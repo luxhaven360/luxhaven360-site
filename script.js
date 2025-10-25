@@ -38,3 +38,44 @@
                 nav.classList.remove('active');
             }
         });
+
+// --- Stripe Checkout Integration ---
+document.addEventListener('DOMContentLoaded', () => {
+  const stripe = Stripe('pk_test_TUA_PUBLISHABLE_KEY'); // <-- METTI QUI la tua publishable key Stripe
+
+  document.querySelectorAll('.buy-button').forEach(button => {
+    button.addEventListener('click', async (e) => {
+      const productName = button.dataset.name;
+      const unit_amount_cents = parseInt(button.dataset.price, 10);
+      const printful_variant_id = button.dataset.variant;
+
+      try {
+        // crea sessione checkout via Netlify Function
+        const response = await fetch('/.netlify/functions/create-checkout-session', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            productName,
+            unit_amount_cents,
+            quantity: 1,
+            metadata: { printful_variant_id }
+          })
+        });
+
+        const data = await response.json();
+
+        if (data.id) {
+          await stripe.redirectToCheckout({ sessionId: data.id });
+        } else {
+          alert('Errore: impossibile creare la sessione di pagamento.');
+          console.error(data);
+        }
+
+      } catch (err) {
+        console.error('Errore Stripe checkout:', err);
+        alert('Si è verificato un errore nel pagamento.');
+      }
+    });
+  });
+});
+
