@@ -38,3 +38,40 @@
                 nav.classList.remove('active');
             }
         });
+
+// funzione frontend per chiamare la Netlify Function
+async function acquistaProdottoFrontend(nomeProdotto, prezzo, cliente, syncVariantId) {
+  const ordine = {
+    prodotto: nomeProdotto,
+    prezzo: prezzo,
+    quantita: 1,
+    cliente: cliente,
+    sync_variant_id: syncVariantId
+  };
+
+  try {
+    const res = await fetch('/.netlify/functions/sendToPrintful', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        // PER TEST: sostituisci temporaneamente 'INSERISCI_QUI_IL_TUO_SITE_SECRET' con il Site Secret che imposterai su Netlify.
+        // ATTENZIONE: NON lasciare questo valore in chiaro su repo pubblico in produzione.
+        'x-site-secret': 'INSERISCI_QUI_IL_TUO_SITE_SECRET'
+      },
+      body: JSON.stringify(ordine)
+    });
+
+    const data = await res.json();
+    if (res.ok) {
+      console.log('Printful response:', data);
+      alert('Ordine inviato con successo a Printful.');
+    } else {
+      console.error('Errore Printful:', data);
+      alert('Errore durante l\'invio dell\'ordine: ' + (data.error || JSON.stringify(data)));
+    }
+  } catch (err) {
+    console.error('Errore di rete:', err);
+    alert('Errore di rete: ' + err.message);
+  }
+}
+
