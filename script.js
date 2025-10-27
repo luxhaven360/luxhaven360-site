@@ -38,3 +38,31 @@
                 nav.classList.remove('active');
             }
         });
+
+// Funzione per acquistare prodotto tramite backend serverless
+document.querySelectorAll('.buy-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+        const productId = btn.dataset.productId;
+        const price = btn.dataset.price;
+
+        try {
+            const res = await fetch('https://TUO-ENDPOINT-SERVERLESS/printful-order', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ productId, price })
+            });
+
+            const data = await res.json();
+            if (data.success) {
+                alert('Ordine ricevuto! Riceverai conferma via email.');
+            } else {
+                alert('Errore nella creazione dell’ordine. Riprova.');
+                console.error(data.error);
+            }
+        } catch (err) {
+            console.error(err);
+            alert('Errore nella connessione al server.');
+        }
+    });
+});
+
