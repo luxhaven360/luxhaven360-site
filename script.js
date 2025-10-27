@@ -40,13 +40,15 @@
         });
 
 // Funzione per acquistare prodotto tramite backend serverless
+const endpoint = 'https://luxhaven360.netlify.app/.netlify/functions/printful-order';
+
 document.querySelectorAll('.buy-btn').forEach(btn => {
     btn.addEventListener('click', async () => {
         const productId = btn.dataset.productId;
         const price = btn.dataset.price;
 
         try {
-            const res = await fetch('https://TUO-ENDPOINT-SERVERLESS/printful-order', {
+            const res = await fetch(endpoint, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ productId, price })
@@ -65,4 +67,5 @@ document.querySelectorAll('.buy-btn').forEach(btn => {
         }
     });
 });
+
 
