@@ -1,25 +1,34 @@
 import fetch from 'node-fetch';
 
 export async function handler(event, context) {
-    if (event.httpMethod !== 'POST') {
-        return { statusCode: 405, body: 'Method Not Allowed' };
+    // CORS
+    const headers = {
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'POST, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type',
+    };
+
+    if (event.httpMethod === 'OPTIONS') {
+        return { statusCode: 200, headers };
     }
 
-    const { productId, price } = JSON.parse(event.body);
-
-    // Mappa productId ai variant_id Printful
-    const productMap = {
-        "premium-apparel": 12345,
-        "art-prints": 23456,
-        "design-accessories": 34567
-    };
-    const variant_id = productMap[productId];
-
-    if (!variant_id) {
-        return { statusCode: 400, body: JSON.stringify({ success: false, error: 'Prodotto non trovato' }) };
+    if (event.httpMethod !== 'POST') {
+        return { statusCode: 405, headers, body: JSON.stringify({ error: 'Method not allowed' }) };
     }
 
     try {
+        const { productId, price } = JSON.parse(event.body);
+
+        // Mappa productId -> variant_id Printful
+        const productMap = {
+            "premium-apparel": 12345,
+            "art-prints": 23456,
+            "design-accessories": 34567
+        };
+
+        const variantId = productMap[productId];
+        if (!variantId) throw new Error('Prodotto non trovato');
+
         const response = await fetch('https://api.printful.com/orders', {
             method: 'POST',
             headers: {
@@ -35,7 +44,7 @@ export async function handler(event, context) {
                     email: 'cliente@example.com'
                 },
                 items: [
-                    { variant_id, quantity: 1 }
+                    { variant_id: variantId, quantity: 1 }
                 ]
             })
         });
@@ -43,9 +52,8 @@ export async function handler(event, context) {
         const data = await response.json();
         if (!response.ok) throw new Error(data.error || 'Errore API Printful');
 
-        return { statusCode: 200, body: JSON.stringify({ success: true, data }) };
+        return { statusCode: 200, headers, body: JSON.stringify({ success: true, data }) };
     } catch (err) {
-        console.error(err);
-        return { statusCode: 500, body: JSON.stringify({ success: false, error: err.message }) };
+        return { statusCode: 500, headers, body: JSON.stringify({ success: false, error: err.message }) };
     }
 }
