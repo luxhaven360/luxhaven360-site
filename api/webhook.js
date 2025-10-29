@@ -1,19 +1,15 @@
 // api/webhook.js
 import Stripe from 'stripe';
 import fetch from 'node-fetch';
+import { PRODUCTS } from '../data/products.js';
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, { apiVersion: '2023-08-16' });
 
-export const config = {
-  api: {
-    bodyParser: false // Stripe requires raw body for signature verification
-  }
-};
+export const config = { api: { bodyParser: false } };
 
-// helper to read stream
 async function buffer(readable) {
   const chunks = [];
-  for await (const chunk of readable) chunks.push(typeof chunk === "string" ? Buffer.from(chunk) : chunk);
+  for await (const chunk of readable) chunks.push(typeof chunk === 'string' ? Buffer.from(chunk) : chunk);
   return Buffer.concat(chunks);
 }
 
@@ -22,80 +18,70 @@ export default async function handler(req, res) {
 
   const sig = req.headers['stripe-signature'];
   const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
-  let event;
 
+  let event;
   try {
     const raw = await buffer(req);
     event = stripe.webhooks.constructEvent(raw, sig, webhookSecret);
   } catch (err) {
-    console.error('Webhook signature verification failed.', err.message);
+    console.error('Errore verifica webhook:', err.message);
     return res.status(400).send(`Webhook Error: ${err.message}`);
   }
 
-  // Handle checkout.session.completed
   if (event.type === 'checkout.session.completed') {
     const session = event.data.object;
+    // recupera la session completa con line items
+    const sessionFull = await stripe.checkout.sessions.retrieve(session.id, { expand: ['line_items', 'customer_details'] });
 
-    // Retrieve the full session with line items
-    const sessionFull = await stripe.checkout.sessions.retrieve(session.id, {
-      expand: ['line_items', 'customer_details']
-    });
+    const skuToVariant = Object.fromEntries(PRODUCTS.map(p => [p.sku, p.variant_id]));
+
+    // costruisci items Printful
+    const items = sessionFull.line_items.data.map(li => {
+      const sku = li.price.product.metadata?.sku || (li.description && li.description.split('|')[0]) || null;
+      const variant_id = sku ? skuToVariant[sku] : null;
+      return {
+        variant_id: variant_id ? Number(variant_id) : null,
+        quantity: li.quantity
+      };
+    }).filter(i => i.variant_id && i.quantity > 0);
+
+    // recipient
+    const addr = sessionFull.customer_details?.address || {};
+    const recipient = {
+      name: sessionFull.customer_details?.name || sessionFull.customer_details?.email,
+      address1: addr.line1 || '',
+      address2: addr.line2 || '',
+      city: addr.city || '',
+      state_code: addr.state || '',
+      country_code: addr.country || '',
+      zip: addr.postal_code || '',
+      phone: sessionFull.customer_details?.phone || ''
+    };
+
+    // payload Printful
+    const orderBody = {
+      external_id: session.id,
+      recipient,
+      items: items.map(it => ({ variant_id: it.variant_id, quantity: it.quantity }))
+    };
 
     try {
-      // Build Printful order payload
-      // Map Stripe line items (metadata.variant) to Printful items
-      const items = sessionFull.line_items.data.map(li => {
-        const variant = li.price.product.metadata ? li.price.product.metadata.variant : (li.price.product && li.price.product.id) || null;
-        // fallback: metadata present in unit_price product_data creates product with metadata in our flow?
-        // We passed metadata in product_data above. For robustness, attempt to read from li.description/description...
-        // IMPORTANT: ensure you use real Printful variant IDs (integer) in product metadata or maintain mapping table.
-        return {
-          variant_id: parseInt(li.price.product.metadata?.variant || li.price.product?.metadata?.variant || li.price.product?.id || 0),
-          quantity: li.quantity,
-          // If you need custom file/images, include "files": [...]
-        };
-      }).filter(i => i.variant_id && i.quantity > 0);
-
-      // Shipping info from Stripe
-      const shipping = sessionFull.customer_details?.address;
-      const recipient = {
-        name: sessionFull.customer_details?.name || sessionFull.customer_details?.email,
-        address1: shipping?.line1 || '',
-        address2: shipping?.line2 || '',
-        city: shipping?.city || '',
-        state_code: shipping?.state || '',
-        country_code: shipping?.country || '',
-        zip: shipping?.postal_code || '',
-        phone: sessionFull.customer_details?.phone || ''
-      };
-
-      // Build Printful order body (v1 API example)
-      const orderBody = {
-        external_id: session.id,
-        recipient,
-        items: items.map(it => ({ variant_id: it.variant_id, quantity: it.quantity }))
-      };
-
-      // POST to Printful
       const resp = await fetch('https://api.printful.com/orders', {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${process.env.PRINTFUL_API_KEY}`,
+          Authorization: `Bearer ${process.env.PRINTFUL_API_KEY}`,
           'Content-Type': 'application/json'
         },
         body: JSON.stringify(orderBody)
       });
-
-      const printfulResult = await resp.json();
+      const pf = await resp.json();
       if (!resp.ok) {
-        console.error('Printful error', printfulResult);
-        // You may want to notify admin / retry
+        console.error('Printful response error', pf);
       } else {
-        console.log('Order created on Printful', printfulResult);
+        console.log('Ordine creato su Printful', pf);
       }
-
     } catch (err) {
-      console.error('Error creating Printful order', err);
+      console.error('Errore chiamata Printful:', err);
     }
   }
 
