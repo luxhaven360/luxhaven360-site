@@ -1,21 +1,23 @@
 // data/products.js
+// Unico punto di verità per i prodotti venduti.
+// MODIFICA: inserisci qui i tuoi variant_id Printful reali e gli URL delle immagini.
 
 export const PRODUCTS = [
   {
     sku: "TSHIRT_PREMIUM",
     name: "T-Shirt Premium",
-    description: "Collezione di abbigliamento esclusivo in cotone pettinato con logo discreto.",
+    description: "Cotone pettinato, stampa logo LuxHaven360.",
     price_cents: 12000,
-    image: "https://files.printful.com/products/mockups/tshirt-example.jpg",
-    variant_id: 1234567890 // <- ID variante Printful
+    image: "https://via.placeholder.com/400x400?text=T-Shirt+Premium", // <-- SOSTITUISCI con gli URL delle immagini reali
+    variant_id: 123456789  // <-- SOSTITUISCI con il variant_id Printful reale
   },
   {
     sku: "ART_PRINT",
-    name: "Art Print",
-    description: "Stampe fotografiche in edizione limitata delle proprietà iconiche.",
+    name: "Art Print 30x40cm",
+    description: "Stampa fotografica di alta qualità.",
     price_cents: 25000,
-    image: "https://files.printful.com/products/mockups/artprint-example.jpg",
-    variant_id: 9876543210
-  },
-  // Aggiungi altri prodotti qui
+    image: "https://via.placeholder.com/400x400?text=Art+Print", // <-- SOSTITUISCI con gli URL delle immagini reali
+    variant_id: 987654321  // <-- SOSTITUISCI
+  }
+  // aggiungi altri prodotti qui
 ];
