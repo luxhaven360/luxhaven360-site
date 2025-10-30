@@ -38,33 +38,3 @@
                 nav.classList.remove('active');
             }
         });
-
-// --- SHOP: integrazione checkout (Stripe via Netlify Functions) ---
-
-// Bottone "Acquista" -> crea sessione di checkout lato server (Netlify Function)
-document.addEventListener('DOMContentLoaded', () => {
-    document.querySelectorAll('.buy-btn').forEach(btn => {
-        btn.addEventListener('click', async (e) => {
-            const card = e.target.closest('.card');
-            const productId = card.getAttribute('data-product-id');
-
-            try {
-                // Chiamata alla Netlify Function che crea la Stripe Checkout session
-                const res = await fetch('/.netlify/functions/create-checkout', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ productId, quantity: 1 })
-                });
-
-                const data = await res.json();
-                if (!res.ok) throw new Error(data.message || 'Errore durante la creazione del checkout');
-
-                // Redirect al Checkout (Stripe Checkout URL)
-                window.location.href = data.url;
-            } catch (err) {
-                console.error(err);
-                alert('Si è verificato un errore nel processo di acquisto. Controlla la console.');
-            }
-        });
-    });
-});
