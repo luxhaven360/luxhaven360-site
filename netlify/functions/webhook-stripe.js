@@ -1,80 +1,78 @@
 const Stripe = require('stripe');
 const fetch = require('node-fetch');
-
 const stripe = Stripe(process.env.STRIPE_SECRET_KEY);
 
-exports.handler = async function(event) {
-  // Stripe invia webhook come POST; dobbiamo verificare la firma
+exports.handler = async (event) => {
   const sig = event.headers['stripe-signature'] || event.headers['Stripe-Signature'];
-  const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
-
   let stripeEvent;
   try {
-    stripeEvent = stripe.webhooks.constructEvent(event.body, sig, webhookSecret);
+    stripeEvent = stripe.webhooks.constructEvent(event.body, sig, process.env.STRIPE_WEBHOOK_SECRET);
   } catch (err) {
-    console.error('Errore firma webhook', err.message);
+    console.error('Webhook signature error:', err.message);
     return { statusCode: 400, body: `Webhook Error: ${err.message}` };
   }
 
-  // Gestiamo solo evento di checkout completato
   if (stripeEvent.type === 'checkout.session.completed') {
     const session = stripeEvent.data.object;
-
     try {
-      // Recupera informazioni cliente/spedizione
-      const shipping = session.shipping || session.customer_details || {};
+      // Estrai informazioni
+      const shipping = session.shipping || {};
       const metadata = session.metadata || {};
-      const productId = metadata.productId || (session.display_items && session.display_items[0] && session.display_items[0].custom && session.display_items[0].custom.name) || 'unknown';
-      const variantId = metadata.printful_variant_id;
+      const variantId = parseInt(metadata.printful_variant_id, 10);
+      const retailPrice = session.amount_total / 100.0; // es. 12000 → 120.00
 
-      // Costruisci payload per Printful (semplice: 1 item, variant_id)
+      // Costruisci body ordine per Printful v2
       const orderBody = {
         recipient: {
-          name: (shipping.name || `${session.customer_details?.name || ''}`).trim(),
-          address1: shipping.address?.line1 || shipping.address_line1 || '',
-          address2: shipping.address?.line2 || shipping.address_line2 || '',
-          city: shipping.address?.city || '',
-          state_code: shipping.address?.state || '',
-          country_code: shipping.address?.country || '',
-          zip: shipping.address?.postal_code || '',
-          email: session.customer_details?.email || '',
+          name: shipping.name || session.customer_details?.name || '',
+          address1: shipping.address?.line1,
+          address2: shipping.address?.line2,
+          city: shipping.address?.city,
+          state_code: shipping.address?.state,
+          country_code: shipping.address?.country,
+          zip: shipping.address?.postal_code,
+          email: session.customer_details?.email,
           phone: shipping.phone || ''
         },
         items: [
           {
-            variant_id: parseInt(variantId, 10),
-            quantity: 1
+            variant_id: variantId,
+            quantity: 1,
+            retail_price: retailPrice.toFixed(2),
+            files: [
+              {
+                url: metadata.printful_file_url || '',   // se passi URL immagine
+                placement: metadata.placement || 'front_large'
+              }
+            ]
           }
         ],
-        // opzionale: note per l'ordine su Printful
-        retail_costs: {
-          currency: "EUR"
+        customization: {
+          packing_slip: {
+            store_name: "LuxHaven360",
+            message: "Grazie per il tuo acquisto!"
+          }
         }
       };
 
-      // Chiamata a Printful API (usa token privato / Bearer)
-      const PRINTFUL_API = process.env.PRINTFUL_API_URL || 'https://api.printful.com/orders';
-      const PRINTFUL_TOKEN = process.env.PRINTFUL_API_KEY;
-
-      const resp = await fetch(PRINTFUL_API, {
+      const resp = await fetch('https://api.printful.com/v2/orders', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${PRINTFUL_TOKEN}`
+          'Authorization': `Bearer ${process.env.PRINTFUL_API_KEY}`
         },
         body: JSON.stringify(orderBody)
       });
+
       const json = await resp.json();
-
       if (!resp.ok) {
-        console.error('Errore Printful:', json);
-        // qui puoi implementare retry o emailing admin
+        console.error('Printful v2 error:', json);
+        // eventuale retry o segnalazione
       } else {
-        console.log('Ordine Printful creato:', json);
+        console.log('Printful v2 order created:', json);
       }
-
     } catch (err) {
-      console.error('Errore durante creazione ordine Printful:', err);
+      console.error('Errore durante creazione ordine Printful v2:', err);
     }
   }
 
