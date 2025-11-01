@@ -53,22 +53,34 @@ document.addEventListener('DOMContentLoaded', () => {
             const data = { productName, price, email, ...extra };
 
             try {
-                const params = new URLSearchParams(data);
-                const response = await fetch(appsScriptUrl, {
-                    method: 'POST',
-                    body: params,
-                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-                });
+    const params = new URLSearchParams(data);
+    const response = await fetch(appsScriptUrl, {
+        method: 'POST',
+        body: params,
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    });
 
-                if (!response.ok) {
-                    throw new Error('Errore dal server: ' + response.status);
-                }
+    // Leggi come testo prima
+    const text = await response.text();
+    console.log('Raw response:', text);  // ← APRI CONSOLE E VEDI COSA ARRIVA
 
-                const session = await response.json();
-                stripe.redirectToCheckout({ sessionId: session.id });
-            } catch (error) {
-                alert('Errore durante il checkout: ' + error.message);
-            }
+    let session;
+    try {
+        session = JSON.parse(text);  // Prova a parsare
+    } catch (parseError) {
+        throw new Error('Risposta non valida dal server: ' + text);
+    }
+
+    if (!session.id) {
+        throw new Error('ID sessione mancante: ' + JSON.stringify(session));
+    }
+
+    stripe.redirectToCheckout({ sessionId: session.id });
+
+} catch (error) {
+    alert('Errore durante il checkout: ' + error.message);
+    console.error(error);
+}
         });
     };
 
