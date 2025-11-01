@@ -42,7 +42,7 @@ document.addEventListener('click', (e) => {
 // Aggiunto: Handler per forms shop con Stripe
 document.addEventListener('DOMContentLoaded', () => {
     const stripe = Stripe('pk_test_51SNyL313nkSVo9XZyhMGIN7IgYjtKtaVZJACjcZvcFpaGXxFziU1QskI95o6pLD1X7IghAAzr2q3qQpNNpvtLMUw00b6GnSa1W');  // Sostituisci con la tua Publishable Key
-    const appsScriptUrl = 'https://script.google.com/macros/s/AKfycbx2HLGGl9XaNJolozuxCeEsf7leydkfAP931HvUWCq0udfdkjcka1nzxNqv4E5DwgmjDQ/exec';  // Il tuo URL; aggiorna se cambiato
+    const appsScriptUrl = 'https://script.google.com/macros/s/AKfycbwTYYdz1nNd6aMRe9kaHsPD3f-WkgSfqwd22l7WWd5CTWfLaOg_0gb4g_7M0PcR_MyczQ/exec';  // Il tuo URL; aggiorna se cambiato
 
     const handleCheckout = (formId, productName, price, getExtraData) => {
     const form = document.getElementById(formId);
