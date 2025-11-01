@@ -1,7 +1,7 @@
 // =======================
 // CONFIGURAZIONE (modifica qui l'URL del tuo Apps Script deployato)
 // =======================
-const APPS_SCRIPT_BACKEND = 'https://script.google.com/macros/s/AKfycby8_SKc3AXBDv_QjiWx_Fz80nZn8UE7y_koK7v0o_HcTpTmFHR7vaMdlu2l01OG52rL/exec'; 
+const APPS_SCRIPT_BACKEND = 'https://script.google.com/macros/s/AKfycbwxiUdmzH_Xpo08p8XKIlzYamebHcoqcO8PQtZXzXTqJQnG8xuCDav4klRtZKWuXDZM/exec'; 
 // Sostituisci con l'URL finale: es. https://script.google.com/macros/s/AKfycbx.../exec
 
 // =======================
