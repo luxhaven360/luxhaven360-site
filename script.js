@@ -1,4 +1,4 @@
-// --- Nav & UI (tuo script esistente mantenuto) ---
+// --- Nav & UI (tuo script esistente mantenuto e ampliato) ---
 
 // Navigation
 function showSection(sectionId) {
@@ -43,41 +43,159 @@ document.addEventListener('click', (e) => {
     }
 });
 
-// --- Shop / Stripe Payment Links integration ---
+// ---------------------- Dynamic products loading ----------------------
+// Carica i JSON dalla cartella 'products' e popola le rispettive griglie.
+// Struttura attesa di ogni prodotto (esempio):
+// {
+//   "sku": "LH360-TSHIRT",
+//   "title": "Premium T-Shirt",
+//   "desc": "Maglietta premium in cotone pettinato con logo LuxHaven360.",
+//   "price": 120,
+//   "currency": "EUR",
+//   "icon": "👕",               // o "assets/img/tshirt.jpg"
+//   "stripe_link": "https://buy.stripe.com/abcd...",
+//   "cta": "Acquista"           // testo del bottone (es. "Acquista", "Prenota Ora", "Richiedi Visita")
+// }
 
-/*
-  Replace these placeholders with the actual Payment Link URLs you create in Stripe.
-  Example:
-    "LH360-TSHIRT": "https://buy.stripe.com/abcd1234..."
-*/
-const PRODUCT_PAYMENT_LINKS = {
-    "LH360-TSHIRT": "https://buy.stripe.com/test_4gMaEP6ecaHB7dI6WQ3VC00",
-    "LH360-PRINT": "REPLACE_WITH_YOUR_STRIPE_PAYMENT_LINK_FOR_PRINT",
-    "LH360-ACC": "REPLACE_WITH_YOUR_STRIPE_PAYMENT_LINK_FOR_ACCESSORY"
-};
+const SECTIONS = [
+    { id: 'properties', json: 'products/properties.json', gridId: 'propertiesGrid', defaultCta: 'Richiedi Visita' },
+    { id: 'supercars', json: 'products/supercars.json', gridId: 'supercarsGrid', defaultCta: 'Test Drive' },
+    { id: 'stays', json: 'products/stays.json', gridId: 'staysGrid', defaultCta: 'Prenota Ora' },
+    { id: 'shop', json: 'products/shop.json', gridId: 'shopGrid', defaultCta: 'Acquista' }
+];
 
-/**
- * buyProduct(buttonElement)
- * Called when user clicks "Acquista". Reads data attributes and redirects to the Payment Link.
- */
-function buyProduct(btn) {
-    const sku = btn.getAttribute('data-product-sku');
-    const name = btn.getAttribute('data-product-name');
-    const price = btn.getAttribute('data-price');
-
-    const paymentLink = PRODUCT_PAYMENT_LINKS[sku];
-    if (!paymentLink || paymentLink.startsWith("REPLACE_WITH")) {
-        alert("Pagamento non configurato per questo prodotto. Controlla i Payment Links in Stripe e aggiorna il sito.");
-        return;
+// utility per creare elementi DOM
+function el(tag, attrs = {}, children = []) {
+    const node = document.createElement(tag);
+    for (const k in attrs) {
+        if (k === 'class') node.className = attrs[k];
+        else if (k === 'html') node.innerHTML = attrs[k];
+        else node.setAttribute(k, attrs[k]);
     }
-
-    // Optional: we can store some analytics in localStorage before redirect
-    try {
-        localStorage.setItem('lh360_last_product', JSON.stringify({sku, name, price, ts: Date.now()}));
-    } catch(e) {}
-
-    // Redirect to the payment link (opens in same tab)
-    window.location.href = paymentLink;
+    children.forEach(c => node.appendChild(typeof c === 'string' ? document.createTextNode(c) : c));
+    return node;
 }
+
+// format prezzo semplice
+function formatPrice(p, currency = 'EUR') {
+    try {
+        return new Intl.NumberFormat('it-IT', { style: 'currency', currency }).format(p);
+    } catch (e) {
+        return `${p} ${currency}`;
+    }
+}
+
+// funzione per creare una card prodotto
+function createProductCard(prod, defaultCta) {
+    // container
+    const card = el('div', { class: 'card' });
+
+    // image/icon
+    const imageContainer = el('div', { class: 'card-image' });
+    if (prod.icon) {
+        // se è url img, crea <img>, altrimenti usa emoji/testo
+        if (typeof prod.icon === 'string' && (prod.icon.startsWith('http') || prod.icon.endsWith('.jpg') || prod.icon.endsWith('.png') || prod.icon.endsWith('.webp') || prod.icon.endsWith('.jpeg'))) {
+            const img = el('img', { src: prod.icon, alt: prod.title, style: 'width:100%; height:auto; object-fit:cover;' });
+            imageContainer.appendChild(img);
+        } else {
+            imageContainer.textContent = prod.icon;
+        }
+    } else {
+        imageContainer.textContent = '📦';
+    }
+    card.appendChild(imageContainer);
+
+    // title
+    const title = el('h3', { class: 'card-title' }, [document.createTextNode(prod.title || 'Untitled')]);
+    card.appendChild(title);
+
+    // desc
+    const desc = el('p', { class: 'card-desc' }, [document.createTextNode(prod.desc || '')]);
+    card.appendChild(desc);
+
+    // price
+    const priceText = el('div', { class: 'card-price' }, [document.createTextNode(prod.price != null ? formatPrice(prod.price, prod.currency || 'EUR') : (prod.price_text || 'Contattaci'))]);
+    card.appendChild(priceText);
+
+    // button area
+    const btn = el('button', { class: 'btn', style: 'margin-top: 1.5rem; width: 100%;' }, [document.createTextNode(prod.cta || defaultCta || 'Scopri')]);
+
+    // attach product data as data- attributes for analytics / fallback
+    btn.dataset.sku = prod.sku || '';
+    btn.dataset.title = prod.title || '';
+    if (prod.stripe_link) btn.dataset.stripeLink = prod.stripe_link;
+    if (prod.action) btn.dataset.action = prod.action;
+
+    // on click behaviour:
+    // - se presente stripe_link => redirect
+    // - altrimenti fallback: per immobili/esperienze apri contact form con prefill (qui semplice alert)
+    btn.addEventListener('click', () => {
+        if (btn.dataset.stripeLink) {
+            // salva analytics minimale
+            try {
+                localStorage.setItem('lh360_last_product', JSON.stringify({ sku: btn.dataset.sku, title: btn.dataset.title, ts: Date.now() }));
+            } catch (e) {}
+            // redirect
+            window.location.href = btn.dataset.stripeLink;
+        } else {
+            // fallback: apri form contatto con prefilled info (qui un semplice alert per integrarlo facilmente)
+            // Se vuoi, puoi implementare un modal con il form precompilato.
+            alert(`Nessun link di pagamento configurato per "${btn.dataset.title}". Verrà inviata una richiesta di informazioni.`);
+            // eventualmente apri sezione contatti
+            showSection('contact');
+            // e riempi il form (se esiste)
+            try {
+                document.getElementById('interest').value = prod.sectionName || '';
+                document.getElementById('message').value = `Richiesta informazioni su: ${prod.title} (SKU: ${prod.sku || 'n/a'})`;
+            } catch (e) {}
+        }
+    });
+
+    card.appendChild(btn);
+
+    return card;
+}
+
+// carica e popola una sezione
+async function loadSection(section) {
+    const grid = document.getElementById(section.gridId);
+    if (!grid) return;
+
+    // stato caricamento
+    grid.innerHTML = '<div class="loading">Caricamento...</div>';
+
+    try {
+        const resp = await fetch(section.json, { cache: 'no-cache' });
+        if (!resp.ok) throw new Error('Network response was not ok: ' + resp.status);
+        const items = await resp.json();
+
+        // svuota e popola
+        grid.innerHTML = '';
+        if (!Array.isArray(items) || items.length === 0) {
+            grid.innerHTML = `<div class="empty">Nessun prodotto disponibile in questa categoria.</div>`;
+            return;
+        }
+
+        items.forEach(prod => {
+            // aggiungi meta utile
+            prod.sectionName = section.id;
+            const card = createProductCard(prod, section.defaultCta);
+            grid.appendChild(card);
+        });
+    } catch (err) {
+        console.error('Errore caricamento', section.json, err);
+        grid.innerHTML = `<div class="error">Errore caricamento prodotti. Assicurati che ${section.json} sia raggiungibile. (${err.message})</div>`;
+    }
+}
+
+// bootstrap: carica tutte le sezioni
+function initDynamicProducts() {
+    SECTIONS.forEach(s => loadSection(s));
+}
+
+// init al load
+window.addEventListener('DOMContentLoaded', () => {
+    initDynamicProducts();
+});
 
 // --- end ---
