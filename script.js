@@ -40,7 +40,7 @@
         });
 
 const STRIPE_PUBLISHABLE_KEY = "pk_test_51SNyL313nkSVo9XZyhMGIN7IgYjtKtaVZJACjcZvcFpaGXxFziU1QskI95o6pLD1X7IghAAzr2q3qQpNNpvtLMUw00b6GnSa1W"; // <--- SOSTITUISCI con la tua publishable key
-const APPS_SCRIPT_WEBAPP_URL = "https://script.google.com/macros/s/AKfycbxqyGhgR-1WXvg-5AzsPaj598oi1QCWXI_4D_ImB4DnENE4CmDXasVbemxTN2fHMSFU/exec"; // <--- SOSTITUISCI con l'URL del Web App Apps Script
+const APPS_SCRIPT_WEBAPP_URL = "https://script.google.com/macros/s/AKfycbyKss4Q6NBuymfFzeOtD4w63H4QEmFqQGTra113ahRj0OD-sXhVx7Suni6JwE7Tizco/exec"; // <--- SOSTITUISCI con l'URL del Web App Apps Script
 
 const stripe = Stripe(STRIPE_PUBLISHABLE_KEY);
 
