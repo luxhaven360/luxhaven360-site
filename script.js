@@ -41,10 +41,10 @@ document.addEventListener('click', (e) => {
 
 // Aggiunto: Handler per forms shop con Stripe
 document.addEventListener('DOMContentLoaded', () => {
-    const stripe = Stripe('pk_test_51SNyL313nkSVo9XZyhMGIN7IgYjtKtaVZJACjcZvcFpaGXxFziU1QskI95o6pLD1X7IghAAzr2q3qQpNNpvtLMUw00b6GnSa1W');  // Sostituisci con la tua PK
-    const appsScriptUrl = 'https://script.google.com/macros/s/AKfycbwFJ6BEQ0iDMHbrY3fJ0PZMcxJWs0JOcviRYBOGkFQ0cNs_RTT9fHK4Hc5FooE4Yo5_fg/exec';  // URL del tuo createSession.gs web app
+    const stripe = Stripe('pk_test_51SNyL313nkSVo9XZyhMGIN7IgYjtKtaVZJACjcZvcFpaGXxFziU1QskI95o6pLD1X7IghAAzr2q3qQpNNpvtLMUw00b6GnSa1W');  // Sostituisci con la tua Publishable Key
+    const appsScriptUrl = 'https://script.google.com/macros/s/AKfycbw-b11mHOlRaQywRq-plnDKxCGz4LbX049IdfyHzilBNSB0bh0AoKT6zeJ1iIeB3L0d/exec';  // URL del tuo createSession.gs (es. https://script.google.com/macros/s/.../exec)
 
-    const handleCheckout = async (formId, productName, price, getExtraData) => {
+    const handleCheckout = (formId, productName, price, getExtraData) => {
         const form = document.getElementById(formId);
         form.addEventListener('submit', async (e) => {
             e.preventDefault();
@@ -53,11 +53,18 @@ document.addEventListener('DOMContentLoaded', () => {
             const data = { productName, price, email, ...extra };
 
             try {
+                // Usa URLSearchParams per form-urlencoded (evita preflight)
+                const params = new URLSearchParams(data);
                 const response = await fetch(appsScriptUrl, {
                     method: 'POST',
-                    body: JSON.stringify(data),
-                    headers: { 'Content-Type': 'application/json' },
+                    body: params,
+                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
                 });
+
+                if (!response.ok) {
+                    throw new Error('Errore dal server: ' + response.status);
+                }
+
                 const session = await response.json();
                 stripe.redirectToCheckout({ sessionId: session.id });
             } catch (error) {
