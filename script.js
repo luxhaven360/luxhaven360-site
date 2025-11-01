@@ -42,7 +42,7 @@ document.addEventListener('click', (e) => {
 // Aggiunto: Handler per forms shop con Stripe
 document.addEventListener('DOMContentLoaded', () => {
     const stripe = Stripe('pk_test_51SNyL313nkSVo9XZyhMGIN7IgYjtKtaVZJACjcZvcFpaGXxFziU1QskI95o6pLD1X7IghAAzr2q3qQpNNpvtLMUw00b6GnSa1W');  // Sostituisci con la tua PK
-    const appsScriptUrl = 'https://script.google.com/macros/s/AKfycbzHZYMAcI5IJQF_lEh3i31spQzxHuBW3Mrivt5AGXd8qnlOcJbD-bTcP16XQAWEn7dr3w/exec';  // URL del tuo createSession.gs web app
+    const appsScriptUrl = 'https://script.google.com/macros/s/AKfycbwFJ6BEQ0iDMHbrY3fJ0PZMcxJWs0JOcviRYBOGkFQ0cNs_RTT9fHK4Hc5FooE4Yo5_fg/exec';  // URL del tuo createSession.gs web app
 
     const handleCheckout = async (formId, productName, price, getExtraData) => {
         const form = document.getElementById(formId);
