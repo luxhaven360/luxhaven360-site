@@ -1195,8 +1195,8 @@
 
         // Immagini: usa images_by_color se presente, altrimenti fallback
         if (prod.images_by_color && Object.keys(prod.images_by_color).length > 0) {
-            // Inizializza con il primo colore
-            selectedColor = prod.colors[0];
+            // Inizializza con il primo colore (default: nero)
+            selectedColor = prod.colors[0] || '#000000';
             images = prod.images_by_color[selectedColor] || prod.images || [];
         } else if (Array.isArray(prod.images) && prod.images.length > 0) {
             images = prod.images.slice(0, 4);
@@ -1214,11 +1214,17 @@
         currentImage = 0;
         renderGallery();
 
-        // Opzioni: colori, taglie (invariato, ma aggiungi listener per colori)
+        // Opzioni: colori, taglie
         renderColors(prod.colors);
         renderSizes(prod.sizes);
 
-        // Aggiungi listener per selezione colore (per cambio immagini)
+        // Seleziona default il primo colore
+        const firstColorBtn = document.querySelector('.color-btn');
+        if (firstColorBtn) {
+            firstColorBtn.classList.add('active');
+        }
+
+        // Listener per selezione colore (invariato, ma con update variant)
         const colorBtns = document.querySelectorAll('.color-btn');
         colorBtns.forEach(btn => {
             btn.addEventListener('click', () => {
@@ -1236,7 +1242,7 @@
             });
         });
 
-        // Aggiungi listener per selezione size (per variant)
+        // Listener per selezione size (invariato)
         const sizeBtns = document.querySelectorAll('.size-btn');
         sizeBtns.forEach(btn => {
             btn.addEventListener('click', () => {
@@ -1268,18 +1274,21 @@
         buyNowBtn.textContent = prod.cta || 'Acquista Ora';
         buyNowBtn.dataset.stripeLink = prod.stripe_link || '';
 
-        // Comportamento Acquista Ora (modificato per quantità e variant)
+        // Comportamento Acquista Ora (aggiunto check per variante e nota su quantità)
         buyNowBtn.onclick = function () {
-            // Memorizza quantità in localStorage (per eventuale uso futuro)
+            if (!selectedVariantId) {
+                alert('Seleziona colore e taglia prima di procedere.');
+                return;
+            }
+            // Memorizza quantità e variant in localStorage
             localStorage.setItem('lh360_selected_quantity', quantity);
-            // Trova variant_id e memorizzalo
             if (selectedVariantId) localStorage.setItem('lh360_selected_variant_id', selectedVariantId);
 
             if (buyNowBtn.dataset.stripeLink) {
                 try {
                     localStorage.setItem('lh360_last_product', JSON.stringify({ sku: prod.sku, title: prod.title, ts: Date.now() }));
                 } catch (e) {}
-                // Append quantità e variant_id al link (quantità non supportata da Stripe, ma per custom)
+                // Append quantità e variant_id (quantità ignorata da Stripe, ma per futuro backend)
                 let link = buyNowBtn.dataset.stripeLink;
                 link += (link.includes('?') ? '&' : '?') + `quantity=${quantity}`;
                 if (selectedVariantId) link += `&variant_id=${selectedVariantId}`;
@@ -1289,7 +1298,7 @@
             }
         };
 
-        // Comportamento Aggiungi al Carrello (invariato, ma include variant_id se presente)
+        // Comportamento Aggiungi al Carrello (invariato)
         addCartBtn.onclick = function () {
             const cartRaw = localStorage.getItem('lh360_cart');
             let cart = [];
@@ -1314,7 +1323,7 @@
         };
     }
 
-    // Nuova funzione per aggiornare variant selezionato
+    // Nuova funzione per aggiornare variant selezionato (invariato)
     let selectedColor = null;
     let selectedSize = null;
     let selectedVariantId = null;
