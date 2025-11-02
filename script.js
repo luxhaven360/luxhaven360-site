@@ -135,7 +135,7 @@ btn.addEventListener('click', () => {
     const sku = encodeURIComponent(prod.sku || '');
     // Se vuoi anche portare title o altri dati leggeri:
     // const title = encodeURIComponent(prod.title || '');
-    window.location.href = `/product-details/pdp-products.html?sku=${sku}`;
+    window.location.href = `/product-details/pdp-products.tsx?sku=${sku}`;
 });
 
 
