@@ -898,46 +898,246 @@
             if(!isActive) faqItem.classList.add('active');
         }
 
-        /* ====== Caricamento dinamico prodotto ====== */
-        async function loadProduct() {
-            // Ricava SKU dalla query string oppure da localStorage fallback
-            const skuFromQs = qs('sku');
-            const skuFromLS = localStorage.getItem('lh360_selected_sku') || (() => {
-                try {
-                    const j = JSON.parse(localStorage.getItem('lh360_last_product') || '{}');
-                    return j && j.sku ? j.sku : '';
-                } catch (e) { return ''; }
-            })();
+        /* ====== Nuovo caricamento prodotto da product-details/data/<SKU>.json con fallback ====== */
 
-            const sku = skuFromQs || skuFromLS || '';
+async function loadProduct() {
+    const skuFromQs = qs('sku');
+    const skuFromLS = localStorage.getItem('lh360_selected_sku') || (() => {
+        try {
+            const j = JSON.parse(localStorage.getItem('lh360_last_product') || '{}');
+            return j && j.sku ? j.sku : '';
+        } catch (e) { return ''; }
+    })();
 
-            // percorso al JSON dei prodotti (da product-details/ -> ../products/shop.json)
-            const PRODUCTS_JSON = '../products/shop.json';
+    const sku = skuFromQs || skuFromLS || '';
 
-            try {
-                const resp = await fetch(PRODUCTS_JSON, { cache: 'no-cache' });
-                if (!resp.ok) throw new Error('Impossibile caricare prodotti: ' + resp.status);
+    // Primo tentativo: file specifico nella cartella richiesta
+    const DATA_JSON = sku ? `product-details/data/${encodeURIComponent(sku)}.json` : null;
+    let product = null;
+
+    if (DATA_JSON) {
+        try {
+            const resp = await fetch(DATA_JSON, { cache: 'no-cache' });
+            if (resp.ok) {
+                product = await resp.json();
+            } else {
+                // se non trovato, non interrompere: fallback più sotto
+                console.warn('product-details data non trovato:', DATA_JSON, resp.status);
+            }
+        } catch (e) {
+            console.warn('Errore fetch specifico product-details data:', e);
+        }
+    }
+
+    // Fallback: vecchio catalogo products/shop.json (manteniamo compatibilità)
+    if (!product) {
+        try {
+            const resp = await fetch('../products/shop.json', { cache: 'no-cache' });
+            if (resp.ok) {
                 const items = await resp.json();
-
-                let product = null;
                 if (sku) product = items.find(it => it.sku === sku);
-                if (!product && items.length) {
-                    // fallback: primo prodotto
-                    product = items[0];
-                }
+                if (!product && items.length) product = items[0];
+            } else {
+                throw new Error('Impossibile caricare ../products/shop.json: ' + resp.status);
+            }
+        } catch (err) {
+            console.error('Errore caricamento prodotto fallback', err);
+            document.querySelector('.container').innerHTML = `<div style="padding:4rem;color:#fca5a5">Errore caricamento prodotto: ${err.message}</div>`;
+            return;
+        }
+    }
 
-                if (!product) {
-                    // errore: nessun prodotto disponibile
-                    document.querySelector('.container').innerHTML = '<div style="padding:4rem;color:#fca5a5">Nessun prodotto trovato. Torna allo shop.</div>';
-                    return;
-                }
+    if (!product) {
+        document.querySelector('.container').innerHTML = '<div style="padding:4rem;color:#fca5a5">Nessun prodotto trovato. Torna allo shop.</div>';
+        return;
+    }
 
-                populateProduct(product);
-            } catch (err) {
-                console.error(err);
-                document.querySelector('.container').innerHTML = `<div style="padding:4rem;color:#fca5a5">Errore caricamento prodotto: ${err.message}</div>`;
+    populateProduct(product);
+}
+
+function populateProduct(prod) {
+    // Titolo, descrizione, prezzo (se presenti)
+    document.getElementById('productTitle').textContent = prod.title || 'Prodotto';
+    document.getElementById('productDesc').textContent = prod.description || prod.desc || '';
+
+    if (prod.price != null) {
+        document.getElementById('productPrice').textContent = formatPrice(prod.price, prod.currency || 'EUR');
+    } else if (prod.price_text) {
+        document.getElementById('productPrice').textContent = prod.price_text;
+    }
+
+    document.title = `${prod.title || 'Prodotto'} — Dettaglio`;
+
+    // Disponibilità (se disponibile)
+    if (prod.availability) {
+        document.getElementById('availabilityInnerText').textContent = prod.availability;
+        document.getElementById('availabilityText').style.display = '';
+    } else {
+        // nascondi se non presente
+        const a = document.getElementById('availabilityText');
+        if (a) a.style.display = 'none';
+    }
+
+    /* ====== IMMAGINI: usa max 4 immagini ====== */
+    if (Array.isArray(prod.images) && prod.images.length > 0) {
+        images = prod.images.slice(0, 4);
+    } else {
+        // mantieni il fallback già presente (unsplash) - ma limita a 4
+        images = images.slice(0, 4);
+    }
+    currentImage = 0;
+    renderGallery();
+
+    /* ====== RATING & RECENSIONI - gestione assenza ====== */
+    const ratingTopEl = document.querySelector('.rating');
+    const ratingTextEl = document.getElementById('ratingText');
+    const ratingNumberEl = document.getElementById('ratingNumber');
+    const reviewsCountEl = document.getElementById('reviewsCount');
+    const reviewsSummaryEl = document.querySelector('.reviews-summary');
+
+    if (prod.rating && typeof prod.rating.value !== 'undefined' && prod.rating.count && prod.rating.count > 0) {
+        // mostra rating in header
+        if (ratingTopEl) ratingTopEl.style.display = 'flex';
+        if (ratingTextEl) ratingTextEl.textContent = `★ ${prod.rating.value} (${prod.rating.count} recensioni)`;
+        if (ratingNumberEl) ratingNumberEl.textContent = prod.rating.value;
+        if (reviewsCountEl) reviewsCountEl.textContent = `${prod.rating.count} recensioni`;
+
+        // se breakdown presente aggiorna le barre (opzionale)
+        if (prod.rating.breakdown && reviewsSummaryEl) {
+            const fills = reviewsSummaryEl.querySelectorAll('.rating-bar-fill');
+            // semplice calcolo percentuale se breakdown è fornito
+            const total = Object.values(prod.rating.breakdown).reduce((s, v) => s + Number(v), 0);
+            if (total > 0) {
+                const labels = ['5','4','3','2','1'];
+                fills.forEach((f, idx) => {
+                    const k = labels[idx];
+                    const pct = Math.round((Number(prod.rating.breakdown[k] || 0) / total) * 100);
+                    f.style.width = pct + '%';
+                });
             }
         }
+    } else {
+        // Nascondi elementi di rating e mostra messaggio informativo al posto delle recensioni
+        if (ratingTopEl) ratingTopEl.style.display = 'none';
+        if (reviewsSummaryEl) {
+            reviewsSummaryEl.style.display = 'none';
+            // crea messaggio informativo (solo se non già presente)
+            if (!document.getElementById('noReviewsMsg')) {
+                const reviewsTab = document.getElementById('reviews');
+                const p = document.createElement('p');
+                p.id = 'noReviewsMsg';
+                p.style.color = '#a1a1aa';
+                p.style.padding = '1rem 0';
+                p.textContent = 'Ancora nessuna recensione per questo prodotto.';
+                if (reviewsTab) reviewsTab.appendChild(p);
+            }
+        }
+    }
+
+    /* ====== COLORI - visualizza solo se presenti ====== */
+    const colorSection = document.querySelector('#colorOptions')?.parentElement; // .section wrapper
+    const colorOptionsContainer = document.getElementById('colorOptions');
+    if (Array.isArray(prod.colors) && prod.colors.length > 0 && colorOptionsContainer) {
+        // ripulisci e genera bottoni
+        colorOptionsContainer.innerHTML = '';
+        prod.colors.forEach((c, i) => {
+            const btn = document.createElement('button');
+            btn.className = 'color-btn';
+            // se oggetto con hex -> style, altrimenti background as text
+            if (c.hex) {
+                btn.style.background = c.hex;
+                btn.title = c.name || c.hex;
+            } else if (c.name) {
+                btn.textContent = c.name[0].toUpperCase(); // fallback: iniziale
+                btn.title = c.name;
+            }
+            btn.onclick = () => {
+                document.querySelectorAll('.color-btn').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                // eventuale callback per cambiare immagine basata sul colore (non implementata qui)
+            };
+            if (i === 0) btn.classList.add('active');
+            colorOptionsContainer.appendChild(btn);
+        });
+        if (colorSection) colorSection.style.display = '';
+    } else {
+        if (colorSection) colorSection.style.display = 'none';
+    }
+
+    /* ====== TAGLIE - visualizza solo se presenti ====== */
+    const sizeSection = document.querySelector('#sizeGrid')?.parentElement;
+    const sizeGrid = document.getElementById('sizeGrid');
+    if (Array.isArray(prod.sizes) && prod.sizes.length > 0 && sizeGrid) {
+        sizeGrid.innerHTML = '';
+        prod.sizes.forEach((s, i) => {
+            const btn = document.createElement('button');
+            btn.className = 'size-btn';
+            btn.textContent = s;
+            btn.onclick = () => {
+                document.querySelectorAll('.size-btn').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+            };
+            // pre-seleziona la prima taglia se vuoi
+            if (i === 0) btn.classList.add('active');
+            sizeGrid.appendChild(btn);
+        });
+        if (sizeSection) sizeSection.style.display = '';
+    } else {
+        if (sizeSection) sizeSection.style.display = 'none';
+    }
+
+    /* ====== QUANTITÀ - imposta valore di default se presente ====== */
+    if (typeof prod.default_quantity !== 'undefined' && prod.default_quantity > 0) {
+        quantity = prod.default_quantity;
+        document.getElementById('qtyValue').textContent = quantity;
+    } else {
+        // mantiene il valore globale già definito
+        document.getElementById('qtyValue').textContent = quantity;
+    }
+
+    /* ====== SPECIFICHE dinamiche (Composizione / Origine / Peso / Vestibilità) ====== */
+    if (prod.specs) {
+        if (prod.specs.composition) document.getElementById('specComposition').textContent = prod.specs.composition;
+        if (prod.specs.weight) document.getElementById('specWeight').textContent = prod.specs.weight;
+        if (prod.specs.origin) document.getElementById('specOrigin').textContent = prod.specs.origin;
+        if (prod.specs.fit) document.getElementById('specFit').textContent = prod.specs.fit;
+    }
+
+    /* ====== GUIDE TAGLIE: se presenti aggiungile nella tab Specifiche ====== */
+    if (prod.size_guides) {
+        // es. mostra una tabella semplice nella sezione "specs" (inseriamo sotto #specsGrid)
+        const sg = prod.size_guides;
+        const specsGrid = document.getElementById('specsGrid');
+        if (specsGrid && sg.table && Array.isArray(sg.table) && sg.table.length > 0) {
+            // crea una tabella HTML semplificata
+            const t = document.createElement('table');
+            t.className = 'size-table';
+            const thead = document.createElement('thead');
+            const headers = Object.keys(sg.table[0]);
+            const trh = document.createElement('tr');
+            headers.forEach(h => {
+                const th = document.createElement('th');
+                th.textContent = h.charAt(0).toUpperCase() + h.slice(1);
+                trh.appendChild(th);
+            });
+            thead.appendChild(trh);
+            t.appendChild(thead);
+            const tb = document.createElement('tbody');
+            sg.table.forEach(row => {
+                const tr = document.createElement('tr');
+                headers.forEach(h => {
+                    const td = document.createElement('td');
+                    td.textContent = row[h];
+                    tr.appendChild(td);
+                });
+                tb.appendChild(tr);
+            });
+            t.appendChild(tb);
+            // append one time
+            if (!document.querySelector('.size-table')) specsGrid.appendChild(t);
+        }
+    }
+}
 
         function safeText(s){ return (s==null)?'':s; }
 
