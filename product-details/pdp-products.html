@@ -240,6 +240,7 @@
             cursor: pointer;
             transition: all 0.3s;
             position: relative;
+            overflow: hidden;
         }
 
         .color-btn:hover {
@@ -871,17 +872,22 @@
             'https://images.unsplash.com/photo-1591047139829-d91aecb6caea?w=800&h=1000&fit=crop'
         ];
         let currentImage = 0;
+        let currentProduct = null; // riferimento al prodotto caricato
 
         function renderGallery() {
             const mainImg = document.getElementById('mainImageImg');
             mainImg.src = images[currentImage] || images[0];
+            mainImg.alt = document.getElementById('productTitle').textContent || 'Prodotto';
 
             const thumbs = document.getElementById('thumbnailsContainer');
             thumbs.innerHTML = '';
             images.forEach((src, i) => {
                 const div = document.createElement('div');
                 div.className = 'thumbnail' + (i === currentImage ? ' active' : '');
-                div.innerHTML = `<img src="${src}" alt="Vista ${i+1}" />`;
+                const img = document.createElement('img');
+                img.src = src;
+                img.alt = `Vista ${i+1}`;
+                div.appendChild(img);
                 div.addEventListener('click', () => {
                     selectImage(i);
                 });
@@ -915,8 +921,23 @@
             colors.forEach((color, i) => {
                 const btn = document.createElement('button');
                 btn.className = 'color-btn' + (i === 0 ? ' active' : '');
-                btn.style.background = color;
-                btn.onclick = () => selectColor(btn);
+                // salva il valore colore nel dataset per usare in seguito
+                btn.dataset.color = String(color);
+                btn.setAttribute('aria-label', 'Colore ' + String(color));
+
+                // se il valore è un hex (#xxxxxx) impostalo come background, altrimenti prova a usare immagine di anteprima
+                if (/^#?[0-9A-Fa-f]{6}$/.test(String(color))) {
+                    const hex = color.startsWith('#') ? color : '#' + color;
+                    btn.style.background = hex;
+                } else if (/https?:\/\/.+\.(jpg|jpeg|png|webp)$/i.test(String(color))) {
+                    // color può essere un URL di anteprima
+                    btn.style.backgroundImage = `url(${color})`;
+                    btn.style.backgroundSize = 'cover';
+                    btn.style.backgroundPosition = 'center';
+                } else {
+                    // fallback visivo neutro
+                    btn.style.background = 'linear-gradient(45deg,#444,#222)';
+                }
                 container.appendChild(btn);
             });
         }
@@ -941,10 +962,15 @@
         function selectColor(btn) {
             document.querySelectorAll('.color-btn').forEach(b => b.classList.remove('active'));
             btn.classList.add('active');
+            // imposta selectedColor e aggiorna galleria (usa currentProduct se disponibile)
+            selectedColor = btn.dataset.color;
+            if (currentProduct) updateGalleryForColor(currentProduct, selectedColor);
         }
         function selectSize(btn) {
             document.querySelectorAll('.size-btn').forEach(b => b.classList.remove('active'));
             btn.classList.add('active');
+            selectedSize = btn.textContent;
+            if (currentProduct) updateSelectedVariant(currentProduct);
         }
         let quantity = 1;
         function increaseQty(){ quantity++; document.getElementById('qtyValue').textContent = quantity; }
@@ -1056,6 +1082,49 @@
             // Bar fills: qui statici, per dinamici usa rating.distribution se presente
         }
 
+        /* ====== Helper immagini per colore ====== */
+        function normalizeColorKey(k) {
+            if (k == null) return k;
+            k = String(k).trim();
+            if (k.startsWith('#')) return k.toLowerCase();
+            if (/^[0-9A-Fa-f]{6}$/.test(k)) return ('#' + k).toLowerCase();
+            return k.toLowerCase();
+        }
+
+        function findImagesForColor(prod, color) {
+            if (!prod) return null;
+            if (!prod.images_by_color) return null;
+            const keys = Object.keys(prod.images_by_color || {});
+            const target = normalizeColorKey(color);
+            // try direct match
+            for (const k of keys) {
+                if (normalizeColorKey(k) === target) return prod.images_by_color[k];
+            }
+            // try match without #
+            const targetNoHash = target ? target.replace('#','') : target;
+            for (const k of keys) {
+                if (normalizeColorKey(k).replace('#','') === targetNoHash) return prod.images_by_color[k];
+            }
+            // fallback: first available images_by_color entry
+            if (keys.length > 0) return prod.images_by_color[keys[0]];
+            return null;
+        }
+
+        function updateGalleryForColor(prod, color) {
+            const imgs = findImagesForColor(prod, color);
+            if (imgs && imgs.length > 0) {
+                images = imgs.slice();
+            } else if (Array.isArray(prod.images) && prod.images.length > 0) {
+                images = prod.images.slice();
+            } else {
+                images = [
+                    `https://images.unsplash.com/photo-1591047139829-d91aecb6caea?w=800&h=1000&fit=crop`
+                ];
+            }
+            currentImage = 0;
+            renderGallery();
+        }
+
         /* ====== Caricamento dinamico prodotto ====== */
         async function loadProduct() {
             // Ricava SKU e section dalla query string oppure da localStorage fallback
@@ -1116,7 +1185,7 @@
         // escape HTML per valori testuali
         function safeText(s){
             if (s == null) return '';
-            return String(s).replace(/[&<>"']/g, function(m){
+            return String(s).replace(/[&<>\"']/g, function(m){
                 return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[m];
             });
         }
@@ -1164,6 +1233,9 @@
         }
 
         function populateProduct(prod) {
+        // memorizza riferimento globale
+        currentProduct = prod;
+
         // Titolo, descrizione, prezzo (invariato)
         document.getElementById('productTitle').textContent = prod.title || 'Prodotto';
         document.getElementById('productDesc').textContent = prod.desc || '';
@@ -1195,12 +1267,13 @@
 
         // Immagini: usa images_by_color se presente, altrimenti fallback
         if (prod.images_by_color && Object.keys(prod.images_by_color).length > 0) {
-            // Inizializza con il primo colore (default: nero)
-            selectedColor = prod.colors[0] || '#000000';
-            images = prod.images_by_color[selectedColor] || prod.images || [];
-            console.log('Immagini iniziali per colore default:', images); // Debug: verifica in console
+            // Inizializza con il primo colore disponibile
+            selectedColor = (Array.isArray(prod.colors) && prod.colors.length>0) ? prod.colors[0] : Object.keys(prod.images_by_color)[0];
+            const imgs = findImagesForColor(prod, selectedColor) || prod.images || [];
+            images = imgs.slice(0, 8);
+            console.log('Immagini iniziali per colore default:', selectedColor, images); // Debug: verifica in console
         } else if (Array.isArray(prod.images) && prod.images.length > 0) {
-            images = prod.images.slice(0, 4);
+            images = prod.images.slice(0, 8);
         } else {
             // fallback Unsplash (invariato)
             const q = encodeURIComponent(prod.title || 'product');
@@ -1222,34 +1295,21 @@
         // Seleziona default il primo colore e forza update gallery
         const firstColorBtn = document.querySelector('.color-btn');
         if (firstColorBtn) {
+            // assegna dataset e stato active (renderColors ha già impostato dataset)
             firstColorBtn.classList.add('active');
             // Forza un update immediato per il default
             if (prod.images_by_color) {
-                images = prod.images_by_color[selectedColor] || images;
-                currentImage = 0;
-                renderGallery();
+                const normalized = firstColorBtn.dataset.color || selectedColor;
+                updateGalleryForColor(prod, normalized);
             }
         }
 
         // Listener per selezione colore
         const colorBtns = document.querySelectorAll('.color-btn');
         colorBtns.forEach(btn => {
+            // click aggiornato usa selectColor per mantenere comportamento visuale centralizzato
             btn.addEventListener('click', () => {
-                selectedColor = btn.dataset.color;
-                colorBtns.forEach(b => b.classList.remove('active'));
-                btn.classList.add('active');
-                // Aggiorna immagini basate sul colore
-                if (prod.images_by_color) {
-                    const newImages = prod.images_by_color[selectedColor] || images;
-                    if (newImages.length > 0) {
-                        images = newImages;
-                        currentImage = 0;
-                        renderGallery();
-                        console.log('Immagini aggiornate per colore:', selectedColor, images); // Debug: verifica in console
-                    } else {
-                        console.warn('Nessuna immagine trovata per colore:', selectedColor);
-                    }
-                }
+                selectColor(btn);
                 // Aggiorna variant se size selezionata
                 if (selectedSize) updateSelectedVariant(prod);
             });
@@ -1342,7 +1402,7 @@
     let selectedVariantId = null;
     function updateSelectedVariant(prod) {
         if (prod.variants && Array.isArray(prod.variants)) {
-            const variant = prod.variants.find(v => v.color === selectedColor && v.size === selectedSize);
+            const variant = prod.variants.find(v => normalizeColorKey(v.color) === normalizeColorKey(selectedColor) && v.size === selectedSize);
             if (variant) {
                 selectedVariantId = variant.variant_id;
                 // Qui potresti aggiornare prezzo o altro se varianti hanno prezzi diversi
@@ -1357,6 +1417,6 @@
         renderGallery();
         loadProduct();
     });
-</script>
+    </script>
 </body>
 </html>
