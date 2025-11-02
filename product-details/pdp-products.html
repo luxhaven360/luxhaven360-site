@@ -1164,119 +1164,177 @@
         }
 
         function populateProduct(prod) {
-            // Titolo, descrizione, prezzo
-            document.getElementById('productTitle').textContent = prod.title || 'Prodotto';
-            document.getElementById('productDesc').textContent = prod.desc || '';
-            if (prod.price != null) {
-                document.getElementById('productPrice').textContent = formatPrice(prod.price, prod.currency || 'EUR');
-            } else {
-                document.getElementById('productPrice').textContent = prod.price_text || 'Contattaci';
-            }
-            document.title = `${prod.title || 'Prodotto'} — Dettaglio`;
+        // Titolo, descrizione, prezzo (invariato)
+        document.getElementById('productTitle').textContent = prod.title || 'Prodotto';
+        document.getElementById('productDesc').textContent = prod.desc || '';
+        if (prod.price != null) {
+            document.getElementById('productPrice').textContent = formatPrice(prod.price, prod.currency || 'EUR');
+        } else {
+            document.getElementById('productPrice').textContent = prod.price_text || 'Contattaci';
+        }
+        document.title = `${prod.title || 'Prodotto'} — Dettaglio`;
 
-            // Disponibilità (se presente)
-            if (prod.availability) {
-                document.getElementById('availabilityInnerText').textContent = prod.availability;
-            }
-
-            // Descrizione lunga (solo dinamica, con HTML formattato)
-            if (prod.longDescription) {
-                // usa DOMPurify se disponibile
-                if (window.DOMPurify) {
-                    document.getElementById('longDescription').innerHTML = DOMPurify.sanitize(prod.longDescription || '');
-                } else {
-                    // naive fallback: rimuove script tag ma non è completo
-                    document.getElementById('longDescription').innerHTML = (prod.longDescription || '').replace(/<script[\s\S]*?>[\s\S]*?<\/script>/gi, '');
-                }
-            } else {
-                document.getElementById('longDescription').innerHTML = '';
-            }
-
-            // Specifiche: render dinamico (sostituisce i set manuali)
-            renderSpecsGrid(prod.specs || {});
-
-            // Immagini: max 4, se presente array product.images lo useremo, altrimenti fallback
-            if (Array.isArray(prod.images) && prod.images.length > 0) {
-                images = prod.images.slice(0, 4);
-            } else {
-                // fallback Unsplash
-                const q = encodeURIComponent(prod.title || 'product');
-                images = [
-                    `https://images.unsplash.com/photo-1591047139829-d91aecb6caea?w=800&h=1000&fit=crop`,
-                    `https://images.unsplash.com/photo-1591047139829-d91aecb6caea?w=800&h=1000&fit=crop&flip=h`,
-                    `https://images.unsplash.com/photo-1591047139829-d91aecb6caea?w=800&h=1000&fit=crop&sat=-100`,
-                    `https://images.unsplash.com/photo-1591047139829-d91aecb6caea?w=800&h=1000&fit=crop&brightness=110`
-                ];
-            }
-
-            currentImage = 0;
-            renderGallery();
-
-            // Opzioni: colori, taglie (solo se disponibili)
-            renderColors(prod.colors);
-            renderSizes(prod.sizes);
-
-            // Guide taglie (solo se sizeGuide presente)
-            if (prod.sizeGuide && Array.isArray(prod.sizeGuide) && prod.sizeGuide.length > 0) {
-                renderSizeGuide(prod.sizeGuide);
-            } else {
-                const title = document.getElementById('sizeGuideTitle');
-                const table = document.getElementById('sizeTable');
-                if (title) title.style.display = 'none';
-                if (table) table.style.display = 'none';
-            }
-
-            // Rating e recensioni (se presenti)
-            renderReviews(prod.rating || {});
-
-            // Aggiorna testo CTA
-            const buyNowBtn = document.getElementById('buyNowBtn');
-            const addCartBtn = document.getElementById('addCartBtn');
-
-            buyNowBtn.textContent = prod.cta || 'Acquista Ora';
-            buyNowBtn.dataset.stripeLink = prod.stripe_link || '';
-
-            // Comportamento Acquista Ora
-            buyNowBtn.onclick = function () {
-                if (buyNowBtn.dataset.stripeLink) {
-                    try {
-                        localStorage.setItem('lh360_last_product', JSON.stringify({ sku: prod.sku, title: prod.title, ts: Date.now() }));
-                    } catch (e) {}
-                    window.location.href = buyNowBtn.dataset.stripeLink;
-                } else {
-                    alert('Nessun link di pagamento configurato per questo prodotto. Verrai reindirizzato al form di contatto.');
-                }
-            };
-
-            // Comportamento Aggiungi al Carrello (semplice localStorage cart)
-            addCartBtn.onclick = function () {
-                const cartRaw = localStorage.getItem('lh360_cart');
-                let cart = [];
-                try { cart = cartRaw ? JSON.parse(cartRaw) : []; } catch(e){ cart = []; }
-                const existing = cart.find(i => i.sku === prod.sku);
-                if (existing) {
-                    existing.qty = (existing.qty || 1) + quantity;
-                } else {
-                    cart.push({
-                        sku: prod.sku,
-                        title: prod.title,
-                        price: prod.price || 0,
-                        currency: prod.currency || 'EUR',
-                        qty: quantity,
-                        timestamp: Date.now()
-                    });
-                }
-                localStorage.setItem('lh360_cart', JSON.stringify(cart));
-                addCartBtn.textContent = 'Aggiunto ✓';
-                setTimeout(()=> addCartBtn.textContent = (prod.add_to_cart_text || 'Aggiungi al Carrello'), 1500);
-            };
+        // Disponibilità (invariato)
+        if (prod.availability) {
+            document.getElementById('availabilityInnerText').textContent = prod.availability;
         }
 
-        // bootstrap
-        document.addEventListener('DOMContentLoaded', () => {
-            renderGallery();
-            loadProduct();
+        // Descrizione lunga (invariato)
+        if (prod.longDescription) {
+            if (window.DOMPurify) {
+                document.getElementById('longDescription').innerHTML = DOMPurify.sanitize(prod.longDescription || '');
+            } else {
+                document.getElementById('longDescription').innerHTML = (prod.longDescription || '').replace(/<script[\s\S]*?>[\s\S]*?<\/script>/gi, '');
+            }
+        } else {
+            document.getElementById('longDescription').innerHTML = '';
+        }
+
+        // Specifiche (invariato)
+        renderSpecsGrid(prod.specs || {});
+
+        // Immagini: usa images_by_color se presente, altrimenti fallback
+        if (prod.images_by_color && Object.keys(prod.images_by_color).length > 0) {
+            // Inizializza con il primo colore
+            selectedColor = prod.colors[0];
+            images = prod.images_by_color[selectedColor] || prod.images || [];
+        } else if (Array.isArray(prod.images) && prod.images.length > 0) {
+            images = prod.images.slice(0, 4);
+        } else {
+            // fallback Unsplash (invariato)
+            const q = encodeURIComponent(prod.title || 'product');
+            images = [
+                `https://images.unsplash.com/photo-1591047139829-d91aecb6caea?w=800&h=1000&fit=crop`,
+                `https://images.unsplash.com/photo-1591047139829-d91aecb6caea?w=800&h=1000&fit=crop&flip=h`,
+                `https://images.unsplash.com/photo-1591047139829-d91aecb6caea?w=800&h=1000&fit=crop&sat=-100`,
+                `https://images.unsplash.com/photo-1591047139829-d91aecb6caea?w=800&h=1000&fit=crop&brightness=110`
+            ];
+        }
+
+        currentImage = 0;
+        renderGallery();
+
+        // Opzioni: colori, taglie (invariato, ma aggiungi listener per colori)
+        renderColors(prod.colors);
+        renderSizes(prod.sizes);
+
+        // Aggiungi listener per selezione colore (per cambio immagini)
+        const colorBtns = document.querySelectorAll('.color-btn');
+        colorBtns.forEach(btn => {
+            btn.addEventListener('click', () => {
+                selectedColor = btn.dataset.color;
+                colorBtns.forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                // Aggiorna immagini basate sul colore
+                if (prod.images_by_color) {
+                    images = prod.images_by_color[selectedColor] || images;
+                    currentImage = 0;
+                    renderGallery();
+                }
+                // Aggiorna variant se size selezionata
+                if (selectedSize) updateSelectedVariant(prod);
+            });
         });
-    </script>
+
+        // Aggiungi listener per selezione size (per variant)
+        const sizeBtns = document.querySelectorAll('.size-btn');
+        sizeBtns.forEach(btn => {
+            btn.addEventListener('click', () => {
+                selectedSize = btn.textContent;
+                sizeBtns.forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                // Aggiorna variant se color selezionato
+                if (selectedColor) updateSelectedVariant(prod);
+            });
+        });
+
+        // Guide taglie (invariato)
+        if (prod.sizeGuide && Array.isArray(prod.sizeGuide) && prod.sizeGuide.length > 0) {
+            renderSizeGuide(prod.sizeGuide);
+        } else {
+            const title = document.getElementById('sizeGuideTitle');
+            const table = document.getElementById('sizeTable');
+            if (title) title.style.display = 'none';
+            if (table) table.style.display = 'none';
+        }
+
+        // Rating e recensioni (invariato)
+        renderReviews(prod.rating || {});
+
+        // Aggiorna testo CTA (invariato)
+        const buyNowBtn = document.getElementById('buyNowBtn');
+        const addCartBtn = document.getElementById('addCartBtn');
+
+        buyNowBtn.textContent = prod.cta || 'Acquista Ora';
+        buyNowBtn.dataset.stripeLink = prod.stripe_link || '';
+
+        // Comportamento Acquista Ora (modificato per quantità e variant)
+        buyNowBtn.onclick = function () {
+            // Memorizza quantità in localStorage (per eventuale uso futuro)
+            localStorage.setItem('lh360_selected_quantity', quantity);
+            // Trova variant_id e memorizzalo
+            if (selectedVariantId) localStorage.setItem('lh360_selected_variant_id', selectedVariantId);
+
+            if (buyNowBtn.dataset.stripeLink) {
+                try {
+                    localStorage.setItem('lh360_last_product', JSON.stringify({ sku: prod.sku, title: prod.title, ts: Date.now() }));
+                } catch (e) {}
+                // Append quantità e variant_id al link (quantità non supportata da Stripe, ma per custom)
+                let link = buyNowBtn.dataset.stripeLink;
+                link += (link.includes('?') ? '&' : '?') + `quantity=${quantity}`;
+                if (selectedVariantId) link += `&variant_id=${selectedVariantId}`;
+                window.location.href = link;
+            } else {
+                alert('Nessun link di pagamento configurato per questo prodotto. Verrai reindirizzato al form di contatto.');
+            }
+        };
+
+        // Comportamento Aggiungi al Carrello (invariato, ma include variant_id se presente)
+        addCartBtn.onclick = function () {
+            const cartRaw = localStorage.getItem('lh360_cart');
+            let cart = [];
+            try { cart = cartRaw ? JSON.parse(cartRaw) : []; } catch(e){ cart = []; }
+            const existing = cart.find(i => i.sku === prod.sku && i.variant_id === selectedVariantId);
+            if (existing) {
+                existing.qty = (existing.qty || 1) + quantity;
+            } else {
+                cart.push({
+                    sku: prod.sku,
+                    title: prod.title,
+                    price: prod.price || 0,
+                    currency: prod.currency || 'EUR',
+                    qty: quantity,
+                    variant_id: selectedVariantId || '',
+                    timestamp: Date.now()
+                });
+            }
+            localStorage.setItem('lh360_cart', JSON.stringify(cart));
+            addCartBtn.textContent = 'Aggiunto ✓';
+            setTimeout(()=> addCartBtn.textContent = (prod.add_to_cart_text || 'Aggiungi al Carrello'), 1500);
+        };
+    }
+
+    // Nuova funzione per aggiornare variant selezionato
+    let selectedColor = null;
+    let selectedSize = null;
+    let selectedVariantId = null;
+    function updateSelectedVariant(prod) {
+        if (prod.variants && Array.isArray(prod.variants)) {
+            const variant = prod.variants.find(v => v.color === selectedColor && v.size === selectedSize);
+            if (variant) {
+                selectedVariantId = variant.variant_id;
+                // Qui potresti aggiornare prezzo o altro se varianti hanno prezzi diversi
+            } else {
+                selectedVariantId = null;
+            }
+        }
+    }
+
+    // bootstrap (invariato)
+    document.addEventListener('DOMContentLoaded', () => {
+        renderGallery();
+        loadProduct();
+    });
+</script>
 </body>
 </html>
