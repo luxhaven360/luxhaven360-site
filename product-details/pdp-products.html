@@ -169,6 +169,22 @@
             font-size: 1.25rem;
         }
 
+        .star-half {
+            position: relative;
+        }
+
+        .star-half::before {
+            content: '★';
+            position: absolute;
+            color: #fbbf24;
+            overflow: hidden;
+            width: 50%;
+        }
+
+        .star-empty {
+            color: #a1a1aa;
+        }
+
         .rating-text {
             color: #a1a1aa;
         }
@@ -688,9 +704,9 @@
                 <h1 id="productTitle">Cashmere Essentials</h1>
                 <div class="rating" id="ratingContainer">
                     <div class="stars" id="starsContainer">
-                        <span class="star">★</span><span class="star">★</span><span class="star">★</span><span class="star">★</span><span class="star">★</span>
+                        <!-- Stelle generate dinamicamente -->
                     </div>
-                    <span class="rating-text" id="ratingText">4.8 (127 recensioni)</span>
+                    <span class="rating-text" id="ratingText"></span>
                 </div>
                 <div class="price" id="productPrice">€ 485,00</div>
                 <p class="description" id="productDesc">Un capo senza tempo che ridefinisce l'eleganza contemporanea.</p>
@@ -753,15 +769,7 @@
             </div>
 
             <div id="description" class="tab-content active">
-                <p id="longDescription" style="font-size:1.25rem;color:#fafafa;margin-bottom:1.5rem;">Ogni dettaglio racconta una storia di eccellenza artigianale e attenzione maniacale alla qualità.</p>
-                <p>Questo capo rappresenta l'equilibrio perfetto tra tradizione e innovazione. Le fibre naturali vengono selezionate con cura per garantire una texture morbida al tatto e una durata eccezionale nel tempo.</p>
-                <h4>Cura del Capo</h4>
-                <ul>
-                    <li>• Lavaggio delicato a 30°C</li>
-                    <li>• Non utilizzare candeggina</li>
-                    <li>• Asciugare in posizione orizzontale</li>
-                    <li>• Stirare a bassa temperatura se necessario</li>
-                </ul>
+                <p id="longDescription" style="font-size:1.25rem;color:#fafafa;margin-bottom:1.5rem;"></p>
             </div>
 
             <div id="specs" class="tab-content">
@@ -777,7 +785,7 @@
                             <th>Taglia</th>
                             <th>Petto (cm)</th>
                             <th>Vita (cm)</th>
-                            <th>Fianchi (cm)</th>
+                            <th>Lunghezza (cm)</th>
                         </tr>
                     </thead>
                     <tbody id="sizeTableBody">
@@ -790,7 +798,9 @@
                 <div id="reviewsSummary" class="reviews-summary">
                     <div class="rating-overview">
                         <div class="rating-number" id="ratingNumber">4.8</div>
-                        <div class="stars"><span class="star">★</span><span class="star">★</span><span class="star">★</span><span class="star">★</span><span class="star">★</span></div>
+                        <div class="stars" id="reviewsStarsContainer">
+                            <!-- Stelle generate dinamicamente -->
+                        </div>
                         <p style="font-size:.875rem;color:#a1a1aa;margin-top:.25rem;" id="reviewsCount">127 recensioni</p>
                     </div>
                     <div class="rating-bars">
@@ -837,6 +847,15 @@
                 return new Intl.NumberFormat('it-IT', { style: 'currency', currency }).format(p);
             } catch (e) {
                 return p + ' ' + currency;
+            }
+        }
+
+        // format numero recensioni
+        function formatCount(n) {
+            try {
+                return new Intl.NumberFormat('it-IT').format(n);
+            } catch (e) {
+                return n;
             }
         }
 
@@ -950,9 +969,39 @@
             table.style.display = 'table';
             sizeGuide.forEach(row => {
                 const tr = document.createElement('tr');
-                tr.innerHTML = `<td>${row.size}</td><td>${row.chest}</td><td>${row.waist}</td><td>${row.hips}</td>`;
+                tr.innerHTML = `<td>${row.taglia}</td><td>${row.petto}</td><td>${row.vita}</td><td>${row.lunghezza}</td>`;
                 tbody.appendChild(tr);
             });
+        }
+
+        /* ====== Render Stelle ====== */
+        function renderStars(containerId, ratingValue) {
+            const container = document.getElementById(containerId);
+            container.innerHTML = '';
+            const fullStars = Math.floor(ratingValue);
+            const hasHalf = ratingValue % 1 >= 0.5;
+            for (let i = 0; i < fullStars; i++) {
+                const span = document.createElement('span');
+                span.className = 'star';
+                span.textContent = '★';
+                container.appendChild(span);
+            }
+            if (hasHalf) {
+                const span = document.createElement('span');
+                span.className = 'star star-half';
+                span.textContent = '☆';
+                span.style.position = 'relative';
+                span.style.overflow = 'hidden';
+                span.innerHTML += '<span style="position:absolute;left:0;overflow:hidden;width:50%;color:#fbbf24;">★</span>';
+                container.appendChild(span);
+            }
+            const remaining = 5 - fullStars - (hasHalf ? 1 : 0);
+            for (let i = 0; i < remaining; i++) {
+                const span = document.createElement('span');
+                span.className = 'star star-empty';
+                span.textContent = '☆';
+                container.appendChild(span);
+            }
         }
 
         /* ====== Render Recensioni Summary ====== */
@@ -971,18 +1020,13 @@
             ratingContainer.style.display = 'flex';
 
             document.getElementById('ratingNumber').textContent = rating.value;
-            document.getElementById('reviewsCount').textContent = `${rating.count} recensioni`;
-            document.getElementById('ratingText').textContent = `${rating.value} (${rating.count} recensioni)`;
+            const formattedCount = formatCount(rating.count);
+            document.getElementById('reviewsCount').textContent = `${formattedCount} recensioni`;
+            document.getElementById('ratingText').textContent = `${rating.value} (${formattedCount} recensioni)`;
 
-            // Aggiorna stelle (approssimazione semplice)
-            const stars = document.getElementById('starsContainer');
-            stars.innerHTML = '';
-            for (let i = 0; i < 5; i++) {
-                const span = document.createElement('span');
-                span.className = 'star';
-                span.textContent = i < Math.floor(rating.value) ? '★' : (i < rating.value ? '★' : '☆'); // Semplice, ignora frazioni
-                stars.appendChild(span);
-            }
+            // Render stelle per overview e rating
+            renderStars('starsContainer', rating.value);
+            renderStars('reviewsStarsContainer', rating.value);
 
             // Bar fills: qui statici, per dinamici usa rating.distribution se presente
         }
@@ -1062,9 +1106,11 @@
                 document.getElementById('availabilityInnerText').textContent = prod.availability;
             }
 
-            // Descrizione lunga (se presente)
+            // Descrizione lunga (solo dinamica, con HTML formattato)
             if (prod.longDescription) {
-                document.getElementById('longDescription').textContent = prod.longDescription;
+                document.getElementById('longDescription').innerHTML = prod.longDescription;
+            } else {
+                document.getElementById('longDescription').innerHTML = '';
             }
 
             // Specifiche (se presenti)
