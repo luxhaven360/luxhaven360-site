@@ -127,23 +127,19 @@ function createProductCard(prod, defaultCta) {
     if (prod.action) btn.dataset.action = prod.action;
 
     // on click behaviour:
-    // --- dentro createProductCard(prod, defaultCta) ---
-// replace existing btn.addEventListener('click', ...) block with:
-
-btn.addEventListener('click', () => {
+    btn.addEventListener('click', () => {
+    // salva analytics semplice
     try {
-        // salva il prodotto selezionato in sessionStorage (oggetto completo)
-        sessionStorage.setItem('lh360_selected_product', JSON.stringify(prod));
-    } catch (e) {
-        console.warn('Impossibile salvare sessionStorage', e);
-    }
+        localStorage.setItem('lh360_last_product', JSON.stringify({ sku: btn.dataset.sku, title: btn.dataset.title, ts: Date.now() }));
+        // utile fallback per pdp quando si naviga via JS
+        localStorage.setItem('lh360_selected_sku', btn.dataset.sku || '');
+    } catch (e) {}
 
-    // apri la pagina PDP dove verrà popolata dinamicamente
-    const pdpPath = 'product-details/pdp-products.html'; // aggiorna se diverso
-    const skuParam = prod.sku ? `?sku=${encodeURIComponent(prod.sku)}` : '';
-    window.location.href = pdpPath + skuParam;
+    // reindirizza alla pagina dettaglio prodotto (qui passa lo SKU in querystring)
+    const base = 'product-details/pdp-products.html';
+    const sku = encodeURIComponent(btn.dataset.sku || '');
+    window.location.href = `${base}?sku=${sku}`;
 });
-
 
     card.appendChild(btn);
 
