@@ -1,4 +1,4 @@
-// --- Nav & UI (tuo script esistente mantenuto e ampliato) ---
+// --- script.js aggiornato ---
 
 // Navigation
 function showSection(sectionId) {
@@ -128,18 +128,18 @@ function createProductCard(prod, defaultCta) {
 
     // on click behaviour:
     btn.addEventListener('click', () => {
-    // salva analytics semplice
-    try {
-        localStorage.setItem('lh360_last_product', JSON.stringify({ sku: btn.dataset.sku, title: btn.dataset.title, ts: Date.now() }));
-        // utile fallback per pdp quando si naviga via JS
-        localStorage.setItem('lh360_selected_sku', btn.dataset.sku || '');
-    } catch (e) {}
+        // salva analytics semplice
+        try {
+            localStorage.setItem('lh360_last_product', JSON.stringify({ sku: btn.dataset.sku, title: btn.dataset.title, ts: Date.now() }));
+            // utile fallback per pdp quando si naviga via JS
+            localStorage.setItem('lh360_selected_sku', btn.dataset.sku || '');
+        } catch (e) {}
 
-    // reindirizza alla pagina dettaglio prodotto (qui passa lo SKU in querystring)
-    const base = 'product-details/pdp-products.html';
-    const sku = encodeURIComponent(btn.dataset.sku || '');
-    window.location.href = `${base}?sku=${sku}`;
-});
+        // reindirizza alla pagina dettaglio prodotto (qui passa lo SKU in querystring)
+        const base = 'product-details/pdp-products.html';
+        const sku = encodeURIComponent(btn.dataset.sku || '');
+        window.location.href = `${base}?sku=${sku}`;
+    });
 
     card.appendChild(btn);
 
