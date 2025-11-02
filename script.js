@@ -138,7 +138,8 @@ function createProductCard(prod, defaultCta) {
     // reindirizza alla pagina dettaglio prodotto (qui passa lo SKU in querystring)
     const base = 'product-details/pdp-products.html';
     const sku = encodeURIComponent(btn.dataset.sku || '');
-    window.location.href = `${base}?sku=${sku}`;
+    const section = encodeURIComponent(prod.sectionName || 'shop');
+    window.location.href = `${base}?sku=${sku}&section=${section}`;
 });
 
     card.appendChild(btn);
