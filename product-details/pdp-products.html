@@ -682,6 +682,8 @@
             }
         }
     </style>
+    <!-- DOMPurify per sanitizzazione longDescription (opzionale ma consigliata) -->
+    <script src="https://unpkg.com/dompurify@2.4.0/dist/purify.min.js"></script>
 </head>
 <body>
     <div class="container">
@@ -763,9 +765,9 @@
         <!-- Tabs Section -->
         <div class="tabs-section">
             <div class="tabs">
-                <button class="tab active" onclick="switchTab('description')">Descrizione</button>
-                <button class="tab" onclick="switchTab('specs')">Specifiche</button>
-                <button class="tab" onclick="switchTab('reviews')">Recensioni</button>
+                <button class="tab active" onclick="switchTab('description', this)">Descrizione</button>
+                <button class="tab" onclick="switchTab('specs', this)">Specifiche</button>
+                <button class="tab" onclick="switchTab('reviews', this)">Recensioni</button>
             </div>
 
             <div id="description" class="tab-content active">
@@ -949,11 +951,19 @@
         function decreaseQty(){ if(quantity>1){ quantity--; document.getElementById('qtyValue').textContent = quantity; } }
 
         /* ====== Tabs & FAQ ====== */
-        function switchTab(tabName) {
+        function switchTab(tabName, btn) {
             document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
             document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
-            if (typeof event !== 'undefined' && event && event.target) event.target.classList.add('active');
-            document.getElementById(tabName).classList.add('active');
+
+            if (btn) {
+                btn.classList.add('active');
+            } else {
+                const fallback = document.querySelector(`.tab[onclick*="${tabName}"]`);
+                if (fallback) fallback.classList.add('active');
+            }
+
+            const target = document.getElementById(tabName);
+            if (target) target.classList.add('active');
         }
         function toggleFaq(btn){
             const faqItem = btn.parentElement;
@@ -964,34 +974,37 @@
 
         /* ====== Render Guide Taglie ====== */
         function renderSizeGuide(sizeGuide) {
-    const title = document.getElementById('sizeGuideTitle');
-    const table = document.getElementById('sizeTable');
-    const tbody = document.getElementById('sizeTableBody');
-    tbody.innerHTML = '';
+            const title = document.getElementById('sizeGuideTitle');
+            const table = document.getElementById('sizeTable');
+            const tbody = document.getElementById('sizeTableBody');
+            if (!tbody) return;
+            tbody.innerHTML = '';
 
-    if (!sizeGuide || sizeGuide.length === 0) {
-        if (title) title.style.display = 'none';
-        table.style.display = 'none';
-        return;
-    }
+            if (!sizeGuide || !Array.isArray(sizeGuide) || sizeGuide.length === 0) {
+                if (title) title.style.display = 'none';
+                if (table) table.style.display = 'none';
+                return;
+            }
 
-    // mostra titolo e tabella
-    if (title) title.style.display = 'block';
-    table.style.display = 'table';
+            // mostra titolo e tabella
+            if (title) title.style.display = 'block';
+            if (table) table.style.display = 'table';
 
-    sizeGuide.forEach(row => {
-        const tr = document.createElement('tr');
-        tr.innerHTML = `<td>${safeText(row.taglia)}</td><td>${safeText(row.petto)}</td><td>${safeText(row.vita)}</td><td>${safeText(row.lunghezza)}</td>`;
-        tbody.appendChild(tr);
-    });
-}
+            sizeGuide.forEach(row => {
+                const tr = document.createElement('tr');
+                tr.innerHTML = `<td>${safeText(row.taglia)}</td><td>${safeText(row.petto)}</td><td>${safeText(row.vita)}</td><td>${safeText(row.lunghezza)}</td>`;
+                tbody.appendChild(tr);
+            });
+        }
 
         /* ====== Render Stelle ====== */
         function renderStars(containerId, ratingValue) {
             const container = document.getElementById(containerId);
+            if (!container) return;
             container.innerHTML = '';
-            const fullStars = Math.floor(ratingValue);
-            const hasHalf = ratingValue % 1 >= 0.5;
+            const value = parseFloat(ratingValue) || 0;
+            const fullStars = Math.floor(value);
+            const hasHalf = (value - fullStars) >= 0.5;
             for (let i = 0; i < fullStars; i++) {
                 const span = document.createElement('span');
                 span.className = 'star';
@@ -1021,20 +1034,20 @@
             const summary = document.getElementById('reviewsSummary');
             const noMessage = document.getElementById('noReviewsMessage');
             const ratingContainer = document.getElementById('ratingContainer');
-            if (!rating || !rating.value || !rating.count) {
-                summary.style.display = 'none';
-                noMessage.style.display = 'block';
-                ratingContainer.style.display = 'none';
+            if (!rating || (rating.value == null && rating.count == null)) {
+                if (summary) summary.style.display = 'none';
+                if (noMessage) noMessage.style.display = 'block';
+                if (ratingContainer) ratingContainer.style.display = 'none';
                 return;
             }
-            summary.style.display = 'flex';
-            noMessage.style.display = 'none';
-            ratingContainer.style.display = 'flex';
+            if (summary) summary.style.display = 'flex';
+            if (noMessage) noMessage.style.display = 'none';
+            if (ratingContainer) ratingContainer.style.display = 'flex';
 
-            document.getElementById('ratingNumber').textContent = rating.value;
-            const formattedCount = formatCount(rating.count);
-            document.getElementById('reviewsCount').textContent = `${formattedCount} recensioni`;
-            document.getElementById('ratingText').textContent = `${rating.value} (${formattedCount} recensioni)`;
+            document.getElementById('ratingNumber').textContent = (rating.value != null) ? rating.value : '';
+            const formattedCount = rating.count ? formatCount(rating.count) : '';
+            document.getElementById('reviewsCount').textContent = formattedCount ? `${formattedCount} recensioni` : '';
+            document.getElementById('ratingText').textContent = (rating.value != null) ? `${rating.value} (${formattedCount} recensioni)` : '';
 
             // Render stelle per overview e rating
             renderStars('starsContainer', rating.value);
@@ -1100,49 +1113,55 @@
             }
         }
 
-        function safeText(s){ return (s==null)?'':s; }
+        // escape HTML per valori testuali
+        function safeText(s){
+            if (s == null) return '';
+            return String(s).replace(/[&<>"']/g, function(m){
+                return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[m];
+            });
+        }
 
         function renderSpecsGrid(specs) {
-    const specsGrid = document.getElementById('specsGrid');
-    if (!specsGrid) return;
-    specsGrid.innerHTML = ''; // svuota prima
+            const specsGrid = document.getElementById('specsGrid');
+            if (!specsGrid) return;
+            specsGrid.innerHTML = ''; // svuota prima
 
-    if (!specs || Object.keys(specs).length === 0) {
-        specsGrid.style.display = 'none';
-        return;
-    }
-    specsGrid.style.display = 'grid';
+            if (!specs || Object.keys(specs).length === 0) {
+                specsGrid.style.display = 'none';
+                return;
+            }
+            specsGrid.style.display = 'grid';
 
-    // ordine preferito e label leggibili
-    const order = ['composition', 'weight', 'origin', 'fit'];
-    const labels = {
-        composition: 'Composizione',
-        weight: 'Peso',
-        origin: 'Origine',
-        fit: 'Vestibilità'
-    };
+            // ordine preferito e label leggibili
+            const order = ['composition', 'weight', 'origin', 'fit'];
+            const labels = {
+                composition: 'Composizione',
+                weight: 'Peso',
+                origin: 'Origine',
+                fit: 'Vestibilità'
+            };
 
-    // aggiungi in ordine le chiavi previste
-    order.forEach(key => {
-        if (specs[key]) {
-            const div = document.createElement('div');
-            div.className = 'spec-row';
-            div.innerHTML = `<span class="spec-label">${labels[key] || key}</span><span>${safeText(specs[key])}</span>`;
-            specsGrid.appendChild(div);
+            // aggiungi in ordine le chiavi previste
+            order.forEach(key => {
+                if (specs[key]) {
+                    const div = document.createElement('div');
+                    div.className = 'spec-row';
+                    div.innerHTML = `<span class="spec-label">${labels[key] || key}</span><span>${safeText(specs[key])}</span>`;
+                    specsGrid.appendChild(div);
+                }
+            });
+
+            // poi eventuali altre chiavi non previste
+            Object.keys(specs).forEach(key => {
+                if (order.indexOf(key) === -1) {
+                    const pretty = key.replace(/([A-Z])/g, ' $1').replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+                    const div = document.createElement('div');
+                    div.className = 'spec-row';
+                    div.innerHTML = `<span class="spec-label">${pretty}</span><span>${safeText(specs[key])}</span>`;
+                    specsGrid.appendChild(div);
+                }
+            });
         }
-    });
-
-    // poi eventuali altre chiavi non previste
-    Object.keys(specs).forEach(key => {
-        if (order.indexOf(key) === -1) {
-            const pretty = key.replace(/([A-Z])/g, ' $1').replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
-            const div = document.createElement('div');
-            div.className = 'spec-row';
-            div.innerHTML = `<span class="spec-label">${pretty}</span><span>${safeText(specs[key])}</span>`;
-            specsGrid.appendChild(div);
-        }
-    });
-}
 
         function populateProduct(prod) {
             // Titolo, descrizione, prezzo
@@ -1162,13 +1181,19 @@
 
             // Descrizione lunga (solo dinamica, con HTML formattato)
             if (prod.longDescription) {
-                document.getElementById('longDescription').innerHTML = prod.longDescription;
+                // usa DOMPurify se disponibile
+                if (window.DOMPurify) {
+                    document.getElementById('longDescription').innerHTML = DOMPurify.sanitize(prod.longDescription || '');
+                } else {
+                    // naive fallback: rimuove script tag ma non è completo
+                    document.getElementById('longDescription').innerHTML = (prod.longDescription || '').replace(/<script[\s\S]*?>[\s\S]*?<\/script>/gi, '');
+                }
             } else {
                 document.getElementById('longDescription').innerHTML = '';
             }
 
             // Specifiche: render dinamico (sostituisce i set manuali)
-            renderSpecsGrid(prod.specs);
+            renderSpecsGrid(prod.specs || {});
 
             // Immagini: max 4, se presente array product.images lo useremo, altrimenti fallback
             if (Array.isArray(prod.images) && prod.images.length > 0) {
@@ -1191,13 +1216,18 @@
             renderColors(prod.colors);
             renderSizes(prod.sizes);
 
-            // Guide taglie (solo se disponibili e taglie presenti)
-            if (prod.sizes && prod.sizes.length > 0) {
+            // Guide taglie (solo se sizeGuide presente)
+            if (prod.sizeGuide && Array.isArray(prod.sizeGuide) && prod.sizeGuide.length > 0) {
                 renderSizeGuide(prod.sizeGuide);
+            } else {
+                const title = document.getElementById('sizeGuideTitle');
+                const table = document.getElementById('sizeTable');
+                if (title) title.style.display = 'none';
+                if (table) table.style.display = 'none';
             }
 
             // Rating e recensioni (se presenti)
-            renderReviews(prod.rating);
+            renderReviews(prod.rating || {});
 
             // Aggiorna testo CTA
             const buyNowBtn = document.getElementById('buyNowBtn');
