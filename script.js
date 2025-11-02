@@ -127,29 +127,17 @@ function createProductCard(prod, defaultCta) {
     if (prod.action) btn.dataset.action = prod.action;
 
     // on click behaviour:
-    // - se presente stripe_link => redirect
-    // - altrimenti fallback: per immobili/esperienze apri contact form con prefill (qui semplice alert)
-    btn.addEventListener('click', () => {
-        if (btn.dataset.stripeLink) {
-            // salva analytics minimale
-            try {
-                localStorage.setItem('lh360_last_product', JSON.stringify({ sku: btn.dataset.sku, title: btn.dataset.title, ts: Date.now() }));
-            } catch (e) {}
-            // redirect
-            window.location.href = btn.dataset.stripeLink;
-        } else {
-            // fallback: apri form contatto con prefilled info (qui un semplice alert per integrarlo facilmente)
-            // Se vuoi, puoi implementare un modal con il form precompilato.
-            alert(`Nessun link di pagamento configurato per "${btn.dataset.title}". Verrà inviata una richiesta di informazioni.`);
-            // eventualmente apri sezione contatti
-            showSection('contact');
-            // e riempi il form (se esiste)
-            try {
-                document.getElementById('interest').value = prod.sectionName || '';
-                document.getElementById('message').value = `Richiesta informazioni su: ${prod.title} (SKU: ${prod.sku || 'n/a'})`;
-            } catch (e) {}
-        }
-    });
+    // Dentro createProductCard(prod, defaultCta) — sostituisci la logica del click così:
+btn.addEventListener('click', () => {
+    // Apri la pagina di dettaglio prodotto passando lo SKU in querystring
+    // Assumo che la PDP sia disponibile all'URL /product-details/pdp-products.html (o /product-details/pdp-products)
+    // Modifica l'URL se il tuo routing React è diverso.
+    const sku = encodeURIComponent(prod.sku || '');
+    // Se vuoi anche portare title o altri dati leggeri:
+    // const title = encodeURIComponent(prod.title || '');
+    window.location.href = `/product-details/pdp-products.html?sku=${sku}`;
+});
+
 
     card.appendChild(btn);
 
