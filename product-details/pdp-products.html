@@ -751,12 +751,12 @@
             </div>
         </div>
 
-        <!-- Tabs Section (resto contenuti invariati) -->
+        <!-- Tabs Section -->
         <div class="tabs-section">
             <div class="tabs">
-                <button class="tab active" onclick="switchTab('description')">Descrizione</button>
-                <button class="tab" onclick="switchTab('specs')">Specifiche</button>
-                <button class="tab" onclick="switchTab('reviews')">Recensioni</button>
+                <button class="tab active" onclick="switchTab('description', this)">Descrizione</button>
+                <button class="tab" onclick="switchTab('specs', this)">Specifiche</button>
+                <button class="tab" onclick="switchTab('reviews', this)">Recensioni</button>
             </div>
 
             <div id="description" class="tab-content active">
@@ -824,7 +824,6 @@
             return new URLSearchParams(window.location.search).get(name);
         }
 
-        // format prezzo
         function formatPrice(p, currency = 'EUR') {
             try {
                 return new Intl.NumberFormat('it-IT', { style: 'currency', currency }).format(p);
@@ -832,6 +831,8 @@
                 return p + ' ' + currency;
             }
         }
+
+        function safeText(s){ return (s==null)?'':s; }
 
         /* ====== Gallery (gestione dinamica delle immagini) ====== */
         let images = [
@@ -841,9 +842,11 @@
 
         function renderGallery() {
             const mainImg = document.getElementById('mainImageImg');
-            mainImg.src = images[currentImage] || images[0];
+            if (!mainImg) return;
+            mainImg.src = images[currentImage] || images[0] || '';
 
             const thumbs = document.getElementById('thumbnailsContainer');
+            if (!thumbs) return;
             thumbs.innerHTML = '';
             images.forEach((src, i) => {
                 const div = document.createElement('div');
@@ -857,18 +860,10 @@
         }
 
         function selectImage(index) {
+            if (!images || images.length === 0) return;
             currentImage = index;
             renderGallery();
         }
-
-        document.getElementById('nextBtn').addEventListener('click', () => {
-            currentImage = (currentImage + 1) % images.length;
-            renderGallery();
-        });
-        document.getElementById('prevBtn').addEventListener('click', () => {
-            currentImage = (currentImage - 1 + images.length) % images.length;
-            renderGallery();
-        });
 
         /* ====== Selezioni UI (colore/taglia/qty) ====== */
         function selectColor(btn) {
@@ -883,13 +878,13 @@
         function increaseQty(){ quantity++; document.getElementById('qtyValue').textContent = quantity; }
         function decreaseQty(){ if(quantity>1){ quantity--; document.getElementById('qtyValue').textContent = quantity; } }
 
-        /* ====== Tabs & FAQ (mantengo il comportamento originale) ====== */
-        function switchTab(tabName) {
+        /* ====== Tabs & FAQ ====== */
+        function switchTab(tabName, btn) {
             document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
             document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
-            // event.target potrebbe non essere definito se chiamata programmaticamente; protezione:
-            if (typeof event !== 'undefined' && event && event.target) event.target.classList.add('active');
-            document.getElementById(tabName).classList.add('active');
+            if (btn) btn.classList.add('active');
+            const el = document.getElementById(tabName);
+            if (el) el.classList.add('active');
         }
         function toggleFaq(btn){
             const faqItem = btn.parentElement;
@@ -898,20 +893,166 @@
             if(!isActive) faqItem.classList.add('active');
         }
 
-        /* ====== Caricamento dinamico prodotto ====== */
+        /* ====== Caricamento dettagli prodotto da product-details/data/{sku}.json ====== */
+        async function loadProductDataFromDetailsJSON(prod) {
+            if (!prod || !prod.sku) return;
+            const detailsPath = `product-details/data/${encodeURIComponent(prod.sku)}.json`;
+            try {
+                const resp = await fetch(detailsPath, { cache: 'no-cache' });
+                if (!resp.ok) {
+                    console.info('Dettagli prodotto non trovati in', detailsPath);
+                    return;
+                }
+                const d = await resp.json();
+
+                /* 1) Media (max 4 immagini) */
+                if (d.media && Array.isArray(d.media.images) && d.media.images.length > 0) {
+                    images = d.media.images.slice(0,4);
+                    currentImage = 0;
+                    renderGallery();
+                }
+
+                /* 2) Recensioni e Rating */
+                const ratingText = document.getElementById('ratingText');
+                const starsContainer = document.getElementById('starsContainer');
+                const ratingNumber = document.getElementById('ratingNumber');
+                const reviewsCount = document.getElementById('reviewsCount');
+                const reviewsTab = document.getElementById('reviews');
+
+                const hasReviews = d.rating && ( (typeof d.rating.count === 'number' && d.rating.count > 0) || (Array.isArray(d.rating.reviews) && d.rating.reviews.length>0) );
+
+                if (hasReviews) {
+                    const val = (typeof d.rating.value === 'number') ? d.rating.value.toFixed(1) : (d.rating.value || '');
+                    if (ratingNumber) ratingNumber.textContent = val;
+                    if (reviewsCount) reviewsCount.textContent = (d.rating.count ? d.rating.count + ' recensioni' : (Array.isArray(d.rating.reviews) ? d.rating.reviews.length + ' recensioni' : ''));
+                    if (ratingText) ratingText.style.display = '';
+                    if (starsContainer) starsContainer.style.display = '';
+
+                    // popola lista recensioni se presente (append sotto #reviews)
+                    if (Array.isArray(d.rating.reviews) && d.rating.reviews.length>0) {
+                        const reviewsContainer = reviewsTab;
+                        d.rating.reviews.slice(0,20).forEach(r => {
+                            const div = document.createElement('div');
+                            div.className = 'review-item';
+                            const stars = '★'.repeat(r.rating || 5);
+                            div.innerHTML = `<div class="review-header"><div><div class="review-author">${safeText(r.author || 'Anonimo')}</div><div class="review-date">${safeText(r.date||'')}</div></div><div class="stars"><span class="star" style="font-size:1rem;">${stars}</span></div></div><p class="review-text">${safeText(r.text || '')}</p>`;
+                            reviewsContainer.appendChild(div);
+                        });
+                    }
+
+                } else {
+                    // nascondi blocco rating/recensioni
+                    const ratingBlock = document.querySelector('.rating');
+                    if (ratingBlock) ratingBlock.style.display = 'none';
+                    if (reviewsTab) reviewsTab.style.display = 'none';
+                }
+
+                /* 3) Opzioni: colori, taglie, quantita' */
+                const colorOptions = document.getElementById('colorOptions');
+                if (d.options && Array.isArray(d.options.colors) && d.options.colors.length>0 && colorOptions) {
+                    colorOptions.innerHTML = '';
+                    d.options.colors.forEach((c, idx) => {
+                        const btn = document.createElement('button');
+                        btn.className = 'color-btn' + (idx===0? ' active':'');
+                        if (c.hex) btn.style.background = c.hex;
+                        if (c.swatch_image) btn.style.backgroundImage = `url(${c.swatch_image})`;
+                        btn.setAttribute('title', c.name || 'colore');
+                        btn.addEventListener('click', ()=>{
+                            document.querySelectorAll('.color-btn').forEach(b=>b.classList.remove('active'));
+                            btn.classList.add('active');
+                        });
+                        colorOptions.appendChild(btn);
+                    });
+                    colorOptions.parentElement.style.display = '';
+                } else {
+                    if (colorOptions && colorOptions.parentElement) colorOptions.parentElement.style.display = 'none';
+                }
+
+                // Taglie
+                const sizeGrid = document.getElementById('sizeGrid');
+                if (d.options && Array.isArray(d.options.sizes) && d.options.sizes.length>0 && sizeGrid) {
+                    sizeGrid.innerHTML = '';
+                    d.options.sizes.forEach(sz => {
+                        const btn = document.createElement('button');
+                        btn.className = 'size-btn';
+                        btn.textContent = sz;
+                        btn.addEventListener('click', ()=>{
+                            document.querySelectorAll('.size-btn').forEach(b=>b.classList.remove('active'));
+                            btn.classList.add('active');
+                        });
+                        sizeGrid.appendChild(btn);
+                    });
+                    sizeGrid.parentElement.style.display = '';
+
+                    // se esiste size_guides, mostra tab "Specifiche" -> size table
+                    if (d.size_guides && d.size_guides.table) {
+                        const labels = Object.keys(d.size_guides.table);
+                        let tableHtml = '<table class="size-table"><thead><tr><th></th>' + labels.map(l=>`<th>${l}</th>`).join('') + '</tr></thead><tbody>';
+                        const first = d.size_guides.table[labels[0]] || {};
+                        const measureKeys = Object.keys(first);
+                        measureKeys.forEach(mk => {
+                            tableHtml += `<tr><th>${mk}</th>` + labels.map(l=>`<td>${(d.size_guides.table[l] && d.size_guides.table[l][mk])||''}</td>`).join('') + `</tr>`;
+                        });
+                        tableHtml += '</tbody></table>';
+                        const specsGrid = document.getElementById('specsGrid');
+                        const wrapper = document.createElement('div');
+                        wrapper.innerHTML = `<div style="margin-top:1rem">${tableHtml}<p style="color:#a1a1aa">${safeText(d.size_guides.notes||'')}</p></div>`;
+                        specsGrid.appendChild(wrapper);
+                    }
+
+                } else {
+                    if (sizeGrid && sizeGrid.parentElement) sizeGrid.parentElement.style.display = 'none';
+                }
+
+                // Selected quantity
+                if (d.options && typeof d.options.selected_quantity === 'number') {
+                    quantity = d.options.selected_quantity;
+                    const qEl = document.getElementById('qtyValue');
+                    if (qEl) qEl.textContent = quantity;
+                }
+
+                /* 4) Informazioni dettagliate */
+                if (d.description) {
+                    const longDesc = document.getElementById('longDescription');
+                    if (longDesc) longDesc.textContent = d.description;
+                }
+
+                if (d.specs) {
+                    if (d.specs.composition) {
+                        const el = document.getElementById('specComposition');
+                        if (el) el.textContent = d.specs.composition;
+                    }
+                    if (d.specs.weight) {
+                        const el = document.getElementById('specWeight');
+                        if (el) el.textContent = d.specs.weight;
+                    }
+                    if (d.specs.origin) {
+                        const el = document.getElementById('specOrigin');
+                        if (el) el.textContent = d.specs.origin;
+                    }
+                    if (d.specs.fit) {
+                        const el = document.getElementById('specFit');
+                        if (el) el.textContent = d.specs.fit;
+                    }
+                }
+
+            } catch (e) {
+                console.warn('Errore caricamento dettagli prodotto', e);
+            }
+        }
+
+        /* ====== Caricamento prodotto principale (shop.json fallback) ====== */
         async function loadProduct() {
             // Ricava SKU dalla query string oppure da localStorage fallback
             const skuFromQs = qs('sku');
-            const skuFromLS = localStorage.getItem('lh360_selected_sku') || (() => {
-                try {
-                    const j = JSON.parse(localStorage.getItem('lh360_last_product') || '{}');
-                    return j && j.sku ? j.sku : '';
-                } catch (e) { return ''; }
-            })();
+            let skuFromLS = '';
+            try {
+                const j = JSON.parse(localStorage.getItem('lh360_last_product') || '{}');
+                skuFromLS = j && j.sku ? j.sku : '';
+            } catch (e) { skuFromLS = localStorage.getItem('lh360_selected_sku') || ''; }
 
             const sku = skuFromQs || skuFromLS || '';
 
-            // percorso al JSON dei prodotti (da product-details/ -> ../products/shop.json)
             const PRODUCTS_JSON = '../products/shop.json';
 
             try {
@@ -921,28 +1062,28 @@
 
                 let product = null;
                 if (sku) product = items.find(it => it.sku === sku);
-                if (!product && items.length) {
-                    // fallback: primo prodotto
+                if (!product && items && items.length) {
                     product = items[0];
                 }
 
                 if (!product) {
-                    // errore: nessun prodotto disponibile
                     document.querySelector('.container').innerHTML = '<div style="padding:4rem;color:#fca5a5">Nessun prodotto trovato. Torna allo shop.</div>';
                     return;
                 }
 
                 populateProduct(product);
+
+                // CARICA I DETTAGLI SPECIFICI (se esistono in product-details/data/<sku>.json)
+                await loadProductDataFromDetailsJSON(product);
+
             } catch (err) {
                 console.error(err);
                 document.querySelector('.container').innerHTML = `<div style="padding:4rem;color:#fca5a5">Errore caricamento prodotto: ${err.message}</div>`;
             }
         }
 
-        function safeText(s){ return (s==null)?'':s; }
-
+        /* ====== populateProduct (mapping base fields dal JSON principale) ====== */
         function populateProduct(prod) {
-            // Titolo, descrizione, prezzo
             document.getElementById('productTitle').textContent = prod.title || 'Prodotto';
             document.getElementById('productDesc').textContent = prod.desc || '';
             if (prod.price != null) {
@@ -952,12 +1093,10 @@
             }
             document.title = `${prod.title || 'Prodotto'} — Dettaglio`;
 
-            // Disponibilità (se presente)
             if (prod.availability) {
                 document.getElementById('availabilityInnerText').textContent = prod.availability;
             }
 
-            // Specifiche (se presenti)
             if (prod.specs) {
                 if (prod.specs.composition) document.getElementById('specComposition').textContent = prod.specs.composition;
                 if (prod.specs.weight) document.getElementById('specWeight').textContent = prod.specs.weight;
@@ -965,11 +1104,9 @@
                 if (prod.specs.fit) document.getElementById('specFit').textContent = prod.specs.fit;
             }
 
-            // Immagini: se presente array product.images lo useremo, altrimenti fallback a immagini unsplash generiche
             if (Array.isArray(prod.images) && prod.images.length > 0) {
-                images = prod.images.slice();
+                images = prod.images.slice(0,4);
             } else {
-                // fallback: genera 4 varianti usando Unsplash con query titolata per miglior resa visiva
                 const q = encodeURIComponent(prod.title || 'product');
                 images = [
                     `https://images.unsplash.com/photo-1591047139829-d91aecb6caea?w=800&h=1000&fit=crop`,
@@ -982,64 +1119,75 @@
             currentImage = 0;
             renderGallery();
 
-            // Rating e recensioni (se presenti)
             if (prod.rating) {
-                document.getElementById('ratingNumber').textContent = prod.rating.value || prod.rating;
-                document.getElementById('reviewsCount').textContent = (prod.rating.count ? prod.rating.count + ' recensioni' : '');
+                const elNum = document.getElementById('ratingNumber');
+                const elCount = document.getElementById('reviewsCount');
+                if (elNum) elNum.textContent = prod.rating.value || prod.rating;
+                if (elCount) elCount.textContent = (prod.rating.count ? prod.rating.count + ' recensioni' : '');
             }
 
-            // Aggiorna testo CTA
             const buyNowBtn = document.getElementById('buyNowBtn');
             const addCartBtn = document.getElementById('addCartBtn');
 
-            buyNowBtn.textContent = prod.cta || 'Acquista Ora';
-            buyNowBtn.dataset.stripeLink = prod.stripe_link || '';
+            if (buyNowBtn) {
+                buyNowBtn.textContent = prod.cta || 'Acquista Ora';
+                buyNowBtn.dataset.stripeLink = prod.stripe_link || '';
+                buyNowBtn.onclick = function () {
+                    if (buyNowBtn.dataset.stripeLink) {
+                        try {
+                            localStorage.setItem('lh360_last_product', JSON.stringify({ sku: prod.sku, title: prod.title, ts: Date.now() }));
+                        } catch (e) {}
+                        window.location.href = buyNowBtn.dataset.stripeLink;
+                    } else {
+                        alert('Nessun link di pagamento configurato per questo prodotto. Verrai reindirizzato al form di contatto.');
+                    }
+                };
+            }
 
-            // Comportamento Acquista Ora
-            buyNowBtn.onclick = function () {
-                if (buyNowBtn.dataset.stripeLink) {
-                    // salva un record di checkout in localStorage per analytics
-                    try {
-                        localStorage.setItem('lh360_last_product', JSON.stringify({ sku: prod.sku, title: prod.title, ts: Date.now() }));
-                    } catch (e) {}
-                    // redirect al checkout (Stripe o altro)
-                    window.location.href = buyNowBtn.dataset.stripeLink;
-                } else {
-                    alert('Nessun link di pagamento configurato per questo prodotto. Verrai reindirizzato al form di contatto.');
-                    // potresti aprire qui la sezione contatti o mostrare un modal; per ora rimaniamo semplici
-                }
-            };
-
-            // Comportamento Aggiungi al Carrello (semplice localStorage cart)
-            addCartBtn.onclick = function () {
-                const cartRaw = localStorage.getItem('lh360_cart');
-                let cart = [];
-                try { cart = cartRaw ? JSON.parse(cartRaw) : []; } catch(e){ cart = []; }
-                // trova voce esistente
-                const existing = cart.find(i => i.sku === prod.sku);
-                if (existing) {
-                    existing.qty = (existing.qty || 1) + quantity;
-                } else {
-                    cart.push({
-                        sku: prod.sku,
-                        title: prod.title,
-                        price: prod.price || 0,
-                        currency: prod.currency || 'EUR',
-                        qty: quantity,
-                        timestamp: Date.now()
-                    });
-                }
-                localStorage.setItem('lh360_cart', JSON.stringify(cart));
-                // conferma visiva
-                addCartBtn.textContent = 'Aggiunto ✓';
-                setTimeout(()=> addCartBtn.textContent = (prod.add_to_cart_text || 'Aggiungi al Carrello'), 1500);
-            };
+            if (addCartBtn) {
+                addCartBtn.onclick = function () {
+                    const cartRaw = localStorage.getItem('lh360_cart');
+                    let cart = [];
+                    try { cart = cartRaw ? JSON.parse(cartRaw) : []; } catch(e){ cart = []; }
+                    const existing = cart.find(i => i.sku === prod.sku);
+                    if (existing) {
+                        existing.qty = (existing.qty || 1) + quantity;
+                    } else {
+                        cart.push({
+                            sku: prod.sku,
+                            title: prod.title,
+                            price: prod.price || 0,
+                            currency: prod.currency || 'EUR',
+                            qty: quantity,
+                            timestamp: Date.now()
+                        });
+                    }
+                    localStorage.setItem('lh360_cart', JSON.stringify(cart));
+                    addCartBtn.textContent = 'Aggiunto ✓';
+                    setTimeout(()=> addCartBtn.textContent = (prod.add_to_cart_text || 'Aggiungi al Carrello'), 1500);
+                };
+            }
         }
 
         // bootstrap
         document.addEventListener('DOMContentLoaded', () => {
             // inizializza gallery/qty ecc.
             renderGallery();
+
+            // navigation thumbs and prev/next buttons
+            const nextBtn = document.getElementById('nextBtn');
+            const prevBtn = document.getElementById('prevBtn');
+            if (nextBtn) nextBtn.addEventListener('click', () => {
+                if (!images || images.length === 0) return;
+                currentImage = (currentImage + 1) % images.length;
+                renderGallery();
+            });
+            if (prevBtn) prevBtn.addEventListener('click', () => {
+                if (!images || images.length === 0) return;
+                currentImage = (currentImage - 1 + images.length) % images.length;
+                renderGallery();
+            });
+
             loadProduct();
         });
     </script>
