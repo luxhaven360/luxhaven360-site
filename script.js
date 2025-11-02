@@ -127,29 +127,23 @@ function createProductCard(prod, defaultCta) {
     if (prod.action) btn.dataset.action = prod.action;
 
     // on click behaviour:
-    // - se presente stripe_link => redirect
-    // - altrimenti fallback: per immobili/esperienze apri contact form con prefill (qui semplice alert)
-    btn.addEventListener('click', () => {
-        if (btn.dataset.stripeLink) {
-            // salva analytics minimale
-            try {
-                localStorage.setItem('lh360_last_product', JSON.stringify({ sku: btn.dataset.sku, title: btn.dataset.title, ts: Date.now() }));
-            } catch (e) {}
-            // redirect
-            window.location.href = btn.dataset.stripeLink;
-        } else {
-            // fallback: apri form contatto con prefilled info (qui un semplice alert per integrarlo facilmente)
-            // Se vuoi, puoi implementare un modal con il form precompilato.
-            alert(`Nessun link di pagamento configurato per "${btn.dataset.title}". Verrà inviata una richiesta di informazioni.`);
-            // eventualmente apri sezione contatti
-            showSection('contact');
-            // e riempi il form (se esiste)
-            try {
-                document.getElementById('interest').value = prod.sectionName || '';
-                document.getElementById('message').value = `Richiesta informazioni su: ${prod.title} (SKU: ${prod.sku || 'n/a'})`;
-            } catch (e) {}
-        }
-    });
+    // --- dentro createProductCard(prod, defaultCta) ---
+// replace existing btn.addEventListener('click', ...) block with:
+
+btn.addEventListener('click', () => {
+    try {
+        // salva il prodotto selezionato in sessionStorage (oggetto completo)
+        sessionStorage.setItem('lh360_selected_product', JSON.stringify(prod));
+    } catch (e) {
+        console.warn('Impossibile salvare sessionStorage', e);
+    }
+
+    // apri la pagina PDP dove verrà popolata dinamicamente
+    const pdpPath = 'product-details/pdp-products.html'; // aggiorna se diverso
+    const skuParam = prod.sku ? `?sku=${encodeURIComponent(prod.sku)}` : '';
+    window.location.href = pdpPath + skuParam;
+});
+
 
     card.appendChild(btn);
 
