@@ -1077,5 +1077,232 @@
             }
         }
     </script>
+
+    <script>
+/* PDP dynamic population: legge sessionStorage (chiave 'lh360_selected_product')
+   Se non presente, prova a cercare il prodotto usando SKU in querystring (fetch su prodotti conosciuti).
+   Poi popola titolo, prezzo, descrizione, gallery e CTA.
+*/
+
+(function(){
+    const PRODUCT_STORAGE_KEY = 'lh360_selected_product';
+
+    function formatPrice(p, currency = 'EUR') {
+        try {
+            return new Intl.NumberFormat('it-IT', { style: 'currency', currency }).format(p);
+        } catch (e) {
+            return (p != null ? p : '') + ' ' + currency;
+        }
+    }
+
+    // lista di file JSON dove cercare come fallback (modifica path se serve)
+    const PRODUCT_JSON_FILES = [
+        'products/shop.json',
+        'products/stays.json',
+        'products/supercars.json',
+        'products/properties.json'
+    ];
+
+    function getSkuFromUrl() {
+        try {
+            const params = new URLSearchParams(window.location.search);
+            return params.get('sku');
+        } catch (e) { return null; }
+    }
+
+    async function fetchProductBySku(sku) {
+        if (!sku) return null;
+        for (const f of PRODUCT_JSON_FILES) {
+            try {
+                const resp = await fetch(f, { cache: 'no-cache' });
+                if (!resp.ok) continue;
+                const items = await resp.json();
+                if (!Array.isArray(items)) continue;
+                const found = items.find(it => it && it.sku === sku);
+                if (found) return found;
+            } catch (e) {
+                // continua al prossimo file
+                console.warn('fetch fallback error for', f, e);
+            }
+        }
+        return null;
+    }
+
+    function isImageUrl(u){
+        if (!u || typeof u !== 'string') return false;
+        const lower = u.toLowerCase();
+        return lower.startsWith('http') || /\.(jpg|jpeg|png|webp|gif)$/.test(lower);
+    }
+
+    async function initPdp() {
+        let product = null;
+
+        // 1) prova da sessionStorage
+        try {
+            const raw = sessionStorage.getItem(PRODUCT_STORAGE_KEY);
+            if (raw) product = JSON.parse(raw);
+        } catch (e) {
+            console.warn('Impossibile leggere sessionStorage', e);
+        }
+
+        // 2) fallback: usa sku da URL e fetch sui file prodotti
+        if (!product) {
+            const sku = getSkuFromUrl();
+            if (sku) {
+                product = await fetchProductBySku(sku);
+            }
+        }
+
+        // 3) se ancora nulla, non popolare (mantieni contenuti statici), log
+        if (!product) {
+            console.warn('Nessun prodotto selezionato per la PDP (sessionStorage e fallback falliti).');
+            return;
+        }
+
+        // Popola titolo
+        try {
+            const titleEl = document.querySelector('.product-info h1') || document.querySelector('h1');
+            if (titleEl && product.title) titleEl.textContent = product.title;
+        } catch(e){}
+
+        // Popola prezzo
+        try {
+            const priceEl = document.querySelector('.price');
+            if (priceEl) {
+                if (product.price != null) {
+                    priceEl.textContent = formatPrice(product.price, product.currency || 'EUR');
+                } else if (product.price_text) {
+                    priceEl.textContent = product.price_text;
+                }
+            }
+        } catch(e){}
+
+        // Popola descrizione
+        try {
+            const descEl = document.querySelector('.description');
+            if (descEl && product.desc) descEl.textContent = product.desc;
+        } catch(e){}
+
+        // Popola availability (se presente)
+        try {
+            const availEl = document.querySelector('.availability');
+            if (availEl && product.availability_text) {
+                availEl.innerHTML = `<span>✓</span><span>${product.availability_text}</span>`;
+            }
+        } catch(e){}
+
+        // Popola gallery: cerca product.images (array) o usa product.icon (se è url) o fallback
+        try {
+            let imgs = [];
+            if (Array.isArray(product.images) && product.images.length) {
+                imgs = product.images.slice();
+            } else if (isImageUrl(product.icon)) {
+                imgs = [product.icon];
+            } else if (product.image) {
+                if (Array.isArray(product.image)) imgs = product.image;
+                else if (isImageUrl(product.image)) imgs = [product.image];
+            }
+
+            // se non abbiamo immagini, manteniamo quelle statiche già presenti
+            if (imgs.length) {
+                // aggiorna la variabile globale images usata dalla gallery nel file (se presente)
+                if (window.images && Array.isArray(window.images)) {
+                    window.images.length = 0;
+                    imgs.forEach(u => window.images.push(u));
+                } else {
+                    window.images = imgs.slice();
+                }
+
+                // set main image
+                const mainImg = document.querySelector('#mainImage img');
+                if (mainImg) mainImg.src = window.images[0];
+
+                // ricostruisci thumbnails
+                const thumbs = document.querySelector('.thumbnails');
+                if (thumbs) {
+                    thumbs.innerHTML = '';
+                    window.images.forEach((src, i) => {
+                        const div = document.createElement('div');
+                        div.className = 'thumbnail' + (i === 0 ? ' active' : '');
+                        const img = document.createElement('img');
+                        img.src = src;
+                        img.alt = `Vista ${i+1}`;
+                        div.appendChild(img);
+                        div.addEventListener('click', () => {
+                            if (typeof selectImage === 'function') selectImage(i);
+                            else {
+                                // fallback: cambia src manualmente
+                                const main = document.querySelector('#mainImage img');
+                                if (main) main.src = src;
+                                document.querySelectorAll('.thumbnail').forEach((t, idx) => t.classList.toggle('active', idx === i));
+                            }
+                        });
+                        thumbs.appendChild(div);
+                    });
+                }
+            }
+        } catch(e){ console.warn('Errore popolazione gallery', e); }
+
+        // Imposta comportamento CTA nella PDP:
+        // - Bottone "Acquista Ora" deve aprire stripe_link (se presente)
+        // - Bottone "Aggiungi al Carrello" salva in localStorage come carrello semplice
+        try {
+            // seleziona i bottoni per testo (fallback sul contenuto)
+            const btns = Array.from(document.querySelectorAll('.btn'));
+            const addCartBtn = btns.find(b => b.textContent && b.textContent.toLowerCase().includes('aggiungi'));
+            const buyNowBtn = btns.find(b => b.textContent && b.textContent.toLowerCase().includes('acquista'));
+
+            if (buyNowBtn) {
+                buyNowBtn.addEventListener('click', (ev) => {
+                    ev.preventDefault();
+                    if (product.stripe_link) {
+                        window.location.href = product.stripe_link;
+                    } else {
+                        alert('Nessun link di pagamento disponibile per questo prodotto.');
+                    }
+                });
+            }
+
+            if (addCartBtn) {
+                addCartBtn.addEventListener('click', (ev) => {
+                    ev.preventDefault();
+                    try {
+                        const cartKey = 'lh360_cart';
+                        const raw = localStorage.getItem(cartKey);
+                        const cart = raw ? JSON.parse(raw) : [];
+                        // prendi taglia/quantity selezionata dalla pagina
+                        const qty = parseInt(document.getElementById('qtyValue')?.textContent || '1') || 1;
+                        const sizeBtn = document.querySelector('.size-btn.active');
+                        const size = sizeBtn ? sizeBtn.textContent.trim() : (product.size || null);
+                        const item = {
+                            sku: product.sku || null,
+                            title: product.title || null,
+                            price: product.price != null ? product.price : null,
+                            currency: product.currency || 'EUR',
+                            qty,
+                            size
+                        };
+                        cart.push(item);
+                        localStorage.setItem(cartKey, JSON.stringify(cart));
+                        alert('Prodotto aggiunto al carrello.');
+                    } catch (e) {
+                        console.warn('Errore salvataggio carrello', e);
+                        alert('Errore aggiunta al carrello.');
+                    }
+                });
+            }
+        } catch(e){ console.warn('Errore binding CTA', e); }
+
+        // opzionale: rimuovi selezione dalla sessionStorage così la PDP non rimane vincolata (commenta se non vuoi)
+        try {
+            // sessionStorage.removeItem(PRODUCT_STORAGE_KEY);
+        } catch (e) {}
+
+    } // end initPdp
+
+    // avvia
+    initPdp();
+})();
+</script>
 </body>
 </html>
