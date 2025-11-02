@@ -964,20 +964,27 @@
 
         /* ====== Render Guide Taglie ====== */
         function renderSizeGuide(sizeGuide) {
-            const table = document.getElementById('sizeTable');
-            const tbody = document.getElementById('sizeTableBody');
-            tbody.innerHTML = '';
-            if (!sizeGuide || sizeGuide.length === 0) {
-                table.style.display = 'none';
-                return;
-            }
-            table.style.display = 'table';
-            sizeGuide.forEach(row => {
-                const tr = document.createElement('tr');
-                tr.innerHTML = `<td>${row.taglia}</td><td>${row.petto}</td><td>${row.vita}</td><td>${row.lunghezza}</td>`;
-                tbody.appendChild(tr);
-            });
-        }
+    const title = document.getElementById('sizeGuideTitle');
+    const table = document.getElementById('sizeTable');
+    const tbody = document.getElementById('sizeTableBody');
+    tbody.innerHTML = '';
+
+    if (!sizeGuide || sizeGuide.length === 0) {
+        if (title) title.style.display = 'none';
+        table.style.display = 'none';
+        return;
+    }
+
+    // mostra titolo e tabella
+    if (title) title.style.display = 'block';
+    table.style.display = 'table';
+
+    sizeGuide.forEach(row => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `<td>${safeText(row.taglia)}</td><td>${safeText(row.petto)}</td><td>${safeText(row.vita)}</td><td>${safeText(row.lunghezza)}</td>`;
+        tbody.appendChild(tr);
+    });
+}
 
         /* ====== Render Stelle ====== */
         function renderStars(containerId, ratingValue) {
@@ -1095,6 +1102,48 @@
 
         function safeText(s){ return (s==null)?'':s; }
 
+        function renderSpecsGrid(specs) {
+    const specsGrid = document.getElementById('specsGrid');
+    if (!specsGrid) return;
+    specsGrid.innerHTML = ''; // svuota prima
+
+    if (!specs || Object.keys(specs).length === 0) {
+        specsGrid.style.display = 'none';
+        return;
+    }
+    specsGrid.style.display = 'grid';
+
+    // ordine preferito e label leggibili
+    const order = ['composition', 'weight', 'origin', 'fit'];
+    const labels = {
+        composition: 'Composizione',
+        weight: 'Peso',
+        origin: 'Origine',
+        fit: 'Vestibilità'
+    };
+
+    // aggiungi in ordine le chiavi previste
+    order.forEach(key => {
+        if (specs[key]) {
+            const div = document.createElement('div');
+            div.className = 'spec-row';
+            div.innerHTML = `<span class="spec-label">${labels[key] || key}</span><span>${safeText(specs[key])}</span>`;
+            specsGrid.appendChild(div);
+        }
+    });
+
+    // poi eventuali altre chiavi non previste
+    Object.keys(specs).forEach(key => {
+        if (order.indexOf(key) === -1) {
+            const pretty = key.replace(/([A-Z])/g, ' $1').replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+            const div = document.createElement('div');
+            div.className = 'spec-row';
+            div.innerHTML = `<span class="spec-label">${pretty}</span><span>${safeText(specs[key])}</span>`;
+            specsGrid.appendChild(div);
+        }
+    });
+}
+
         function populateProduct(prod) {
             // Titolo, descrizione, prezzo
             document.getElementById('productTitle').textContent = prod.title || 'Prodotto';
@@ -1118,13 +1167,8 @@
                 document.getElementById('longDescription').innerHTML = '';
             }
 
-            // Specifiche (se presenti)
-            if (prod.specs) {
-                if (prod.specs.composition) document.getElementById('specComposition').textContent = prod.specs.composition;
-                if (prod.specs.weight) document.getElementById('specWeight').textContent = prod.specs.weight;
-                if (prod.specs.origin) document.getElementById('specOrigin').textContent = prod.specs.origin;
-                if (prod.specs.fit) document.getElementById('specFit').textContent = prod.specs.fit;
-            }
+            // Specifiche: render dinamico (sostituisce i set manuali)
+            renderSpecsGrid(prod.specs);
 
             // Immagini: max 4, se presente array product.images lo useremo, altrimenti fallback
             if (Array.isArray(prod.images) && prod.images.length > 0) {
