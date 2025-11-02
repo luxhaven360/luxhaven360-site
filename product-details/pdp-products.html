@@ -1198,6 +1198,7 @@
             // Inizializza con il primo colore (default: nero)
             selectedColor = prod.colors[0] || '#000000';
             images = prod.images_by_color[selectedColor] || prod.images || [];
+            console.log('Immagini iniziali per colore default:', images); // Debug: verifica in console
         } else if (Array.isArray(prod.images) && prod.images.length > 0) {
             images = prod.images.slice(0, 4);
         } else {
@@ -1218,13 +1219,19 @@
         renderColors(prod.colors);
         renderSizes(prod.sizes);
 
-        // Seleziona default il primo colore
+        // Seleziona default il primo colore e forza update gallery
         const firstColorBtn = document.querySelector('.color-btn');
         if (firstColorBtn) {
             firstColorBtn.classList.add('active');
+            // Forza un update immediato per il default
+            if (prod.images_by_color) {
+                images = prod.images_by_color[selectedColor] || images;
+                currentImage = 0;
+                renderGallery();
+            }
         }
 
-        // Listener per selezione colore (invariato, ma con update variant)
+        // Listener per selezione colore
         const colorBtns = document.querySelectorAll('.color-btn');
         colorBtns.forEach(btn => {
             btn.addEventListener('click', () => {
@@ -1233,9 +1240,15 @@
                 btn.classList.add('active');
                 // Aggiorna immagini basate sul colore
                 if (prod.images_by_color) {
-                    images = prod.images_by_color[selectedColor] || images;
-                    currentImage = 0;
-                    renderGallery();
+                    const newImages = prod.images_by_color[selectedColor] || images;
+                    if (newImages.length > 0) {
+                        images = newImages;
+                        currentImage = 0;
+                        renderGallery();
+                        console.log('Immagini aggiornate per colore:', selectedColor, images); // Debug: verifica in console
+                    } else {
+                        console.warn('Nessuna immagine trovata per colore:', selectedColor);
+                    }
                 }
                 // Aggiorna variant se size selezionata
                 if (selectedSize) updateSelectedVariant(prod);
@@ -1274,7 +1287,7 @@
         buyNowBtn.textContent = prod.cta || 'Acquista Ora';
         buyNowBtn.dataset.stripeLink = prod.stripe_link || '';
 
-        // Comportamento Acquista Ora (aggiunto check per variante e nota su quantità)
+        // Comportamento Acquista Ora (invariato)
         buyNowBtn.onclick = function () {
             if (!selectedVariantId) {
                 alert('Seleziona colore e taglia prima di procedere.');
