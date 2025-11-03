@@ -1446,20 +1446,99 @@
         // reset
         selectedVariantId = null;
 
-        // 1) prova a leggere dal shop.json (shopProducts) se è disponibile
         try {
             if (window.shopProducts && Array.isArray(window.shopProducts)) {
                 const sp = window.shopProducts.find(p => String(p.sku) === String(prod.sku));
-                // ora usiamo il campo `printful_variant_ids` come richiesto
-                if (sp && Array.isArray(sp.printful_variant_ids) && Array.isArray(prod.variants)) {
-                    // costruisci una mappa prefix -> variants dal product-details
-                    const byPrefix = {};
-                    prod.variants.forEach(v => {
-                        const vid = String(v.variant_id || '');
-                        const prefix = vid.split('-')[0];
-                        if (!byPrefix[prefix]) byPrefix[prefix] = [];
-                        byPrefix[prefix].push(v);
-                    });
+                if (sp) {
+                    // 1) If shop.json has a direct `variants` array, prefer it (exact match)
+                    if (Array.isArray(sp.variants)) {
+                        const match = sp.variants.find(v =>
+                            normalizeColorKey(v.color) === normalizeColorKey(selectedColor) &&
+                            String(v.size) === String(selectedSize)
+                        );
+                        if (match && match.variant_id) {
+                            selectedVariantId = match.variant_id;
+                            if (sp.price != null) document.getElementById('productPrice').textContent = formatPrice(sp.price, sp.currency || 'EUR');
+                            console.log('variant preso da shop.json (sp.variants):', selectedVariantId);
+                            return;
+                        }
+                    }
+
+                    // 2) If shop.json exposes printful_variant_ids, it may be either:
+                    //    - an array of prefixes (strings) -> we map using prod.variants prefixes
+                    //    - an array of objects {color,size,variant_id} -> we can match directly
+                    if (Array.isArray(sp.printful_variant_ids) && sp.printful_variant_ids.length > 0) {
+                        const first = sp.printful_variant_ids[0];
+
+                        // CASE A: array of strings (prefixes)
+                        if (typeof first === 'string') {
+                            // build map prefix -> variants from product-details
+                            const byPrefix = {};
+                            if (Array.isArray(prod.variants)) {
+                                prod.variants.forEach(v => {
+                                    const vid = String(v.variant_id || '');
+                                    const prefix = vid.split('-')[0];
+                                    if (!byPrefix[prefix]) byPrefix[prefix] = [];
+                                    byPrefix[prefix].push(v);
+                                });
+                            }
+
+                            for (const prefix of sp.printful_variant_ids) {
+                                const candidates = byPrefix[prefix] || [];
+                                const match = candidates.find(v =>
+                                    normalizeColorKey(v.color) === normalizeColorKey(selectedColor) &&
+                                    String(v.size) === String(selectedSize)
+                                );
+                                if (match && match.variant_id) {
+                                    selectedVariantId = match.variant_id;
+                                    if (sp.price != null) document.getElementById('productPrice').textContent = formatPrice(sp.price, sp.currency || 'EUR');
+                                    console.log('variant preso da shop.json (printful_variant_ids prefixes):', selectedVariantId);
+                                    return;
+                                }
+                            }
+                        }
+
+                        // CASE B: array of objects {color,size,variant_id}
+                        if (typeof first === 'object') {
+                            const match = sp.printful_variant_ids.find(v =>
+                                normalizeColorKey(v.color) === normalizeColorKey(selectedColor) &&
+                                String(v.size) === String(selectedSize)
+                            );
+                            if (match && match.variant_id) {
+                                selectedVariantId = match.variant_id;
+                                if (sp.price != null) document.getElementById('productPrice').textContent = formatPrice(sp.price, sp.currency || 'EUR');
+                                console.log('variant preso da shop.json (printful_variant_ids objects):', selectedVariantId);
+                                return;
+                            }
+                        }
+                    }
+                }
+            }
+        } catch (e) {
+            console.warn('Errore cercando variant in shopProducts', e);
+        }
+
+        // 3) fallback al file di dettaglio (prod.variants)
+        try {
+            if (prod && Array.isArray(prod.variants)) {
+                const match = prod.variants.find(v =>
+                    normalizeColorKey(v.color) === normalizeColorKey(selectedColor) &&
+                    String(v.size) === String(selectedSize)
+                );
+                if (match && match.variant_id) {
+                    selectedVariantId = match.variant_id;
+                    console.log('variant preso da product-details:', selectedVariantId);
+                    return;
+                }
+            }
+        } catch (e) {
+            console.warn('Errore cercando variant in product details', e);
+        }
+
+        // se ancora null -> nessuna variante corrispondente trovata
+        selectedVariantId = null;
+        console.log('Nessuna variant disponibile per', selectedColor, selectedSize);
+    });
 
                     // scorri gli id presenti in shop.json e cerca una corrispondenza colore+taglia
                     for (const prefix of sp.printful_variant_ids) {
