@@ -916,7 +916,13 @@
                 const btn = document.createElement('button');
                 btn.className = 'color-btn' + (i === 0 ? ' active' : '');
                 btn.style.background = color;
-                btn.onclick = () => selectColor(btn);
+                // important: store the color value so listeners can use it
+                btn.dataset.color = color;
+                btn.setAttribute('aria-label', 'Colore ' + color);
+                // add a subtle border for very light colors so they remain visible
+                if (color.toLowerCase() === '#ffffff' || color.toLowerCase() === 'white' || color.toLowerCase() === 'rgb(255,255,255)') {
+                    btn.style.boxShadow = 'inset 0 0 0 1px rgba(0,0,0,0.12)';
+                }
                 container.appendChild(btn);
             });
         }
@@ -939,12 +945,26 @@
         }
 
         function selectColor(btn) {
+            // visual
             document.querySelectorAll('.color-btn').forEach(b => b.classList.remove('active'));
             btn.classList.add('active');
+
+            // functional
+            selectedColor = btn.dataset.color;
+            // aggiorna immagini complete (main + thumbnails) in base al colore selezionato
+            if (currentProduct && currentProduct.images_by_color && currentProduct.images_by_color[selectedColor]) {
+                images = currentProduct.images_by_color[selectedColor].slice();
+            } else if (currentProduct && Array.isArray(currentProduct.images) && currentProduct.images.length > 0) {
+                images = currentProduct.images.slice(0, 4);
+            }
+            currentImage = 0;
+            renderGallery();
         }
+
         function selectSize(btn) {
             document.querySelectorAll('.size-btn').forEach(b => b.classList.remove('active'));
             btn.classList.add('active');
+            selectedSize = btn.textContent;
         }
         let quantity = 1;
         function increaseQty(){ quantity++; document.getElementById('qtyValue').textContent = quantity; }
@@ -1163,6 +1183,12 @@
             });
         }
 
+        // Stato globale prodotto/selezioni
+        let currentProduct = null;
+        let selectedColor = null;
+        let selectedSize = null;
+        let selectedVariantId = null;
+
         function populateProduct(prod) {
         // Titolo, descrizione, prezzo (invariato)
         document.getElementById('productTitle').textContent = prod.title || 'Prodotto';
@@ -1193,12 +1219,15 @@
         // Specifiche (invariato)
         renderSpecsGrid(prod.specs || {});
 
-        // Immagini: usa images_by_color se presente, altrimenti fallback
+        // Memorizza prodotto corrente per l'uso nelle funzioni di selezione colore
+        currentProduct = prod;
+
+        // Immagini: preferisci images_by_color se presente
         if (prod.images_by_color && Object.keys(prod.images_by_color).length > 0) {
-            // Inizializza con il primo colore (default: nero)
-            selectedColor = prod.colors[0] || '#000000';
-            images = prod.images_by_color[selectedColor] || prod.images || [];
-            console.log('Immagini iniziali per colore default:', images); // Debug: verifica in console
+            // scegli colore iniziale: primo colore se definito, altrimenti prima chiave di images_by_color
+            const initialColor = (prod.colors && prod.colors.length > 0) ? prod.colors[0] : Object.keys(prod.images_by_color)[0];
+            selectedColor = initialColor || null;
+            images = (selectedColor && prod.images_by_color[selectedColor]) ? prod.images_by_color[selectedColor].slice() : (Array.isArray(prod.images) ? prod.images.slice(0,4) : images);
         } else if (Array.isArray(prod.images) && prod.images.length > 0) {
             images = prod.images.slice(0, 4);
         } else {
@@ -1219,43 +1248,25 @@
         renderColors(prod.colors);
         renderSizes(prod.sizes);
 
-        // Seleziona default il primo colore e forza update gallery
+        // Assicurati che il primo pulsante colore sia effettivamente selezionato e sincronizzato con le immagini
         const firstColorBtn = document.querySelector('.color-btn');
         if (firstColorBtn) {
-            firstColorBtn.classList.add('active');
-            // Forza un update immediato per il default
-            if (prod.images_by_color) {
-                images = prod.images_by_color[selectedColor] || images;
-                currentImage = 0;
-                renderGallery();
-            }
+            // Se selectedColor è stato impostato sopra, prova a trovare il matching button
+            const preferredBtn = Array.from(document.querySelectorAll('.color-btn')).find(b => b.dataset && b.dataset.color === selectedColor) || firstColorBtn;
+            selectColor(preferredBtn);
         }
 
-        // Listener per selezione colore
+        // Listener per selezione colore: usa selectColor per aggiornare visivo e immagini
         const colorBtns = document.querySelectorAll('.color-btn');
         colorBtns.forEach(btn => {
             btn.addEventListener('click', () => {
-                selectedColor = btn.dataset.color;
-                colorBtns.forEach(b => b.classList.remove('active'));
-                btn.classList.add('active');
-                // Aggiorna immagini basate sul colore
-                if (prod.images_by_color) {
-                    const newImages = prod.images_by_color[selectedColor] || images;
-                    if (newImages.length > 0) {
-                        images = newImages;
-                        currentImage = 0;
-                        renderGallery();
-                        console.log('Immagini aggiornate per colore:', selectedColor, images); // Debug: verifica in console
-                    } else {
-                        console.warn('Nessuna immagine trovata per colore:', selectedColor);
-                    }
-                }
+                selectColor(btn);
                 // Aggiorna variant se size selezionata
                 if (selectedSize) updateSelectedVariant(prod);
             });
         });
 
-        // Listener per selezione size (invariato)
+        // Listener per selezione size
         const sizeBtns = document.querySelectorAll('.size-btn');
         sizeBtns.forEach(btn => {
             btn.addEventListener('click', () => {
@@ -1337,9 +1348,6 @@
     }
 
     // Nuova funzione per aggiornare variant selezionato (invariato)
-    let selectedColor = null;
-    let selectedSize = null;
-    let selectedVariantId = null;
     function updateSelectedVariant(prod) {
         if (prod.variants && Array.isArray(prod.variants)) {
             const variant = prod.variants.find(v => v.color === selectedColor && v.size === selectedSize);
@@ -1357,6 +1365,6 @@
         renderGallery();
         loadProduct();
     });
-</script>
+    </script>
 </body>
 </html>
