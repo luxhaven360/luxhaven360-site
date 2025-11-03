@@ -240,6 +240,7 @@
             cursor: pointer;
             transition: all 0.3s;
             position: relative;
+            overflow: hidden;
         }
 
         .color-btn:hover {
@@ -733,15 +734,7 @@
                     </div>
                 </div>
 
-                <!-- Quantity -->
-                <div class="section">
-                    <div class="section-title">Quantità</div>
-                    <div class="quantity-selector">
-                        <button class="qty-btn" onclick="decreaseQty()">−</button>
-                        <span class="qty-value" id="qtyValue">1</span>
-                        <button class="qty-btn" onclick="increaseQty()">+</button>
-                    </div>
-                </div>
+                <!-- Quantity removed per request -->
 
                 <!-- CTAs -->
                 <div class="cta-buttons">
@@ -871,17 +864,22 @@
             'https://images.unsplash.com/photo-1591047139829-d91aecb6caea?w=800&h=1000&fit=crop'
         ];
         let currentImage = 0;
+        let currentProduct = null; // riferimento al prodotto caricato
 
         function renderGallery() {
             const mainImg = document.getElementById('mainImageImg');
             mainImg.src = images[currentImage] || images[0];
+            mainImg.alt = document.getElementById('productTitle').textContent || 'Prodotto';
 
             const thumbs = document.getElementById('thumbnailsContainer');
             thumbs.innerHTML = '';
             images.forEach((src, i) => {
                 const div = document.createElement('div');
                 div.className = 'thumbnail' + (i === currentImage ? ' active' : '');
-                div.innerHTML = `<img src="${src}" alt="Vista ${i+1}" />`;
+                const img = document.createElement('img');
+                img.src = src;
+                img.alt = `Vista ${i+1}`;
+                div.appendChild(img);
                 div.addEventListener('click', () => {
                     selectImage(i);
                 });
@@ -915,8 +913,23 @@
             colors.forEach((color, i) => {
                 const btn = document.createElement('button');
                 btn.className = 'color-btn' + (i === 0 ? ' active' : '');
-                btn.style.background = color;
-                btn.onclick = () => selectColor(btn);
+                // salva il valore colore nel dataset per usare in seguito
+                btn.dataset.color = String(color);
+                btn.setAttribute('aria-label', 'Colore ' + String(color));
+
+                // se il valore è un hex (#xxxxxx) impostalo come background, altrimenti prova a usare immagine di anteprima
+                if (/^#?[0-9A-Fa-f]{6}$/.test(String(color))) {
+                    const hex = color.startsWith('#') ? color : '#' + color;
+                    btn.style.background = hex;
+                } else if (/https?:\/\/.+\.(jpg|jpeg|png|webp)$/i.test(String(color))) {
+                    // color può essere un URL di anteprima
+                    btn.style.backgroundImage = `url(${color})`;
+                    btn.style.backgroundSize = 'cover';
+                    btn.style.backgroundPosition = 'center';
+                } else {
+                    // fallback visivo neutro
+                    btn.style.background = 'linear-gradient(45deg,#444,#222)';
+                }
                 container.appendChild(btn);
             });
         }
@@ -941,14 +954,17 @@
         function selectColor(btn) {
             document.querySelectorAll('.color-btn').forEach(b => b.classList.remove('active'));
             btn.classList.add('active');
+            // imposta selectedColor e aggiorna galleria (usa currentProduct se disponibile)
+            selectedColor = btn.dataset.color;
+            if (currentProduct) updateGalleryForColor(currentProduct, selectedColor);
         }
         function selectSize(btn) {
             document.querySelectorAll('.size-btn').forEach(b => b.classList.remove('active'));
             btn.classList.add('active');
+            selectedSize = btn.textContent;
+            if (currentProduct) updateSelectedVariant(currentProduct);
         }
-        let quantity = 1;
-        function increaseQty(){ quantity++; document.getElementById('qtyValue').textContent = quantity; }
-        function decreaseQty(){ if(quantity>1){ quantity--; document.getElementById('qtyValue').textContent = quantity; } }
+        let quantity = 1; // quantità fissa (UI rimossa)
 
         /* ====== Tabs & FAQ ====== */
         function switchTab(tabName, btn) {
@@ -1056,6 +1072,49 @@
             // Bar fills: qui statici, per dinamici usa rating.distribution se presente
         }
 
+        /* ====== Helper immagini per colore ====== */
+        function normalizeColorKey(k) {
+            if (k == null) return k;
+            k = String(k).trim();
+            if (k.startsWith('#')) return k.toLowerCase();
+            if (/^[0-9A-Fa-f]{6}$/.test(k)) return ('#' + k).toLowerCase();
+            return k.toLowerCase();
+        }
+
+        function findImagesForColor(prod, color) {
+            if (!prod) return null;
+            if (!prod.images_by_color) return null;
+            const keys = Object.keys(prod.images_by_color || {});
+            const target = normalizeColorKey(color);
+            // try direct match
+            for (const k of keys) {
+                if (normalizeColorKey(k) === target) return prod.images_by_color[k];
+            }
+            // try match without #
+            const targetNoHash = target ? target.replace('#','') : target;
+            for (const k of keys) {
+                if (normalizeColorKey(k).replace('#','') === targetNoHash) return prod.images_by_color[k];
+            }
+            // fallback: first available images_by_color entry
+            if (keys.length > 0) return prod.images_by_color[keys[0]];
+            return null;
+        }
+
+        function updateGalleryForColor(prod, color) {
+            const imgs = findImagesForColor(prod, color);
+            if (imgs && imgs.length > 0) {
+                images = imgs.slice();
+            } else if (Array.isArray(prod.images) && prod.images.length > 0) {
+                images = prod.images.slice();
+            } else {
+                images = [
+                    `https://images.unsplash.com/photo-1591047139829-d91aecb6caea?w=800&h=1000&fit=crop`
+                ];
+            }
+            currentImage = 0;
+            renderGallery();
+        }
+
         /* ====== Caricamento dinamico prodotto ====== */
         async function loadProduct() {
             // Ricava SKU e section dalla query string oppure da localStorage fallback
@@ -1082,6 +1141,8 @@
                 const respBase = await fetch(PRODUCTS_JSON, { cache: 'no-cache' });
                 if (!respBase.ok) throw new Error('Impossibile caricare prodotti base: ' + respBase.status);
                 const items = await respBase.json();
+                // salva la lista base del negozio per lookup delle varianti
+                window.shopProducts = items;
 
                 let product = null;
                 if (sku) product = items.find(it => it.sku === sku);
@@ -1116,7 +1177,7 @@
         // escape HTML per valori testuali
         function safeText(s){
             if (s == null) return '';
-            return String(s).replace(/[&<>"']/g, function(m){
+            return String(s).replace(/[&<>\"']/g, function(m){
                 return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[m];
             });
         }
@@ -1164,6 +1225,9 @@
         }
 
         function populateProduct(prod) {
+        // memorizza riferimento globale
+        currentProduct = prod;
+
         // Titolo, descrizione, prezzo (invariato)
         document.getElementById('productTitle').textContent = prod.title || 'Prodotto';
         document.getElementById('productDesc').textContent = prod.desc || '';
@@ -1195,12 +1259,13 @@
 
         // Immagini: usa images_by_color se presente, altrimenti fallback
         if (prod.images_by_color && Object.keys(prod.images_by_color).length > 0) {
-            // Inizializza con il primo colore (default: nero)
-            selectedColor = prod.colors[0] || '#000000';
-            images = prod.images_by_color[selectedColor] || prod.images || [];
-            console.log('Immagini iniziali per colore default:', images); // Debug: verifica in console
+            // Inizializza con il primo colore disponibile
+            selectedColor = (Array.isArray(prod.colors) && prod.colors.length>0) ? prod.colors[0] : Object.keys(prod.images_by_color)[0];
+            const imgs = findImagesForColor(prod, selectedColor) || prod.images || [];
+            images = imgs.slice(0, 8);
+            console.log('Immagini iniziali per colore default:', selectedColor, images); // Debug: verifica in console
         } else if (Array.isArray(prod.images) && prod.images.length > 0) {
-            images = prod.images.slice(0, 4);
+            images = prod.images.slice(0, 8);
         } else {
             // fallback Unsplash (invariato)
             const q = encodeURIComponent(prod.title || 'product');
@@ -1222,34 +1287,21 @@
         // Seleziona default il primo colore e forza update gallery
         const firstColorBtn = document.querySelector('.color-btn');
         if (firstColorBtn) {
+            // assegna dataset e stato active (renderColors ha già impostato dataset)
             firstColorBtn.classList.add('active');
             // Forza un update immediato per il default
             if (prod.images_by_color) {
-                images = prod.images_by_color[selectedColor] || images;
-                currentImage = 0;
-                renderGallery();
+                const normalized = firstColorBtn.dataset.color || selectedColor;
+                updateGalleryForColor(prod, normalized);
             }
         }
 
         // Listener per selezione colore
         const colorBtns = document.querySelectorAll('.color-btn');
         colorBtns.forEach(btn => {
+            // click aggiornato usa selectColor per mantenere comportamento visuale centralizzato
             btn.addEventListener('click', () => {
-                selectedColor = btn.dataset.color;
-                colorBtns.forEach(b => b.classList.remove('active'));
-                btn.classList.add('active');
-                // Aggiorna immagini basate sul colore
-                if (prod.images_by_color) {
-                    const newImages = prod.images_by_color[selectedColor] || images;
-                    if (newImages.length > 0) {
-                        images = newImages;
-                        currentImage = 0;
-                        renderGallery();
-                        console.log('Immagini aggiornate per colore:', selectedColor, images); // Debug: verifica in console
-                    } else {
-                        console.warn('Nessuna immagine trovata per colore:', selectedColor);
-                    }
-                }
+                selectColor(btn);
                 // Aggiorna variant se size selezionata
                 if (selectedSize) updateSelectedVariant(prod);
             });
@@ -1288,26 +1340,76 @@
         buyNowBtn.dataset.stripeLink = prod.stripe_link || '';
 
         // Comportamento Acquista Ora (invariato)
-        buyNowBtn.onclick = function () {
+        buyNowBtn.onclick = async function () {
             if (!selectedVariantId) {
                 alert('Seleziona colore e taglia prima di procedere.');
                 return;
             }
-            // Memorizza quantità e variant in localStorage
-            localStorage.setItem('lh360_selected_quantity', quantity);
-            if (selectedVariantId) localStorage.setItem('lh360_selected_variant_id', selectedVariantId);
 
-            if (buyNowBtn.dataset.stripeLink) {
+            // quantità selezionata nella pagina
+            const qty = quantity || 1;
+
+            // Se esiste un payment link statico salvato nel dataset del pulsante -> fallback
+            const staticLink = buyNowBtn.dataset.stripeLink && buyNowBtn.dataset.stripeLink.trim();
+            if (staticLink) {
+                // Nota: Payment Links statici **NON** permettono di sovrascrivere la quantità addebitata via URL.
+                // Possiamo però aggiungere un client_reference_id per tracciamento e un parametro `quantity` visibile
+                const payload = {
+                    sku: currentProduct && currentProduct.sku ? currentProduct.sku : '',
+                    variant_id: selectedVariantId,
+                    qty: qty
+                };
+
+                const sep = staticLink.includes('?') ? '&' : '?';
+                const clientRef = encodeURIComponent(JSON.stringify(payload));
+                const finalUrl = `${staticLink}${sep}client_reference_id=${clientRef}&quantity=${encodeURIComponent(qty)}`;
+
                 try {
-                    localStorage.setItem('lh360_last_product', JSON.stringify({ sku: prod.sku, title: prod.title, ts: Date.now() }));
+                    localStorage.setItem('lh360_last_product', JSON.stringify({ sku: currentProduct.sku, variant: selectedVariantId, qty }));
                 } catch (e) {}
-                // Append quantità e variant_id (quantità ignorata da Stripe, ma per futuro backend)
-                let link = buyNowBtn.dataset.stripeLink;
-                link += (link.includes('?') ? '&' : '?') + `quantity=${quantity}`;
-                if (selectedVariantId) link += `&variant_id=${selectedVariantId}`;
-                window.location.href = link;
-            } else {
-                alert('Nessun link di pagamento configurato per questo prodotto. Verrai reindirizzato al form di contatto.');
+
+                window.location.href = finalUrl;
+                return;
+            }
+
+            // --- METODO RACCOMANDATO: creare una Checkout Session dinamica lato server ---
+            // Implementa un endpoint server (/create-checkout-session) che crea una Checkout Session
+            // con stripe.checkout.sessions.create({ line_items: [{ price: priceId, quantity: qty }], ... })
+            // Qui effettuiamo la chiamata al tuo endpoint per generare la sessione con la quantità corretta.
+            try {
+                const payload = {
+                    sku: currentProduct && currentProduct.sku ? currentProduct.sku : '',
+                    variant_id: selectedVariantId,
+                    qty: qty,
+                    // opzionale: invia price_id se il tuo prodotto ha un Price su Stripe
+                    price_id: currentProduct && (currentProduct.price_id || currentProduct.stripe_price_id || currentProduct.default_price) ? (currentProduct.price_id || currentProduct.stripe_price_id || currentProduct.default_price) : undefined
+                };
+
+                const resp = await fetch('/create-checkout-session', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+
+                if (!resp.ok) throw new Error('Errore creazione sessione: ' + resp.status);
+                const data = await resp.json();
+
+                // API moderna di Stripe restituisce data.url (session.url) oppure sessionId
+                if (data.url) {
+                    try { localStorage.setItem('lh360_last_product', JSON.stringify({ sku: currentProduct.sku, variant: selectedVariantId, qty })); } catch (e) {}
+                    window.location.href = data.url;
+                    return;
+                }
+                if (data.sessionId && data.sessionUrl) {
+                    try { localStorage.setItem('lh360_last_product', JSON.stringify({ sku: currentProduct.sku, variant: selectedVariantId, qty })); } catch (e) {}
+                    window.location.href = data.sessionUrl;
+                    return;
+                }
+
+                alert('Errore: risposta Stripe non valida.');
+            } catch (e) {
+                console.error(e);
+                alert('Impossibile avviare pagamento: ' + (e && e.message ? e.message : 'errore sconosciuto'));
             }
         };
 
@@ -1436,6 +1538,84 @@
         // se ancora null -> nessuna variante corrispondente trovata
         selectedVariantId = null;
         console.log('Nessuna variant disponibile per', selectedColor, selectedSize);
+    });
+
+                    // scorri gli id presenti in shop.json e cerca una corrispondenza colore+taglia
+                    for (const prefix of sp.printful_variant_ids) {
+                        const candidates = byPrefix[prefix] || [];
+                        const match = candidates.find(v =>
+                            normalizeColorKey(v.color) === normalizeColorKey(selectedColor) &&
+                            String(v.size) === String(selectedSize)
+                        );
+                        if (match && match.variant_id) {
+                            selectedVariantId = match.variant_id;
+                            if (sp.price != null) {
+                                document.getElementById('productPrice').textContent = formatPrice(sp.price, sp.currency || 'EUR');
+                            }
+                            console.log('variant preso da shop.json (printful_variant_ids):', selectedVariantId);
+                            return; // trovato
+                        }
+                    }
+                }
+            }
+        } catch (e) {
+            console.warn('Errore cercando variant in shopProducts (printful_variant_ids)', e);
+        }
+
+        // 2) fallback al file di dettaglio (prod.variants)
+        try {
+            if (prod && Array.isArray(prod.variants)) {
+                const match = prod.variants.find(v =>
+                    normalizeColorKey(v.color) === normalizeColorKey(selectedColor) &&
+                    String(v.size) === String(selectedSize)
+                );
+                if (match && match.variant_id) {
+                    selectedVariantId = match.variant_id;
+                    console.log('variant preso da product-details:', selectedVariantId);
+                    return;
+                }
+            }
+        } catch (e) {
+            console.warn('Errore cercando variant in product details', e);
+        }
+
+        // se ancora null -> nessuna variante corrispondente trovata
+        selectedVariantId = null;
+        console.log('Nessuna variant disponibile per', selectedColor, selectedSize);
+    }
+                        console.log('variant preso da shop.json:', selectedVariantId);
+                        return; // già trovato -> esci
+                    }
+                }
+            }
+        } catch (e) {
+            console.warn('Errore cercando variant in shopProducts', e);
+        }
+
+        // 2) fallback al file di dettaglio (prod.variants)
+        try {
+            if (prod && Array.isArray(prod.variants)) {
+                const match = prod.variants.find(v =>
+                    normalizeColorKey(v.color) === normalizeColorKey(selectedColor) &&
+                    String(v.size) === String(selectedSize)
+                );
+                if (match && match.variant_id) {
+                    selectedVariantId = match.variant_id;
+                    console.log('variant preso da product-details:', selectedVariantId);
+                    return;
+                }
+            }
+        } catch (e) {
+            console.warn('Errore cercando variant in product details', e);
+        }
+
+        // se ancora null -> nessuna variante corrispondente trovata
+        selectedVariantId = null;
+        console.log('Nessuna variant disponibile per', selectedColor, selectedSize);
+    } else {
+                selectedVariantId = null;
+            }
+        }
     }
 
     // bootstrap (invariato)
@@ -1443,6 +1623,6 @@
         renderGallery();
         loadProduct();
     });
-</script>
+    </script>
 </body>
 </html>
