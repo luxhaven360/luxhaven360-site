@@ -290,35 +290,6 @@
             font-weight: 500;
         }
 
-        /* Quantity */
-        .quantity-selector {
-            display: flex;
-            align-items: center;
-            gap: 1rem;
-        }
-
-        .qty-btn {
-            width: 3rem;
-            height: 3rem;
-            background: rgba(39, 39, 42, 0.5);
-            border: none;
-            border-radius: 0.75rem;
-            color: white;
-            font-size: 1.25rem;
-            cursor: pointer;
-            transition: all 0.3s;
-        }
-
-        .qty-btn:hover {
-            background: #27272a;
-        }
-
-        .qty-value {
-            font-size: 1.25rem;
-            width: 3rem;
-            text-align: center;
-        }
-
         /* CTA Buttons */
         .cta-buttons {
             display: flex;
@@ -732,17 +703,6 @@
                         <!-- Generati dinamicamente -->
                     </div>
                 </div>
-
-                <!-- Quantity -->
-                <div class="section">
-                    <div class="section-title">Quantità</div>
-                    <div class="quantity-selector">
-                        <button class="qty-btn" onclick="decreaseQty()">−</button>
-                        <span class="qty-value" id="qtyValue">1</span>
-                        <button class="qty-btn" onclick="increaseQty()">+</button>
-                    </div>
-                </div>
-
                 <!-- CTAs -->
                 <div class="cta-buttons">
                     <button id="addCartBtn" class="btn btn-primary">
@@ -966,10 +926,6 @@
             btn.classList.add('active');
             selectedSize = btn.textContent;
         }
-        let quantity = 1;
-        function increaseQty(){ quantity++; document.getElementById('qtyValue').textContent = quantity; }
-        function decreaseQty(){ if(quantity>1){ quantity--; document.getElementById('qtyValue').textContent = quantity; } }
-
         /* ====== Tabs & FAQ ====== */
         function switchTab(tabName, btn) {
             document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
@@ -1304,18 +1260,15 @@
                 alert('Seleziona colore e taglia prima di procedere.');
                 return;
             }
-            // Memorizza quantità e variant in localStorage
-            localStorage.setItem('lh360_selected_quantity', quantity);
             if (selectedVariantId) localStorage.setItem('lh360_selected_variant_id', selectedVariantId);
 
             if (buyNowBtn.dataset.stripeLink) {
                 try {
                     localStorage.setItem('lh360_last_product', JSON.stringify({ sku: prod.sku, title: prod.title, ts: Date.now() }));
                 } catch (e) {}
-                // Append quantità e variant_id (quantità ignorata da Stripe, ma per futuro backend)
+                // Append variant_id
                 let link = buyNowBtn.dataset.stripeLink;
-                link += (link.includes('?') ? '&' : '?') + `quantity=${quantity}`;
-                if (selectedVariantId) link += `&variant_id=${selectedVariantId}`;
+                if (selectedVariantId) link += (link.includes('?') ? '&' : '?') + `variant_id=${selectedVariantId}`;
                 window.location.href = link;
             } else {
                 alert('Nessun link di pagamento configurato per questo prodotto. Verrai reindirizzato al form di contatto.');
@@ -1329,14 +1282,14 @@
             try { cart = cartRaw ? JSON.parse(cartRaw) : []; } catch(e){ cart = []; }
             const existing = cart.find(i => i.sku === prod.sku && i.variant_id === selectedVariantId);
             if (existing) {
-                existing.qty = (existing.qty || 1) + quantity;
+                existing.qty = (existing.qty || 1) + 1;
             } else {
                 cart.push({
                     sku: prod.sku,
                     title: prod.title,
                     price: prod.price || 0,
                     currency: prod.currency || 'EUR',
-                    qty: quantity,
+                    qty: 1,
                     variant_id: selectedVariantId || '',
                     timestamp: Date.now()
                 });
