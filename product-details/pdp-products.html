@@ -1300,16 +1300,77 @@
         };
     }
 
-    // Nuova funzione per aggiornare variant selezionato (invariato)
+    // Nuova funzione per aggiornare variant selezionato (ora usa shop.json -> printful_variant_ids)
     function updateSelectedVariant(prod) {
-        if (prod.variants && Array.isArray(prod.variants)) {
-            const variant = prod.variants.find(v => v.color === selectedColor && v.size === selectedSize);
+        // Reset
+        selectedVariantId = null;
+        if (!selectedColor || !selectedSize) return;
+
+        // Prefer the centralized mapping in printful_variant_ids (products/shop.json)
+        const variants = (prod && Array.isArray(prod.printful_variant_ids)) ? prod.printful_variant_ids : (currentProduct && Array.isArray(currentProduct.printful_variant_ids) ? currentProduct.printful_variant_ids : []);
+
+        if (variants.length > 0) {
+            // If variants are objects like { color, size, variant_id }
+            if (typeof variants[0] === 'object') {
+                const match = variants.find(v => v && v.color && v.size && String(v.color).toLowerCase() === String(selectedColor).toLowerCase() && String(v.size) === String(selectedSize));
+                if (match) {
+                    selectedVariantId = match.variant_id;
+                    return;
+                }
+            } else {
+                // Legacy array (strings / base ids) - attempt best-effort mapping
+                // First try to find in prod.variants for backward compatibility
+                if (prod && Array.isArray(prod.variants)) {
+                    const variant = prod.variants.find(v => v.color && v.size && String(v.color).toLowerCase() === String(selectedColor).toLowerCase() && v.size === selectedSize);
+                    if (variant) { selectedVariantId = variant.variant_id; return; }
+                }
+
+                // Try to compose variant_id from base id + color + size using color index
+                const baseIds = variants;
+                const colors = (prod && prod.colors) ? prod.colors : (currentProduct && currentProduct.colors ? currentProduct.colors : []);
+                let idx = -1;
+                try { idx = colors.findIndex(c => String(c).toLowerCase() === String(selectedColor).toLowerCase()); } catch (e) { idx = -1; }
+                if (idx >= 0 && idx < baseIds.length) {
+                    const base = baseIds[idx];
+                    const colorNoHash = String(selectedColor).replace(/^#/, '').toUpperCase();
+                    selectedVariantId = `${base}-${colorNoHash}-${selectedSize}`;
+                    return;
+                }
+
+                // Fallback: use first base id
+                if (baseIds.length > 0) {
+                    const base = baseIds[0];
+                    const colorNoHash = String(selectedColor).replace(/^#/, '').toUpperCase();
+                    selectedVariantId = `${base}-${colorNoHash}-${selectedSize}`;
+                    return;
+                }
+            }
+        }
+
+        // If we reached here, no variant found in centralized mapping. As last resort, try older prod.variants again.
+        if (prod && Array.isArray(prod.variants)) {
+            const variant = prod.variants.find(v => v.color && v.size && String(v.color).toLowerCase() === String(selectedColor).toLowerCase() && v.size === selectedSize);
             if (variant) {
                 selectedVariantId = variant.variant_id;
-                // Qui potresti aggiornare prezzo o altro se varianti hanno prezzi diversi
-            } else {
-                selectedVariantId = null;
+                return;
             }
+        }
+    }
+
+        // Fallback: se per qualche motivo non troviamo la corrispondenza, cerca in prod.variants (compatibilità retroattiva)
+        if (prod && Array.isArray(prod.variants)) {
+            const variant = prod.variants.find(v => v.color && v.size && String(v.color).toLowerCase() === String(selectedColor).toLowerCase() && v.size === selectedSize);
+            if (variant) {
+                selectedVariantId = variant.variant_id;
+                return;
+            }
+        }
+
+        // Ultimo fallback: costruzione generica usando il primo baseId disponibile
+        if (baseIds.length > 0) {
+            const base = baseIds[0];
+            const colorNoHash = String(selectedColor).replace(/^#/, '').toUpperCase();
+            selectedVariantId = `${base}-${colorNoHash}-${selectedSize}`;
         }
     }
 
