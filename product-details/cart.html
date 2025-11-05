@@ -713,19 +713,30 @@
 
         // Funzione per preparare i dati del carrello e reindirizzare a Stripe
         function initStripeCheckout() {
-            if (cart.length === 0) {
-                alert("Il carrello è vuoto.");
-                return;
-            }
+    if (cart.length === 0) {
+        alert("Il carrello è vuoto.");
+        return;
+    }
 
-            const cartItemsForCheckout = cart.map(item => ({
-                id: item.id, // Assumendo che ogni item nel carrello abbia un ID unico
-                title: item.title,
-                price: item.price,
-                qty: item.qty,
-                color: item.color,
-                size: item.size
-            }));
+    const cartItemsForCheckout = cart.map(item => {
+        // Sanificazione dei dati: assicurati che price e qty siano numeri validi
+        const validatedPrice = parseFloat(item.price);
+        const validatedQty = parseInt(item.qty);
+
+        if (isNaN(validatedPrice) || validatedPrice <= 0 || isNaN(validatedQty) || validatedQty <= 0 || !item.title) {
+             // Se un oggetto non è valido, interrompi o ignora (è meglio lanciare un errore)
+             throw new Error(`Articolo non valido nel carrello: ${item.title || 'Sconosciuto'}. Prezzo: ${item.price}, Qty: ${item.qty}`);
+        }
+
+        return {
+            id: item.id,
+            title: item.title,
+            price: validatedPrice,
+            qty: validatedQty,
+            color: item.color,
+            size: item.size
+        };
+    });
 
             // Impedisce clic multipli
             const checkoutBtn = document.querySelector('.checkout-btn');
