@@ -662,7 +662,7 @@
                 itemElement.style.transform = 'translateX(-2rem)';
                 setTimeout(() => {
                     cart.splice(index, 1);
-                    localStorage.setItem('lh360_cart', JSON.stringify(cart));
+                    localStorage.setProperty('lh360_cart', JSON.stringify(cart));
                     renderCart();
                 }, 300);
             }
@@ -709,11 +709,11 @@
             updateSummary(); // Ensure count is 0 even on empty
         }
 
-        // Handle checkout with CORS proxy
-        async function handleCheckout() {
+        // Handle checkout with form submission to bypass CORS
+        function handleCheckout() {
             if (cart.length === 0) return;
 
-            const webAppUrl = 'https://script.google.com/macros/s/AKfycbxrzrp7QHT-N8SbwUcfE92z7Jio4azBIO_JRwttQ8gbyq8lKeAmYel9G7WYNX8SQcWd/exec';
+            const webAppUrl = 'https://script.google.com/macros/s/AKfycbxrZrp0HT-NBSwUFE927j104aZB10_Jrwt0g8byg81aKmAye96g/exec';
 
             const payload = {
                 items: cart.map(item => ({
@@ -726,22 +726,20 @@
                 }))
             };
 
-            const proxyUrl = 'https://corsproxy.io/?' + encodeURIComponent(webAppUrl + '?data=' + encodeURIComponent(JSON.stringify(payload)));
+            const form = document.createElement('form');
+            form.method = 'POST';
+            form.action = webAppUrl;
+            form.target = '_blank'; // Open in new tab to avoid leaving the page
 
-            try {
-                const response = await fetch(proxyUrl);
-                if (!response.ok) throw new Error('Errore nella creazione della sessione');
+            const input = document.createElement('input');
+            input.type = 'hidden';
+            input.name = 'data';
+            input.value = JSON.stringify(payload);
 
-                const data = await response.json();
-                if (data.url) {
-                    window.location.href = data.url;
-                } else {
-                    alert('Errore: ' + (data.error || 'Sconosciuto'));
-                }
-            } catch (error) {
-                console.error('Errore checkout:', error);
-                alert('Si è verificato un errore durante il checkout. Riprova.');
-            }
+            form.appendChild(input);
+            document.body.appendChild(form);
+            form.submit();
+            document.body.removeChild(form);
         }
 
         // Check for success parameter
