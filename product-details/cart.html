@@ -478,7 +478,7 @@
         <!-- Header -->
         <div class="cart-header">
             <h1 class="cart-title">Il Tuo Carrello</h1>
-            <p class="cart-subtitle" id="itemCount">3 Articoli</p>
+            <p class="cart-subtitle" id="itemCount">0 Articoli</p>
         </div>
 
         <div class="cart-layout">
@@ -498,21 +498,21 @@
                         <span class="progress-highlight">€ 150</span>
                     </div>
                     <div class="progress-bar">
-                        <div class="progress-fill" id="progressFill" style="width: 100%;"></div>
+                        <div class="progress-fill" id="progressFill" style="width: 0%;"></div>
                     </div>
                 </div>
 
                 <div class="summary-row">
                     <span class="summary-label">Subtotale</span>
-                    <span class="summary-value" id="subtotal">€ 1.511,00</span>
+                    <span class="summary-value" id="subtotal">€ 0,00</span>
                 </div>
                 <div class="summary-row">
                     <span class="summary-label">Spedizione</span>
-                    <span class="summary-value" id="shipping" style="color: #34d399;">Gratuita</span>
+                    <span class="summary-value" id="shipping">€ 15,00</span>
                 </div>
                 <div class="summary-row">
                     <span class="summary-label">Sconto</span>
-                    <span class="summary-value" id="discount" style="color: #34d399;">- € 120,00</span>
+                    <span class="summary-value" id="discount" style="color: #34d399;">- € 0,00</span>
                 </div>
 
                 <!-- Promo Code -->
@@ -526,7 +526,7 @@
 
                 <div class="summary-row summary-total">
                     <span class="summary-label">Totale</span>
-                    <span class="summary-value" id="total">€ 1.391,00</span>
+                    <span class="summary-value" id="total">€ 0,00</span>
                 </div>
 
                 <button class="checkout-btn">Procedi al Checkout</button>
@@ -587,13 +587,7 @@
     <script>
         let cart = JSON.parse(localStorage.getItem('lh360_cart')) || [];
 
-        const colorNameMap = {
-            '#000000': 'Nero',
-            '#FFFFFF': 'Bianco'
-            // Aggiungi altri colori se necessari
-        };
-
-        // Render cart items dynamically
+        // Render cart items dynamically (no quantity display/modify)
         function renderCart() {
             const cartItemsContainer = document.getElementById('cartItems');
             cartItemsContainer.innerHTML = '';
@@ -601,25 +595,26 @@
                 checkEmptyCart();
                 return;
             }
-            // Group by sku + variant_id
-            const grouped = cart.reduce((acc, item) => {
-                const key = `${item.sku}-${item.variant_id}`;
-                if (!acc[key]) {
-                    acc[key] = { ...item, qty: 0 };
-                }
-                acc[key].qty += item.qty || 1;
-                return acc;
-            }, {});
-
-            Object.values(grouped).forEach((item, index) => {
-                let colorHex = '', colorName = '', size = '';
-                if (item.variant_id) {
-                    const parts = item.variant_id.split('-');
-                    if (parts.length >= 2) {
-                        colorHex = '#' + parts[1].replace('#', '');
-                        size = parts[2] || '';
-                        colorName = colorNameMap[colorHex] || '';
+            cart.forEach((item, index) => {
+                let variantHTML = '';
+                if (item.color || item.size) {
+                    variantHTML = '<div class="item-variant">';
+                    if (item.color) {
+                        variantHTML += `
+                            <div class="variant-detail">
+                                <span class="color-dot" style="background-color: ${item.color};"></span>
+                                <span>Colore</span>
+                            </div>
+                        `;
                     }
+                    if (item.size) {
+                        variantHTML += `
+                            <div class="variant-detail">
+                                <span>Taglia ${item.size}</span>
+                            </div>
+                        `;
+                    }
+                    variantHTML += '</div>';
                 }
                 const itemElement = document.createElement('div');
                 itemElement.className = 'cart-item';
@@ -630,26 +625,13 @@
                     </div>
                     <div class="item-details">
                         <div class="item-name">${item.title}</div>
-                        <div class="item-variant">
-                            ${colorHex ? `
-                                <div class="variant-detail">
-                                    <span class="color-dot" style="background-color: ${colorHex};"></span>
-                                    <span>${colorName}</span>
-                                </div>
-                            ` : ''}
-                            ${size ? `
-                                <div class="variant-detail">
-                                    <span>Taglia ${size}</span>
-                                </div>
-                            ` : ''}
-                        </div>
+                        ${variantHTML}
                         <div class="item-actions">
-                            <button class="remove-btn" onclick="removeItem('${item.sku}', '${item.variant_id}')">Rimuovi</button>
+                            <button class="remove-btn" onclick="removeItem(${index})">Rimuovi</button>
                         </div>
                     </div>
                     <div class="item-price-section">
-                        <div class="item-original-price">${item.originalPrice ? '€ ' + item.originalPrice.toFixed(2) : ''}</div>
-                        <div class="item-price">€ ${(item.price * item.qty).toFixed(2)}</div>
+                        <div class="item-price">€ ${item.price.toFixed(2)}</div>
                     </div>
                 `;
                 cartItemsContainer.appendChild(itemElement);
@@ -658,22 +640,28 @@
         }
 
         // Remove item
-        function removeItem(sku, variant_id) {
-            cart = cart.filter(item => !(item.sku === sku && item.variant_id === variant_id));
-            localStorage.setItem('lh360_cart', JSON.stringify(cart));
-            renderCart();
+        function removeItem(index) {
+            const itemElement = document.querySelector(`[data-id="${index}"]`);
+            if (itemElement) {
+                itemElement.style.opacity = '0';
+                itemElement.style.transform = 'translateX(-2rem)';
+                setTimeout(() => {
+                    cart.splice(index, 1);
+                    localStorage.setItem('lh360_cart', JSON.stringify(cart));
+                    renderCart();
+                }, 300);
+            }
         }
 
-        // Update summary
+        // Update summary (uses internal qty for calculations, no display)
         function updateSummary() {
             let subtotal = 0;
             let itemCount = 0;
-            let discount = 0; // Assume logic for discount if needed
+            let discount = 0; // No originalPrice, set to 0
 
             cart.forEach(item => {
-                subtotal += item.price * (item.qty || 1);
-                itemCount += item.qty || 1;
-                if (item.originalPrice) discount += (item.originalPrice - item.price) * (item.qty || 1);
+                subtotal += item.price * item.qty;
+                itemCount += item.qty;
             });
 
             const shipping = subtotal >= 150 ? 0 : 15;
@@ -681,7 +669,7 @@
 
             document.getElementById('subtotal').textContent = `€ ${subtotal.toLocaleString('it-IT', { minimumFractionDigits: 2 })}`;
             document.getElementById('shipping').textContent = shipping === 0 ? 'Gratuita' : `€ ${shipping.toFixed(2)}`;
-            document.getElementById('discount').textContent = discount > 0 ? `- € ${discount.toFixed(2)}` : '- € 0.00';
+            document.getElementById('discount').textContent = `- € ${discount.toFixed(2)}`;
             document.getElementById('total').textContent = `€ ${total.toLocaleString('it-IT', { minimumFractionDigits: 2 })}`;
             document.getElementById('itemCount').textContent = `${itemCount} Articoli`;
 
