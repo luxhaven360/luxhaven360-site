@@ -4,7 +4,6 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Il Tuo Carrello</title>
-    <script src="https://js.stripe.com/v3/"></script>
     <style>
         * {
             margin: 0;
@@ -452,18 +451,11 @@
             font-size: 0.875rem;
         }
 
-        @media (max-width: 1200px) {
+        @media (max-width: 768px) {
             .cart-layout {
                 grid-template-columns: 1fr;
             }
 
-            .cart-summary {
-                position: static;
-                margin-top: 3rem;
-            }
-        }
-
-        @media (max-width: 768px) {
             .cart-item {
                 grid-template-columns: 120px 1fr;
                 gap: 1.5rem;
@@ -536,7 +528,7 @@
                     <span class="summary-value" id="total">€ 0,00</span>
                 </div>
 
-                <button class="checkout-btn">Procedi al Checkout</button>
+                <button class="checkout-btn" id="checkoutBtn">Procedi al Checkout</button>
 
                 <div class="trust-badges">
                     <div class="trust-badge">
@@ -701,94 +693,57 @@
             updateSummary(); // Ensure count is 0 even on empty
         }
 
-        // Initialize (deve rimanere)
+        // Initialize
         renderCart();
 
-        // ----------------------------------------------------
-        // NUOVE FUNZIONI PER STRIPE CHECKOUT (DA AGGIUNGERE)
-        // ----------------------------------------------------
+        // Checkout integration with JSONP
+        const checkoutBtn = document.getElementById('checkoutBtn');
+        const webAppUrl = 'https://script.google.com/macros/s/AKfycbzA9QQKDKw9xy9sbGooA9ZFojUapvnW30BiWimuyXTrs7dQbVUiRUsWB567pmuNlzQ/exec'; // Replace with your deployed Apps Script web app URL
 
-        // **IMPORTANTE**: SOSTITUISCI CON LA TUA WEB APP URL DI GOOGLE APPS SCRIPT
-        const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxnmExnVKTXjWhhvv__tp_aUktrsEUBvvmEI8QeoMcvcRbUtF9L7nyjFpLGf027P9L6/exec'; // <--- AGGIORNA QUESTO
-
-        // Funzione per preparare i dati del carrello e reindirizzare a Stripe
-        function initStripeCheckout() {
-    if (cart.length === 0) {
-        alert("Il carrello è vuoto.");
-        return;
-    }
-
-    const cartItemsForCheckout = cart.map(item => {
-        // Sanificazione dei dati: assicurati che price e qty siano numeri validi
-        const validatedPrice = parseFloat(item.price);
-        const validatedQty = parseInt(item.qty);
-
-        if (isNaN(validatedPrice) || validatedPrice <= 0 || isNaN(validatedQty) || validatedQty <= 0 || !item.title) {
-             // Se un oggetto non è valido, interrompi o ignora (è meglio lanciare un errore)
-             throw new Error(`Articolo non valido nel carrello: ${item.title || 'Sconosciuto'}. Prezzo: ${item.price}, Qty: ${item.qty}`);
-        }
-
-        return {
-            id: item.id,
-            title: item.title,
-            price: validatedPrice,
-            qty: validatedQty,
-            color: item.color,
-            size: item.size
+        // Global callback function
+        window.handleCheckoutResponse = function(response) {
+            if (response.error) {
+                alert('Errore durante il checkout: ' + response.error);
+            } else {
+                window.location.href = response.url;
+            }
+            // Remove the script tag
+            const script = document.getElementById('checkout-script');
+            if (script) script.remove();
         };
-    });
 
-            // Impedisce clic multipli
-            const checkoutBtn = document.querySelector('.checkout-btn');
-            checkoutBtn.disabled = true;
-            checkoutBtn.textContent = 'Reindirizzamento...';
+        checkoutBtn.addEventListener('click', () => {
+            if (cart.length === 0) {
+                alert('Il carrello è vuoto!');
+                return;
+            }
 
-            fetch(APPS_SCRIPT_URL, {
-                method: 'POST',
-                body: JSON.stringify({ 
-                    action: 'create_checkout_session',
-                    cartItems: cartItemsForCheckout,
-                    metadata: { source: 'cart_full_checkout' }
-                }),
-                headers: {
-                    // Questa intestazione è cruciale per dire ad Apps Script che stai inviando testo,
-                    // il che aiuta ad aggirare i problemi CORS per le risposte text/html / text/plain
-                    'Content-Type': 'text/plain;charset=utf-8', 
-                },
-                mode: 'cors'
-            })
-            .then(response => {
-                // Apps Script risponde con text/plain o text/html per evitare CORS.
-                // Leggiamo la risposta come testo.
-                return response.text(); 
-            })
-            .then(text => {
-                // Ora analizziamo il testo come JSON.
-                const data = JSON.parse(text);
+            const subtotal = cart.reduce((sum, item) => sum + item.price * (item.qty || 1), 0);
+            const shipping = subtotal >= 150 ? 0 : 15;
 
-                if (data.sessionId) {
-                    // Reindirizza l'utente alla pagina di Checkout di Stripe
-                    const stripe = Stripe(data.publishableKey);
-                    stripe.redirectToCheckout({
-                        sessionId: data.sessionId
-                    });
-                } else {
-                    alert('Errore nella creazione della sessione di checkout: ' + (data.error || 'Errore sconosciuto'));
-                    checkoutBtn.disabled = false;
-                    checkoutBtn.textContent = 'Procedi al Checkout';
-                }
-            })
-            .catch(error => {
-                console.error('Errore nel checkout:', error);
-                alert('Si è verificato un errore durante l\'avvio del checkout. Riprova.');
-                checkoutBtn.disabled = false;
-                checkoutBtn.textContent = 'Procedi al Checkout';
-            });
-        }
+            const data = {
+                cart: cart.map(item => ({
+                    title: item.title,
+                    price: item.price,
+                    qty: item.qty || 1,
+                    color: item.color || '',
+                    size: item.size || '',
+                    currency: item.currency || 'EUR'
+                })),
+                shipping: shipping
+            };
 
-        // ----------------------------------------------------
-        // Associa la nuova funzione al pulsante (DA AGGIUNGERE)
-        document.querySelector('.checkout-btn').addEventListener('click', initStripeCheckout);
+            const dataStr = encodeURIComponent(JSON.stringify(data));
+            const callback = 'handleCheckoutResponse';
+
+            const scriptUrl = `${webAppUrl}?data=${dataStr}&callback=${callback}`;
+
+            // Create and append script tag
+            const script = document.createElement('script');
+            script.id = 'checkout-script';
+            script.src = scriptUrl;
+            document.body.appendChild(script);
+        });
     </script>
-<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'999f658afdfaeea5',t:'MTc2MjM3NzY0Mi4wMDAwMDA='};var a=document.createElement('script');a.nonce='';a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+</body>
 </html>
