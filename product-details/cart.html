@@ -734,22 +734,27 @@
 
             fetch(APPS_SCRIPT_URL, {
                 method: 'POST',
-                // Dati inviati come JSON
                 body: JSON.stringify({ 
                     action: 'create_checkout_session',
                     cartItems: cartItemsForCheckout,
                     metadata: { source: 'cart_full_checkout' }
                 }),
                 headers: {
-                    'Content-Type': 'text/plain;charset=utf-8',
+                    // Questa intestazione è cruciale per dire ad Apps Script che stai inviando testo,
+                    // il che aiuta ad aggirare i problemi CORS per le risposte text/html / text/plain
+                    'Content-Type': 'text/plain;charset=utf-8', 
                 },
                 mode: 'cors'
             })
             .then(response => {
-                if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-                return response.json();
+                // Apps Script risponde con text/plain o text/html per evitare CORS.
+                // Leggiamo la risposta come testo.
+                return response.text(); 
             })
-            .then(data => {
+            .then(text => {
+                // Ora analizziamo il testo come JSON.
+                const data = JSON.parse(text);
+
                 if (data.sessionId) {
                     // Reindirizza l'utente alla pagina di Checkout di Stripe
                     const stripe = Stripe(data.publishableKey);
