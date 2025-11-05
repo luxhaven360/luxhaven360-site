@@ -4,7 +4,6 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Il Tuo Carrello</title>
-    <script src="https://js.stripe.com/v3/"></script>
     <style>
         * {
             margin: 0;
@@ -452,18 +451,11 @@
             font-size: 0.875rem;
         }
 
-        @media (max-width: 1200px) {
+        @media (max-width: 768px) {
             .cart-layout {
                 grid-template-columns: 1fr;
             }
 
-            .cart-summary {
-                position: static;
-                margin-top: 3rem;
-            }
-        }
-
-        @media (max-width: 768px) {
             .cart-item {
                 grid-template-columns: 120px 1fr;
                 gap: 1.5rem;
@@ -592,23 +584,6 @@
     </div>
 
     <script>
-        // Sostituisci con la tua chiave publishable Stripe
-        const stripe = Stripe('pk_test_51SNyL313nkSVo9XZyhMGIN7IgYjtKtaVZJACjcZvcFpaGXxFziU1QskI95o6pLD1X7IghAAzr2q3qQpNNpvtLMUw00b6GnSa1W'); // <-- Inserisci qui la tua PK Stripe
-
-        // Sostituisci con l'URL del tuo web app Apps Script deployato
-        const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzA9QQKDKw9xy9sbGooA9ZFojUapvnW30BiWimuyXTrs7dQbVUiRUsWB567pmuNlzQ/exec'; // <-- Inserisci qui l'URL del web app
-
-        // Mappa colori (hex to name) - espandi con i tuoi colori
-        const colorMapReverse = {
-            '#000000': 'Black',
-            '#FFFFFF': 'White'
-            // Aggiungi altri: '#FF0000': 'Red', etc.
-        };
-
-        function getColorName(hex) {
-            return colorMapReverse[hex.toUpperCase()] || '';
-        }
-
         let cart = JSON.parse(localStorage.getItem('lh360_cart')) || [];
 
         // Render cart items dynamically (no quantity display/modify)
@@ -718,41 +693,57 @@
             updateSummary(); // Ensure count is 0 even on empty
         }
 
-        // Gestione checkout con Stripe
-        document.getElementById('checkoutBtn').addEventListener('click', async function() {
+        // Initialize
+        renderCart();
+
+        // Checkout integration with JSONP
+        const checkoutBtn = document.getElementById('checkoutBtn');
+        const webAppUrl = 'https://script.google.com/macros/s/AKfycbzAsMoSOa8rfbPuTKfIMfRKBD3t_pdgY_Ij5MNlNz3xOy4kY8GD7MqDioED8vdSls7S/exec'; // Replace with your deployed Apps Script web app URL
+
+        // Global callback function
+        window.handleCheckoutResponse = function(response) {
+            if (response.error) {
+                alert('Errore durante il checkout: ' + response.error);
+            } else {
+                window.location.href = response.url;
+            }
+            // Remove the script tag
+            const script = document.getElementById('checkout-script');
+            if (script) script.remove();
+        };
+
+        checkoutBtn.addEventListener('click', () => {
             if (cart.length === 0) {
                 alert('Il carrello è vuoto!');
                 return;
             }
 
-            try {
-                const response = await fetch(APPS_SCRIPT_URL, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({ cart: cart })
-                });
+            const subtotal = cart.reduce((sum, item) => sum + item.price * (item.qty || 1), 0);
+            const shipping = subtotal >= 150 ? 0 : 15;
 
-                if (!response.ok) {
-                    throw new Error('Errore nella creazione della sessione di checkout');
-                }
+            const data = {
+                cart: cart.map(item => ({
+                    title: item.title,
+                    price: item.price,
+                    qty: item.qty || 1,
+                    color: item.color || '',
+                    size: item.size || '',
+                    currency: item.currency || 'EUR'
+                })),
+                shipping: shipping
+            };
 
-                const { sessionId } = await response.json();
-                const { error } = await stripe.redirectToCheckout({ sessionId });
+            const dataStr = encodeURIComponent(JSON.stringify(data));
+            const callback = 'handleCheckoutResponse';
 
-                if (error) {
-                    console.error(error);
-                    alert('Errore durante il reindirizzamento al checkout: ' + error.message);
-                }
-            } catch (err) {
-                console.error(err);
-                alert('Si è verificato un errore: ' + err.message);
-            }
+            const scriptUrl = `${webAppUrl}?data=${dataStr}&callback=${callback}`;
+
+            // Create and append script tag
+            const script = document.createElement('script');
+            script.id = 'checkout-script';
+            script.src = scriptUrl;
+            document.body.appendChild(script);
         });
-
-        // Initialize
-        renderCart();
     </script>
 </body>
 </html>
