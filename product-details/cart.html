@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Il Tuo Carrello</title>
+    <script src="https://js.stripe.com/v3/"></script>
     <style>
         * {
             margin: 0;
@@ -700,8 +701,78 @@
             updateSummary(); // Ensure count is 0 even on empty
         }
 
-        // Initialize
+        // Initialize (deve rimanere)
         renderCart();
+
+        // ----------------------------------------------------
+        // NUOVE FUNZIONI PER STRIPE CHECKOUT (DA AGGIUNGERE)
+        // ----------------------------------------------------
+
+        // **IMPORTANTE**: SOSTITUISCI CON LA TUA WEB APP URL DI GOOGLE APPS SCRIPT
+        const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/TUA_WEB_APP_ID/exec'; // <--- AGGIORNA QUESTO
+
+        // Funzione per preparare i dati del carrello e reindirizzare a Stripe
+        function initStripeCheckout() {
+            if (cart.length === 0) {
+                alert("Il carrello è vuoto.");
+                return;
+            }
+
+            const cartItemsForCheckout = cart.map(item => ({
+                id: item.id, // Assumendo che ogni item nel carrello abbia un ID unico
+                title: item.title,
+                price: item.price,
+                qty: item.qty,
+                color: item.color,
+                size: item.size
+            }));
+
+            // Impedisce clic multipli
+            const checkoutBtn = document.querySelector('.checkout-btn');
+            checkoutBtn.disabled = true;
+            checkoutBtn.textContent = 'Reindirizzamento...';
+
+            fetch(APPS_SCRIPT_URL, {
+                method: 'POST',
+                // Dati inviati come JSON
+                body: JSON.stringify({ 
+                    action: 'create_checkout_session',
+                    cartItems: cartItemsForCheckout,
+                    metadata: { source: 'cart_full_checkout' }
+                }),
+                headers: {
+                    'Content-Type': 'text/plain;charset=utf-8',
+                },
+                mode: 'cors'
+            })
+            .then(response => {
+                if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+                return response.json();
+            })
+            .then(data => {
+                if (data.sessionId) {
+                    // Reindirizza l'utente alla pagina di Checkout di Stripe
+                    const stripe = Stripe(data.publishableKey);
+                    stripe.redirectToCheckout({
+                        sessionId: data.sessionId
+                    });
+                } else {
+                    alert('Errore nella creazione della sessione di checkout: ' + (data.error || 'Errore sconosciuto'));
+                    checkoutBtn.disabled = false;
+                    checkoutBtn.textContent = 'Procedi al Checkout';
+                }
+            })
+            .catch(error => {
+                console.error('Errore nel checkout:', error);
+                alert('Si è verificato un errore durante l\'avvio del checkout. Riprova.');
+                checkoutBtn.disabled = false;
+                checkoutBtn.textContent = 'Procedi al Checkout';
+            });
+        }
+
+        // ----------------------------------------------------
+        // Associa la nuova funzione al pulsante (DA AGGIUNGERE)
+        document.querySelector('.checkout-btn').addEventListener('click', initStripeCheckout);
     </script>
 <script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'999f658afdfaeea5',t:'MTc2MjM3NzY0Mi4wMDAwMDA='};var a=document.createElement('script');a.nonce='';a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
 </html>
