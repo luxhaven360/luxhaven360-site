@@ -709,8 +709,8 @@
             updateSummary(); // Ensure count is 0 even on empty
         }
 
-        // Handle checkout
-        async function handleCheckout() {
+        // Handle checkout with JSONP to avoid CORS
+        function handleCheckout() {
             if (cart.length === 0) return;
 
             const webAppUrl = 'https://script.google.com/macros/s/AKfycbxrzrp7QHT-N8SbwUcfE92z7Jio4azBIO_JRwttQ8gbyq8lKeAmYel9G7WYNX8SQcWd/exec';
@@ -726,18 +726,28 @@
                 }))
             };
 
-            try {
-                const encodedData = encodeURIComponent(JSON.stringify(payload));
-                const response = await fetch(`${webAppUrl}?data=${encodedData}`);
+            // Encode payload as base64 to handle special characters and URL length
+            const jsonString = JSON.stringify(payload);
+            const encodedData = btoa(unescape(encodeURIComponent(jsonString)));
 
-                if (!response.ok) throw new Error('Errore nella creazione della sessione');
+            const callbackName = 'checkoutCallback_' + Date.now();
 
-                const data = await response.json();
-                window.location.href = data.url;
-            } catch (error) {
-                console.error('Errore checkout:', error);
-                alert('Si è verificato un errore durante il checkout. Riprova.');
-            }
+            window[callbackName] = function(data) {
+                if (data.url) {
+                    window.location.href = data.url;
+                } else {
+                    alert('Errore nella creazione della sessione: ' + (data.error || 'Sconosciuto'));
+                }
+                // Cleanup
+                const script = document.getElementById(callbackName);
+                if (script) script.remove();
+                delete window[callbackName];
+            };
+
+            const script = document.createElement('script');
+            script.id = callbackName;
+            script.src = `${webAppUrl}?callback=${callbackName}&data=${encodeURIComponent(encodedData)}`;
+            document.body.appendChild(script);
         }
 
         // Check for success parameter
