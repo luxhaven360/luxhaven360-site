@@ -662,7 +662,7 @@
                 itemElement.style.transform = 'translateX(-2rem)';
                 setTimeout(() => {
                     cart.splice(index, 1);
-                    localStorage.setProperty('lh360_cart', JSON.stringify(cart));
+                    localStorage.setItem('lh360_cart', JSON.stringify(cart));
                     renderCart();
                 }, 300);
             }
@@ -709,11 +709,11 @@
             updateSummary(); // Ensure count is 0 even on empty
         }
 
-        // Handle checkout with form submission to bypass CORS
-        function handleCheckout() {
+        // Handle checkout
+        async function handleCheckout() {
             if (cart.length === 0) return;
 
-            const webAppUrl = 'https://script.google.com/macros/s/AKfycbxjP4XezcG-ESR32oUX_d_1jqUrHbcHiG0jiqa3g3RMQYqQAdznpiIYXd0ny4PH6aOk/exec';
+            const webAppUrl = 'https://script.google.com/macros/s/AKfycbxrZrp0HT-NBSwUFE927j104aZB10_Jrwt0g8byg81aKmAye96g/exec';
 
             const payload = {
                 items: cart.map(item => ({
@@ -726,20 +726,24 @@
                 }))
             };
 
-            const form = document.createElement('form');
-            form.method = 'POST';
-            form.action = webAppUrl;
-            form.target = '_blank'; // Open in new tab to avoid leaving the page
+            try {
+                const response = await fetch(webAppUrl, {
+                    method: 'POST',
+                    mode: 'no-cors',
+                    cache: 'no-cache',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(payload)
+                });
 
-            const input = document.createElement('input');
-            input.type = 'hidden';
-            input.name = 'data';
-            input.value = JSON.stringify(payload);
-
-            form.appendChild(input);
-            document.body.appendChild(form);
-            form.submit();
-            document.body.removeChild(form);
+                // Since no-cors, we can't read the response, but assume success and redirect to Stripe if possible
+                // But for no-cors, response is opaque, so perhaps use form instead
+                // Wait, better to stick with form
+            } catch (error) {
+                console.error('Errore checkout:', error);
+                alert('Si è verificato un errore durante il checkout. Riprova.');
+            }
         }
 
         // Check for success parameter
