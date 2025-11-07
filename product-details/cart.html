@@ -696,23 +696,11 @@
         // Initialize
         renderCart();
 
-        // Checkout integration with JSONP
+        // Checkout integration with fetch (POST)
         const checkoutBtn = document.getElementById('checkoutBtn');
         const webAppUrl = 'https://script.google.com/macros/s/AKfycbw25e-3soJJxFZrkaxQxwEqoSN8aCD9xX_Ah0Y4llXLFtLS-haG2PZRMsv92BzTAAff/exec'; // Replace with your deployed Apps Script web app URL
 
-        // Global callback function
-        window.handleCheckoutResponse = function(response) {
-            if (response.error) {
-                alert('Errore durante il checkout: ' + response.error);
-            } else {
-                window.location.href = response.url;
-            }
-            // Remove the script tag
-            const script = document.getElementById('checkout-script');
-            if (script) script.remove();
-        };
-
-        checkoutBtn.addEventListener('click', () => {
+        checkoutBtn.addEventListener('click', async () => {
             if (cart.length === 0) {
                 alert('Il carrello è vuoto!');
                 return;
@@ -733,16 +721,29 @@
                 shipping: shipping
             };
 
-            const dataStr = encodeURIComponent(JSON.stringify(data));
-            const callback = 'handleCheckoutResponse';
+            try {
+                const response = await fetch(webAppUrl, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(data)
+                });
 
-            const scriptUrl = `${webAppUrl}?data=${dataStr}&callback=${callback}`;
+                if (!response.ok) {
+                    throw new Error(`Errore HTTP: ${response.status}`);
+                }
 
-            // Create and append script tag
-            const script = document.createElement('script');
-            script.id = 'checkout-script';
-            script.src = scriptUrl;
-            document.body.appendChild(script);
+                const result = await response.json();
+                if (result.error) {
+                    alert('Errore durante il checkout: ' + result.error);
+                } else {
+                    window.location.href = result.url;
+                }
+            } catch (error) {
+                console.error('Errore fetch:', error);
+                alert('Si è verificato un errore durante il checkout. Controlla la console per dettagli o verifica l\'URL dell\'Apps Script.');
+            }
         });
     </script>
 </body>
