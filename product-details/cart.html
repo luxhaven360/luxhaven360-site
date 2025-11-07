@@ -698,55 +698,53 @@
         renderCart();
 
         // Checkout integration with JSONP
-        const checkoutBtn = document.getElementById('checkoutBtn');
-        const webAppUrl = 'https://script.google.com/macros/s/AKfycbxZkaUgNotZcqfel8oun6NzqcuMMXNMB5TcJXw3IdkKnAr0KuFJOEYBSx9pUtLDmiFn/exec'; // Replace with your deployed Apps Script web app URL
+const checkoutBtn = document.getElementById('checkoutBtn');
+const webAppUrl = 'https://script.google.com/macros/s/AKfycbxZkaUgNotZcqfel8oun6NzqcuMMXNMB5TcJXw3IdkKnAr0KuFJOEYBSx9pUtLDmiFn/exec'; // Usa il tuo URL deployato aggiornato
 
-        // Global callback function
-        window.handleCheckoutResponse = function(response) {
-            console.log('Response da Apps Script:', response);
-            if (response.error) {
-                alert('Errore durante il checkout: ' + response.error);
-            } else {
-                window.location.href = response.url;
-            }
-            // Remove the script tag
-            const script = document.getElementById('checkout-script');
-            if (script) script.remove();
-        };
-
-        checkoutBtn.addEventListener('click', async () => {
-  if (cart.length === 0) {
-    alert('Il carrello è vuoto!');
-    return;
-  }
-  const subtotal = cart.reduce((sum, item) => sum + item.price * (item.qty || 1), 0);
-  const shipping = subtotal >= 150 ? 0 : 15;
-  const data = {
-    cart: cart.map(item => ({
-      title: item.title,
-      price: item.price,
-      qty: item.qty || 1,
-      color: item.color || '',
-      size: item.size || '',
-      currency: item.currency || 'EUR'
-    })),
-    shipping: shipping
-  };
-  try {
-    const resp = await fetch(webAppUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(data)
-    });
-    const body = await resp.json();
-    if (body.error) {
-      alert('Errore: ' + body.error);
+// Global callback function
+window.handleCheckoutResponse = function(response) {
+    console.log('Response da Apps Script:', response); // Per debug nel console browser
+    if (response.error) {
+        alert('Errore durante il checkout: ' + response.error);
     } else {
-      window.location.href = body.url; // O usa Stripe.redirectToCheckout({sessionId: body.sessionId}) se preferisci
+        window.location.href = response.url;
     }
-  } catch (err) {
-    alert('Errore connessione: ' + err);
-  }
+    // Remove the script tag
+    const script = document.getElementById('checkout-script');
+    if (script) script.remove();
+};
+
+checkoutBtn.addEventListener('click', () => {
+    if (cart.length === 0) {
+        alert('Il carrello è vuoto!');
+        return;
+    }
+
+    const subtotal = cart.reduce((sum, item) => sum + item.price * (item.qty || 1), 0);
+    const shipping = subtotal >= 150 ? 0 : 15;
+
+    const data = {
+        cart: cart.map(item => ({
+            title: item.title,
+            price: item.price,
+            qty: item.qty || 1,
+            color: item.color || '',
+            size: item.size || '',
+            currency: item.currency || 'EUR'
+        })),
+        shipping: shipping
+    };
+
+    const dataStr = encodeURIComponent(JSON.stringify(data));
+    const callback = 'handleCheckoutResponse';
+
+    const scriptUrl = `${webAppUrl}?data=${dataStr}&callback=${callback}`;
+
+    // Create and append script tag
+    const script = document.createElement('script');
+    script.id = 'checkout-script';
+    script.src = scriptUrl;
+    document.body.appendChild(script);
 });
     </script>
 </body>
