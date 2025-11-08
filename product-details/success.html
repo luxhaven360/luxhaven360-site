@@ -557,11 +557,11 @@
         </div>
 
         <!-- Hero Section -->
-        <div class="hero-section">
-            <h1 class="success-title">Ordine Confermato</h1>
-            <p class="success-subtitle">Il tuo ordine è stato ricevuto con successo</p>
-            <div class="order-number">Ordine #OE-2024-11-087453</div>
-        </div>
+    <div class="hero-section">
+        <h1 class="success-title">Ordine Confermato</h1>
+        <p class="success-subtitle">Il tuo ordine è stato ricevuto con successo</p>
+        <div class="order-number" id="orderNumber">Caricamento ID ordine...</div>  <!-- Modificato: ID dinamico -->
+    </div>
 
         <!-- Info Cards -->
         <div class="info-cards">
@@ -706,7 +706,35 @@
         // Add entrance animations on load
         window.addEventListener('load', () => {
             document.body.style.opacity = '1';
+            loadOrderId();
         });
+
+        // Nuova: Carica ID ordine dinamicamente
+        function loadOrderId() {
+            const urlParams = new URLSearchParams(window.location.search);
+            const sessionId = urlParams.get('session_id');
+            if (!sessionId) {
+                document.getElementById('orderNumber').textContent = 'ID ordine non disponibile';
+                return;
+            }
+
+            const webAppUrl = 'https://script.google.com/macros/s/AKfycbxbB9G90lfi1ano4GEFgTr5df6qZCHz0ODsMbmMnXWJr0GRDAFQVUhkJ_NpIb6_Oby4/exec';  // Stesso URL del tuo web app
+            const script = document.createElement('script');
+            script.src = `${webAppUrl}?get_order_id=1&session_id=${sessionId}&callback=handleOrderIdResponse`;
+            document.body.appendChild(script);
+        }
+
+        // Callback per response JSONP
+        window.handleOrderIdResponse = function(response) {
+            const orderNumElem = document.getElementById('orderNumber');
+            if (response.error) {
+                orderNumElem.textContent = response.error;  // Es. "Ordine non ancora elaborato"
+                // Opzionale: riprova dopo 10s
+                setTimeout(loadOrderId, 10000);
+            } else {
+                orderNumElem.textContent = `Ordine #${response.order_id}`;
+            }
+        };
 
         // Simulate timeline progression (for demo)
         let currentStep = 1;
