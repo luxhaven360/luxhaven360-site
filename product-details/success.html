@@ -140,6 +140,11 @@
             border-radius: 2rem;
             border: 1px solid rgba(16, 185, 129, 0.2);
             margin-top: 1rem;
+            min-width: 200px;
+        }
+
+        .order-number.loading {
+            animation: pulse 1.5s infinite;
         }
 
         /* Info Cards */
@@ -557,11 +562,11 @@
         </div>
 
         <!-- Hero Section -->
-    <div class="hero-section">
-        <h1 class="success-title">Ordine Confermato</h1>
-        <p class="success-subtitle">Il tuo ordine è stato ricevuto con successo</p>
-        <div class="order-number" id="orderNumber">Caricamento ID ordine...</div>  <!-- Modificato: ID dinamico -->
-    </div>
+        <div class="hero-section">
+            <h1 class="success-title">Ordine Confermato</h1>
+            <p class="success-subtitle">Il tuo ordine è stato ricevuto con successo</p>
+            <div class="order-number loading" id="orderNumber">Caricamento ID ordine...</div>
+        </div>
 
         <!-- Info Cards -->
         <div class="info-cards">
@@ -702,47 +707,83 @@
         </div>
     </div>
 
-   <script>
-    window.addEventListener('load', () => {
-        document.body.style.opacity = '1';
-        loadOrderId();
-    });
+    <script>
+        // Add entrance animations on load
+        window.addEventListener('load', () => {
+            document.body.style.opacity = '1';
+            loadOrderId();
+        });
 
-    function loadOrderId() {
-        const urlParams = new URLSearchParams(window.location.search);
-        const sessionId = urlParams.get('session_id');
-        if (!sessionId) {
-            document.getElementById('orderNumber').textContent = 'ID ordine non disponibile';
-            return;
+        // MODIFICA: Carica ID ordine dinamicamente con retry automatico
+        let retryCount = 0;
+        const MAX_RETRIES = 6; // Massimo 6 tentativi (60 secondi)
+        
+        function loadOrderId() {
+            const urlParams = new URLSearchParams(window.location.search);
+            const sessionId = urlParams.get('session_id');
+            
+            if (!sessionId) {
+                document.getElementById('orderNumber').textContent = 'ID ordine non disponibile';
+                document.getElementById('orderNumber').classList.remove('loading');
+                return;
+            }
+
+            const webAppUrl = 'https://script.google.com/macros/s/AKfycbxbB9G90lfi1ano4GEFgTr5df6qZCHz0ODsMbmMnXWJr0GRDAFQVUhkJ_NpIb6_Oby4/exec';
+            
+            // Rimuovi script precedente se esiste
+            const oldScript = document.getElementById('order-id-script');
+            if (oldScript) {
+                oldScript.remove();
+            }
+            
+            const script = document.createElement('script');
+            script.id = 'order-id-script';
+            script.src = `${webAppUrl}?get_order_id=1&session_id=${encodeURIComponent(sessionId)}&callback=handleOrderIdResponse&_=${Date.now()}`;
+            document.body.appendChild(script);
         }
 
-        const webAppUrl = 'https://script.google.com/macros/s/AKfycbxbB9G90lfi1ano4GEFgTr5df6qZCHz0ODsMbmMnXWJr0GRDAFQVUhkJ_NpIb6_Oby4/exec';
-        const script = document.createElement('script');
-        script.src = `${webAppUrl}?get_order_id=1&session_id=${sessionId}&callback=handleOrderIdResponse`;
-        document.body.appendChild(script);
-    }
+        // Callback per response JSONP
+        window.handleOrderIdResponse = function(response) {
+            const orderNumElem = document.getElementById('orderNumber');
+            
+            if (response.error) {
+                // Se l'ordine non è ancora stato elaborato e non abbiamo raggiunto il massimo dei tentativi
+                if (response.error.includes('non ancora elaborato') && retryCount < MAX_RETRIES) {
+                    retryCount++;
+                    orderNumElem.textContent = `Caricamento ID ordine... (${retryCount}/${MAX_RETRIES})`;
+                    // Riprova dopo 10 secondi
+                    setTimeout(loadOrderId, 10000);
+                } else {
+                    // Dopo tutti i tentativi o altri errori
+                    orderNumElem.textContent = 'ID ordine in elaborazione';
+                    orderNumElem.classList.remove('loading');
+                }
+            } else {
+                // Successo: mostra l'ID ordine
+                orderNumElem.textContent = `Ordine #${response.order_id}`;
+                orderNumElem.classList.remove('loading');
+            }
+            
+            // Rimuovi lo script
+            const script = document.getElementById('order-id-script');
+            if (script) {
+                script.remove();
+            }
+        };
 
-    window.handleOrderIdResponse = function(response) {
-        const orderNumElem = document.getElementById('orderNumber');
-        if (response.error) {
-            orderNumElem.textContent = response.error;
-            setTimeout(loadOrderId, 8000); // Riprova ogni 8 secondi
-        } else {
-            orderNumElem.textContent = `Ordine #${response.order_id}`;
-        }
-    };
-
-    // Simulazione timeline (demo)
-    let currentStep = 1;
-    setInterval(() => {
-        if (currentStep < 4) {
-            const steps = document.querySelectorAll('.timeline-step');
-            steps[currentStep].classList.remove('active');
-            steps[currentStep].classList.add('completed');
-            currentStep++;
-            if (currentStep < 4) steps[currentStep].classList.add('active');
-        }
-    }, 5000);
-</script>
+        // Simulate timeline progression (for demo)
+        let currentStep = 1;
+        setInterval(() => {
+            if (currentStep < 4) {
+                const steps = document.querySelectorAll('.timeline-step');
+                steps[currentStep].classList.remove('active');
+                steps[currentStep].classList.add('completed');
+                currentStep++;
+                if (currentStep < 4) {
+                    steps[currentStep].classList.add('active');
+                }
+            }
+        }, 5000);
+    </script>
 </body>
 </html>
