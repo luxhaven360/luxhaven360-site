@@ -140,11 +140,6 @@
             border-radius: 2rem;
             border: 1px solid rgba(16, 185, 129, 0.2);
             margin-top: 1rem;
-            min-width: 200px;
-        }
-
-        .order-number.loading {
-            animation: pulse 1.5s infinite;
         }
 
         /* Info Cards */
@@ -565,7 +560,7 @@
     <div class="hero-section">
         <h1 class="success-title">Ordine Confermato</h1>
         <p class="success-subtitle">Il tuo ordine è stato ricevuto con successo</p>
-        <div class="order-number loading" id="orderNumber">Caricamento ID ordine...</div>
+        <div class="order-number" id="orderNumber">Caricamento ID ordine...</div>  <!-- Modificato: ID dinamico -->
     </div>
 
         <!-- Info Cards -->
@@ -681,7 +676,7 @@
                 <span>Traccia Spedizione</span>
                 <span>→</span>
             </a>
-            <a href="/luxhaven360-site/index.html" class="btn btn-secondary">
+            <a href="#" class="btn btn-secondary">
                 <span>Continua lo Shopping</span>
             </a>
         </div>
@@ -714,61 +709,31 @@
             loadOrderId();
         });
 
-        // MODIFICA 3: Carica ID ordine dinamicamente con retry automatico
-        let retryCount = 0;
-        const maxRetries = 6; // Max 6 tentativi (60 secondi)
-        
+        // Nuova: Carica ID ordine dinamicamente
         function loadOrderId() {
             const urlParams = new URLSearchParams(window.location.search);
             const sessionId = urlParams.get('session_id');
-            
             if (!sessionId) {
                 document.getElementById('orderNumber').textContent = 'ID ordine non disponibile';
-                document.getElementById('orderNumber').classList.remove('loading');
                 return;
             }
 
-            const webAppUrl = 'https://script.google.com/macros/s/AKfycbxbB9G90lfi1ano4GEFgTr5df6qZCHz0ODsMbmMnXWJr0GRDAFQVUhkJ_NpIb6_Oby4/exec';
+            const webAppUrl = 'https://script.google.com/macros/s/AKfycbxbB9G90lfi1ano4GEFgTr5df6qZCHz0ODsMbmMnXWJr0GRDAFQVUhkJ_NpIb6_Oby4/exec';  // Stesso URL del tuo web app
             const script = document.createElement('script');
-            script.id = 'order-id-script-' + Date.now();
-            script.src = `${webAppUrl}?get_order_id=1&session_id=${encodeURIComponent(sessionId)}&callback=handleOrderIdResponse&_=${Date.now()}`;
-            
-            // Timeout per rimuovere script in caso di errore
-            setTimeout(() => {
-                if (document.getElementById(script.id)) {
-                    script.remove();
-                }
-            }, 10000);
-            
+            script.src = `${webAppUrl}?get_order_id=1&session_id=${sessionId}&callback=handleOrderIdResponse`;
             document.body.appendChild(script);
         }
 
         // Callback per response JSONP
         window.handleOrderIdResponse = function(response) {
             const orderNumElem = document.getElementById('orderNumber');
-            
             if (response.error) {
-                // Ordine non ancora elaborato - retry automatico
-                if (retryCount < maxRetries) {
-                    retryCount++;
-                    orderNumElem.textContent = `Elaborazione in corso... (${retryCount}/${maxRetries})`;
-                    setTimeout(loadOrderId, 10000); // Riprova dopo 10 secondi
-                } else {
-                    orderNumElem.textContent = 'Ordine in elaborazione';
-                    orderNumElem.classList.remove('loading');
-                }
-            } else if (response.order_id) {
-                // Successo!
+                orderNumElem.textContent = response.error;  // Es. "Ordine non ancora elaborato"
+                // Opzionale: riprova dopo 10s
+                setTimeout(loadOrderId, 10000);
+            } else {
                 orderNumElem.textContent = `Ordine #${response.order_id}`;
-                orderNumElem.classList.remove('loading');
-                
-                // Animazione di successo
-                orderNumElem.style.animation = 'scaleIn 0.5s cubic-bezier(0.34, 1.56, 0.64, 1)';
             }
-            
-            // Rimuovi script tag usato
-            const scripts = document.querySelectorAll('[id^="order-id-script-"]');
-            scripts.forEach(s => s.remove());
         };
 
         // Simulate timeline progression (for demo)
