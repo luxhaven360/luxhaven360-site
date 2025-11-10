@@ -562,11 +562,11 @@
         </div>
 
         <!-- Hero Section -->
-        <div class="hero-section">
-            <h1 class="success-title">Ordine Confermato</h1>
-            <p class="success-subtitle">Il tuo ordine è stato ricevuto con successo</p>
-            <div class="order-number loading" id="orderNumber">Caricamento ID ordine...</div>
-        </div>
+    <div class="hero-section">
+        <h1 class="success-title">Ordine Confermato</h1>
+        <p class="success-subtitle">Il tuo ordine è stato ricevuto con successo</p>
+        <div class="order-number loading" id="orderNumber">Caricamento ID ordine...</div>
+    </div>
 
         <!-- Info Cards -->
         <div class="info-cards">
@@ -681,7 +681,7 @@
                 <span>Traccia Spedizione</span>
                 <span>→</span>
             </a>
-            <a href="#" class="btn btn-secondary">
+            <a href="/luxhaven360-site/index.html" class="btn btn-secondary">
                 <span>Continua lo Shopping</span>
             </a>
         </div>
@@ -714,9 +714,9 @@
             loadOrderId();
         });
 
-        // MODIFICA: Carica ID ordine dinamicamente con retry automatico
+        // MODIFICA 3: Carica ID ordine dinamicamente con retry automatico
         let retryCount = 0;
-        const MAX_RETRIES = 6; // Massimo 6 tentativi (60 secondi)
+        const maxRetries = 6; // Max 6 tentativi (60 secondi)
         
         function loadOrderId() {
             const urlParams = new URLSearchParams(window.location.search);
@@ -729,16 +729,17 @@
             }
 
             const webAppUrl = 'https://script.google.com/macros/s/AKfycbxbB9G90lfi1ano4GEFgTr5df6qZCHz0ODsMbmMnXWJr0GRDAFQVUhkJ_NpIb6_Oby4/exec';
-            
-            // Rimuovi script precedente se esiste
-            const oldScript = document.getElementById('order-id-script');
-            if (oldScript) {
-                oldScript.remove();
-            }
-            
             const script = document.createElement('script');
-            script.id = 'order-id-script';
+            script.id = 'order-id-script-' + Date.now();
             script.src = `${webAppUrl}?get_order_id=1&session_id=${encodeURIComponent(sessionId)}&callback=handleOrderIdResponse&_=${Date.now()}`;
+            
+            // Timeout per rimuovere script in caso di errore
+            setTimeout(() => {
+                if (document.getElementById(script.id)) {
+                    script.remove();
+                }
+            }, 10000);
+            
             document.body.appendChild(script);
         }
 
@@ -747,28 +748,27 @@
             const orderNumElem = document.getElementById('orderNumber');
             
             if (response.error) {
-                // Se l'ordine non è ancora stato elaborato e non abbiamo raggiunto il massimo dei tentativi
-                if (response.error.includes('non ancora elaborato') && retryCount < MAX_RETRIES) {
+                // Ordine non ancora elaborato - retry automatico
+                if (retryCount < maxRetries) {
                     retryCount++;
-                    orderNumElem.textContent = `Caricamento ID ordine... (${retryCount}/${MAX_RETRIES})`;
-                    // Riprova dopo 10 secondi
-                    setTimeout(loadOrderId, 10000);
+                    orderNumElem.textContent = `Elaborazione in corso... (${retryCount}/${maxRetries})`;
+                    setTimeout(loadOrderId, 10000); // Riprova dopo 10 secondi
                 } else {
-                    // Dopo tutti i tentativi o altri errori
-                    orderNumElem.textContent = 'ID ordine in elaborazione';
+                    orderNumElem.textContent = 'Ordine in elaborazione';
                     orderNumElem.classList.remove('loading');
                 }
-            } else {
-                // Successo: mostra l'ID ordine
+            } else if (response.order_id) {
+                // Successo!
                 orderNumElem.textContent = `Ordine #${response.order_id}`;
                 orderNumElem.classList.remove('loading');
+                
+                // Animazione di successo
+                orderNumElem.style.animation = 'scaleIn 0.5s cubic-bezier(0.34, 1.56, 0.64, 1)';
             }
             
-            // Rimuovi lo script
-            const script = document.getElementById('order-id-script');
-            if (script) {
-                script.remove();
-            }
+            // Rimuovi script tag usato
+            const scripts = document.querySelectorAll('[id^="order-id-script-"]');
+            scripts.forEach(s => s.remove());
         };
 
         // Simulate timeline progression (for demo)
