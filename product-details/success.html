@@ -560,7 +560,7 @@
     <div class="hero-section">
         <h1 class="success-title">Ordine Confermato</h1>
         <p class="success-subtitle">Il tuo ordine è stato ricevuto con successo</p>
-        <div class="order-number" id="orderNumber">Caricamento ID ordine in corso...</div>
+        <div class="order-number" id="orderNumber">Caricamento ID ordine...</div>  <!-- Modificato: ID dinamico -->
     </div>
 
         <!-- Info Cards -->
@@ -702,37 +702,53 @@
         </div>
     </div>
 
-        <script>
-    window.addEventListener('load', () => {
-        document.body.style.opacity = '1';
-        loadOrderId();
-    });
+    <script>
+        // Add entrance animations on load
+        window.addEventListener('load', () => {
+            document.body.style.opacity = '1';
+            loadOrderId();
+        });
 
-    function loadOrderId() {
-        const urlParams = new URLSearchParams(window.location.search);
-        const sessionId = urlParams.get('session_id');
-        const elem = document.getElementById('orderNumber');
+        // Nuova: Carica ID ordine dinamicamente
+        function loadOrderId() {
+            const urlParams = new URLSearchParams(window.location.search);
+            const sessionId = urlParams.get('session_id');
+            if (!sessionId) {
+                document.getElementById('orderNumber').textContent = 'ID ordine non disponibile';
+                return;
+            }
 
-        if (!sessionId) {
-            elem.textContent = 'ID ordine non trovato. Controlla la tua email.';
-            return;
+            const webAppUrl = 'https://script.google.com/macros/s/AKfycbylmEqqjD-m08fzT8unTG0B4GQGa7ww7vDOtgXrsigwcymZkvEj5Xi0BgiQDL7p8W8Q/exec';  // Stesso URL del tuo web app
+            const script = document.createElement('script');
+            script.src = `${webAppUrl}?get_order_id=1&session_id=${sessionId}&callback=handleOrderIdResponse`;
+            document.body.appendChild(script);
         }
 
-        const webAppUrl = 'https://script.google.com/macros/s/AKfycbylmEqqjD-m08fzT8unTG0B4GQGa7ww7vDOtgXrsigwcymZkvEj5Xi0BgiQDL7p8W8Q';
-        const script = document.createElement('script');
-        script.src = `${webAppUrl}?get_order_id=1&session_id=${sessionId}&callback=handleOrderIdResponse`;
-        document.body.appendChild(script);
-    }
+        // Callback per response JSONP
+        window.handleOrderIdResponse = function(response) {
+            const orderNumElem = document.getElementById('orderNumber');
+            if (response.error) {
+                orderNumElem.textContent = response.error;  // Es. "Ordine non ancora elaborato"
+                // Opzionale: riprova dopo 10s
+                setTimeout(loadOrderId, 10000);
+            } else {
+                orderNumElem.textContent = `Ordine #${response.order_id}`;
+            }
+        };
 
-    window.handleOrderIdResponse = function(response) {
-        const elem = document.getElementById('orderNumber');
-        if (response.error) {
-            elem.textContent = response.error;
-            setTimeout(loadOrderId, 5000); // riprova ogni 5 secondi
-        } else {
-            elem.textContent = `Ordine #${response.order_id}`;
-        }
-    };
-</script>
+        // Simulate timeline progression (for demo)
+        let currentStep = 1;
+        setInterval(() => {
+            if (currentStep < 4) {
+                const steps = document.querySelectorAll('.timeline-step');
+                steps[currentStep].classList.remove('active');
+                steps[currentStep].classList.add('completed');
+                currentStep++;
+                if (currentStep < 4) {
+                    steps[currentStep].classList.add('active');
+                }
+            }
+        }, 5000);
+    </script>
 </body>
 </html>
