@@ -703,42 +703,38 @@
     </div>
 
     <script>
-    window.addEventListener('load', () => {
-        document.body.style.opacity = '1';
-        const urlParams = new URLSearchParams(window.location.search);
-        const orderIdParam = urlParams.get('id_ordine');
-        if (orderIdParam) {
-            document.getElementById('orderNumber').textContent = `Ordine #${orderIdParam}`;
-            return;  // ID già nell'URL, mostra direttamente
-        }
-        loadOrderId();  // Altrimenti, carica e redirect
-    });
+        // Add entrance animations on load
+        window.addEventListener('load', () => {
+            document.body.style.opacity = '1';
+            loadOrderId();
+        });
 
-    function loadOrderId() {
-        const urlParams = new URLSearchParams(window.location.search);
-        const sessionId = urlParams.get('session_id');
-        if (!sessionId) {
-            document.getElementById('orderNumber').textContent = 'ID ordine non disponibile';
-            return;
-        }
+        // Nuova: Carica ID ordine dinamicamente
+        function loadOrderId() {
+            const urlParams = new URLSearchParams(window.location.search);
+            const sessionId = urlParams.get('session_id');
+            if (!sessionId) {
+                document.getElementById('orderNumber').textContent = 'ID ordine non disponibile';
+                return;
+            }
 
-        const webAppUrl = 'https://script.google.com/macros/s/AKfycbylmEqqjD-m08fzT8unTG0B4GQGa7ww7vDOtgXrsigwcymZkvEj5Xi0BgiQDL7p8W8Q/exec';
-        const script = document.createElement('script');
-        script.src = `${webAppUrl}?get_order_id=1&session_id=${sessionId}&callback=handleOrderIdResponse`;
-        document.body.appendChild(script);
-    }
+            const webAppUrl = 'https://script.google.com/macros/s/AKfycbylmEqqjD-m08fzT8unTG0B4GQGa7ww7vDOtgXrsigwcymZkvEj5Xi0BgiQDL7p8W8Q/exec';  // Stesso URL del tuo web app
+            const script = document.createElement('script');
+            script.src = `${webAppUrl}?get_order_id=1&session_id=${sessionId}&callback=handleOrderIdResponse`;
+            document.body.appendChild(script);
+        }
 
         // Callback per response JSONP
         window.handleOrderIdResponse = function(response) {
-        const orderNumElem = document.getElementById('orderNumber');
-        if (response.error) {
-            orderNumElem.textContent = response.error;
-            setTimeout(loadOrderId, 10000);  // Retry
-        } else {
-            // Nuova: Redirect con id_ordine nell'URL
-            window.location.href = `${window.location.pathname}?id_ordine=${response.order_id}`;
-        }
-    };
+            const orderNumElem = document.getElementById('orderNumber');
+            if (response.error) {
+                orderNumElem.textContent = response.error;  // Es. "Ordine non ancora elaborato"
+                // Opzionale: riprova dopo 10s
+                setTimeout(loadOrderId, 10000);
+            } else {
+                orderNumElem.textContent = `Ordine #${response.order_id}`;
+            }
+        };
 
         // Simulate timeline progression (for demo)
         let currentStep = 1;
@@ -756,4 +752,3 @@
     </script>
 </body>
 </html>
-
