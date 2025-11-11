@@ -703,70 +703,56 @@
     </div>
 
     <script>
-        // Add entrance animations on load
-        window.addEventListener('load', () => {
-            document.body.style.opacity = '1';
-            loadOrderId();
-        });
+  window.addEventListener('load', () => {
+      document.body.style.opacity = '1';
+      loadOrderId();
+  });
 
-        // Modificata: Prima prova a leggere dall'URL, poi fallback a chiamata dinamica
-        function loadOrderId() {
-            const urlParams = new URLSearchParams(window.location.search);
-            const orderIdFromUrl = urlParams.get('id_ordine');
-            const orderNumElem = document.getElementById('orderNumber');
+  function getUrlParam(name) {
+      const urlParams = new URLSearchParams(window.location.search);
+      return urlParams.get(name);
+  }
 
-            if (orderIdFromUrl) {
-                // Se presente in URL, mostra immediatamente
-                orderNumElem.textContent = `Ordine #${orderIdFromUrl}`;
-                return;
-            }
+  function loadOrderId() {
+      const preReservedId = getUrlParam('id_ordine'); // se presente mostriamo subito
+      if (preReservedId) {
+          document.getElementById('orderNumber').textContent = `Ordine #${preReservedId}`;
+          return;
+      }
 
-            // Fallback a chiamata JSONP con retry limitati
-            const sessionId = urlParams.get('session_id');
-            if (!sessionId) {
-                orderNumElem.textContent = 'ID ordine non disponibile';
-                return;
-            }
+      // fallback: se manca id_ordine, proviamo con session_id -> JSONP al web app
+      const sessionId = getUrlParam('session_id');
+      if (!sessionId) {
+          document.getElementById('orderNumber').textContent = 'ID ordine non disponibile';
+          return;
+      }
 
-            const webAppUrl = 'https://script.google.com/macros/s/AKfycbylmEqqjD-m08fzT8unTG0B4GQGa7ww7vDOtgXrsigwcymZkvEj5Xi0BgiQDL7p8W8Q/exec';  // Il tuo URL web app
-            let retryCount = 0;
-            const maxRetries = 6;  // Max 1 minuto (6 x 10s)
+      const webAppUrl = 'https://script.google.com/macros/s/AKfycbylmEqqjD-m08fzT8unTG0B4GQGa7ww7vDOtgXrsigwcymZkvEj5Xi0BgiQDL7p8W8Q/exec';
+      const script = document.createElement('script');
+      script.src = `${webAppUrl}?get_order_id=1&session_id=${encodeURIComponent(sessionId)}&callback=handleOrderIdResponse`;
+      script.async = true;
+      document.body.appendChild(script);
+  }
 
-            function fetchOrderId() {
-                const script = document.createElement('script');
-                script.src = `${webAppUrl}?get_order_id=1&session_id=${sessionId}&callback=handleOrderIdResponse`;
-                document.body.appendChild(script);
-            }
-
-            window.handleOrderIdResponse = function(response) {
-                if (response.error) {
-                    retryCount++;
-                    if (retryCount < maxRetries) {
-                        setTimeout(fetchOrderId, 10000);  // Riprova dopo 10s
-                    } else {
-                        orderNumElem.textContent = 'ID ordine temporaneamente non disponibile. Controlla la tua email.';
-                    }
-                } else {
-                    orderNumElem.textContent = `Ordine #${response.order_id}`;
-                }
-            };
-
-            fetchOrderId();  // Inizia la chiamata
-        }
-
-        // Simulate timeline progression (for demo) - invariato
-        let currentStep = 1;
-        setInterval(() => {
-            if (currentStep < 4) {
-                const steps = document.querySelectorAll('.timeline-step');
-                steps[currentStep].classList.remove('active');
-                steps[currentStep].classList.add('completed');
-                currentStep++;
-                if (currentStep < 4) {
-                    steps[currentStep].classList.add('active');
-                }
-            }
-        }, 5000);
-    </script>
+  // Callback JSONP
+  window.handleOrderIdResponse = function(response) {
+      const orderNumElem = document.getElementById('orderNumber');
+      if (!response) {
+          orderNumElem.textContent = 'Errore recupero ID ordine';
+          return;
+      }
+      if (response.error) {
+          orderNumElem.textContent = response.error;
+          // tentiamo nuovamente dopo 8 secondi (solo se errore temporaneo)
+          if (response.error && response.error.toString().toLowerCase().includes('non ancora elaborato')) {
+              setTimeout(loadOrderId, 8000);
+          }
+      } else if (response.order_id) {
+          orderNumElem.textContent = `Ordine #${response.order_id}`;
+      } else {
+          orderNumElem.textContent = 'ID ordine non disponibile';
+      }
+  };
+</script>
 </body>
 </html>
