@@ -560,7 +560,7 @@
     <div class="hero-section">
         <h1 class="success-title">Ordine Confermato</h1>
         <p class="success-subtitle">Il tuo ordine è stato ricevuto con successo</p>
-        <div class="order-number" id="orderNumber">Caricamento ID ordine...</div>  <!-- Modificato: ID dinamico -->
+        <div class="order-number" id="orderNumber">Caricamento ID ordine...</div>
     </div>
 
         <!-- Info Cards -->
@@ -709,34 +709,52 @@
             loadOrderId();
         });
 
-        // Nuova: Carica ID ordine dinamicamente
+        // Modificata: Prima prova a leggere dall'URL, poi fallback a chiamata dinamica
         function loadOrderId() {
             const urlParams = new URLSearchParams(window.location.search);
-            const sessionId = urlParams.get('session_id');
-            if (!sessionId) {
-                document.getElementById('orderNumber').textContent = 'ID ordine non disponibile';
+            const orderIdFromUrl = urlParams.get('id_ordine');
+            const orderNumElem = document.getElementById('orderNumber');
+
+            if (orderIdFromUrl) {
+                // Se presente in URL, mostra immediatamente
+                orderNumElem.textContent = `Ordine #${orderIdFromUrl}`;
                 return;
             }
 
-            const webAppUrl = 'https://script.google.com/macros/s/AKfycbylmEqqjD-m08fzT8unTG0B4GQGa7ww7vDOtgXrsigwcymZkvEj5Xi0BgiQDL7p8W8Q/exec';  // Stesso URL del tuo web app
-            const script = document.createElement('script');
-            script.src = `${webAppUrl}?get_order_id=1&session_id=${sessionId}&callback=handleOrderIdResponse`;
-            document.body.appendChild(script);
+            // Fallback a chiamata JSONP con retry limitati
+            const sessionId = urlParams.get('session_id');
+            if (!sessionId) {
+                orderNumElem.textContent = 'ID ordine non disponibile';
+                return;
+            }
+
+            const webAppUrl = 'https://script.google.com/macros/s/AKfycbylmEqqjD-m08fzT8unTG0B4GQGa7ww7vDOtgXrsigwcymZkvEj5Xi0BgiQDL7p8W8Q/exec';  // Il tuo URL web app
+            let retryCount = 0;
+            const maxRetries = 6;  // Max 1 minuto (6 x 10s)
+
+            function fetchOrderId() {
+                const script = document.createElement('script');
+                script.src = `${webAppUrl}?get_order_id=1&session_id=${sessionId}&callback=handleOrderIdResponse`;
+                document.body.appendChild(script);
+            }
+
+            window.handleOrderIdResponse = function(response) {
+                if (response.error) {
+                    retryCount++;
+                    if (retryCount < maxRetries) {
+                        setTimeout(fetchOrderId, 10000);  // Riprova dopo 10s
+                    } else {
+                        orderNumElem.textContent = 'ID ordine temporaneamente non disponibile. Controlla la tua email.';
+                    }
+                } else {
+                    orderNumElem.textContent = `Ordine #${response.order_id}`;
+                }
+            };
+
+            fetchOrderId();  // Inizia la chiamata
         }
 
-        // Callback per response JSONP
-        window.handleOrderIdResponse = function(response) {
-            const orderNumElem = document.getElementById('orderNumber');
-            if (response.error) {
-                orderNumElem.textContent = response.error;  // Es. "Ordine non ancora elaborato"
-                // Opzionale: riprova dopo 10s
-                setTimeout(loadOrderId, 10000);
-            } else {
-                orderNumElem.textContent = `Ordine #${response.order_id}`;
-            }
-        };
-
-        // Simulate timeline progression (for demo)
+        // Simulate timeline progression (for demo) - invariato
         let currentStep = 1;
         setInterval(() => {
             if (currentStep < 4) {
