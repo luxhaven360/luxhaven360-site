@@ -701,40 +701,45 @@
             </div>
         </div>
     </div>
-
+    
     <script>
+  // Add entrance animations on load
   window.addEventListener('load', () => {
       document.body.style.opacity = '1';
       loadOrderId();
   });
 
-  function getUrlParam(name) {
-      const urlParams = new URLSearchParams(window.location.search);
-      return urlParams.get(name);
-  }
-
+  // Carica ID ordine preferibilmente dall'URL (id_ordine), fallback a session_id via JSONP
   function loadOrderId() {
-      const preReservedId = getUrlParam('id_ordine'); // se presente mostriamo subito
-      if (preReservedId) {
-          document.getElementById('orderNumber').textContent = `Ordine #${preReservedId}`;
+      const urlParams = new URLSearchParams(window.location.search);
+      const explicitOrderId = urlParams.get('id_ordine') || urlParams.get('id') || null;
+      const sessionId = urlParams.get('session_id');
+
+      const orderNumElem = document.getElementById('orderNumber');
+
+      if (explicitOrderId) {
+          // Mostra direttamente l'ID ordine passato nell'URL
+          orderNumElem.textContent = `Ordine #${explicitOrderId}`;
           return;
       }
 
-      // fallback: se manca id_ordine, proviamo con session_id -> JSONP al web app
-      const sessionId = getUrlParam('session_id');
       if (!sessionId) {
-          document.getElementById('orderNumber').textContent = 'ID ordine non disponibile';
+          orderNumElem.textContent = 'ID ordine non disponibile';
           return;
       }
 
-      const webAppUrl = 'https://script.google.com/macros/s/AKfycbylmEqqjD-m08fzT8unTG0B4GQGa7ww7vDOtgXrsigwcymZkvEj5Xi0BgiQDL7p8W8Q/exec';
+      // se arriviamo qui -> non c'era id_ordine quindi proviamo a recuperarlo dal backend via JSONP
+      const webAppUrl = 'https://script.google.com/macros/s/AKfycbylmEqqjD-m08fzT8unTG0B4GQGa7ww7vDOtgXrsigwcymZkvEj5Xi0BgiQDL7p8W8Q/exec';  // Stesso URL del tuo web app
       const script = document.createElement('script');
       script.src = `${webAppUrl}?get_order_id=1&session_id=${encodeURIComponent(sessionId)}&callback=handleOrderIdResponse`;
       script.async = true;
       document.body.appendChild(script);
+
+      // mostra messaggio temporaneo
+      orderNumElem.textContent = 'Caricamento ID ordine...';
   }
 
-  // Callback JSONP
+  // Callback per response JSONP
   window.handleOrderIdResponse = function(response) {
       const orderNumElem = document.getElementById('orderNumber');
       if (!response) {
@@ -742,11 +747,14 @@
           return;
       }
       if (response.error) {
-          orderNumElem.textContent = response.error;
-          // tentiamo nuovamente dopo 8 secondi (solo se errore temporaneo)
-          if (response.error && response.error.toString().toLowerCase().includes('non ancora elaborato')) {
-              setTimeout(loadOrderId, 8000);
-          }
+          // Se ordine non ancora elaborato, mostralo in modo leggibile e non fare retry infinito;
+          // si può offrire un bottone "Riprova" o fare un solo retry dopo X secondi.
+          orderNumElem.textContent = response.error;  // Es. "Ordine non ancora elaborato"
+          // Un solo tentativo di retry dopo 10s (opzionale)
+          setTimeout(() => {
+              // solo retry se la pagina è ancora visibile
+              if (document.visibilityState === 'visible') loadOrderId();
+          }, 10000);
       } else if (response.order_id) {
           orderNumElem.textContent = `Ordine #${response.order_id}`;
       } else {
