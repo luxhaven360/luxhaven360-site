@@ -703,52 +703,57 @@
     </div>
 
     <script>
-        // Add entrance animations on load
-        window.addEventListener('load', () => {
-            document.body.style.opacity = '1';
-            loadOrderId();
-        });
+    // Add entrance animations on load
+    window.addEventListener('load', () => {
+        document.body.style.opacity = '1';
+        loadOrderId();
+    });
 
-        // Nuova: Carica ID ordine dinamicamente
-        function loadOrderId() {
-            const urlParams = new URLSearchParams(window.location.search);
-            const sessionId = urlParams.get('session_id');
-            if (!sessionId) {
-                document.getElementById('orderNumber').textContent = 'ID ordine non disponibile';
-                return;
-            }
+    // Carica ID ordine dinamicamente dall'URL
+    function loadOrderId() {
+        const urlParams = new URLSearchParams(window.location.search);
+        const orderId = urlParams.get('id_ordine');
+        const sessionId = urlParams.get('session_id'); // Per fallback
+        const orderNumElem = document.getElementById('orderNumber');
 
-            const webAppUrl = 'https://script.google.com/macros/s/AKfycbylmEqqjD-m08fzT8unTG0B4GQGa7ww7vDOtgXrsigwcymZkvEj5Xi0BgiQDL7p8W8Q/exec';  // Stesso URL del tuo web app
+        if (orderId) {
+            orderNumElem.textContent = `Ordine #${orderId}`;
+        } else if (sessionId) {
+            // Fallback al vecchio metodo con JSONP se id_ordine non presente
+            const webAppUrl = 'https://script.google.com/macros/s/AKfycbxbB9G90lfi1ano4GEFgTr5df6qZCHz0ODsMbmMnXWJr0GRDAFQVUhkJ_NpIb6_Oby4/exec';
             const script = document.createElement('script');
             script.src = `${webAppUrl}?get_order_id=1&session_id=${sessionId}&callback=handleOrderIdResponse`;
             document.body.appendChild(script);
+        } else {
+            orderNumElem.textContent = 'ID ordine non disponibile';
         }
+    }
 
-        // Callback per response JSONP
-        window.handleOrderIdResponse = function(response) {
-            const orderNumElem = document.getElementById('orderNumber');
-            if (response.error) {
-                orderNumElem.textContent = response.error;  // Es. "Ordine non ancora elaborato"
-                // Opzionale: riprova dopo 10s
-                setTimeout(loadOrderId, 10000);
-            } else {
-                orderNumElem.textContent = `Ordine #${response.order_id}`;
-            }
-        };
+    // Callback per response JSONP (fallback)
+    window.handleOrderIdResponse = function(response) {
+        const orderNumElem = document.getElementById('orderNumber');
+        if (response.error) {
+            orderNumElem.textContent = response.error;  // Es. "Ordine non ancora elaborato"
+            // Opzionale: riprova dopo 10s
+            setTimeout(loadOrderId, 10000);
+        } else {
+            orderNumElem.textContent = `Ordine #${response.order_id}`;
+        }
+    };
 
-        // Simulate timeline progression (for demo)
-        let currentStep = 1;
-        setInterval(() => {
+    // Simulate timeline progression (for demo)
+    let currentStep = 1;
+    setInterval(() => {
+        if (currentStep < 4) {
+            const steps = document.querySelectorAll('.timeline-step');
+            steps[currentStep].classList.remove('active');
+            steps[currentStep].classList.add('completed');
+            currentStep++;
             if (currentStep < 4) {
-                const steps = document.querySelectorAll('.timeline-step');
-                steps[currentStep].classList.remove('active');
-                steps[currentStep].classList.add('completed');
-                currentStep++;
-                if (currentStep < 4) {
-                    steps[currentStep].classList.add('active');
-                }
+                steps[currentStep].classList.add('active');
             }
-        }, 5000);
-    </script>
+        }
+    }, 5000);
+</script>
 </body>
 </html>
