@@ -568,7 +568,7 @@
             <div class="info-card">
                 <span class="info-icon">📧</span>
                 <div class="info-label">Conferma Inviata</div>
-                <div class="info-value">esempio@email.com</div>
+                <div class="info-value" id="emailValue">esempio@email.com</div>
             </div>
             <div class="info-card">
                 <span class="info-icon">📅</span>
@@ -578,7 +578,7 @@
             <div class="info-card">
                 <span class="info-icon">💳</span>
                 <div class="info-label">Metodo di Pagamento</div>
-                <div class="info-value">•••• 4242</div>
+                <div class="info-value" id="paymentValue">•••• 4242</div>
             </div>
         </div>
 
@@ -731,12 +731,14 @@
             // 1) Se l'ID è già passato nell'URL mostralo subito
             if (orderIdFromUrl) {
                 orderNumElem.textContent = `Ordine #${orderIdFromUrl}`;
-                return;
+                // Continua per caricare email e pagamento se sessionId presente
             }
 
             // 2) Altrimenti, fallback: se abbiamo session_id proviamo la lookup via JSONP
             if (!sessionId) {
-                orderNumElem.textContent = 'ID ordine non disponibile';
+                if (!orderIdFromUrl) {
+                    orderNumElem.textContent = 'ID ordine non disponibile';
+                }
                 return;
             }
 
@@ -767,6 +769,8 @@
         // Callback JSONP: il webapp risponde con {order_id: "..."} o {error: "..."}
         window.handleOrderIdResponse = function(response) {
             const orderNumElem = document.getElementById('orderNumber');
+            const emailElem = document.getElementById('emailValue');
+            const paymentElem = document.getElementById('paymentValue');
             if (!response) {
                 orderNumElem.textContent = 'Errore nella risposta del server';
                 return;
@@ -782,6 +786,12 @@
                 }
             } else if (response.order_id) {
                 orderNumElem.textContent = `Ordine #${response.order_id}`;
+                if (response.email) {
+                    emailElem.textContent = response.email;
+                }
+                if (response.last4) {
+                    paymentElem.textContent = `•••• ${response.last4}`;
+                }
             } else {
                 orderNumElem.textContent = 'ID ordine non trovato';
             }
