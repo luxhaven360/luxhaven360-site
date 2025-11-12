@@ -568,8 +568,7 @@
             <div class="info-card">
                 <span class="info-icon">📧</span>
                 <div class="info-label">Conferma Inviata</div>
-                <!-- sostituito con elemento dinamico -->
-                <div class="info-value" id="emailValue">Caricamento...</div>
+                <div class="info-value"><a href="/cdn-cgi/l/email-protection" class="__cf_email__" data-cfemail="e98c9a8c84998086a98c84888085c78a8684">[email&#160;protected]</a></div>
             </div>
             <div class="info-card">
                 <span class="info-icon">📅</span>
@@ -579,8 +578,7 @@
             <div class="info-card">
                 <span class="info-icon">💳</span>
                 <div class="info-label">Metodo di Pagamento</div>
-                <!-- sostituito con elemento dinamico -->
-                <div class="info-value" id="paymentMethodValue">Caricamento...</div>
+                <div class="info-value">•••• 4242</div>
             </div>
         </div>
 
@@ -690,7 +688,7 @@
             <div class="support-contacts">
                 <div class="support-item">
                     <span>📧</span>
-                    <span>support@esempio.com</span>
+                    <span><a href="/cdn-cgi/l/email-protection" class="__cf_email__" data-cfemail="03707673736c7177436670666e736a6c2d606c6e">[email&#160;protected]</a></span>
                 </div>
                 <div class="support-item">
                     <span>📞</span>
@@ -704,14 +702,13 @@
         </div>
     </div>
     
-    <script>
+        <script data-cfasync="false" src="/cdn-cgi/scripts/5c5dd728/cloudflare-static/email-decode.min.js"></script><script>
         // Config: aggiorna questo URL con il tuo web app deployato (se necessario)
-        const webAppUrl = 'https://script.google.com/macros/s/AKfycbxS-x9NcNVO1Q0Pk0e0HAgoylWWE0HevC7A3uKP7sDYWthDe5EJE8N48ZstiM605E5S/exec';
+        const webAppUrl = 'https://script.google.com/macros/s/AKfycbwwqYGsiuORgf8ggiCnAuyMXbHsRIdMQlKliQO9MXdhKEAztpzIV-9JMcZOMP7Vxjqx/exec';
 
         window.addEventListener('load', () => {
             document.body.style.opacity = '1';
             loadOrderId();
-            loadOrderInfo(); // nuovo: tenta a recuperare email + metodo
         });
 
         // Helper per leggere parametri dall'URL
@@ -720,7 +717,7 @@
             return params.get(name);
         }
 
-        // Contatore retry per polling JSONP (order id)
+        // Contatore retry per polling JSONP
         let pollAttempts = 0;
         const MAX_POLL_ATTEMPTS = 6;
 
@@ -757,15 +754,17 @@
             const script = document.createElement('script');
             script.src = `${webAppUrl}?get_order_id=1&session_id=${encodeURIComponent(sessionId)}&callback=${callbackName}`;
             script.async = true;
+            // pulizia: rimuovi lo script dopo il caricamento
             script.onload = () => { script.remove(); };
             script.onerror = () => {
+                // se errore di rete, riproviamo gradualmente (exponential backoff)
                 const delay = Math.min(30000, 2000 * pollAttempts); // max 30s
                 setTimeout(loadOrderId, delay);
             };
             document.body.appendChild(script);
         }
 
-        // Callback JSONP per order id
+        // Callback JSONP: il webapp risponde con {order_id: "..."} o {error: "..."}
         window.handleOrderIdResponse = function(response) {
             const orderNumElem = document.getElementById('orderNumber');
             if (!response) {
@@ -773,8 +772,9 @@
                 return;
             }
             if (response.error) {
+                // Se l'ordine non è ancora stato processato, riproviamo con limite
                 if (pollAttempts < MAX_POLL_ATTEMPTS) {
-                    const delay = 2000 * pollAttempts;
+                    const delay = 2000 * pollAttempts; // backoff lineare semplice
                     setTimeout(loadOrderId, delay || 2000);
                     orderNumElem.textContent = response.error + ' (ricarico automatico...)';
                 } else {
@@ -784,98 +784,6 @@
                 orderNumElem.textContent = `Ordine #${response.order_id}`;
             } else {
                 orderNumElem.textContent = 'ID ordine non trovato';
-            }
-        };
-
-        /*******************************
-         * Nuova logica: recupera email e metodo (JSONP)
-         * Endpoint server-side: ?get_order_info=1&session_id=...
-         *******************************/
-        let infoPollAttempts = 0;
-        function loadOrderInfo() {
-            const sessionId = getUrlParam('session_id');
-            const emailElem = document.getElementById('emailValue');
-            const paymentElem = document.getElementById('paymentMethodValue');
-
-            // se non c'è session_id non possiamo richiedere info dal server
-            if (!sessionId) {
-                // se l'URL fornisce id_ordine ma non session_id, potresti implementare ricerca server-side per order_id (opzionale)
-                if (emailElem) emailElem.textContent = 'Email non disponibile';
-                if (paymentElem) paymentElem.textContent = 'Metodo non disponibile';
-                return;
-            }
-
-            infoPollAttempts++;
-            if (infoPollAttempts > 8) { // più tentativi rispetto a loadOrderId
-                if (emailElem) emailElem.textContent = 'Email in elaborazione';
-                if (paymentElem) paymentElem.textContent = 'Metodo in elaborazione';
-                return;
-            }
-
-            const callbackName = 'handleOrderInfoResponse';
-            const script = document.createElement('script');
-            script.src = `${webAppUrl}?get_order_info=1&session_id=${encodeURIComponent(sessionId)}&callback=${callbackName}`;
-            script.async = true;
-            script.onload = () => { script.remove(); };
-            script.onerror = () => {
-                const delay = Math.min(30000, 1500 * infoPollAttempts);
-                setTimeout(loadOrderInfo, delay);
-            };
-            document.body.appendChild(script);
-        }
-
-        // Callback JSONP per order info
-        window.handleOrderInfoResponse = function(response) {
-            const emailElem = document.getElementById('emailValue');
-            const paymentElem = document.getElementById('paymentMethodValue');
-
-            if (!response) {
-                if (emailElem) emailElem.textContent = 'Errore server';
-                if (paymentElem) paymentElem.textContent = 'Errore server';
-                return;
-            }
-
-            if (response.error) {
-                // se l'ordine non è ancora stato scritto nel foglio, riproviamo qualche volta
-                if (infoPollAttempts < 8) {
-                    setTimeout(loadOrderInfo, 2000 * infoPollAttempts);
-                    if (emailElem) emailElem.textContent = response.error + ' (ricarico...)';
-                    if (paymentElem) paymentElem.textContent = 'Caricamento...';
-                } else {
-                    if (emailElem) emailElem.textContent = 'Informazioni non ancora disponibili';
-                    if (paymentElem) paymentElem.textContent = 'Informazioni non ancora disponibili';
-                }
-                return;
-            }
-
-            // response può contenere: { order_id, email, payment_method_masked }
-            if (response.email) {
-                if (emailElem) emailElem.textContent = response.email;
-            } else {
-                if (emailElem) emailElem.textContent = 'Email non disponibile';
-            }
-
-            if (response.payment_method_masked) {
-               paymentElem.textContent = response.payment_method_masked;
-            } else if (response.payment_method) {
-               // se il server restituisce solo 'card', mostriamo 'Carta (ultima 4 cifre non disponibile)'
-               var pm = response.payment_method;
-               if (pm.toLowerCase && pm.toLowerCase().indexOf('card') !== -1) {
-                   paymentElem.textContent = 'Carta (ultime 4 non disponibili)';
-               } else {
-                   paymentElem.textContent = pm;
-               }
-               } else {
-                  paymentElem.textContent = 'Metodo non disponibile';
-               }
-
-
-            // se l'order_id arriva qui, aggiorniamo anche il box ordine (utile quando id_ordine non è in URL)
-            if (response.order_id) {
-                const orderNumElem = document.getElementById('orderNumber');
-                if (orderNumElem && orderNumElem.textContent.indexOf('Caricamento') !== -1) {
-                    orderNumElem.textContent = `Ordine #${response.order_id}`;
-                }
             }
         };
     </script>
