@@ -568,7 +568,7 @@
             <div class="info-card">
                 <span class="info-icon">📧</span>
                 <div class="info-label">Conferma Inviata</div>
-                <div class="info-value">esempio@email.com</div>
+                <div class="info-value">Caricamento...</div>
             </div>
             <div class="info-card">
                 <span class="info-icon">📅</span>
@@ -578,7 +578,7 @@
             <div class="info-card">
                 <span class="info-icon">💳</span>
                 <div class="info-label">Metodo di Pagamento</div>
-                <div class="info-value">•••• 4242</div>
+                <div class="info-value">Caricamento...</div>
             </div>
         </div>
 
@@ -708,7 +708,7 @@
 
         window.addEventListener('load', () => {
             document.body.style.opacity = '1';
-            loadOrderId();
+            loadOrderDetails();
         });
 
         // Helper per leggere parametri dall'URL
@@ -721,36 +721,34 @@
         let pollAttempts = 0;
         const MAX_POLL_ATTEMPTS = 6;
 
-        function loadOrderId() {
+        function loadOrderDetails() {
             const urlParams = new URLSearchParams(window.location.search);
-            const orderIdFromUrl = urlParams.get('id_ordine');
             const sessionId = urlParams.get('session_id');
-
             const orderNumElem = document.getElementById('orderNumber');
+            const emailElem = document.querySelector('.info-cards .info-card:nth-child(1) .info-value');
+            const paymentElem = document.querySelector('.info-cards .info-card:nth-child(3) .info-value');
 
-            // 1) Se l'ID è già passato nell'URL mostralo subito
-            if (orderIdFromUrl) {
-                orderNumElem.textContent = `Ordine #${orderIdFromUrl}`;
-                return;
-            }
-
-            // 2) Altrimenti, fallback: se abbiamo session_id proviamo la lookup via JSONP
             if (!sessionId) {
                 orderNumElem.textContent = 'ID ordine non disponibile';
+                emailElem.textContent = 'Email non disponibile';
+                paymentElem.textContent = 'Metodo non disponibile';
                 return;
             }
 
-            // Costruiamo chiamata JSONP per recuperare order id (handleGetOrderId lato web app)
             pollAttempts++;
             if (pollAttempts > MAX_POLL_ATTEMPTS) {
                 orderNumElem.textContent = 'Ordine in elaborazione. Se non compare nei prossimi minuti scrivi a support@esempio.com indicando il tuo ID session.';
+                emailElem.textContent = 'Email in elaborazione';
+                paymentElem.textContent = 'Metodo in elaborazione';
                 return;
             }
 
             orderNumElem.textContent = 'Caricamento ID ordine...';
+            emailElem.textContent = 'Caricamento...';
+            paymentElem.textContent = 'Caricamento...';
 
             // Creiamo script JSONP
-            const callbackName = 'handleOrderIdResponse';
+            const callbackName = 'handleOrderDetailsResponse';
             const script = document.createElement('script');
             script.src = `${webAppUrl}?get_order_id=1&session_id=${encodeURIComponent(sessionId)}&callback=${callbackName}`;
             script.async = true;
@@ -759,14 +757,17 @@
             script.onerror = () => {
                 // se errore di rete, riproviamo gradualmente (exponential backoff)
                 const delay = Math.min(30000, 2000 * pollAttempts); // max 30s
-                setTimeout(loadOrderId, delay);
+                setTimeout(loadOrderDetails, delay);
             };
             document.body.appendChild(script);
         }
 
-        // Callback JSONP: il webapp risponde con {order_id: "..."} o {error: "..."}
-        window.handleOrderIdResponse = function(response) {
+        // Callback JSONP: il webapp risponde con {order_id: "...", email: "...", last4: "..."} o {error: "..."}
+        window.handleOrderDetailsResponse = function(response) {
             const orderNumElem = document.getElementById('orderNumber');
+            const emailElem = document.querySelector('.info-cards .info-card:nth-child(1) .info-value');
+            const paymentElem = document.querySelector('.info-cards .info-card:nth-child(3) .info-value');
+
             if (!response) {
                 orderNumElem.textContent = 'Errore nella risposta del server';
                 return;
@@ -775,15 +776,27 @@
                 // Se l'ordine non è ancora stato processato, riproviamo con limite
                 if (pollAttempts < MAX_POLL_ATTEMPTS) {
                     const delay = 2000 * pollAttempts; // backoff lineare semplice
-                    setTimeout(loadOrderId, delay || 2000);
+                    setTimeout(loadOrderDetails, delay || 2000);
                     orderNumElem.textContent = response.error + ' (ricarico automatico...)';
                 } else {
                     orderNumElem.textContent = 'Ordine in elaborazione. Se non compare nei prossimi minuti scrivi a support@esempio.com indicando il tuo ID session.';
                 }
-            } else if (response.order_id) {
-                orderNumElem.textContent = `Ordine #${response.order_id}`;
             } else {
-                orderNumElem.textContent = 'ID ordine non trovato';
+                if (response.order_id) {
+                    orderNumElem.textContent = `Ordine #${response.order_id}`;
+                } else {
+                    orderNumElem.textContent = 'ID ordine non trovato';
+                }
+                if (response.email) {
+                    emailElem.textContent = response.email;
+                } else {
+                    emailElem.textContent = 'Email non trovata';
+                }
+                if (response.last4) {
+                    paymentElem.textContent = `•••• ${response.last4}`;
+                } else {
+                    paymentElem.textContent = 'Metodo non trovato';
+                }
             }
         };
     </script>
