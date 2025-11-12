@@ -588,57 +588,26 @@
                 <h2 class="summary-title">Dettagli Ordine</h2>
             </div>
 
-            <div class="summary-items">
-                <div class="summary-item">
-                    <div class="summary-item-image">
-                        <img src="https://images.unsplash.com/photo-1591047139829-d91aecb6caea?w=200&h=250&fit=crop" alt="Prodotto">
-                    </div>
-                    <div class="summary-item-details">
-                        <div class="summary-item-name">Cashmere Essentials</div>
-                        <div class="summary-item-variant">Nero · Taglia M · Quantità: 1</div>
-                    </div>
-                    <div class="summary-item-price">€ 485,00</div>
-                </div>
-
-                <div class="summary-item">
-                    <div class="summary-item-image">
-                        <img src="https://images.unsplash.com/photo-1434389677669-e08b4cac3105?w=200&h=250&fit=crop" alt="Prodotto">
-                    </div>
-                    <div class="summary-item-details">
-                        <div class="summary-item-name">Silk Collection</div>
-                        <div class="summary-item-variant">Blu Notte · Taglia L · Quantità: 2</div>
-                    </div>
-                    <div class="summary-item-price">€ 648,00</div>
-                </div>
-
-                <div class="summary-item">
-                    <div class="summary-item-image">
-                        <img src="https://images.unsplash.com/photo-1620799140408-edc6dcb6d633?w=200&h=250&fit=crop" alt="Prodotto">
-                    </div>
-                    <div class="summary-item-details">
-                        <div class="summary-item-name">Merino Wool</div>
-                        <div class="summary-item-variant">Antracite · Taglia S · Quantità: 1</div>
-                    </div>
-                    <div class="summary-item-price">€ 378,00</div>
-                </div>
+            <div class="summary-items" id="summaryItems">
+                <!-- Prodotti dinamici verranno inseriti qui -->
             </div>
 
             <div class="summary-totals">
                 <div class="summary-row">
                     <span class="summary-label">Subtotale</span>
-                    <span>€ 1.511,00</span>
+                    <span id="subtotalValue">€ 0,00</span>
                 </div>
                 <div class="summary-row">
                     <span class="summary-label">Spedizione</span>
-                    <span style="color: #34d399;">Gratuita</span>
+                    <span id="shippingValue">€ 0,00</span>
                 </div>
                 <div class="summary-row">
                     <span class="summary-label">Sconto</span>
-                    <span style="color: #34d399;">- € 120,00</span>
+                    <span id="discountValue">- € 0,00</span>
                 </div>
                 <div class="summary-row summary-total">
                     <span class="summary-label">Totale Pagato</span>
-                    <span>€ 1.391,00</span>
+                    <span id="totalValue">€ 0,00</span>
                 </div>
             </div>
         </div>
@@ -756,6 +725,11 @@
             const emailElem = document.getElementById('emailValue');
             const paymentElem = document.getElementById('paymentValue');
             const orderNumElem = document.getElementById('orderNumber');
+            const summaryItems = document.getElementById('summaryItems');
+            const subtotalValue = document.getElementById('subtotalValue');
+            const shippingValue = document.getElementById('shippingValue');
+            const discountValue = document.getElementById('discountValue');
+            const totalValue = document.getElementById('totalValue');
 
             if (!response || response.error) {
                 emailElem.textContent = 'Email non disponibile';
@@ -767,14 +741,66 @@
                 emailElem.textContent = response.email;
             }
 
-            if (response.last4) {
-                paymentElem.textContent = `•••• ${response.last4}`;
+            if (response.payment_method) {
+                let paymentDisplay = response.payment_method.charAt(0).toUpperCase() + response.payment_method.slice(1);
+                if (response.last4 && response.payment_method === 'card') {
+                    paymentDisplay += ` (•••• ${response.last4})`;
+                }
+                paymentElem.textContent = paymentDisplay;
             } else {
                 paymentElem.textContent = '•••• ****';
             }
 
             if (response.order_id && orderNumElem.textContent === 'ID ordine non disponibile') {
                 orderNumElem.textContent = `Ordine #${response.order_id}`;
+            }
+
+            // Popola i prodotti dinamicamente
+            if (response.products && Array.isArray(response.products)) {
+                summaryItems.innerHTML = ''; // Svuota i placeholder statici
+                response.products.forEach(prod => {
+                    const item = document.createElement('div');
+                    item.className = 'summary-item';
+                    item.innerHTML = `
+                        <div class="summary-item-image">
+                            <img src="${prod.image || 'https://via.placeholder.com/200x250?text=Prodotto'}" alt="${prod.name}">
+                        </div>
+                        <div class="summary-item-details">
+                            <div class="summary-item-name">${prod.name}</div>
+                            <div class="summary-item-variant">${prod.color} · Taglia ${prod.size}</div>
+                        </div>
+                        <div class="summary-item-price">€ ${prod.price.toLocaleString('it-IT', { minimumFractionDigits: 2 })}</div>
+                    `;
+                    summaryItems.appendChild(item);
+                });
+            }
+
+            // Popola i valori economici dinamicamente
+            if (response.subtotal != null) {
+                subtotalValue.textContent = `€ ${response.subtotal.toLocaleString('it-IT', { minimumFractionDigits: 2 })}`;
+            }
+
+            if (response.shipping != null) {
+                if (response.shipping === 0) {
+                    shippingValue.textContent = 'Gratuita';
+                    shippingValue.style.color = '#34d399';
+                } else {
+                    shippingValue.textContent = `€ ${response.shipping.toLocaleString('it-IT', { minimumFractionDigits: 2 })}`;
+                    shippingValue.style.color = '';
+                }
+            }
+
+            if (response.discount != null) {
+                discountValue.textContent = `- € ${response.discount.toLocaleString('it-IT', { minimumFractionDigits: 2 })}`;
+                if (response.discount > 0) {
+                    discountValue.style.color = '#34d399';
+                } else {
+                    discountValue.style.color = '';
+                }
+            }
+
+            if (response.total != null) {
+                totalValue.textContent = `€ ${response.total.toLocaleString('it-IT', { minimumFractionDigits: 2 })}`;
             }
         };
     </script>
