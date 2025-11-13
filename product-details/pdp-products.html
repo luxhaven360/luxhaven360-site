@@ -1444,6 +1444,50 @@ setTimeout(() => {
             });
         }
     });
+
+        // Garantisce che il loader non rimanga bloccato quando la pagina è ripristinata dalla bfcache o l'utente torna da Stripe
+function hideLoaderImmediately() {
+    const loader = document.getElementById('luxhaven-loader');
+    if (!loader) return;
+    // Nascondi gradualmente per mantenere l'animazione esistente
+    loader.style.opacity = '0';
+    setTimeout(() => {
+        try { loader.style.display = 'none'; } catch (e) {}
+    }, 500);
+}
+
+window.addEventListener('pageshow', (event) => {
+    const returningFromStripe = sessionStorage.getItem('lh360_returning_from_stripe') === '1';
+    try { sessionStorage.removeItem('lh360_returning_from_stripe'); } catch(e){}
+
+    // Nascondi loader subito in ogni caso (previene il "loader infinito")
+    hideLoaderImmediately();
+
+    // Se la pagina è stata ripristinata dalla cache (event.persisted) o torniamo da Stripe
+    // rilanciamo inizializzazioni leggere per rinfrescare UI/localStorage sync.
+    if (event.persisted || returningFromStripe) {
+        // piccolo ritardo per permettere al browser di ripristinare il DOM
+        setTimeout(() => {
+            try {
+                renderGallery();
+                updateCartIcon();
+                // ricarica i dati del prodotto nel caso non siano stati rieseguiti
+                loadProduct();
+            } catch (e) {
+                console.warn('Errore ri-inizializzazione dopo pageshow:', e);
+            }
+        }, 60);
+    }
+});
+
+// fallback: se per qualsiasi motivo pageshow non viene usato, assicuriamoci al load che il loader non rimanga visibile.
+window.addEventListener('load', () => {
+    const loader = document.getElementById('luxhaven-loader');
+    if (loader && loader.style.display !== 'none') {
+        setTimeout(hideLoaderImmediately, 300);
+    }
+});
+
     </script>
 </body>
 </html>
