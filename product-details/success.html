@@ -624,25 +624,25 @@
         <div class="timeline-section">
             <h2 class="timeline-title">Traccia il Tuo Ordine</h2>
             <div class="timeline">
-                <div class="timeline-step completed">
+                <div id="step-confirmed" class="timeline-step">
                     <div class="timeline-dot">✓</div>
                     <div class="timeline-label">Confermato</div>
-                    <div class="timeline-date">6 Nov, 14:32</div>
+                    <div id="date-confirmed" class="timeline-date">Caricamento...</div>
                 </div>
-                <div class="timeline-step active">
+                <div id="step-preparing" class="timeline-step">
                     <div class="timeline-dot">📦</div>
                     <div class="timeline-label">In Preparazione</div>
-                    <div class="timeline-date">In corso</div>
+                    <div id="date-preparing" class="timeline-date">Caricamento...</div>
                 </div>
-                <div class="timeline-step pending">
+                <div id="step-shipped" class="timeline-step">
                     <div class="timeline-dot">🚚</div>
                     <div class="timeline-label">Spedito</div>
-                    <div class="timeline-date">7-8 Nov</div>
+                    <div id="date-shipped" class="timeline-date">Caricamento...</div>
                 </div>
-                <div class="timeline-step pending">
+                <div id="step-delivered" class="timeline-step">
                     <div class="timeline-dot">🏠</div>
                     <div class="timeline-label">Consegnato</div>
-                    <div class="timeline-date">8-9 Nov</div>
+                    <div id="date-delivered" class="timeline-date">Caricamento...</div>
                 </div>
             </div>
         </div>
@@ -825,11 +825,119 @@
             if (response.order_id && orderNumElem) {
                 orderNumElem.textContent = `Ordine #${response.order_id}`;
             }
+
+            // Aggiorna la timeline con dati dinamici (assumendo che il backend restituisca current_status, status_dates, estimated_dates)
+            // Per dimostrazione, simula i dati se non presenti (in produzione, rimuovi la simulazione)
+            if (!response.current_status) {
+                response.current_status = 'preparing'; // Esempio: 'confirmed', 'preparing', 'shipped', 'delivered'
+            }
+            if (!response.status_dates) {
+                response.status_dates = {
+                    confirmed: new Date().toISOString(), // Data reale di conferma (caricamento pagina)
+                    preparing: null,
+                    shipped: null,
+                    delivered: null
+                };
+            }
+            if (!response.estimated_dates) {
+                response.estimated_dates = {
+                    preparing: 'In corso',
+                    shipped: '7-8 Nov',
+                    delivered: '8-9 Nov'
+                };
+            }
+            updateTimeline(response);
+        } else {
+            // Fallback se errore: usa data corrente per confermato e stato iniziale
+            updateTimeline({
+                current_status: 'confirmed',
+                status_dates: { confirmed: new Date().toISOString() },
+                estimated_dates: { preparing: 'In corso', shipped: '7-8 Nov', delivered: '8-9 Nov' }
+            });
         }
 
         // Tutto pronto, mostra la pagina
         finalizePageLoad();
     };
+
+    /**
+     * FUNZIONE: Aggiorna la timeline dinamicamente
+     */
+    function updateTimeline(data) {
+        const steps = {
+            confirmed: document.getElementById('step-confirmed'),
+            preparing: document.getElementById('step-preparing'),
+            shipped: document.getElementById('step-shipped'),
+            delivered: document.getElementById('step-delivered')
+        };
+
+        const dateElems = {
+            confirmed: document.getElementById('date-confirmed'),
+            preparing: document.getElementById('date-preparing'),
+            shipped: document.getElementById('date-shipped'),
+            delivered: document.getElementById('date-delivered')
+        };
+
+        const icons = {
+            confirmed: '✓',
+            preparing: '📦',
+            shipped: '🚚',
+            delivered: '🏠'
+        };
+
+        const stepOrder = ['confirmed', 'preparing', 'shipped', 'delivered'];
+        const currentIndex = stepOrder.indexOf(data.current_status);
+
+        // Aggiorna classi, icone e date
+        stepOrder.forEach((step, index) => {
+            const elem = steps[step];
+            if (!elem) return;
+
+            // Rimuovi classi esistenti
+            elem.classList.remove('completed', 'active', 'pending');
+
+            // Aggiungi classe appropriata
+            if (index < currentIndex) {
+                elem.classList.add('completed');
+            } else if (index === currentIndex) {
+                elem.classList.add('active');
+            } else {
+                elem.classList.add('pending');
+            }
+
+            // Aggiorna icona del dot
+            const dot = elem.querySelector('.timeline-dot');
+            if (dot) {
+                if (index < currentIndex) {
+                    dot.innerHTML = '✓'; // Spunta per completati
+                } else {
+                    dot.innerHTML = icons[step]; // Icona specifica per active/pending
+                }
+            }
+
+            // Aggiorna data
+            const dateElem = dateElems[step];
+            if (dateElem) {
+                const actualDate = data.status_dates[step];
+                if (actualDate) {
+                    const date = new Date(actualDate);
+                    dateElem.textContent = date.toLocaleDateString('it-IT', { day: 'numeric', month: 'short' }) + ', ' + date.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
+                } else {
+                    dateElem.textContent = data.estimated_dates[step] || 'Da definire';
+                }
+            }
+        });
+
+        // Aggiorna barra di progresso dinamicamente
+        const timelineElem = document.querySelector('.timeline');
+        if (timelineElem) {
+            const progress = (currentIndex / (stepOrder.length - 1)) * 100;
+            timelineElem.style.setProperty('--progress-percent', `${progress}%`);
+            // Aggiorna lo stile ::before via JS (o usa variable CSS)
+            const beforeStyle = timelineElem.style;
+            beforeStyle.background = `linear-gradient(90deg, #10b981 0%, #10b981 var(--progress-percent), rgba(39, 39, 42, 0.5) var(--progress-percent), rgba(39, 39, 42, 0.5) 100%)`;
+        }
+    }
 
     /**
      * FUNZIONE: Carica articoli dal LocalStorage
