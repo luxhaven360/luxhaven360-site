@@ -38,7 +38,7 @@ window.addEventListener('scroll', () => {
 document.addEventListener('click', (e) => {
     const nav = document.getElementById('navLinks');
     const toggle = document.querySelector('.mobile-toggle');
-    if (nav && toggle && !nav.contains(e.target) && !toggle.contains(e.target) ) {
+    if (nav && toggle && !nav.contains(e.target) && !toggle.contains(e.target)) {
         nav.classList.remove('active');
     }
 });
@@ -193,6 +193,7 @@ function initDynamicProducts() {
 // init al load
 window.addEventListener('DOMContentLoaded', () => {
     initDynamicProducts();
+    updateTrackingIcon(); // Nuova: Inizializza icona tracking
 });
 
 // --- end ---
@@ -275,29 +276,31 @@ function hideLoader() {
     }
 }
 
-// Funzione per aggiornare la visibilità dell'icona tracking
+// Nuova funzione per icona tracking
 function updateTrackingIcon() {
-    const orders = JSON.parse(localStorage.getItem('lh360_orders') || '[]');
-    const thirtyDaysAgo = new Date();
-    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-    
-    const hasPending = orders.some(order => {
-        return new Date(order.date) > thirtyDaysAgo && order.status !== 'delivered';
-    });
-    
     const trackingIcon = document.getElementById('trackingIcon');
-    if (trackingIcon) {
-        if (hasPending) {
-            trackingIcon.classList.add('show');
-        } else {
-            trackingIcon.classList.remove('show');
-        }
-    }
+    if (!trackingIcon) return;
     
-    // Listener per cambiamenti
-    window.addEventListener('storage', (event) => {
-        if (event.key === 'lh360_orders') {
-            updateTrackingIcon();
-        }
+    const orders = JSON.parse(localStorage.getItem('lh360_orders')) || [];
+    const thirtyDaysAgo = Date.now() - 30 * 24 * 60 * 60 * 1000;
+    
+    const pendingOrders = orders.filter(order => {
+        const orderDate = new Date(order.date).getTime();
+        const daysPassed = (Date.now() - orderDate) / (1000 * 60 * 60 * 24);
+        const isPending = daysPassed < 2;  // Simula: <2 giorni = pending (non consegnati)
+        return orderDate >= thirtyDaysAgo && isPending;
     });
+    
+    if (pendingOrders.length > 0) {
+        trackingIcon.classList.add('show');
+    } else {
+        trackingIcon.classList.remove('show');
+    }
 }
+
+// Listener storage per aggiornamenti cross-tab
+window.addEventListener('storage', (e) => {
+    if (e.key === 'lh360_orders') {
+        updateTrackingIcon();
+    }
+});
