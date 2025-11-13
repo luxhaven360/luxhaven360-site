@@ -739,6 +739,20 @@
             localStorage.removeItem('lh360_selected_variant_id');
             // Nota: Non rimuoviamo 'lh360_order_confirmed_time' per persistere la data
         }, 1000);
+
+        // Rimuovi dati molto vecchi (es. ordini di oltre 90 giorni)
+setTimeout(() => {
+    const now = Date.now();
+    for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key.startsWith('lh360_order_time_')) {
+            const timestamp = localStorage.getItem(key);
+            if (timestamp && (now - new Date(timestamp).getTime()) > 90 * 24 * 60 * 60 * 1000) {
+                localStorage.removeItem(key);
+            }
+        }
+    }
+}, 5000);
     }
 
     /**
@@ -800,86 +814,89 @@
     }
 
     /**
-     * CALLBACK GLOBALE: Riceve i dati da Google Script
-     */
-    window.handleDetailsResponse = function(response) {
-        const emailElem = document.getElementById('emailValue');
-        const paymentElem = document.getElementById('paymentValue');
-        const orderNumElem = document.getElementById('orderNumber');
+ * CALLBACK GLOBALE: Riceve i dati da Google Script
+ */
+window.handleDetailsResponse = function(response) {
+    const emailElem = document.getElementById('emailValue');
+    const paymentElem = document.getElementById('paymentValue');
+    const orderNumElem = document.getElementById('orderNumber');
 
-        if (response && !response.error) {
-            // Aggiorna Email
-            if (response.email && emailElem) {
-                emailElem.textContent = response.email;
-            }
+    let currentOrderId = null;
 
-            // Aggiorna Metodo Pagamento
-            if (paymentElem) {
-                if (response.last4) {
-                    paymentElem.textContent = `Carta •••• ${response.last4}`;
-                } else {
-                    paymentElem.textContent = 'Pagamento Online'; // Fallback generico
-                }
-            }
-
-            // Aggiorna ID Ordine (sovrascrive quello dell'URL se presente, perché questo è quello ufficiale del DB)
-            if (response.order_id && orderNumElem) {
-                orderNumElem.textContent = `Ordine #${response.order_id}`;
-            }
-
-            // Gestione timestamp confermato persistente
-            let confirmedTime;
-            const storedTime = localStorage.getItem('lh360_order_confirmed_time');
-            if (storedTime) {
-                confirmedTime = storedTime;
-            } else {
-                confirmedTime = new Date().toISOString();
-                localStorage.setItem('lh360_order_confirmed_time', confirmedTime);
-            }
-
-            // Aggiorna la timeline con dati dinamici (assumendo che il backend restituisca current_status, status_dates, estimated_dates)
-            // Per dimostrazione, simula i dati se non presenti (in produzione, rimuovi la simulazione)
-            if (!response.current_status) {
-                response.current_status = 'preparing'; // Esempio: 'confirmed', 'preparing', 'shipped', 'delivered'
-            }
-            if (!response.status_dates) {
-                response.status_dates = {
-                    confirmed: confirmedTime, // Usa il timestamp persistente
-                    preparing: null,
-                    shipped: null,
-                    delivered: null
-                };
-            }
-            if (!response.estimated_dates) {
-                response.estimated_dates = {
-                    preparing: 'In corso',
-                    shipped: '7-8 Nov',
-                    delivered: '8-9 Nov'
-                };
-            }
-            updateTimeline(response);
-        } else {
-            // Fallback se errore: usa data corrente per confermato e stato iniziale
-            // Gestione timestamp confermato persistente nel fallback
-            let confirmedTime;
-            const storedTime = localStorage.getItem('lh360_order_confirmed_time');
-            if (storedTime) {
-                confirmedTime = storedTime;
-            } else {
-                confirmedTime = new Date().toISOString();
-                localStorage.setItem('lh360_order_confirmed_time', confirmedTime);
-            }
-
-            updateTimeline({
-                current_status: 'confirmed',
-                status_dates: { confirmed: confirmedTime },
-                estimated_dates: { preparing: 'In corso', shipped: '7-8 Nov', delivered: '8-9 Nov' }
-            });
+    if (response && !response.error) {
+        // Aggiorna Email
+        if (response.email && emailElem) {
+            emailElem.textContent = response.email;
         }
 
-        // Tutto pronto, mostra la pagina
-        finalizePageLoad();
+        // Aggiorna Metodo Pagamento
+        if (paymentElem) {
+            if (response.last4) {
+                paymentElem.textContent = `Carta •••• ${response.last4}`;
+            } else {
+                paymentElem.textContent = 'Pagamento Online';
+            }
+        }
+
+        // Aggiorna ID Ordine
+        if (response.order_id && orderNumElem) {
+            orderNumElem.textContent = `Ordine #${response.order_id}`;
+            currentOrderId = response.order_id;
+        }
+    }
+
+    // === GESTIONE TIMESTAMP FISSO PER QUESTO ORDINE SPECIFICO ===
+    let confirmedTime;
+
+    // Se abbiamo l'ID ordine dal backend (più affidabile)
+    if (currentOrderId) {
+        const storedTime = localStorage.getItem(`lh360_order_time_${currentOrderId}`);
+        if (storedTime) {
+            confirmedTime = storedTime; // Usa il timestamp salvato per questo ordine
+        } else {
+            confirmedTime = new Date().toISOString();
+            localStorage.setItem(`lh360_order_time_${currentOrderId}`, confirmedTime); // Salva per questo ordine
+        }
+    } else {
+        // Fallback: usa session_id dall'URL (se presente)
+        const urlParams = new URLSearchParams(window.location.search);
+        const sessionId = urlParams.get('session_id');
+        const fallbackKey = sessionId ? `lh360_order_time_session_${sessionId}` : 'lh360_order_time_fallback';
+
+        const storedTime = localStorage.getItem(fallbackKey);
+        if (storedTime) {
+            confirmedTime = storedTime;
+        } else {
+            confirmedTime = new Date().toISOString();
+            localStorage.setItem(fallbackKey, confirmedTime);
+        }
+    }
+
+    // Prepara i dati per la timeline
+    const timelineData = {
+        current_status: response?.current_status || 'preparing',
+        status_dates: {
+            confirmed: confirmedTime,
+            preparing: response?.status_dates?.preparing || null,
+            shipped: response?.status_dates?.shipped || null,
+            delivered: response?.status_dates?.delivered || null
+        },
+        estimated_dates: response?.estimated_dates || {
+            preparing: 'In corso',
+            shipped: '7-8 Nov',
+            delivered: '8-9 Nov'
+        }
     };
+
+    // Fallback completo se response è vuoto
+    if (!response || response.error) {
+        timelineData.current_status = 'confirmed';
+        timelineData.status_dates = { confirmed: confirmedTime };
+    }
+
+    updateTimeline(timelineData);
+    finalizePageLoad();
+};
 
     /**
      * FUNZIONE: Aggiorna la timeline dinamicamente
