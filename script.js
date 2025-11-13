@@ -128,19 +128,18 @@ function createProductCard(prod, defaultCta) {
 
     // on click behaviour:
     btn.addEventListener('click', () => {
+    // salva analytics semplice
     try {
         localStorage.setItem('lh360_last_product', JSON.stringify({ sku: btn.dataset.sku, title: btn.dataset.title, ts: Date.now() }));
+        // utile fallback per pdp quando si naviga via JS
         localStorage.setItem('lh360_selected_sku', btn.dataset.sku || '');
     } catch (e) {}
 
-    const repoPath = '/luxhaven360-site/';
+    // reindirizza alla pagina dettaglio prodotto (qui passa lo SKU in querystring)
     const base = 'product-details/pdp-products.html';
-    const skuEnc = encodeURIComponent(btn.dataset.sku || '');
-    const sectionEnc = encodeURIComponent(prod.sectionName || 'shop');
-    const target = repoPath + base + '?sku=' + skuEnc + '&section=' + sectionEnc;
-    const loadingUrl = repoPath + 'assets/loading_screen/luxhaven-loading.html?next=' + encodeURIComponent(target) +
-                       '&type=pdp&sku=' + skuEnc + '&section=' + sectionEnc + '&delay=5000';
-    window.location.href = loadingUrl;
+    const sku = encodeURIComponent(btn.dataset.sku || '');
+    const section = encodeURIComponent(prod.sectionName || 'shop');
+    window.location.href = `${base}?sku=${sku}&section=${section}`;
 });
 
     card.appendChild(btn);
