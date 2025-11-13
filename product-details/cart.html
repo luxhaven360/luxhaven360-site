@@ -699,51 +699,87 @@
         // Initialize
         renderCart();
 
-        // Checkout integration with JSONP
-        const checkoutBtn = document.getElementById('checkoutBtn');
+        /* --- INTEGRATION CHECKOUT (Sostituisci il blocco checkoutBtn esistente) --- */
+const checkoutBtn = document.getElementById('checkoutBtn');
 
-        // Global callback function
-        window.handleCheckoutResponse = function(response) {
-            if (response.error) {
-                alert('Errore durante il checkout: ' + response.error);
-            } else {
-                window.location.href = response.url;
-            }
-            // Remove the script tag
-            const script = document.getElementById('checkout-script');
-            if (script) script.remove();
-        };
+// Callback globale per la risposta da Google
+window.handleCheckoutResponse = function(response) {
+    if (response.error) {
+        // Nascondi il loader in caso di errore (se presente)
+        const loader = document.getElementById('luxhaven-loader') || document.getElementById('temp-loader');
+        if (loader) loader.style.display = 'none';
+        
+        alert('Errore dal server: ' + response.error);
+    } else {
+        // Redirect al pagamento Stripe
+        window.location.href = response.url;
+    }
+    
+    // Rimuovi script temporaneo
+    const script = document.getElementById('checkout-script');
+    if (script) script.remove();
+};
 
-        checkoutBtn.addEventListener('click', () => {
-    if (cart.length === 0) {
+checkoutBtn.addEventListener('click', (e) => {
+    e.preventDefault();
+
+    // 1. Ricarica i dati freschi dal LocalStorage per evitare errori di stato
+    const freshCart = JSON.parse(localStorage.getItem('lh360_cart')) || [];
+
+    // 2. Filtra eventuali elementi corrotti o nulli
+    const validItems = freshCart.filter(item => item && item.title && item.price);
+
+    if (validItems.length === 0) {
         alert('Il carrello è vuoto!');
         return;
     }
 
-    // >>> 1. Mostra il Loader
-    // Se hai incluso styles.css e script.js globalmente:
+    // 3. Mostra il Loader (usa la funzione showLoader se hai integrato lo script precedente, o fallback)
     if (typeof showLoader === 'function') {
         showLoader();
     } else {
-        // Fallback manuale se script.js non è incluso
-        document.body.insertAdjacentHTML('beforeend', '<div id="temp-loader" style="position:fixed;top:0;left:0;width:100%;height:100%;background:#0a0a0a;z-index:9999;opacity:0.9;display:flex;justify-content:center;align-items:center;color:white;">ELABORAZIONE CHECKOUT...</div>');
+        // Fallback rapido se non hai caricato il loader globale
+        const btnText = checkoutBtn.innerHTML;
+        checkoutBtn.innerHTML = 'Elaborazione...';
+        checkoutBtn.disabled = true;
     }
 
-    const subtotal = cart.reduce((sum, item) => sum + item.price * (item.qty || 1), 0);
+    // 4. Ricalcola totali e spedizione sui dati freschi
+    const subtotal = validItems.reduce((sum, item) => sum + (item.price * (item.qty || 1)), 0);
     const shipping = subtotal >= 150 ? 0 : 15;
 
-    const data = { /* ... dati carrello ... */ };
+    // 5. Prepara il pacchetto dati pulito
+    const data = {
+        cart: validItems.map(item => ({
+            title: item.title,
+            price: item.price,
+            qty: item.qty || 1,
+            color: item.color || '',
+            size: item.size || '',
+            currency: item.currency || 'EUR'
+        })),
+        shipping: shipping
+    };
+
+    console.log("Invio dati a Google Script:", data); // Debug console (F12)
+
+    // 6. Invia richiesta JSONP
     const dataStr = encodeURIComponent(JSON.stringify(data));
     const callback = 'handleCheckoutResponse';
     const scriptUrl = `${webAppUrl}?data=${dataStr}&callback=${callback}`;
 
-    // La chiamata JSONP avverrà mentre il loader è visibile.
-    // Quando handleCheckoutResponse viene chiamato, la pagina cambia URL, 
-    // quindi il loader rimarrà visibile fino al cambio pagina.
-    
     const script = document.createElement('script');
     script.id = 'checkout-script';
     script.src = scriptUrl;
+    
+    // Gestione errore di rete (es. script bloccato)
+    script.onerror = () => {
+        alert("Errore di connessione al server di pagamento.");
+        if (typeof hideLoader === 'function') hideLoader();
+        checkoutBtn.innerHTML = 'Procedi al Checkout';
+        checkoutBtn.disabled = false;
+    };
+
     document.body.appendChild(script);
 });
     </script>
