@@ -226,6 +226,28 @@ function injectLoader() {
     document.body.insertAdjacentHTML('beforeend', loaderHTML);
 }
 
+// Nuova funzione per nascondere immediatamente il loader (fix per back-forward cache)
+function hideLoaderImmediately() {
+    const loader = document.getElementById('luxhaven-loader');
+    if (loader) {
+        loader.style.opacity = '0';
+        setTimeout(() => {
+            loader.style.display = 'none';
+        }, 500); // Tempo per transizione
+    }
+}
+
+// Aggiungi listener per nascondere loader su pageshow (quando si torna indietro) e load
+window.addEventListener('pageshow', (event) => {
+    hideLoaderImmediately();
+    if (event.persisted) {
+        // Reinit opzionali se la pagina è ripristinata dalla cache
+        initDynamicProducts(); // Esempio: ricarica prodotti se necessario
+    }
+});
+
+window.addEventListener('load', hideLoaderImmediately);
+
 // Mostra il loader
 function showLoader() {
     injectLoader();
