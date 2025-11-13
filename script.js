@@ -207,7 +207,7 @@ function injectLoader() {
     <div id="luxhaven-loader">
         <div class="lh-bg-gradient"></div>
         <div class="lh-loader-content">
-            <div class="lh-logo">LuxHaven360</div>
+            <img src="assets/logo-azienda.png" alt="LuxHaven360" class="lh-logo">
             <div class="lh-tagline">Curating Excellence</div>
             
             <div class="lh-loader-wrapper">
