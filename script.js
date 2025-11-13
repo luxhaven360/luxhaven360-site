@@ -127,20 +127,26 @@ function createProductCard(prod, defaultCta) {
     if (prod.action) btn.dataset.action = prod.action;
 
     // on click behaviour:
-    btn.addEventListener('click', () => {
-    // salva analytics semplice
-    try {
-        localStorage.setItem('lh360_last_product', JSON.stringify({ sku: btn.dataset.sku, title: btn.dataset.title, ts: Date.now() }));
-        // utile fallback per pdp quando si naviga via JS
-        localStorage.setItem('lh360_selected_sku', btn.dataset.sku || '');
-    } catch (e) {}
+    btn.addEventListener('click', (e) => {
+        e.preventDefault(); // Previene navigazione immediata
+        
+        // 1. Mostra Loader
+        showLoader();
 
-    // reindirizza alla pagina dettaglio prodotto (qui passa lo SKU in querystring)
-    const base = 'product-details/pdp-products.html';
-    const sku = encodeURIComponent(btn.dataset.sku || '');
-    const section = encodeURIComponent(prod.sectionName || 'shop');
-    window.location.href = `${base}?sku=${sku}&section=${section}`;
-});
+        // 2. Salva dati
+        try {
+            localStorage.setItem('lh360_last_product', JSON.stringify({ sku: btn.dataset.sku, title: btn.dataset.title, ts: Date.now() }));
+            localStorage.setItem('lh360_selected_sku', btn.dataset.sku || '');
+        } catch (e) {}
+
+        // 3. Naviga dopo un breve ritardo per far vedere l'animazione di start
+        setTimeout(() => {
+            const base = 'product-details/pdp-products.html'; // Assicurati che il percorso sia corretto relativo alla pagina corrente
+            const sku = encodeURIComponent(btn.dataset.sku || '');
+            const section = encodeURIComponent(prod.sectionName || 'shop');
+            window.location.href = `${base}?sku=${sku}&section=${section}`;
+        }, 800); // 800ms di delay estetico
+    });
 
     card.appendChild(btn);
 
@@ -190,3 +196,54 @@ window.addEventListener('DOMContentLoaded', () => {
 });
 
 // --- end ---
+
+// --- LOADER UTILITIES ---
+
+// Inietta l'HTML del loader se non esiste
+function injectLoader() {
+    if (document.getElementById('luxhaven-loader')) return;
+
+    const loaderHTML = `
+    <div id="luxhaven-loader">
+        <div class="lh-bg-gradient"></div>
+        <div class="lh-loader-content">
+            <div class="lh-logo">LuxHaven360</div>
+            <div class="lh-tagline">Curating Excellence</div>
+            
+            <div class="lh-loader-wrapper">
+                <div class="lh-ring"></div>
+                <div class="lh-ring"></div>
+                <div class="lh-ring"></div>
+            </div>
+
+            <div class="lh-progress-container">
+                <div class="lh-progress-fill"></div>
+            </div>
+            <div class="lh-loading-text">Caricamento</div>
+        </div>
+    </div>`;
+    
+    document.body.insertAdjacentHTML('beforeend', loaderHTML);
+}
+
+// Mostra il loader
+function showLoader() {
+    injectLoader();
+    // Piccolo timeout per permettere al DOM di aggiornarsi prima di cambiare opacity
+    setTimeout(() => {
+        const loader = document.getElementById('luxhaven-loader');
+        if (loader) loader.classList.add('visible');
+    }, 10);
+}
+
+// Nasconde il loader
+function hideLoader() {
+    const loader = document.getElementById('luxhaven-loader');
+    if (loader) {
+        loader.classList.remove('visible');
+        // Rimuovi dal DOM dopo la transizione per pulizia (opzionale)
+        setTimeout(() => {
+            // loader.remove(); // Decommenta se vuoi rimuoverlo completamente
+        }, 500);
+    }
+}
