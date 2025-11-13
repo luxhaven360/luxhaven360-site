@@ -251,14 +251,16 @@ window.addEventListener('load', hideLoaderImmediately);
 // Mostra il loader
 function showLoader() {
     injectLoader();
-    // Piccolo timeout per permettere al DOM di aggiornarsi prima di cambiare opacity
-    setTimeout(() => {
-        const loader = document.getElementById('luxhaven-loader');
-        if (loader) {
-            loader.style.display = 'flex'; // Reset display per override 'none' da hide
-            loader.classList.add('visible');
-        }
-    }, 10);
+    const loader = document.getElementById('luxhaven-loader');
+    if (loader) {
+        // Reset stili inline per override completo
+        loader.style.display = 'flex'; // Forza visibilità
+        loader.style.opacity = '1';    // Forza opacità immediata
+        loader.classList.remove('visible'); // Reset classe per ri-trigger transizione
+        // Forza reflow per applicare cambiamenti (trick per browser con cache issues)
+        void loader.offsetWidth;
+        loader.classList.add('visible'); // Ri-applica classe
+    }
 }
 
 // Nasconde il loader
