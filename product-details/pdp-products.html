@@ -683,6 +683,19 @@
     </style>
     <!-- DOMPurify per sanitizzazione longDescription (opzionale ma consigliata) -->
     <script src="https://unpkg.com/dompurify@2.4.0/dist/purify.min.js"></script>
+
+    <script>
+    // Inietta e mostra il loader immediatamente (inline per velocità)
+    document.write(`
+    <div id="luxhaven-loader" class="visible" style="position:fixed;top:0;left:0;width:100%;height:100%;background:#0a0a0a;z-index:99999;display:flex;align-items:center;justify-content:center;transition:opacity 0.5s ease;">
+        <div style="text-align:center;color:#fafafa;">
+            <div style="font-family:serif;font-size:2rem;margin-bottom:1rem;">LUXHAVEN360</div>
+            <div style="font-size:0.8rem;text-transform:uppercase;letter-spacing:0.2em;color:#a1a1aa;">Caricamento Dettagli...</div>
+        </div>
+    </div>
+    `);
+</script>
+    
 </head>
 <body>
     <div class="cart-icon" id="cartIcon">🛒</div>
@@ -1112,11 +1125,23 @@
                 product = { ...product, ...details };
 
                 populateProduct(product);
-            } catch (err) {
-                console.error(err);
-                document.querySelector('.container').innerHTML = `<div style="padding:4rem;color:#fca5a5">Errore caricamento prodotto: ${err.message}</div>`;
-            }
+
+            // >>> MODIFICA: Nascondi il loader quando tutto è pronto
+            setTimeout(() => {
+                const loader = document.getElementById('luxhaven-loader');
+                if(loader) {
+                    loader.style.opacity = '0';
+                    setTimeout(() => loader.style.display = 'none', 500);
+                }
+            }, 500);
+
+        } catch (err) {
+            console.error(err);
+            // Nascondi loader anche in caso di errore per mostrare il messaggio
+            document.getElementById('luxhaven-loader').style.display = 'none';
+            document.querySelector('.container').innerHTML = `<div style="padding:4rem;color:#fca5a5">Errore: ${err.message}</div>`;
         }
+    }
 
         // escape HTML per valori testuali
         function safeText(s){
@@ -1305,22 +1330,35 @@
             buyNowBtn.textContent = prod.cta || 'Acquista Ora';
             buyNowBtn.dataset.stripeLink = prod.stripe_link || '';
 
-            // Comportamento Acquista Ora (updated to use client_reference_id)
-            buyNowBtn.onclick = function () {
-                if (selectedVariantId) localStorage.setItem('lh360_selected_variant_id', selectedVariantId);
+            // Comportamento Acquista Ora
+    buyNowBtn.onclick = function () {
+        if (selectedVariantId) localStorage.setItem('lh360_selected_variant_id', selectedVariantId);
 
-                if (buyNowBtn.dataset.stripeLink) {
-                    try {
-                        localStorage.setItem('lh360_last_product', JSON.stringify({ sku: prod.sku, title: prod.title, ts: Date.now() }));
-                    } catch (e) {}
-                    // Append client_reference_id (changed from variant_id)
-                    let link = buyNowBtn.dataset.stripeLink;
-                    if (selectedVariantId) link += (link.includes('?') ? '&' : '?') + `client_reference_id=${selectedVariantId}`;
-                    window.location.href = link;
-                } else {
-                    alert('Nessun link di pagamento configurato per questo prodotto. Verrai reindirizzato al form di contatto.');
-                }
-            };
+        if (buyNowBtn.dataset.stripeLink) {
+            // >>> MODIFICA: Mostra Loader prima del redirect Stripe
+            const loader = document.getElementById('luxhaven-loader');
+            if(loader) {
+                loader.style.display = 'flex';
+                // Ridisegna il contenuto del loader se necessario o usa quello statico
+                setTimeout(() => loader.style.opacity = '1', 10);
+            }
+
+            try {
+                localStorage.setItem('lh360_last_product', JSON.stringify({ sku: prod.sku, title: prod.title, ts: Date.now() }));
+            } catch (e) {}
+
+            let link = buyNowBtn.dataset.stripeLink;
+            if (selectedVariantId) link += (link.includes('?') ? '&' : '?') + `client_reference_id=${selectedVariantId}`;
+            
+            // Ritardo per vedere il loader
+            setTimeout(() => {
+                window.location.href = link;
+            }, 1000);
+
+        } else {
+            alert('Nessun link di pagamento configurato.');
+        }
+    };
 
         // Comportamento Aggiungi al Carrello (modificato per feedback)
         function showCartLink() {
