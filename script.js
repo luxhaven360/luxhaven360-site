@@ -128,16 +128,20 @@ function createProductCard(prod, defaultCta) {
 
     // on click behaviour:
     btn.addEventListener('click', () => {
-    // Salva analytics...
-    localStorage.setItem('lh360_last_product', JSON.stringify({ sku: btn.dataset.sku, title: btn.dataset.title, ts: Date.now() }));
-    localStorage.setItem('lh360_selected_sku', btn.dataset.sku || '');
+    // Salva analytics semplice
+    try {
+        localStorage.setItem('lh360_last_product', JSON.stringify({ sku: btn.dataset.sku, title: btn.dataset.title, ts: Date.now() }));
+        // utile fallback per pdp quando si naviga via JS
+        localStorage.setItem('lh360_selected_sku', btn.dataset.sku || '');
+    } catch (e) {}
 
-    // Reindirizza tramite loading con next
-    const base = 'product-details/pdp-products.html';
+    // Reindirizza alla pagina dettaglio prodotto (qui passa lo SKU in querystring)
+    const repoPath = '/luxhaven360-site/';  // Base path del repo su GitHub Pages
+    const base = 'product-details/pdp-products.html';  // Percorso corretto (nota: "product-details", non "products-details")
     const sku = encodeURIComponent(btn.dataset.sku || '');
     const section = encodeURIComponent(prod.sectionName || 'shop');
-    const target = `${base}?sku=${sku}&section=${section}`;
-    window.location.href = `assets/loading_screen/luxhaven-loading.html?next=${encodeURIComponent(target)}&delay=3000`;
+    const target = repoPath + base + '?sku=' + sku + '&section=' + section;
+    window.location.href = repoPath + 'assets/loading_screen/luxhaven-loading.html?next=' + encodeURIComponent(target) + '&delay=3000';
 });
 
     card.appendChild(btn);
