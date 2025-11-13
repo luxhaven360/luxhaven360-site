@@ -139,7 +139,7 @@ function createProductCard(prod, defaultCta) {
     const base = 'product-details/pdp-products.html';
     const sku = encodeURIComponent(btn.dataset.sku || '');
     const section = encodeURIComponent(prod.sectionName || 'shop');
-    window.location.href = `${base}?sku=${sku}&section=${section}`;
+    window.location.href = `assets/loading_screen/luxhaven-loading.html?target=${encodeURIComponent(`${base}?sku=${sku}&section=${section}`)}`;
 });
 
     card.appendChild(btn);
