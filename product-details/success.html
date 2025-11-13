@@ -682,7 +682,7 @@
     <script>
     // CONFIGURAZIONE
     // URL della tua Web App Google Apps Script
-    const webAppUrl = 'https://script.google.com/macros/s/AKfycbzJPuF8EdWzNDF3QY1mbbR96QdntlD1mu93H8sNkmvqJg5wDU93lmL-Ua05bwRWFZ9n/exec';
+    const webAppUrl = 'https://script.google.com/macros/s/AKfycbwgLsltBb7hCJ2riB40mmNlG6JNjn1SX3n8yPiPhz5c8omT5Do7sG72zSDtEG9wWD1c/exec';
 
     // Variabile di sicurezza per evitare loop infiniti di caricamento
     let loadTimeout;
@@ -737,6 +737,7 @@
             localStorage.removeItem('lh360_cart');
             // Rimuoviamo anche SKU selezionati o varianti per pulizia
             localStorage.removeItem('lh360_selected_variant_id');
+            // Nota: Non rimuoviamo 'lh360_order_confirmed_time' per persistere la data
         }, 1000);
     }
 
@@ -815,7 +816,7 @@
             // Aggiorna Metodo Pagamento
             if (paymentElem) {
                 if (response.last4) {
-                    paymentElem.textContent = `•••• ${response.last4}`;
+                    paymentElem.textContent = `Carta •••• ${response.last4}`;
                 } else {
                     paymentElem.textContent = 'Pagamento Online'; // Fallback generico
                 }
@@ -826,6 +827,16 @@
                 orderNumElem.textContent = `Ordine #${response.order_id}`;
             }
 
+            // Gestione timestamp confermato persistente
+            let confirmedTime;
+            const storedTime = localStorage.getItem('lh360_order_confirmed_time');
+            if (storedTime) {
+                confirmedTime = storedTime;
+            } else {
+                confirmedTime = new Date().toISOString();
+                localStorage.setItem('lh360_order_confirmed_time', confirmedTime);
+            }
+
             // Aggiorna la timeline con dati dinamici (assumendo che il backend restituisca current_status, status_dates, estimated_dates)
             // Per dimostrazione, simula i dati se non presenti (in produzione, rimuovi la simulazione)
             if (!response.current_status) {
@@ -833,7 +844,7 @@
             }
             if (!response.status_dates) {
                 response.status_dates = {
-                    confirmed: new Date().toISOString(), // Data reale di conferma (caricamento pagina)
+                    confirmed: confirmedTime, // Usa il timestamp persistente
                     preparing: null,
                     shipped: null,
                     delivered: null
@@ -849,9 +860,19 @@
             updateTimeline(response);
         } else {
             // Fallback se errore: usa data corrente per confermato e stato iniziale
+            // Gestione timestamp confermato persistente nel fallback
+            let confirmedTime;
+            const storedTime = localStorage.getItem('lh360_order_confirmed_time');
+            if (storedTime) {
+                confirmedTime = storedTime;
+            } else {
+                confirmedTime = new Date().toISOString();
+                localStorage.setItem('lh360_order_confirmed_time', confirmedTime);
+            }
+
             updateTimeline({
                 current_status: 'confirmed',
-                status_dates: { confirmed: new Date().toISOString() },
+                status_dates: { confirmed: confirmedTime },
                 estimated_dates: { preparing: 'In corso', shipped: '7-8 Nov', delivered: '8-9 Nov' }
             });
         }
