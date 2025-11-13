@@ -541,6 +541,14 @@
     </style>
 </head>
 <body>
+    <div id="luxhaven-loader" class="visible" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: #0a0a0a; z-index: 99999; display: flex; align-items: center; justify-content: center; transition: opacity 0.5s ease;">
+        <div style="text-align: center;">
+            <div style="font-family: 'Georgia', serif; font-size: 2.5rem; color: #fafafa; margin-bottom: 1rem; letter-spacing: 0.2em;">LUXHAVEN360</div>
+            <div style="color: #a1a1aa; font-size: 0.9rem; letter-spacing: 0.1em; text-transform: uppercase; animation: pulse 1.5s infinite;">Finalizzazione Ordine...</div>
+        </div>
+        <style>@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }</style>
+    </div>
+
     <!-- Floating Elements -->
     <div class="floating-element floating-1">✦</div>
     <div class="floating-element floating-2">◆</div>
@@ -640,15 +648,17 @@
         </div>
 
         <!-- CTA Buttons -->
+        <div class="container" id="mainContent" style="opacity: 0; transition: opacity 0.8s ease;">
         <div class="cta-section">
-            <a href="#" class="btn btn-primary">
+            <a href="product-details/tracking-order.html" class="btn btn-primary">
                 <span>Traccia Spedizione</span>
                 <span>→</span>
             </a>
-            <a href="#" class="btn btn-secondary">
+            <a href="index.html#shop" class="btn btn-secondary">
                 <span>Continua lo Shopping</span>
             </a>
         </div>
+    </div>
 
         <!-- Support Section -->
         <div class="support-section">
@@ -671,143 +681,242 @@
         </div>
     </div>
     
-        <script>
-        // Config: aggiorna questo URL con il tuo web app deployato (se necessario)
-        const webAppUrl = 'https://script.google.com/macros/s/AKfycbwgLsltBb7hCJ2riB40mmNlG6JNjn1SX3n8yPiPhz5c8omT5Do7sG72zSDtEG9wWD1c/exec';
+    <script>
+    // CONFIGURAZIONE
+    // URL della tua Web App Google Apps Script
+    const webAppUrl = 'https://script.google.com/macros/s/AKfycbwgLsltBb7hCJ2riB40mmNlG6JNjn1SX3n8yPiPhz5c8omT5Do7sG72zSDtEG9wWD1c/exec';
 
-        window.addEventListener('load', () => {
-            document.body.style.opacity = '1';
-            loadOrderDetails();
-            loadPurchasedItems();
-        });
+    // Variabile di sicurezza per evitare loop infiniti di caricamento
+    let loadTimeout;
 
-        // Helper per leggere parametri dall'URL
-        function getUrlParam(name) {
-            const params = new URLSearchParams(window.location.search);
-            return params.get(name);
+    /**
+     * AVVIO
+     * Al caricamento della pagina, inizia il recupero dati.
+     */
+    window.addEventListener('load', () => {
+        // 1. Imposta i link corretti per i pulsanti
+        setupButtons();
+
+        // 2. Carica gli articoli dal LocalStorage (prima di cancellarli)
+        loadPurchasedItems();
+
+        // 3. Recupera i dettagli dell'ordine (Email, ID, Pagamento)
+        loadOrderDetails();
+
+        // 4. Timeout di sicurezza: se dopo 5 secondi non abbiamo dati, mostriamo comunque la pagina
+        loadTimeout = setTimeout(() => {
+            console.warn('Timeout caricamento dati: forzatura visualizzazione.');
+            finalizePageLoad();
+        }, 5000);
+    });
+
+    /**
+     * FUNZIONE: Finalizza il caricamento
+     * Nasconde il loader e mostra il contenuto.
+     */
+    function finalizePageLoad() {
+        clearTimeout(loadTimeout); // Cancella il timeout di sicurezza se siamo arrivati qui
+
+        const loader = document.getElementById('luxhaven-loader');
+        const content = document.getElementById('mainContent'); // Assicurati che il tuo container abbia id="mainContent"
+
+        // Fade out loader
+        if (loader) {
+            loader.style.opacity = '0';
+            setTimeout(() => {
+                loader.style.display = 'none';
+            }, 500);
         }
 
-        function loadOrderDetails() {
-            const urlParams = new URLSearchParams(window.location.search);
-            const orderIdFromUrl = urlParams.get('id_ordine');
-            const sessionId = urlParams.get('session_id');
-
-            const orderNumElem = document.getElementById('orderNumber');
-            const emailElem = document.getElementById('emailValue');
-            const paymentElem = document.getElementById('paymentValue');
-
-            if (orderIdFromUrl) {
-                orderNumElem.textContent = `Ordine #${orderIdFromUrl}`;
-            } else {
-                orderNumElem.textContent = 'ID ordine non disponibile';
-            }
-
-            if (!sessionId) {
-                emailElem.textContent = 'Email non disponibile';
-                paymentElem.textContent = 'Metodo non disponibile';
-                return;
-            }
-
-            // Chiamata JSONP per dettagli (email e last4)
-            const callbackName = 'handleDetailsResponse';
-            const script = document.createElement('script');
-            script.src = `${webAppUrl}?get_details=1&session_id=${encodeURIComponent(sessionId)}&callback=${callbackName}`;
-            script.async = true;
-            script.onload = () => { script.remove(); };
-            script.onerror = () => {
-                emailElem.textContent = 'Errore caricamento email';
-                paymentElem.textContent = 'Errore caricamento metodo';
-            };
-            document.body.appendChild(script);
+        // Fade in contenuto
+        if (content) {
+            content.style.opacity = '1';
         }
 
-        // Callback JSONP per dettagli
-        window.handleDetailsResponse = function(response) {
-            const emailElem = document.getElementById('emailValue');
-            const paymentElem = document.getElementById('paymentValue');
-            const orderNumElem = document.getElementById('orderNumber');
+        // Svuota il carrello DOPO aver mostrato i dati
+        // (Piccolo ritardo per assicurarsi che la UI sia renderizzata)
+        setTimeout(() => {
+            localStorage.removeItem('lh360_cart');
+            // Rimuoviamo anche SKU selezionati o varianti per pulizia
+            localStorage.removeItem('lh360_selected_variant_id');
+        }, 1000);
+    }
 
-            if (!response || response.error) {
-                emailElem.textContent = 'Email non disponibile';
-                paymentElem.textContent = 'Metodo non disponibile';
-                return;
-            }
+    /**
+     * FUNZIONE: Configura i pulsanti CTA
+     */
+    function setupButtons() {
+        // Pulsante Traccia Spedizione
+        const trackBtn = document.querySelector('.btn-primary');
+        if (trackBtn) {
+            // Assumendo che success.html sia nella root e tracking sia in product-details/
+            trackBtn.href = 'product-details/tracking-order.html';
+        }
 
-            if (response.email) {
+        // Pulsante Continua lo Shopping
+        const shopBtn = document.querySelector('.btn-secondary');
+        if (shopBtn) {
+            shopBtn.href = 'index.html#shop';
+        }
+    }
+
+    /**
+     * FUNZIONE: Recupera dettagli da Google Script (JSONP)
+     */
+    function loadOrderDetails() {
+        const urlParams = new URLSearchParams(window.location.search);
+        const sessionId = urlParams.get('session_id');
+        const orderIdParam = urlParams.get('id_ordine'); // Se passato via URL (fallback)
+
+        // Elementi DOM
+        const orderNumElem = document.getElementById('orderNumber');
+        const emailElem = document.getElementById('emailValue');
+        const paymentElem = document.getElementById('paymentValue');
+
+        // Fallback immediato se c'è l'ID nell'URL
+        if (orderIdParam && orderNumElem) {
+            orderNumElem.textContent = `Ordine #${orderIdParam}`;
+        }
+
+        if (!sessionId) {
+            // Se non c'è session ID, non possiamo fare fetch. Mostriamo la pagina.
+            if (emailElem) emailElem.textContent = 'Non disponibile';
+            if (paymentElem) paymentElem.textContent = 'Non disponibile';
+            finalizePageLoad();
+            return;
+        }
+
+        // Creazione chiamata JSONP
+        const callbackName = 'handleDetailsResponse';
+        const script = document.createElement('script');
+        script.src = `${webAppUrl}?get_details=1&session_id=${encodeURIComponent(sessionId)}&callback=${callbackName}`;
+        script.async = true;
+
+        // Gestione errore script (es. blocco adblocker o rete)
+        script.onerror = () => {
+            console.error('Errore script Google Apps.');
+            finalizePageLoad();
+        };
+
+        document.body.appendChild(script);
+    }
+
+    /**
+     * CALLBACK GLOBALE: Riceve i dati da Google Script
+     */
+    window.handleDetailsResponse = function(response) {
+        const emailElem = document.getElementById('emailValue');
+        const paymentElem = document.getElementById('paymentValue');
+        const orderNumElem = document.getElementById('orderNumber');
+
+        if (response && !response.error) {
+            // Aggiorna Email
+            if (response.email && emailElem) {
                 emailElem.textContent = response.email;
             }
 
-            if (response.last4) {
-                paymentElem.textContent = `•••• ${response.last4}`;
-            } else {
-                paymentElem.textContent = '•••• ****';
+            // Aggiorna Metodo Pagamento
+            if (paymentElem) {
+                if (response.last4) {
+                    paymentElem.textContent = `Carta •••• ${response.last4}`;
+                } else {
+                    paymentElem.textContent = 'Pagamento Online'; // Fallback generico
+                }
             }
 
-            if (response.order_id && orderNumElem.textContent === 'ID ordine non disponibile') {
+            // Aggiorna ID Ordine (sovrascrive quello dell'URL se presente, perché questo è quello ufficiale del DB)
+            if (response.order_id && orderNumElem) {
                 orderNumElem.textContent = `Ordine #${response.order_id}`;
             }
+        }
+
+        // Tutto pronto, mostra la pagina
+        finalizePageLoad();
+    };
+
+    /**
+     * FUNZIONE: Carica articoli dal LocalStorage
+     */
+    function loadPurchasedItems() {
+        const cartRaw = localStorage.getItem('lh360_cart');
+        const cart = cartRaw ? JSON.parse(cartRaw) : [];
+        
+        const itemsContainer = document.querySelector('.summary-items');
+        const subtotalElem = document.querySelector('.summary-totals .summary-row:nth-child(1) span:last-child');
+        const shippingElem = document.querySelector('.summary-totals .summary-row:nth-child(2) span:last-child');
+        const totalElem = document.querySelector('.summary-total span:last-child');
+
+        if (!itemsContainer) return;
+
+        // Svuota container (per sicurezza)
+        itemsContainer.innerHTML = '';
+
+        if (cart.length === 0) {
+            itemsContainer.innerHTML = '<div style="padding:1rem; color:#a1a1aa; text-align:center;">Dettagli articoli non disponibili (Sessione scaduta)</div>';
+            return;
+        }
+
+        let subtotal = 0;
+
+        // Mappa colori per visualizzazione più carina
+        const colorNames = {
+            '#000000': 'Nero', '#FFFFFF': 'Bianco', '#008000': 'Verde', 
+            '#FF0000': 'Rosso', '#0000FF': 'Blu'
         };
 
-        // Nuova funzione per caricare e visualizzare i prodotti acquistati dal localStorage
-        function loadPurchasedItems() {
-            const cart = JSON.parse(localStorage.getItem('lh360_cart')) || [];
-            if (cart.length === 0) {
-                // Mantieni i valori statici se non c'è carrello (fallback)
-                return;
+        cart.forEach(item => {
+            // Calcolo subtotale
+            const itemPrice = parseFloat(item.price) || 0;
+            const itemQty = parseInt(item.qty) || 1;
+            subtotal += itemPrice * itemQty;
+
+            // Formattazione variante
+            let displayColor = item.color || '';
+            if (displayColor.startsWith('#') && colorNames[displayColor]) {
+                displayColor = colorNames[displayColor];
             }
+            
+            let variantText = '';
+            if(displayColor) variantText += displayColor;
+            if(displayColor && item.size) variantText += ' · ';
+            if(item.size) variantText += `Taglia ${item.size}`;
+            if(!variantText) variantText = 'Taglia Unica';
 
-            const itemsContainer = document.querySelector('.summary-items');
-            itemsContainer.innerHTML = '';
+            // Creazione HTML Item
+            const div = document.createElement('div');
+            div.className = 'summary-item';
+            div.innerHTML = `
+                <div class="summary-item-image">
+                    <img src="${item.image || 'https://via.placeholder.com/150'}" alt="${item.title}">
+                </div>
+                <div class="summary-item-details">
+                    <div class="summary-item-name">${item.title} <span style="font-size:0.8em; color:#71717a;">(x${itemQty})</span></div>
+                    <div class="summary-item-variant">${variantText}</div>
+                </div>
+                <div class="summary-item-price">€ ${(itemPrice * itemQty).toLocaleString('it-IT', {minimumFractionDigits: 2})}</div>
+            `;
+            itemsContainer.appendChild(div);
+        });
 
-            const colorNames = {
-                '#000000': 'Nero',
-                '#FFFFFF': 'Bianco',
-                '#008000': 'Verde',
-                // Aggiungi altri colori se necessari
-            };
+        // Calcolo Totali
+        const shippingCost = subtotal >= 150 ? 0 : 15;
+        const total = subtotal + shippingCost;
 
-            let subtotal = 0;
-            cart.forEach(item => {
-                subtotal += item.price;
-
-                let displayColor = item.color;
-                if (displayColor && displayColor.startsWith('#') && colorNames[displayColor]) {
-                    displayColor = colorNames[displayColor];
-                }
-
-                const div = document.createElement('div');
-                div.className = 'summary-item';
-                div.innerHTML = `
-                    <div class="summary-item-image">
-                        <img src="${item.image || 'https://via.placeholder.com/200x250?text=' + encodeURIComponent(item.title)}" alt="${item.title}">
-                    </div>
-                    <div class="summary-item-details">
-                        <div class="summary-item-name">${item.title}</div>
-                        <div class="summary-item-variant">${displayColor ? displayColor + ' · ' : ''}Taglia ${item.size}</div>
-                    </div>
-                    <div class="summary-item-price">€ ${item.price.toFixed(2)}</div>
-                `;
-                itemsContainer.appendChild(div);
-            });
-
-            // Calcola e aggiorna i totali
-            const shipping = subtotal >= 150 ? 0 : 15;
-            const discount = 0; // Nessun sconto implementato
-            const total = subtotal + shipping - discount;
-
-            document.querySelector('.summary-totals .summary-row:nth-child(1) span:last-child').textContent = `€ ${subtotal.toFixed(2)}`;
-
-            const shippingSpan = document.querySelector('.summary-totals .summary-row:nth-child(2) span:last-child');
-            shippingSpan.textContent = shipping === 0 ? 'Gratuita' : `€ ${shipping.toFixed(2)}`;
-            shippingSpan.style.color = shipping === 0 ? '#34d399' : '';
-
-            document.querySelector('.summary-totals .summary-row:nth-child(3) span:last-child').textContent = `- € ${discount.toFixed(2)}`;
-
-            document.querySelector('.summary-total span:last-child').textContent = `€ ${total.toFixed(2)}`;
-
-            // Pulisci il localStorage dopo la visualizzazione
-            localStorage.removeItem('lh360_cart');
+        // Aggiornamento UI Totali
+        if (subtotalElem) subtotalElem.textContent = `€ ${subtotal.toLocaleString('it-IT', {minimumFractionDigits: 2})}`;
+        
+        if (shippingElem) {
+            if (shippingCost === 0) {
+                shippingElem.textContent = 'Gratuita';
+                shippingElem.style.color = '#34d399';
+            } else {
+                shippingElem.textContent = `€ ${shippingCost.toLocaleString('it-IT', {minimumFractionDigits: 2})}`;
+                shippingElem.style.color = '#fafafa';
+            }
         }
-    </script>
+
+        if (totalElem) totalElem.textContent = `€ ${total.toLocaleString('it-IT', {minimumFractionDigits: 2})}`;
+    }
+</script>    
 </body>
 </html>
