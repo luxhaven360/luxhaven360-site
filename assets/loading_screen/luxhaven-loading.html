@@ -321,21 +321,81 @@
     <script>
     window.addEventListener('load', () => {
         document.body.style.opacity = '1';
-        loadOrderDetails();  // Se presente, mantienilo; altrimenti rimuovi
     });
 
     const params = new URLSearchParams(window.location.search);
-    const next = params.get('next');
-    const delay = parseInt(params.get('delay')) || 3000;  // Default 3s
+    const next = params.get('next');  // Es. '/luxhaven360-site/product-details/pdp-products.html?sku=...'
+    const type = params.get('type') || 'static';  // 'pdp' | 'success' | 'stripe' | 'static'
+    const sku = params.get('sku');
+    const section = params.get('section');
+    const session_id = params.get('session_id');
+    const id_ordine = params.get('id_ordine');
+    const delayFallback = parseInt(params.get('delay')) || 3000;  // Fallback se attesa dinamica fallisce
 
-    setTimeout(() => {
+    let isLoaded = false;
+
+    function redirectToNext() {
         document.body.style.opacity = '0';
         document.body.style.transition = 'opacity 0.5s';
         setTimeout(() => {
             const redirectUrl = next ? decodeURIComponent(next) : '/luxhaven360-site/index.html';
-            window.location.href = redirectUrl;  // Usa direttamente il path root-relativo
+            window.location.href = redirectUrl;
         }, 500);
-    }, delay);
+    }
+
+    // Funzione per attendere dinamiche basate su type
+    function waitForDynamicLoad() {
+        if (type === 'pdp' && sku && section) {
+            // Simula loadProduct() da pdp-products.html: Fetch JSON e trova prodotto
+            const url = `/luxhaven360-site/products/${section}.json`;  // Root-relative
+            fetch(url)
+                .then(resp => resp.json())
+                .then(items => {
+                    const prod = items.find(p => p.sku === sku);
+                    if (prod) isLoaded = true;
+                })
+                .catch(err => console.error('PDP fetch error:', err))
+                .finally(() => {
+                    if (isLoaded) redirectToNext();
+                    else setTimeout(redirectToNext, delayFallback);  // Fallback
+                });
+        } else if (type === 'success' && session_id) {
+            // Replica loadOrderDetails() con JSONP
+            const webAppUrl = 'https://script.google.com/macros/s/AKfycbwgLsltBb7hCJ2riB40mmNlG6JNjn1SX3n8yPiPhz5c8omT5Do7sG72zSDtEG9wWD1c/exec';
+            const callbackName = 'tempCallback';
+            window[callbackName] = function(response) {
+                if (response && !response.error) {
+                    isLoaded = true;
+                }
+                redirectIfLoaded();
+                // Cleanup
+                const script = document.getElementById('jsonp-script');
+                if (script) script.remove();
+                delete window[callbackName];
+            };
+            const script = document.createElement('script');
+            script.id = 'jsonp-script';
+            script.src = `${webAppUrl}?get_details=1&session_id=${encodeURIComponent(session_id)}&callback=${callbackName}`;
+            script.onerror = () => {
+                console.error('JSONP error');
+                redirectIfLoaded();
+            };
+            document.body.appendChild(script);
+
+            function redirectIfLoaded() {
+                if (isLoaded) redirectToNext();
+                else setTimeout(redirectToNext, delayFallback);
+            }
+        } else if (type === 'stripe') {
+            // Per Stripe: Delay fisso (esterno, no attesa dinamica possibile)
+            setTimeout(redirectToNext, delayFallback);
+        } else {
+            // Static: Delay fisso
+            setTimeout(redirectToNext, delayFallback);
+        }
+    }
+
+    waitForDynamicLoad();
 </script>
 </body>
 </html>
