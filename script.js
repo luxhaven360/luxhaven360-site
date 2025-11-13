@@ -193,7 +193,6 @@ function initDynamicProducts() {
 // init al load
 window.addEventListener('DOMContentLoaded', () => {
     initDynamicProducts();
-    updateTrackingIcon(); // Nuova: Inizializza icona tracking
 });
 
 // --- end ---
@@ -275,32 +274,3 @@ function hideLoader() {
         }, 500);
     }
 }
-
-// Nuova funzione per icona tracking
-function updateTrackingIcon() {
-    const trackingIcon = document.getElementById('trackingIcon');
-    if (!trackingIcon) return;
-    
-    const orders = JSON.parse(localStorage.getItem('lh360_orders')) || [];
-    const thirtyDaysAgo = Date.now() - 30 * 24 * 60 * 60 * 1000;
-    
-    const pendingOrders = orders.filter(order => {
-        const orderDate = new Date(order.date).getTime();
-        const daysPassed = (Date.now() - orderDate) / (1000 * 60 * 60 * 24);
-        const isPending = daysPassed < 2;  // Simula: <2 giorni = pending (non consegnati)
-        return orderDate >= thirtyDaysAgo && isPending;
-    });
-    
-    if (pendingOrders.length > 0) {
-        trackingIcon.classList.add('show');
-    } else {
-        trackingIcon.classList.remove('show');
-    }
-}
-
-// Listener storage per aggiornamenti cross-tab
-window.addEventListener('storage', (e) => {
-    if (e.key === 'lh360_orders') {
-        updateTrackingIcon();
-    }
-});
