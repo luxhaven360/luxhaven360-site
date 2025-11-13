@@ -254,7 +254,10 @@ function showLoader() {
     // Piccolo timeout per permettere al DOM di aggiornarsi prima di cambiare opacity
     setTimeout(() => {
         const loader = document.getElementById('luxhaven-loader');
-        if (loader) loader.classList.add('visible');
+        if (loader) {
+            loader.style.display = 'flex'; // Reset display per override 'none' da hide
+            loader.classList.add('visible');
+        }
     }, 10);
 }
 
