@@ -38,7 +38,7 @@ window.addEventListener('scroll', () => {
 document.addEventListener('click', (e) => {
     const nav = document.getElementById('navLinks');
     const toggle = document.querySelector('.mobile-toggle');
-    if (nav && toggle && !nav.contains(e.target) && !toggle.contains(e.target)) {
+    if (nav && toggle && !nav.contains(e.target) && !toggle.contains(e.target) ) {
         nav.classList.remove('active');
     }
 });
@@ -273,4 +273,31 @@ function hideLoader() {
             // loader.remove(); // Decommenta se vuoi rimuoverlo completamente
         }, 500);
     }
+}
+
+// Funzione per aggiornare la visibilità dell'icona tracking
+function updateTrackingIcon() {
+    const orders = JSON.parse(localStorage.getItem('lh360_orders') || '[]');
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+    
+    const hasPending = orders.some(order => {
+        return new Date(order.date) > thirtyDaysAgo && order.status !== 'delivered';
+    });
+    
+    const trackingIcon = document.getElementById('trackingIcon');
+    if (trackingIcon) {
+        if (hasPending) {
+            trackingIcon.classList.add('show');
+        } else {
+            trackingIcon.classList.remove('show');
+        }
+    }
+    
+    // Listener per cambiamenti
+    window.addEventListener('storage', (event) => {
+        if (event.key === 'lh360_orders') {
+            updateTrackingIcon();
+        }
+    });
 }
