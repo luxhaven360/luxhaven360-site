@@ -527,24 +527,24 @@
 
                 <div class="progress-section">
                     <div class="progress-steps">
-                        <div class="progress-line" style="width: ${progressPercent}%;"></div>
-                        <div class="step ${activeStep >= 0 ? 'completed' : ''}">
-                            <div class="step-icon">✓</div>
-                            <div class="step-label">Confermato</div>
-                        </div>
-                        <div class="step ${activeStep === 1 ? 'active' : ''} ${activeStep > 1 ? 'completed' : ''}">
-                            <div class="step-icon">${activeStep > 1 ? '✓' : '📦'}</div>
-                            <div class="step-label">Preparato</div>
-                        </div>
-                        <div class="step ${activeStep === 2 ? 'active' : ''} ${activeStep > 2 ? 'completed' : ''}">
-                            <div class="step-icon">${activeStep > 2 ? '✓' : '🚚'}</div>
-                            <div class="step-label">In Viaggio</div>
-                        </div>
-                        <div class="step ${activeStep === 3 ? 'active' : ''} ${activeStep > 3 ? 'completed' : ''}">
-                            <div class="step-icon">${activeStep > 3 ? '✓' : '🏠'}</div>
-                            <div class="step-label">Consegnato</div>
-                        </div>
+                    <div class="progress-line" style="width: ${progressPercent}%;"></div>
+                    <div class="step ${activeStep >= 0 ? 'completed' : ''} ${activeStep === 0 ? 'active' : ''}">
+                        <div class="step-icon">${activeStep > 0 ? '✓' : '📝'}</div>
+                        <div class="step-label">Confermato</div>
                     </div>
+                    <div class="step ${activeStep >= 1 ? 'completed' : ''} ${activeStep === 1 ? 'active' : ''}">
+                        <div class="step-icon">${activeStep > 1 ? '✓' : '📦'}</div>
+                        <div class="step-label">Preparato</div>
+                    </div>
+                    <div class="step ${activeStep >= 2 ? 'completed' : ''} ${activeStep === 2 ? 'active' : ''}">
+                        <div class="step-icon">${activeStep > 2 ? '✓' : '🚚'}</div>
+                        <div class="step-label">In Viaggio</div>
+                    </div>
+                    <div class="step ${activeStep >= 3 ? 'completed' : ''} ${activeStep === 3 ? 'active' : ''}">
+                        <div class="step-icon">${activeStep === 3 ? '✓' : '🏠'}</div>
+                        <div class="step-label">Consegnato</div>
+                      </div>
+                   </div>
                 </div>
 
                 <div class="order-details">
@@ -591,40 +591,68 @@
         }
         
         /**
-         * Helper per barra progresso (Req 5 - Logica Temporale)
+         * Helper per barra progresso (Logica Ibrida Stato + Tempo)
+         * - activeStep: lo step corrente (0, 1, 2, 3)
+         * - progressPercent: la percentuale riempita della barra
          */
         function getProgressInfo(stato, orderDateStr, deliveryDateStr) {
-            let activeStep = 0;
+            const stepMap = { 'Confermato': 0, 'In Preparazione': 1, 'In Transito': 2, 'Consegnato': 3 };
+            let activeStep = stepMap[stato] !== undefined ? stepMap[stato] : 0;
             let progressPercent = 0;
             
-            const stepMap = { 'Confermato': 0, 'In Preparazione': 1, 'In Transito': 2, 'Consegnato': 3 };
-            activeStep = stepMap[stato] !== undefined ? stepMap[stato] : 0;
+            // Definisci la percentuale minima per ogni step completato
+            const basePercents = [0, 33, 66, 100];
             
+            // 1. Se Consegnato, è sempre 100% e step 3
             if (stato === 'Consegnato') {
                 return { progressPercent: 100, activeStep: 3 };
             }
             
-            try {
-                // Tenta di parsare la data 'dd MMMM yyyy' o altri formati
-                const deliveryDate = parseItalianDate(deliveryDateStr);
-                const start = new Date(orderDateStr).getTime();
-                const end = deliveryDate.getTime();
-                const now = Date.now();
-                
-                if (!isNaN(start) && !isNaN(end) && end > start) {
-                    const totalDuration = end - start;
-                    const elapsed = now - start;
-                    // Calcola progresso, ma bloccalo tra 5% e 95% se non ancora consegnato
-                    progressPercent = Math.max(5, Math.min(95, (elapsed / totalDuration) * 100));
-                } else {
-                    // Fallback se date non valide, usa la logica a step
-                    const percents = [10, 33, 66, 100];
-                    progressPercent = percents[activeStep];
+            // 2. Se l'ordine non è ancora "In Transito" (cioè Confermato o In Preparazione)
+            if (activeStep <= 1) {
+                // Calcola l'avanzamento tra l'ordine e la fase di preparazione
+                // (Esempio: assume che la preparazione duri 7 giorni se non specificato)
+                try {
+                    const start = new Date(orderDateStr).getTime();
+                    // Assumiamo che la preparazione duri max 7 giorni (604800000ms) se non è già 'In Preparazione'
+                    const targetEnd = start + (activeStep === 0 ? (7 * 24 * 60 * 60 * 1000) : 0);
+                    const now = Date.now();
+                    
+                    if (!isNaN(start) && targetEnd > start && activeStep < 1) {
+                         const totalDuration = targetEnd - start;
+                         const elapsed = now - start;
+                         // Progresso solo tra il 0% e 33% (fase 0)
+                         progressPercent = Math.min(33, (elapsed / totalDuration) * 33);
+                         // Blocca al minimo 10% per un feedback visivo immediato
+                         progressPercent = Math.max(10, progressPercent);
+                    } else {
+                         // Ordine Confermato / In Preparazione, usa la percentuale base
+                         progressPercent = basePercents[activeStep];
+                    }
+                } catch (e) {
+                    // Fallback se date non valide
+                    progressPercent = basePercents[activeStep];
                 }
-            } catch (e) {
-                // Fallback se parsing fallisce
-                const percents = [10, 33, 66, 100];
-                progressPercent = percents[activeStep];
+                
+            } else if (activeStep === 2) { 
+                // 3. Fase "In Viaggio" (tra 66% e 100%)
+                try {
+                    const start = new Date(orderDateStr).getTime();
+                    const end = parseItalianDate(deliveryDateStr).getTime();
+                    const now = Date.now();
+                    
+                    if (!isNaN(start) && !isNaN(end) && end > start) {
+                        const totalDuration = end - start;
+                        const elapsed = now - start;
+                        
+                        // Calcola progresso totale e lo normalizza tra 66% e 99%
+                        progressPercent = Math.max(66, Math.min(99, (elapsed / totalDuration) * 100));
+                    } else {
+                        progressPercent = basePercents[activeStep]; // Usa 66% se la data di consegna è ignota
+                    }
+                } catch (e) {
+                    progressPercent = basePercents[activeStep];
+                }
             }
             
             return { progressPercent, activeStep };
@@ -679,12 +707,29 @@
         }
 
         /**
-         * 7. Avvio
+         * 8. Avvia il refresh automatico dei dati ogni 30 secondi
          */
-        document.addEventListener('DOMContentLoaded', () => {
+        function startAutoRefresh() {
+            // Aggiorna i dati immediatamente
             const localOrders = getLocalOrderKeys();
             fetchTrackingData(localOrders);
+
+            // Poi imposta un timer per aggiornare i dati ogni 30 secondi
+            setInterval(() => {
+                console.log('Aggiornamento automatico dei dati di tracciamento...');
+                const currentLocalOrders = getLocalOrderKeys();
+                fetchTrackingData(currentLocalOrders);
+            }, 30000); // 30000 millisecondi = 30 secondi
+        }
+
+        /**
+         * 9. Avvio Iniziale e Refresh
+         */
+        document.addEventListener('DOMContentLoaded', () => {
+            // Avvia il ciclo di refresh automatico
+            startAutoRefresh();
         });
+        
     </script>
 </body>
 </html>
