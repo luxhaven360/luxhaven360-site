@@ -8,24 +8,25 @@
 </head>
 <body>
     <!-- Navigation -->
-<nav id="navbar">
-    <div class="nav-content">
-        <div class="logo" onclick="showSection('home')">LuxHaven360</div>
-        <div class="mobile-toggle" onclick="toggleMenu()">
-            <span></span><span></span><span></span>
+    <nav id="navbar">
+        <div class="nav-content">
+            <div class="logo" onclick="showSection('home')">LuxHaven360</div>
+            <div class="mobile-toggle" onclick="toggleMenu()">
+                <span></span><span></span><span></span>
+            </div>
+            <ul class="nav-links" id="navLinks">
+                <li><a href="#" onclick="showSection('home')">Home</a></li>
+                <li><a href="#" onclick="showSection('properties')">Immobili</a></li>
+                <li><a href="#" onclick="showSection('supercars')">Supercar</a></li>
+                <li><a href="#" onclick="showSection('stays')">Esperienze</a></li>
+                <li><a href="#" onclick="showSection('shop')">Shop</a></li>
+                <li><a href="#" onclick="showSection('contact')">Contatti</a></li>
+                <!-- NUOVO: Icona Tracciamento Ordini -->
+                <li id="trackingIcon" class="cart-icon" style="display: none;" onclick="window.location.href='product-details/tracking-order.html'" title="Traccia i tuoi ordini">📦</li>
+                <li id="cartIcon" class="cart-icon" onclick="window.location.href='product-details/cart.html'">🛒</li>
+            </ul>
         </div>
-        <ul class="nav-links" id="navLinks">
-            <li><a href="#" onclick="showSection('home')">Home</a></li>
-            <li><a href="#" onclick="showSection('properties')">Immobili</a></li>
-            <li><a href="#" onclick="showSection('supercars')">Supercar</a></li>
-            <li><a href="#" onclick="showSection('stays')">Esperienze</a></li>
-            <li><a href="#" onclick="showSection('shop')">Shop</a></li>
-            <li><a href="#" onclick="showSection('contact')">Contatti</a></li>
-            <li id="cartIcon" class="cart-icon" onclick="window.location.href='product-details/cart.html'">🛒</li>
-            <li id="trackingIcon" class="tracking-icon" onclick="window.location.href='product-details/tracking-order.html'" style="display: none;">🚚</li>
-        </ul>
-    </div>
-</nav>
+    </nav>
 
     <!-- Hero Section -->
     <section class="hero" id="home">
@@ -123,17 +124,17 @@
 
     <script src="script.js"></script>
     <script>
-        // Aggiungi questo blocco di codice per gestire gli anchor link esterni.
-        // Controlla se l'URL contiene un hash (es. #shop) all'avvio della pagina.
-        window.onload = function() {
-            const hash = window.location.hash.substring(1); // Rimuove il '#'
+        // URL della Web App Google Apps Script
+        const WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbyiDu50VIVwzJ3qQNCWZmSk-_ovC7iBvxJGUYriRc3-PwMRbsgi8wb0baqxk3nLxti2/exec';
 
-            // Se è presente un hash E la funzione showSection esiste, chiamala.
+        // Gestione hash per anchor link esterni
+        window.onload = function() {
+            const hash = window.location.hash.substring(1);
             if (hash && typeof showSection === 'function') {
                 showSection(hash);
             }
-            updateCartIcon(); // Inizializza l'icona carrello all'avvio
-            updateTrackingIcon();
+            updateCartIcon();
+            updateTrackingIcon(); // NUOVO: Check ordini attivi
         };
 
         // Funzione per aggiornare la visibilità dell'icona carrello
@@ -146,13 +147,70 @@
             } else {
                 cartIcon.classList.remove('show');
             }
-            // Aggiungi listener per cambiamenti in localStorage (per aggiornamenti cross-tab)
-            window.addEventListener('storage', (event) => {
-                if (event.key === 'lh360_cart') {
-                    updateCartIcon();
-                }
-            });
         }
+
+        /**
+         * NUOVA FUNZIONE: Aggiorna visibilità icona tracciamento ordini
+         * Mostra l'icona solo se ci sono ordini attivi negli ultimi 30 giorni
+         */
+        function updateTrackingIcon() {
+            const trackingIcon = document.getElementById('trackingIcon');
+            
+            // Call Google Apps Script endpoint to get active orders count
+            const callbackName = 'handleActiveOrdersCount';
+            const script = document.createElement('script');
+            script.src = `${WEB_APP_URL}?get_active_count=1&callback=${callbackName}`;
+            
+            window[callbackName] = function(response) {
+                if (response && response.count > 0) {
+                    trackingIcon.style.display = 'block';
+                } else {
+                    trackingIcon.style.display = 'none';
+                }
+                
+                // Cleanup
+                try {
+                    document.body.removeChild(script);
+                    delete window[callbackName];
+                } catch (e) {}
+            };
+            
+            script.onerror = () => {
+                // Fallback: check localStorage for recent order
+                const lastOrderTime = localStorage.getItem('lh360_order_confirmed_time');
+                if (lastOrderTime) {
+                    const orderDate = new Date(lastOrderTime);
+                    const thirtyDaysAgo = new Date(Date.now() - (30 * 24 * 60 * 60 * 1000));
+                    if (orderDate > thirtyDaysAgo) {
+                        trackingIcon.style.display = 'block';
+                    }
+                }
+                
+                // Cleanup
+                try {
+                    document.body.removeChild(script);
+                    delete window[callbackName];
+                } catch (e) {}
+            };
+            
+            document.body.appendChild(script);
+        }
+
+        // Listener per cambiamenti in localStorage (per aggiornamenti cross-tab)
+        window.addEventListener('storage', (event) => {
+            if (event.key === 'lh360_cart') {
+                updateCartIcon();
+            }
+            // Aggiorna anche tracking icon se viene salvato un nuovo ordine
+            if (event.key && event.key.startsWith('lh360_order_')) {
+                updateTrackingIcon();
+            }
+        });
+
+        // Aggiorna icone periodicamente (ogni 5 minuti)
+        setInterval(() => {
+            updateTrackingIcon();
+        }, 5 * 60 * 1000);
     </script>
 </body>
 </html>
