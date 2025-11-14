@@ -83,10 +83,6 @@
             animation: fadeIn 0.8s ease-out both;
         }
 
-        .order-card:nth-child(1) { animation-delay: 0.1s; }
-        .order-card:nth-child(2) { animation-delay: 0.2s; }
-        .order-card:nth-child(3) { animation-delay: 0.3s; }
-
         .order-card:hover {
             border-color: rgba(255, 255, 255, 0.1);
             transform: translateY(-4px);
@@ -122,19 +118,20 @@
             white-space: nowrap;
         }
 
-        .status-badge.transit {
+        .status-badge.in-transito {
             background: rgba(16, 185, 129, 0.1);
             border: 1px solid rgba(16, 185, 129, 0.3);
             color: #34d399;
         }
 
-        .status-badge.delivered {
+        .status-badge.consegnato {
             background: rgba(59, 130, 246, 0.1);
             border: 1px solid rgba(59, 130, 246, 0.3);
             color: #60a5fa;
         }
 
-        .status-badge.processing {
+        .status-badge.in-preparazione,
+        .status-badge.confermato {
             background: rgba(251, 191, 36, 0.1);
             border: 1px solid rgba(251, 191, 36, 0.3);
             color: #fbbf24;
@@ -255,6 +252,7 @@
         .items-list {
             display: flex;
             gap: 1rem;
+            flex-wrap: wrap;
         }
 
         .item-image {
@@ -288,12 +286,12 @@
             display: inline-flex;
             align-items: center;
             gap: 0.5rem;
+            border: none;
         }
 
         .btn-primary {
             background: white;
             color: #09090b;
-            border: none;
         }
 
         .btn-primary:hover {
@@ -336,6 +334,27 @@
             margin-bottom: 2rem;
         }
 
+        /* Loading State */
+        .loading-state {
+            text-align: center;
+            padding: 4rem 2rem;
+            color: #a1a1aa;
+        }
+
+        .loading-spinner {
+            width: 50px;
+            height: 50px;
+            border: 3px solid rgba(255, 255, 255, 0.1);
+            border-top-color: #10b981;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 1.5rem;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
         @media (max-width: 768px) {
             .title {
                 font-size: 2rem;
@@ -372,189 +391,338 @@
 </head>
 <body>
     <div class="container">
+        <!-- Header -->
         <div class="header">
-            <div class="brand">LUXHAVEN360</div>
+            <div class="brand">LuxHaven360</div>
             <h1 class="title">I Tuoi Ordini</h1>
-            <p class="subtitle">Traccia lo stato delle tue spedizioni recenti</p>
+            <p class="subtitle">Ordini degli ultimi 30 giorni</p>
         </div>
 
-        <!-- Input Email (se non in localStorage) -->
-        <div id="emailInputContainer" class="email-input" style="text-align: center; margin-bottom: 3rem; display: none;">
-            <input id="emailInput" type="email" placeholder="Inserisci la tua email" style="padding: 1rem; width: 300px; border-radius: 0.5rem; border: 1px solid #27272a; background: #18181b; color: #fafafa;">
-            <button onclick="loadOrders()" style="padding: 1rem 2rem; margin-left: 1rem; background: #34d399; border: none; border-radius: 0.5rem; color: #09090b; cursor: pointer;">Carica Ordini</button>
+        <!-- Loading State -->
+        <div class="loading-state" id="loadingState">
+            <div class="loading-spinner"></div>
+            <p>Caricamento ordini in corso...</p>
         </div>
 
-        <div class="orders-list" id="ordersList">
-            <!-- Cards popolate dinamicamente qui -->
+        <!-- Orders List -->
+        <div class="orders-list" id="ordersList" style="display: none;">
+            <!-- Orders will be dynamically populated -->
         </div>
 
-        <!-- Template Card (hidden) -->
-        <div id="orderTemplate" style="display: none;">
-            <div class="order-card">
-                <div class="order-header">
-                    <div class="order-info">
-                        <h3 class="order-id"></h3>
-                        <div class="order-date"></div>
-                    </div>
-                    <div class="status-badge"></div>
-                </div>
-
-                <div class="progress-section">
-                    <div class="progress-steps">
-                        <div class="progress-line"></div>
-                        <div class="step" data-step="confirmed">
-                            <div class="step-icon">✓</div>
-                            <div class="step-label">Confermato</div>
-                        </div>
-                        <div class="step" data-step="preparing">
-                            <div class="step-icon">📦</div>
-                            <div class="step-label">Preparato</div>
-                        </div>
-                        <div class="step" data-step="shipped">
-                            <div class="step-icon">🚚</div>
-                            <div class="step-label">In Viaggio</div>
-                        </div>
-                        <div class="step" data-step="delivered">
-                            <div class="step-icon">🏠</div>
-                            <div class="step-label">Consegnato</div>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="order-details">
-                    <div class="detail-item">
-                        <div class="detail-label">Consegna Prevista</div>
-                        <div class="detail-value consegna-prevista"></div>
-                    </div>
-                    <div class="detail-item">
-                        <div class="detail-label">Articoli</div>
-                        <div class="detail-value num-articoli"></div>
-                    </div>
-                    <div class="detail-item">
-                        <div class="detail-label">Totale</div>
-                        <div class="detail-value totale"></div>
-                    </div>
-                </div>
-
-                <div class="order-items">
-                    <div class="items-title">Articoli ordinati</div>
-                    <div class="items-list"></div>
-                </div>
-
-                <div class="order-actions"></div>
-            </div>
+        <!-- Empty State -->
+        <div class="empty-state" id="emptyState" style="display: none;">
+            <div class="empty-icon">📦</div>
+            <h2 class="empty-title">Nessun ordine recente</h2>
+            <p class="empty-text">Non hai ordini negli ultimi 30 giorni</p>
+            <a href="../index.html#shop" class="btn btn-primary">Inizia a Fare Shopping</a>
         </div>
     </div>
 
     <script>
-        const webAppUrl = 'https://script.google.com/macros/s/YOUR_WEB_APP_ID/exec'; // Sostituisci
+        // Configuration
+        const WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbyiDu50VIVwzJ3qQNCWZmSk-_ovC7iBvxJGUYriRc3-PwMRbsgi8wb0baqxk3nLxti2/exec';
+        const SHEET_ID = '1YL3VKtDPIqFkTbE5IjglQ8GxC-N3QnDy9IYxkzZBXe8'; // Sostituisci con il tuo Sheet ID
 
-        function loadOrders() {
-            let email = localStorage.getItem('lh360_user_email') || document.getElementById('emailInput').value.trim();
-            if (!email) {
-                alert('Inserisci una email valida.');
-                return;
-            }
-            localStorage.setItem('lh360_user_email', email);
+        // State mapping
+        const STATE_STEPS = {
+            'Confermato': 0,
+            'In Preparazione': 1,
+            'In Transito': 2,
+            'Consegnato': 3
+        };
 
-            const callbackName = 'handleOrders_' + Date.now();
-            window[callbackName] = function(resp) {
-                if (resp.error) {
-                    alert('Errore: ' + resp.error);
-                } else {
-                    populateOrders(resp);
-                }
-                try { document.body.removeChild(script); } catch (e) {}
-            };
+        const STEP_ICONS = ['✓', '📦', '🚚', '🏠'];
+        const STEP_LABELS = ['Confermato', 'Preparato', 'In Viaggio', 'Consegnato'];
 
-            const script = document.createElement('script');
-            script.src = `${webAppUrl}?get_orders=1&email=${encodeURIComponent(email)}&callback=${callbackName}`;
-            document.body.appendChild(script);
+        /**
+         * Calcola la percentuale di progresso basata sul tempo
+         */
+        function calculateTimeBasedProgress(orderDate, deliveryDate, currentState) {
+            const now = new Date();
+            const start = parseItalianDate(orderDate);
+            const end = parseItalianDate(deliveryDate);
+            
+            if (!start || !end) return STATE_STEPS[currentState] * 33.33; // Fallback to step-based
+            
+            const totalDuration = end - start;
+            const elapsed = now - start;
+            
+            if (elapsed <= 0) return 0;
+            if (elapsed >= totalDuration) return 100;
+            
+            return Math.min(100, (elapsed / totalDuration) * 100);
         }
 
-        function populateOrders(orders) {
+        /**
+         * Parse date in formato italiano dd/MM/yyyy o dd MMMM yyyy
+         */
+        function parseItalianDate(dateStr) {
+            if (!dateStr) return null;
+            
+            // Try dd/MM/yyyy format
+            const parts = dateStr.split('/');
+            if (parts.length === 3) {
+                return new Date(parts[2], parts[1] - 1, parts[0]);
+            }
+            
+            // Try dd MMMM yyyy format
+            const months = {
+                'gennaio': 0, 'febbraio': 1, 'marzo': 2, 'aprile': 3,
+                'maggio': 4, 'giugno': 5, 'luglio': 6, 'agosto': 7,
+                'settembre': 8, 'ottobre': 9, 'novembre': 10, 'dicembre': 11
+            };
+            
+            const match = dateStr.match(/(\d{1,2})\s+(\w+)\s+(\d{4})/);
+            if (match) {
+                const day = parseInt(match[1]);
+                const monthName = match[2].toLowerCase();
+                const year = parseInt(match[3]);
+                if (months[monthName] !== undefined) {
+                    return new Date(year, months[monthName], day);
+                }
+            }
+            
+            return null;
+        }
+
+        /**
+         * Format price
+         */
+        function formatPrice(price) {
+            if (typeof price === 'string') {
+                if (price.includes('€')) return price;
+                const num = parseFloat(price.replace(',', '.'));
+                if (!isNaN(num)) {
+                    return new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR' }).format(num);
+                }
+                return price;
+            }
+            return new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR' }).format(price);
+        }
+
+        /**
+         * Create progress bar HTML
+         */
+        function createProgressBar(orderDate, deliveryDate, currentState) {
+            const progress = calculateTimeBasedProgress(orderDate, deliveryDate, currentState);
+            const currentStep = STATE_STEPS[currentState] || 0;
+            
+            let stepsHTML = '';
+            for (let i = 0; i < 4; i++) {
+                const isCompleted = i < currentStep;
+                const isActive = i === currentStep;
+                const stepClass = isCompleted ? 'completed' : (isActive ? 'active' : '');
+                
+                stepsHTML += `
+                    <div class="step ${stepClass}">
+                        <div class="step-icon">${STEP_ICONS[i]}</div>
+                        <div class="step-label">${STEP_LABELS[i]}</div>
+                    </div>
+                `;
+            }
+            
+            return `
+                <div class="progress-section">
+                    <div class="progress-steps">
+                        <div class="progress-line" style="width: ${progress}%;"></div>
+                        ${stepsHTML}
+                    </div>
+                </div>
+            `;
+        }
+
+        /**
+         * Get action buttons based on state
+         */
+        function getActionButtons(state, orderId) {
+            const normalizedState = state.toLowerCase().replace(/\s+/g, '-');
+            
+            if (normalizedState === 'in-transito') {
+                return `
+                    <button class="btn btn-primary" onclick="alert('Funzionalità di tracciamento in arrivo!')">
+                        <span>Traccia Spedizione</span>
+                        <span>→</span>
+                    </button>
+                    <button class="btn btn-secondary" onclick="alert('Dettagli ordine ${orderId}')">Dettagli</button>
+                `;
+            } else if (normalizedState === 'consegnato') {
+                return `
+                    <button class="btn btn-primary" onclick="window.location.href='../index.html#shop'">
+                        <span>Acquista di Nuovo</span>
+                    </button>
+                    <button class="btn btn-secondary" onclick="alert('Funzionalità recensioni in arrivo!')">Lascia Recensione</button>
+                `;
+            } else {
+                return `
+                    <button class="btn btn-primary" onclick="alert('Dettagli ordine ${orderId}')">
+                        <span>Dettagli Ordine</span>
+                        <span>→</span>
+                    </button>
+                    <button class="btn btn-secondary" onclick="alert('Supporto: support@luxhaven360.com')">Contatta Supporto</button>
+                `;
+            }
+        }
+
+        /**
+         * Create order card HTML
+         */
+        function createOrderCard(order, index) {
+            const stateClass = order.stato.toLowerCase().replace(/\s+/g, '-');
+            const itemCount = order.products ? order.products.length : 1;
+            
+            // Generate product images
+            let imagesHTML = '';
+            if (order.products && order.products.length > 0) {
+                order.products.slice(0, 4).forEach(product => {
+                    const imgSrc = product.image || `https://images.unsplash.com/photo-1591047139829-d91aecb6caea?w=200&h=250&fit=crop`;
+                    imagesHTML += `
+                        <div class="item-image">
+                            <img src="${imgSrc}" alt="${product.name || 'Prodotto'}">
+                        </div>
+                    `;
+                });
+            } else {
+                imagesHTML = `
+                    <div class="item-image">
+                        <img src="https://images.unsplash.com/photo-1591047139829-d91aecb6caea?w=200&h=250&fit=crop" alt="Prodotto">
+                    </div>
+                `;
+            }
+            
+            return `
+                <div class="order-card" style="animation-delay: ${index * 0.1}s;">
+                    <div class="order-header">
+                        <div class="order-info">
+                            <h3>${order.id}</h3>
+                            <div class="order-date">${order.data}</div>
+                        </div>
+                        <div class="status-badge ${stateClass}">${order.stato}</div>
+                    </div>
+
+                    ${createProgressBar(order.data, order.consegna_prevista, order.stato)}
+
+                    <div class="order-details">
+                        <div class="detail-item">
+                            <div class="detail-label">${order.stato === 'Consegnato' ? 'Consegnato il' : 'Consegna Prevista'}</div>
+                            <div class="detail-value">${order.consegna_prevista || 'Da definire'}</div>
+                        </div>
+                        <div class="detail-item">
+                            <div class="detail-label">Articoli</div>
+                            <div class="detail-value">${itemCount} articol${itemCount === 1 ? 'o' : 'i'}</div>
+                        </div>
+                        <div class="detail-item">
+                            <div class="detail-label">Totale</div>
+                            <div class="detail-value">${formatPrice(order.totale)}</div>
+                        </div>
+                    </div>
+
+                    <div class="order-items">
+                        <div class="items-title">Articoli ordinati</div>
+                        <div class="items-list">
+                            ${imagesHTML}
+                        </div>
+                    </div>
+
+                    <div class="order-actions">
+                        ${getActionButtons(order.stato, order.id)}
+                    </div>
+                </div>
+            `;
+        }
+
+        /**
+         * Load orders from Google Sheets (via Apps Script Web App endpoint)
+         */
+        async function loadOrders() {
+            try {
+                // Using JSONP for cross-origin requests
+                const callbackName = 'handleOrdersData';
+                const script = document.createElement('script');
+                script.src = `${WEB_APP_URL}?action=get_orders&callback=${callbackName}`;
+                
+                window[callbackName] = function(data) {
+                    document.getElementById('loadingState').style.display = 'none';
+                    
+                    if (data.error) {
+                        console.error('Error loading orders:', data.error);
+                        showEmptyState();
+                        return;
+                    }
+                    
+                    if (!data.orders || data.orders.length === 0) {
+                        showEmptyState();
+                        return;
+                    }
+                    
+                    renderOrders(data.orders);
+                    document.body.removeChild(script);
+                    delete window[callbackName];
+                };
+                
+                script.onerror = () => {
+                    console.error('Failed to load orders');
+                    // Fallback: load from localStorage or show empty state
+                    loadFromLocalStorage();
+                };
+                
+                document.body.appendChild(script);
+                
+            } catch (error) {
+                console.error('Error:', error);
+                loadFromLocalStorage();
+            }
+        }
+
+        /**
+         * Fallback: Load from localStorage (demo data)
+         */
+        function loadFromLocalStorage() {
+            document.getElementById('loadingState').style.display = 'none';
+            
+            // Check if there are any recent orders in localStorage
+            const recentOrderId = localStorage.getItem('lh360_last_order_id');
+            
+            if (!recentOrderId) {
+                showEmptyState();
+                return;
+            }
+            
+            // Create a demo order from localStorage data
+            const demoOrders = [{
+                id: recentOrderId,
+                data: new Date().toLocaleDateString('it-IT'),
+                stato: 'In Preparazione',
+                consegna_prevista: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toLocaleDateString('it-IT'),
+                totale: '0,00',
+                products: []
+            }];
+            
+            renderOrders(demoOrders);
+        }
+
+        /**
+         * Render orders to DOM
+         */
+        function renderOrders(orders) {
             const ordersList = document.getElementById('ordersList');
             ordersList.innerHTML = '';
-            if (orders.length === 0) {
-                ordersList.innerHTML = '<p style="text-align: center; color: #a1a1aa;">Nessun ordine attivo trovato negli ultimi 30 giorni.</p>';
-                return;
-            }
-            const template = document.getElementById('orderTemplate').firstElementChild;
-            orders.forEach(order => {
-                const card = template.cloneNode(true);
-                card.querySelector('.order-id').textContent = order.id;
-                card.querySelector('.order-date').textContent = new Date(order.order_date).toLocaleDateString('it-IT', { day: 'numeric', month: 'long', year: 'numeric' });
-                const badge = card.querySelector('.status-badge');
-                badge.textContent = order.stato;
-                if (order.stato === 'In Transito') badge.classList.add('transit');
-                else if (order.stato === 'Consegnato') badge.classList.add('delivered');
-                else badge.classList.add('processing');
-
-                card.querySelector('.progress-line').style.width = order.progress_percent + '%';
-
-                // Aggiorna steps based on stato
-                const stepsMap = {'Confermato': 'confirmed', 'In Preparazione': 'preparing', 'In Transito': 'shipped', 'Consegnato': 'delivered'};
-                const currentStep = stepsMap[order.stato] || 'confirmed';
-                const steps = card.querySelectorAll('.step');
-                let passed = true;
-                steps.forEach(step => {
-                    const stepKey = step.dataset.step;
-                    step.classList.remove('completed', 'active', 'pending');
-                    if (passed && stepKey !== currentStep) {
-                        step.classList.add('completed');
-                    } else if (stepKey === currentStep) {
-                        step.classList.add('active');
-                        passed = false;
-                    } else {
-                        step.classList.add('pending');
-                        passed = false;
-                    }
-                });
-
-                card.querySelector('.consegna-prevista').textContent = order.consegna_prevista;
-                card.querySelector('.num-articoli').textContent = order.num_articoli + ' articoli';
-                card.querySelector('.totale').textContent = order.totale;
-
-                const itemsList = card.querySelector('.items-list');
-                order.images.slice(0, 3).forEach(img => {
-                    const div = document.createElement('div');
-                    div.className = 'item-image';
-                    div.innerHTML = `<img src="${img}" alt="Prodotto">`;
-                    itemsList.appendChild(div);
-                });
-                if (order.images.length === 0) itemsList.innerHTML = '<p style="color: #a1a1aa;">Immagini non disponibili</p>';
-
-                const actions = card.querySelector('.order-actions');
-                if (order.stato === 'In Transito') {
-                    actions.innerHTML = `
-                        <a href="#" class="btn btn-primary"><span>Traccia Spedizione</span><span>→</span></a>
-                        <a href="#" class="btn btn-secondary">Dettagli</a>
-                    `;
-                } else if (order.stato === 'Consegnato') {
-                    actions.innerHTML = `
-                        <a href="#" class="btn btn-primary"><span>Acquista di Nuovo</span></a>
-                        <a href="#" class="btn btn-secondary">Lascia Recensione</a>
-                    `;
-                } else {
-                    actions.innerHTML = `
-                        <a href="#" class="btn btn-primary"><span>Dettagli Ordine</span><span>→</span></a>
-                        <a href="#" class="btn btn-secondary">Contatta Supporto</a>
-                    `;
-                }
-
-                ordersList.appendChild(card);
+            
+            orders.forEach((order, index) => {
+                ordersList.innerHTML += createOrderCard(order, index);
             });
+            
+            ordersList.style.display = 'flex';
         }
 
-        // Init
-        document.addEventListener('DOMContentLoaded', () => {
-            const email = localStorage.getItem('lh360_user_email');
-            if (email) {
-                loadOrders();
-            } else {
-                document.getElementById('emailInputContainer').style.display = 'block';
-            }
-        });
+        /**
+         * Show empty state
+         */
+        function showEmptyState() {
+            document.getElementById('emptyState').style.display = 'block';
+        }
+
+        // Initialize
+        loadOrders();
     </script>
 </body>
 </html>
