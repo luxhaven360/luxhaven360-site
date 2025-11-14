@@ -274,3 +274,22 @@ function hideLoader() {
         }, 500);
     }
 }
+
+// Funzione per aggiornare la visibilità dell'icona tracciamento
+function updateTrackingIcon() {
+    const webAppUrl = 'https://script.google.com/macros/s/YOUR_WEB_APP_ID/exec'; // Sostituisci con il tuo URL Web App
+    fetch(`${webAppUrl}?has_active_orders=1`)
+        .then(response => response.text())
+        .then(text => {
+            const json = JSON.parse(text.match(/\((.*)\)/)[1]);
+            const trackingIcon = document.getElementById('trackingIcon');
+            if (json.has_active) {
+                trackingIcon.classList.add('show');
+            } else {
+                trackingIcon.classList.remove('show');
+            }
+        })
+        .catch(error => {
+            console.error('Errore fetch has_active_orders:', error);
+        });
+}
