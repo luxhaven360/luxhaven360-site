@@ -284,7 +284,7 @@ function updateTrackIcon() {
         trackIcon.classList.remove('show');
         return;
     }
-    const webAppUrl = 'https://script.google.com/macros/s/AKfycbxmQRbuFUipWFwvLvuyTj-mcT_8aCPwrcUoHwlmg9j7KMQgLkjOxYqiFYHM3qG2SQVo/exec'; // Sostituisci con URL reale
+    const webAppUrl = 'https://script.google.com/macros/s/AKfycbz2bGalIvBlv2KRPmckRN7bzvlJGdcC1C1oOyh2A41XT3XKDLtCRzgmGopGkj3ANxnF/exec'; // Sostituisci con URL reale
     fetch(`${webAppUrl}?action=get_has_active_orders&email=${encodeURIComponent(email)}&callback=handleHasActive`)
       .then(res => res.text())
       .then(text => {
