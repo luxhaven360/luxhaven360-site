@@ -293,28 +293,70 @@
         .btn-primary {
             background: white;
             color: #09090b;
+            border: none;
         }
 
         .btn-primary:hover {
             background: #f4f4f5;
-            transform: scale(1.02);
+            transform: translateY(-2px);
         }
 
         .btn-secondary {
-            background: rgba(39, 39, 42, 0.5);
-            color: #d4d4d8;
-            border: 1px solid rgba(39, 39, 42, 0.8);
+            background: rgba(24, 24, 27, 0.6);
+            color: #fafafa;
+            border: 1px solid rgba(39, 39, 42, 0.6);
         }
 
         .btn-secondary:hover {
-            background: rgba(39, 39, 42, 0.8);
-            border-color: rgba(255, 255, 255, 0.1);
+            border-color: rgba(255, 255, 255, 0.2);
+            background: rgba(24, 24, 27, 0.8);
         }
 
-        /* Responsive */
+        /* Empty State */
+        .empty-state {
+            text-align: center;
+            padding: 6rem 2rem;
+            animation: fadeIn 0.8s ease-out;
+        }
+
+        .empty-icon {
+            font-size: 4rem;
+            margin-bottom: 1.5rem;
+            opacity: 0.3;
+        }
+
+        .empty-title {
+            font-size: 1.5rem;
+            font-weight: 300;
+            margin-bottom: 1rem;
+        }
+
+        .empty-text {
+            color: #a1a1aa;
+            margin-bottom: 2rem;
+        }
+
         @media (max-width: 768px) {
+            .title {
+                font-size: 2rem;
+            }
+
+            .order-header {
+                flex-direction: column;
+                gap: 1rem;
+            }
+
             .order-details {
                 grid-template-columns: 1fr;
+            }
+
+            .progress-steps {
+                flex-wrap: wrap;
+                gap: 2rem;
+            }
+
+            .step {
+                flex: 0 0 calc(50% - 1rem);
             }
 
             .order-actions {
@@ -325,246 +367,223 @@
                 width: 100%;
                 justify-content: center;
             }
-
-            .title {
-                font-size: 2.25rem;
-            }
-
-            .order-card {
-                padding: 1.5rem;
-            }
-
-            .item-image {
-                width: 60px;
-                height: 80px;
-            }
-
-            .progress-steps {
-                font-size: 0.75rem;
-            }
-
-            .step-icon {
-                width: 2rem;
-                height: 2rem;
-                font-size: 0.875rem;
-            }
-
-            .step-label {
-                font-size: 0.6875rem;
-            }
         }
     </style>
 </head>
 <body>
     <div class="container">
+        <!-- Header -->
         <div class="header">
-            <div class="brand">LUXHAVEN360</div>
-            <div class="title">I Tuoi Ordini</div>
-            <div class="subtitle">Traccia lo stato delle tue consegne</div>
+            <div class="brand">LuxHaven360</div>
+            <h1 class="title">I Tuoi Ordini</h1>
+            <p class="subtitle">Ordini degli ultimi 30 giorni</p>
         </div>
 
+        <!-- Orders List -->
         <div class="orders-list">
-            <!-- Ordini popolati dinamicamente -->
-        </div>
-    </div>
+            <!-- Order 1 - In Transit -->
+            <div class="order-card">
+                <div class="order-header">
+                    <div class="order-info">
+                        <h3>#OE-2024-11-087453</h3>
+                        <div class="order-date">6 Novembre 2024</div>
+                    </div>
+                    <div class="status-badge transit">In Transito</div>
+                </div>
 
-    <script>
-        const webAppUrl = 'https://script.google.com/macros/s/AKfycbz2bGalIvBlv2KRPmckRN7bzvlJGdcC1C1oOyh2A41XT3XKDLtCRzgmGopGkj3ANxnF/exec'; // Sostituisci con URL reale
-
-        window.onload = function() {
-            const email = localStorage.getItem('lh360_user_email');
-            if (!email) {
-                document.querySelector('.orders-list').innerHTML = '<div style="text-align:center; color:#a1a1aa;">Nessun ordine trovato. Assicurati di aver effettuato un acquisto.</div>';
-                return;
-            }
-            const script = document.createElement('script');
-            script.src = `${webAppUrl}?action=get_orders&email=${encodeURIComponent(email)}&callback=handleOrders`;
-            document.body.appendChild(script);
-        };
-
-        window.handleOrders = function(data) {
-            if (data.error) {
-                document.querySelector('.orders-list').innerHTML = '<div style="text-align:center; color:#a1a1aa;">Errore nel caricamento degli ordini: ' + data.error + '</div>';
-                return;
-            }
-            const orders = data.orders || [];
-            const list = document.querySelector('.orders-list');
-            list.innerHTML = '';
-            if (orders.length === 0) {
-                list.innerHTML = '<div style="text-align:center; color:#a1a1aa;">Nessun ordine attivo negli ultimi 30 giorni.</div>';
-                return;
-            }
-            const stepMap = {
-                'Confermato': 0,
-                'In Preparazione': 1,
-                'In Transito': 2,
-                'Consegnato': 3
-            };
-            const stepIcons = ['✓', '📦', '🚚', '🏠'];
-            orders.forEach(ord => {
-                const currentIndex = stepMap[ord.status] || 0;
-                let badgeClass = '';
-                if (ord.status === 'In Transito') badgeClass = 'transit';
-                else if (ord.status === 'Consegnato') badgeClass = 'delivered';
-                else badgeClass = 'processing';
-                let dateLabel = ord.status === 'Consegnato' ? 'Consegnato il' : 'Consegna Prevista';
-                let dateValue = ord.status === 'Consegnato' ? ord.ultimo.split(',')[0].trim() : ord.expected;
-                let orderDateFormatted = formatDate(ord.date);
-                let dateValueFormatted = ord.status === 'Consegnato' ? formatDate(dateValue) : ord.expected;
-                let itemsHTML = '';
-                const images = ord.images || [];
-                const numImages = Math.min(3, images.length);
-                for (let i = 0; i < numImages; i++) {
-                    itemsHTML += `
-                        <div class="item-image">
-                            <img src="${images[i]}" alt="Prodotto">
+                <div class="progress-section">
+                    <div class="progress-steps">
+                        <div class="progress-line" style="width: 60%;"></div>
+                        <div class="step completed">
+                            <div class="step-icon">✓</div>
+                            <div class="step-label">Confermato</div>
                         </div>
-                    `;
-                }
-                if (numImages === 0) {
-                    itemsHTML = `
+                        <div class="step completed">
+                            <div class="step-icon">✓</div>
+                            <div class="step-label">Preparato</div>
+                        </div>
+                        <div class="step active">
+                            <div class="step-icon">🚚</div>
+                            <div class="step-label">In Viaggio</div>
+                        </div>
+                        <div class="step">
+                            <div class="step-icon">🏠</div>
+                            <div class="step-label">Consegnato</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="order-details">
+                    <div class="detail-item">
+                        <div class="detail-label">Consegna Prevista</div>
+                        <div class="detail-value">8 Nov, entro le 18:00</div>
+                    </div>
+                    <div class="detail-item">
+                        <div class="detail-label">Articoli</div>
+                        <div class="detail-value">3 articoli</div>
+                    </div>
+                    <div class="detail-item">
+                        <div class="detail-label">Totale</div>
+                        <div class="detail-value">€ 1.391,00</div>
+                    </div>
+                </div>
+
+                <div class="order-items">
+                    <div class="items-title">Articoli ordinati</div>
+                    <div class="items-list">
+                        <div class="item-image">
+                            <img src="https://images.unsplash.com/photo-1591047139829-d91aecb6caea?w=200&h=250&fit=crop" alt="Prodotto">
+                        </div>
+                        <div class="item-image">
+                            <img src="https://images.unsplash.com/photo-1434389677669-e08b4cac3105?w=200&h=250&fit=crop" alt="Prodotto">
+                        </div>
                         <div class="item-image">
                             <img src="https://images.unsplash.com/photo-1620799140408-edc6dcb6d633?w=200&h=250&fit=crop" alt="Prodotto">
                         </div>
-                    `;
-                }
-                let actionsHTML = '';
-                if (ord.status === 'In Transito') {
-                    actionsHTML = `
-                        <a href="#" class="btn btn-primary">
-                            <span>Traccia Spedizione</span>
-                            <span>→</span>
-                        </a>
-                        <a href="#" class="btn btn-secondary">Dettagli</a>
-                    `;
-                } else if (ord.status === 'Consegnato') {
-                    actionsHTML = `
-                        <a href="#" class="btn btn-primary">
-                            <span>Acquista di Nuovo</span>
-                        </a>
-                        <a href="#" class="btn btn-secondary">Lascia Recensione</a>
-                    `;
-                } else {
-                    actionsHTML = `
-                        <a href="#" class="btn btn-primary">
-                            <span>Dettagli Ordine</span>
-                            <span>→</span>
-                        </a>
-                        <a href="#" class="btn btn-secondary">Contatta Supporto</a>
-                    `;
-                }
-                const card = document.createElement('div');
-                card.className = 'order-card';
-                card.innerHTML = `
-                    <div class="order-header">
-                        <div class="order-info">
-                            <h3>${ord.id}</h3>
-                            <div class="order-date">${orderDateFormatted}</div>
-                        </div>
-                        <div class="status-badge ${badgeClass}">${ord.status}</div>
                     </div>
+                </div>
 
-                    <div class="progress-section">
-                        <div class="progress-steps">
-                            <div class="progress-line" style="width: 0%;"></div>
-                            <div class="step">
-                                <div class="step-icon">✓</div>
-                                <div class="step-label">Confermato</div>
-                            </div>
-                            <div class="step">
-                                <div class="step-icon">📦</div>
-                                <div class="step-label">Preparato</div>
-                            </div>
-                            <div class="step">
-                                <div class="step-icon">🚚</div>
-                                <div class="step-label">In Viaggio</div>
-                            </div>
-                            <div class="step">
-                                <div class="step-icon">🏠</div>
-                                <div class="step-label">Consegnato</div>
-                            </div>
+                <div class="order-actions">
+                    <a href="#" class="btn btn-primary">
+                        <span>Traccia Spedizione</span>
+                        <span>→</span>
+                    </a>
+                    <a href="#" class="btn btn-secondary">Dettagli</a>
+                </div>
+            </div>
+
+            <!-- Order 2 - Delivered -->
+            <div class="order-card">
+                <div class="order-header">
+                    <div class="order-info">
+                        <h3>#OE-2024-10-076342</h3>
+                        <div class="order-date">28 Ottobre 2024</div>
+                    </div>
+                    <div class="status-badge delivered">Consegnato</div>
+                </div>
+
+                <div class="progress-section">
+                    <div class="progress-steps">
+                        <div class="progress-line" style="width: 100%;"></div>
+                        <div class="step completed">
+                            <div class="step-icon">✓</div>
+                            <div class="step-label">Confermato</div>
+                        </div>
+                        <div class="step completed">
+                            <div class="step-icon">✓</div>
+                            <div class="step-label">Preparato</div>
+                        </div>
+                        <div class="step completed">
+                            <div class="step-icon">✓</div>
+                            <div class="step-label">In Viaggio</div>
+                        </div>
+                        <div class="step completed">
+                            <div class="step-icon">✓</div>
+                            <div class="step-label">Consegnato</div>
                         </div>
                     </div>
+                </div>
 
-                    <div class="order-details">
-                        <div class="detail-item">
-                            <div class="detail-label">${dateLabel}</div>
-                            <div class="detail-value">${dateValueFormatted}</div>
+                <div class="order-details">
+                    <div class="detail-item">
+                        <div class="detail-label">Consegnato il</div>
+                        <div class="detail-value">30 Ottobre 2024</div>
+                    </div>
+                    <div class="detail-item">
+                        <div class="detail-label">Articoli</div>
+                        <div class="detail-value">2 articoli</div>
+                    </div>
+                    <div class="detail-item">
+                        <div class="detail-label">Totale</div>
+                        <div class="detail-value">€ 865,00</div>
+                    </div>
+                </div>
+
+                <div class="order-items">
+                    <div class="items-title">Articoli ordinati</div>
+                    <div class="items-list">
+                        <div class="item-image">
+                            <img src="https://images.unsplash.com/photo-1596755094514-f87e34085b2c?w=200&h=250&fit=crop" alt="Prodotto">
                         </div>
-                        <div class="detail-item">
-                            <div class="detail-label">Articoli</div>
-                            <div class="detail-value">${ord.items_count} articoli</div>
-                        </div>
-                        <div class="detail-item">
-                            <div class="detail-label">Totale</div>
-                            <div class="detail-value">€ ${Number(ord.total).toLocaleString('it-IT', {minimumFractionDigits: 2})}</div>
+                        <div class="item-image">
+                            <img src="https://images.unsplash.com/photo-1598032895397-b9b7ab0f0619?w=200&h=250&fit=crop" alt="Prodotto">
                         </div>
                     </div>
+                </div>
 
-                    <div class="order-items">
-                        <div class="items-title">Articoli ordinati</div>
-                        <div class="items-list">
-                            ${itemsHTML}
+                <div class="order-actions">
+                    <a href="#" class="btn btn-primary">
+                        <span>Acquista di Nuovo</span>
+                    </a>
+                    <a href="#" class="btn btn-secondary">Lascia Recensione</a>
+                </div>
+            </div>
+
+            <!-- Order 3 - Processing -->
+            <div class="order-card">
+                <div class="order-header">
+                    <div class="order-info">
+                        <h3>#OE-2024-10-065128</h3>
+                        <div class="order-date">15 Ottobre 2024</div>
+                    </div>
+                    <div class="status-badge processing">In Preparazione</div>
+                </div>
+
+                <div class="progress-section">
+                    <div class="progress-steps">
+                        <div class="progress-line" style="width: 30%;"></div>
+                        <div class="step completed">
+                            <div class="step-icon">✓</div>
+                            <div class="step-label">Confermato</div>
+                        </div>
+                        <div class="step active">
+                            <div class="step-icon">📦</div>
+                            <div class="step-label">Preparato</div>
+                        </div>
+                        <div class="step">
+                            <div class="step-icon">🚚</div>
+                            <div class="step-label">In Viaggio</div>
+                        </div>
+                        <div class="step">
+                            <div class="step-icon">🏠</div>
+                            <div class="step-label">Consegnato</div>
                         </div>
                     </div>
+                </div>
 
-                    <div class="order-actions">
-                        ${actionsHTML}
+                <div class="order-details">
+                    <div class="detail-item">
+                        <div class="detail-label">Consegna Prevista</div>
+                        <div class="detail-value">18 Ottobre 2024</div>
                     </div>
-                `;
-                list.appendChild(card);
-                // Update progress bar (time-based)
-                const progress = calculateProgress(ord.date, ord.expected);
-                card.querySelector('.progress-line').style.width = `${progress}%`;
-                // Update steps based on status
-                const steps = card.querySelectorAll('.step');
-                steps.forEach((step, index) => {
-                    step.classList.remove('completed', 'active', 'pending');
-                    if (index < currentIndex) {
-                        step.classList.add('completed');
-                        step.querySelector('.step-icon').innerHTML = '✓';
-                    } else if (index === currentIndex) {
-                        step.classList.add('active');
-                        step.querySelector('.step-icon').innerHTML = stepIcons[index];
-                    } else {
-                        step.classList.add('pending');
-                        step.querySelector('.step-icon').innerHTML = stepIcons[index];
-                    }
-                });
-            });
-        };
+                    <div class="detail-item">
+                        <div class="detail-label">Articoli</div>
+                        <div class="detail-value">1 articolo</div>
+                    </div>
+                    <div class="detail-item">
+                        <div class="detail-label">Totale</div>
+                        <div class="detail-value">€ 515,00</div>
+                    </div>
+                </div>
 
-        function calculateProgress(orderDateStr, expectedStr) {
-            const now = new Date(); // Per test: new Date('2025-11-14')
-            const orderDate = parseItalianDate(orderDateStr);
-            const expectedDate = parseItalianDate(expectedStr);
-            if (isNaN(orderDate.getTime()) || isNaN(expectedDate.getTime()) || expectedDate <= orderDate) return 0;
-            if (now >= expectedDate) return 100;
-            return Math.min(100, ((now - orderDate) / (expectedDate - orderDate)) * 100);
-        }
+                <div class="order-items">
+                    <div class="items-title">Articoli ordinati</div>
+                    <div class="items-list">
+                        <div class="item-image">
+                            <img src="https://images.unsplash.com/photo-1622445275463-afa2ab738c34?w=200&h=250&fit=crop" alt="Prodotto">
+                        </div>
+                    </div>
+                </div>
 
-        function parseItalianDate(str) {
-            if (!str) return new Date();
-            const months = {gennaio: 0, febbraio: 1, marzo: 2, aprile: 3, maggio: 4, giugno: 5, luglio: 6, agosto: 7, settembre: 8, ottobre: 9, novembre: 10, dicembre: 11};
-            if (str.includes('/')) {
-                const p = str.split('/');
-                return new Date(parseInt(p[2]), parseInt(p[1]) - 1, parseInt(p[0]));
-            } else {
-                const parts = str.split(' ');
-                if (parts.length >= 3) {
-                    const day = parseInt(parts[0]);
-                    const month = months[parts[1].toLowerCase()];
-                    const year = parseInt(parts[2]);
-                    if (month !== undefined) return new Date(year, month, day);
-                }
-            }
-            return new Date();
-        }
-
-        function formatDate(dateStr) {
-            const d = parseItalianDate(dateStr);
-            return d.toLocaleDateString('it-IT', { day: 'numeric', month: 'long', year: 'numeric' });
-        }
-    </script>
+                <div class="order-actions">
+                    <a href="#" class="btn btn-primary">
+                        <span>Dettagli Ordine</span>
+                        <span>→</span>
+                    </a>
+                    <a href="#" class="btn btn-secondary">Contatta Supporto</a>
+                </div>
+            </div>
+        </div>
+    </div>
 </body>
 </html>
