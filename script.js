@@ -190,9 +190,12 @@ function initDynamicProducts() {
     SECTIONS.forEach(s => loadSection(s));
 }
 
-// init al load
+// init al load (MODIFICATO)
 window.addEventListener('DOMContentLoaded', () => {
     initDynamicProducts();
+    // --- MODIFICA REQUISITO 2 ---
+    checkActiveOrders(); // Aggiungi chiamata qui
+    // --- FINE MODIFICA ---
 });
 
 // --- end ---
@@ -272,5 +275,42 @@ function hideLoader() {
         setTimeout(() => {
             // loader.remove(); // Decommenta se vuoi rimuoverlo completamente
         }, 500);
+    }
+}
+
+/**
+ * REQUISITO 2: Controlla localStorage per ordini attivi negli ultimi 30 giorni
+ * e mostra il link di tracciamento nella navbar se ne trova.
+ */
+function checkActiveOrders() {
+    // MODIFICA: Cerca 'trackingIcon'
+    const trackingIcon = document.getElementById('trackingIcon');
+    if (!trackingIcon) return;
+
+    const thirtyDaysAgo = Date.now() - (30 * 24 * 60 * 60 * 1000);
+    let hasActiveOrder = false;
+
+    try {
+        for (let i = 0; i < localStorage.length; i++) {
+            const key = localStorage.key(i);
+            // Cerca chiavi salvate da success.html (es. lh360_order_time_LHS-000011)
+            if (key && key.startsWith('lh360_order_time_')) {
+                const timestamp = localStorage.getItem(key);
+                if (timestamp) {
+                    const orderDate = new Date(timestamp).getTime();
+                    if (orderDate >= thirtyDaysAgo) {
+                        hasActiveOrder = true;
+                        break; // Trovato uno, basta
+                    }
+                }
+            }
+        }
+    } catch (e) {
+        console.warn('Impossibile controllare ordini attivi da localStorage', e);
+    }
+
+    if (hasActiveOrder) {
+        // MODIFICA: Aggiungi la classe .show
+        trackingIcon.classList.add('show');
     }
 }
