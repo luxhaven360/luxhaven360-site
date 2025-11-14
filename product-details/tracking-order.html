@@ -293,443 +293,298 @@
         .btn-primary {
             background: white;
             color: #09090b;
+            border: none;
         }
 
         .btn-primary:hover {
             background: #f4f4f5;
-            transform: scale(1.02);
+            transform: translateY(-2px);
         }
 
         .btn-secondary {
-            background: rgba(39, 39, 42, 0.8);
+            background: rgba(24, 24, 27, 0.6);
             color: #fafafa;
+            border: 1px solid rgba(39, 39, 42, 0.6);
         }
 
         .btn-secondary:hover {
-            background: #27272a;
-            transform: scale(1.02);
+            border-color: rgba(255, 255, 255, 0.2);
+            background: rgba(24, 24, 27, 0.8);
         }
 
         /* Empty State */
         .empty-state {
             text-align: center;
-            padding: 4rem 0;
-            color: #a1a1aa;
+            padding: 6rem 2rem;
+            animation: fadeIn 0.8s ease-out;
         }
 
-        .empty-state h2 {
+        .empty-icon {
+            font-size: 4rem;
+            margin-bottom: 1.5rem;
+            opacity: 0.3;
+        }
+
+        .empty-title {
             font-size: 1.5rem;
             font-weight: 300;
             margin-bottom: 1rem;
         }
 
-        .empty-state p {
-            font-size: 1rem;
+        .empty-text {
+            color: #a1a1aa;
+            margin-bottom: 2rem;
+        }
+
+        @media (max-width: 768px) {
+            .title {
+                font-size: 2rem;
+            }
+
+            .order-header {
+                flex-direction: column;
+                gap: 1rem;
+            }
+
+            .order-details {
+                grid-template-columns: 1fr;
+            }
+
+            .progress-steps {
+                flex-wrap: wrap;
+                gap: 2rem;
+            }
+
+            .step {
+                flex: 0 0 calc(50% - 1rem);
+            }
+
+            .order-actions {
+                flex-direction: column;
+            }
+
+            .btn {
+                width: 100%;
+                justify-content: center;
+            }
         }
     </style>
 </head>
 <body>
     <div class="container">
+        <!-- Header -->
         <div class="header">
             <div class="brand">LuxHaven360</div>
             <h1 class="title">I Tuoi Ordini</h1>
             <p class="subtitle">Ordini degli ultimi 30 giorni</p>
         </div>
 
-        <div class="orders-list" id="ordersListContainer">
-            <div class="empty-state" id="loader">
-                <div class="empty-icon">⏳</div>
-                <h2 class="empty-title">Caricamento ordini...</h2>
-                <p class="empty-text">Recupero delle informazioni in corso...</p>
-            </div>
-            
-            </div>
-    </div>
-
-    <script>
-        // URL della Web App Google Apps Script
-        const webAppUrl = 'https://script.google.com/macros/s/AKfycbyiDu50VIVwzJ3qQNCWZmSk-_ovC7iBvxJGUYriRc3-PwMRbsgi8wb0baqxk3nLxti2/exec';
-        const ordersListContainer = document.getElementById('ordersListContainer');
-        const loader = document.getElementById('loader');
-
-        /**
-         * 1. Trova ordini locali da localStorage (salvati da success.html)
-         */
-        function getLocalOrderKeys() {
-            const keys = [];
-            try {
-                for (let i = 0; i < localStorage.length; i++) {
-                    const key = localStorage.key(i);
-                    // Cerca sia le date (lh360_order_time_...) che i dettagli (lh360_order_details_...)
-                    if (key && (key.startsWith('lh360_order_time_') || key.startsWith('lh360_order_details_'))) {
-                        const orderId = key.replace('lh360_order_time_', '').replace('lh360_order_details_', '').replace('session_', '');
-                        const orderDate = localStorage.getItem(`lh360_order_time_${orderId}`) || localStorage.getItem(`lh360_order_time_session_${orderId}`);
-                        
-                        // Aggiungi solo se non già presente e se abbiamo una data
-                        if (orderDate && !keys.some(k => k.id === orderId)) {
-                             keys.push({ id: orderId, date: orderDate });
-                        }
-                    }
-                }
-            } catch (e) { console.error('Errore lettura localStorage', e); }
-            
-            // Ordina per data, più recente prima
-            keys.sort((a, b) => new Date(b.date) - new Date(a.date));
-            return keys;
-        }
-
-        /**
-         * 2. Fetch dati da Google Script
-         */
-        function fetchTrackingData(localOrders) {
-            if (localOrders.length === 0) {
-                renderEmptyState();
-                return;
-            }
-            
-            const ids = localOrders.map(o => o.id).join(',');
-            const callback = 'handleTrackingResponse';
-            const script = document.createElement('script');
-            script.src = `${webAppUrl}?action=getTrackingDetails&ids=${encodeURIComponent(ids)}&callback=${callback}`;
-            
-            script.onerror = () => {
-                renderErrorState('Errore di connessione con il server di tracciamento.');
-            };
-            document.body.appendChild(script);
-        }
-
-        /**
-         * 3. Callback per JSONP (Req 3, 4, 5)
-         */
-        window.handleTrackingResponse = function(response) {
-            if (loader) loader.style.display = 'none';
-
-            if (!response || !response.success) {
-                renderErrorState(response ? response.error : 'Risposta non valida dal server.');
-                return;
-            }
-            
-            const localOrders = getLocalOrderKeys(); // Prendi di nuovo per mappare
-            const localOrderMap = new Map(localOrders.map(o => [o.id, o]));
-            
-            if (!response.orders || response.orders.length === 0) {
-                renderEmptyState(); // Nessun ordine trovato sul server (magari vecchi)
-                return;
-            }
-
-            // Unisci dati locali (data, items) e remoti (stato, totale)
-            const combinedOrders = response.orders.map(remoteOrder => {
-                const localData = localOrderMap.get(remoteOrder.id);
-                const cartDataRaw = localStorage.getItem(`lh360_order_details_${remoteOrder.id}`) || localStorage.getItem(`lh360_order_details_session_${remoteOrder.id}`) || '[]';
-                let cartData = [];
-                try { cartData = JSON.parse(cartDataRaw); } catch(e) {}
-                
-                let itemCount = 0;
-                let images = [];
-                if (Array.isArray(cartData)) {
-                    cartData.forEach(item => {
-                        itemCount += (item.qty || 1);
-                        if (item.image) images.push(item.image);
-                    });
-                }
-
-                return {
-                    ...remoteOrder,
-                    orderDate: localData ? localData.date : null,
-                    itemCount: itemCount,
-                    images: images.slice(0, 3) // Max 3 immagini
-                };
-            }).sort((a, b) => new Date(b.orderDate) - new Date(a.orderDate)); // Ordina di nuovo
-            
-            // 4. Renderizza
-            renderOrders(combinedOrders);
-        }
-
-        /**
-         * 5. Funzioni di Render
-         */
-        function renderOrders(orders) {
-            ordersListContainer.innerHTML = ''; // Svuota
-            if (orders.length === 0) {
-                renderEmptyState();
-                return;
-            }
-            orders.forEach((order, index) => {
-                const card = createOrderCard(order);
-                // Applica delay animazione come nell'originale statico
-                card.style.animationDelay = `${(index + 1) * 0.1}s`;
-                ordersListContainer.appendChild(card);
-            });
-        }
-        
-        function renderEmptyState() {
-            if (loader) loader.style.display = 'none';
-            ordersListContainer.innerHTML = `
-                <div class="empty-state" style="text-align: center; padding: 6rem 2rem;">
-                    <div class="empty-icon">📦</div>
-                    <h2 class="empty-title">Nessun ordine attivo</h2>
-                    <p class="empty-text">Non ci sono ordini recenti (ultimi 30 giorni) da tracciare.</p>
-                    <a href="https://luxhaven360.github.io/luxhaven360-site/index.html#shop" class="btn btn-primary">Torna allo Shop</a>
-                </div>
-            `;
-        }
-        
-        function renderErrorState(message) {
-            if (loader) loader.style.display = 'none';
-            ordersListContainer.innerHTML = `<div class="empty-state" style="text-align: center; padding: 6rem 2rem;"><h2 class="empty-title">Errore</h2><p class="empty-text">${message}</p></div>`;
-        }
-
-        /**
-         * 6. Funzione per creare una card (Req 3, 4, 5)
-         */
-        function createOrderCard(order) {
-            const card = document.createElement('div');
-            card.className = 'order-card';
-            
-            // Helpers per info dinamiche
-            const { statusBadge, statusClass } = getStatusInfo(order.stato);
-            const { progressPercent, activeStep } = getProgressInfo(order.stato, order.orderDate, order.consegna_prevista);
-            const buttons = getButtonInfo(order.stato);
-            
-            const orderDateFormatted = order.orderDate ? new Date(order.orderDate).toLocaleDateString('it-IT', { day: 'numeric', month: 'long', year: 'numeric' }) : 'Data non disponibile';
-            
-            // Gestisce Totale (che arriva come stringa "123.45 €" o numero)
-            let totalString = 'N/D';
-            if (typeof order.totale === 'string' && order.totale.includes('€')) {
-                totalString = order.totale;
-            } else if (typeof order.totale === 'number') {
-                totalString = `€ ${order.totale.toLocaleString('it-IT', {minimumFractionDigits: 2})}`;
-            } else if (order.totale) { // Altra stringa
-                 totalString = order.totale;
-            }
-
-            const itemsLabel = order.itemCount === 0 ? 'N/D' : (order.itemCount === 1 ? '1 articolo' : `${order.itemCount} articoli`);
-            
-            // Immagini
-            let imagesHTML = order.images.map(imgSrc => `
-                <div class="item-image">
-                    <img src="${imgSrc}" alt="Prodotto">
-                </div>
-            `).join('');
-            if (order.images.length === 0) {
-                imagesHTML = `<div class="items-title" style="font-size: 0.8em; color: #71717a;">Dettagli prodotto non disponibili</div>`;
-            }
-
-            // HTML Card
-            card.innerHTML = `
+        <!-- Orders List -->
+        <div class="orders-list">
+            <!-- Order 1 - In Transit -->
+            <div class="order-card">
                 <div class="order-header">
                     <div class="order-info">
-                        <h3>${order.id}</h3>
-                        <div class="order-date">${orderDateFormatted}</div>
+                        <h3>#OE-2024-11-087453</h3>
+                        <div class="order-date">6 Novembre 2024</div>
                     </div>
-                    <div class="status-badge ${statusClass}">${statusBadge}</div>
+                    <div class="status-badge transit">In Transito</div>
                 </div>
 
                 <div class="progress-section">
                     <div class="progress-steps">
-                    <div class="progress-line" style="width: ${progressPercent}%;"></div>
-                    <div class="step ${activeStep >= 0 ? 'completed' : ''} ${activeStep === 0 ? 'active' : ''}">
-                        <div class="step-icon">${activeStep > 0 ? '✓' : '📝'}</div>
-                        <div class="step-label">Confermato</div>
+                        <div class="progress-line" style="width: 60%;"></div>
+                        <div class="step completed">
+                            <div class="step-icon">✓</div>
+                            <div class="step-label">Confermato</div>
+                        </div>
+                        <div class="step completed">
+                            <div class="step-icon">✓</div>
+                            <div class="step-label">Preparato</div>
+                        </div>
+                        <div class="step active">
+                            <div class="step-icon">🚚</div>
+                            <div class="step-label">In Viaggio</div>
+                        </div>
+                        <div class="step">
+                            <div class="step-icon">🏠</div>
+                            <div class="step-label">Consegnato</div>
+                        </div>
                     </div>
-                    <div class="step ${activeStep >= 1 ? 'completed' : ''} ${activeStep === 1 ? 'active' : ''}">
-                        <div class="step-icon">${activeStep > 1 ? '✓' : '📦'}</div>
-                        <div class="step-label">Preparato</div>
-                    </div>
-                    <div class="step ${activeStep >= 2 ? 'completed' : ''} ${activeStep === 2 ? 'active' : ''}">
-                        <div class="step-icon">${activeStep > 2 ? '✓' : '🚚'}</div>
-                        <div class="step-label">In Viaggio</div>
-                    </div>
-                    <div class="step ${activeStep >= 3 ? 'completed' : ''} ${activeStep === 3 ? 'active' : ''}">
-                        <div class="step-icon">${activeStep === 3 ? '✓' : '🏠'}</div>
-                        <div class="step-label">Consegnato</div>
-                      </div>
-                   </div>
                 </div>
 
                 <div class="order-details">
                     <div class="detail-item">
-                        <div class="detail-label">${order.stato === 'Consegnato' ? 'Consegnato il' : 'Consegna Prevista'}</div>
-                        <div class="detail-value">${order.consegna_prevista || 'Da definire'}</div>
+                        <div class="detail-label">Consegna Prevista</div>
+                        <div class="detail-value">8 Nov, entro le 18:00</div>
                     </div>
                     <div class="detail-item">
                         <div class="detail-label">Articoli</div>
-                        <div class="detail-value">${itemsLabel}</div>
+                        <div class="detail-value">3 articoli</div>
                     </div>
                     <div class="detail-item">
                         <div class="detail-label">Totale</div>
-                        <div class="detail-value">${totalString}</div>
+                        <div class="detail-value">€ 1.391,00</div>
                     </div>
                 </div>
 
                 <div class="order-items">
                     <div class="items-title">Articoli ordinati</div>
                     <div class="items-list">
-                        ${imagesHTML}
+                        <div class="item-image">
+                            <img src="https://images.unsplash.com/photo-1591047139829-d91aecb6caea?w=200&h=250&fit=crop" alt="Prodotto">
+                        </div>
+                        <div class="item-image">
+                            <img src="https://images.unsplash.com/photo-1434389677669-e08b4cac3105?w=200&h=250&fit=crop" alt="Prodotto">
+                        </div>
+                        <div class="item-image">
+                            <img src="https://images.unsplash.com/photo-1620799140408-edc6dcb6d633?w=200&h=250&fit=crop" alt="Prodotto">
+                        </div>
                     </div>
                 </div>
 
                 <div class="order-actions">
-                    ${buttons.primary}
-                    ${buttons.secondary}
+                    <a href="#" class="btn btn-primary">
+                        <span>Traccia Spedizione</span>
+                        <span>→</span>
+                    </a>
+                    <a href="#" class="btn btn-secondary">Dettagli</a>
                 </div>
-            `;
-            return card;
-        }
+            </div>
 
-        /**
-         * Helper per stato (Req 3)
-         */
-        function getStatusInfo(stato) {
-            switch (stato) {
-                case 'In Transito': return { statusBadge: 'In Transito', statusClass: 'transit' };
-                case 'Consegnato': return { statusBadge: 'Consegnato', statusClass: 'delivered' };
-                case 'In Preparazione': return { statusBadge: 'In Preparazione', statusClass: 'processing' };
-                case 'Confermato': return { statusBadge: 'Confermato', statusClass: 'processing' };
-                default: return { statusBadge: stato || 'In Elaborazione', statusClass: 'processing' };
-            }
-        }
-        
-        /**
-         * Helper per barra progresso (Logica Ibrida Stato + Tempo)
-         * - activeStep: lo step corrente (0, 1, 2, 3)
-         * - progressPercent: la percentuale riempita della barra
-         */
-        function getProgressInfo(stato, orderDateStr, deliveryDateStr) {
-            const stepMap = { 'Confermato': 0, 'In Preparazione': 1, 'In Transito': 2, 'Consegnato': 3 };
-            let activeStep = stepMap[stato] !== undefined ? stepMap[stato] : 0;
-            let progressPercent = 0;
-            
-            // Definisci la percentuale minima per ogni step completato
-            const basePercents = [0, 33, 66, 100];
-            
-            // 1. Se Consegnato, è sempre 100% e step 3
-            if (stato === 'Consegnato') {
-                return { progressPercent: 100, activeStep: 3 };
-            }
-            
-            // 2. Se l'ordine non è ancora "In Transito" (cioè Confermato o In Preparazione)
-            if (activeStep <= 1) {
-                // Calcola l'avanzamento tra l'ordine e la fase di preparazione
-                // (Esempio: assume che la preparazione duri 7 giorni se non specificato)
-                try {
-                    const start = new Date(orderDateStr).getTime();
-                    // Assumiamo che la preparazione duri max 7 giorni (604800000ms) se non è già 'In Preparazione'
-                    const targetEnd = start + (activeStep === 0 ? (7 * 24 * 60 * 60 * 1000) : 0);
-                    const now = Date.now();
-                    
-                    if (!isNaN(start) && targetEnd > start && activeStep < 1) {
-                         const totalDuration = targetEnd - start;
-                         const elapsed = now - start;
-                         // Progresso solo tra il 0% e 33% (fase 0)
-                         progressPercent = Math.min(33, (elapsed / totalDuration) * 33);
-                         // Blocca al minimo 10% per un feedback visivo immediato
-                         progressPercent = Math.max(10, progressPercent);
-                    } else {
-                         // Ordine Confermato / In Preparazione, usa la percentuale base
-                         progressPercent = basePercents[activeStep];
-                    }
-                } catch (e) {
-                    // Fallback se date non valide
-                    progressPercent = basePercents[activeStep];
-                }
-                
-            } else if (activeStep === 2) { 
-                // 3. Fase "In Viaggio" (tra 66% e 100%)
-                try {
-                    const start = new Date(orderDateStr).getTime();
-                    const end = parseItalianDate(deliveryDateStr).getTime();
-                    const now = Date.now();
-                    
-                    if (!isNaN(start) && !isNaN(end) && end > start) {
-                        const totalDuration = end - start;
-                        const elapsed = now - start;
-                        
-                        // Calcola progresso totale e lo normalizza tra 66% e 99%
-                        progressPercent = Math.max(66, Math.min(99, (elapsed / totalDuration) * 100));
-                    } else {
-                        progressPercent = basePercents[activeStep]; // Usa 66% se la data di consegna è ignota
-                    }
-                } catch (e) {
-                    progressPercent = basePercents[activeStep];
-                }
-            }
-            
-            return { progressPercent, activeStep };
-        }
+            <!-- Order 2 - Delivered -->
+            <div class="order-card">
+                <div class="order-header">
+                    <div class="order-info">
+                        <h3>#OE-2024-10-076342</h3>
+                        <div class="order-date">28 Ottobre 2024</div>
+                    </div>
+                    <div class="status-badge delivered">Consegnato</div>
+                </div>
 
-        function parseItalianDate(dateStr) {
-            if (!dateStr) throw new Error('Data non valida');
-            const months = {
-                'gennaio': 0, 'febbraio': 1, 'marzo': 2, 'aprile': 3, 'maggio': 4, 'giugno': 5,
-                'luglio': 6, 'agosto': 7, 'settembre': 8, 'ottobre': 9, 'novembre': 10, 'dicembre': 11
-            };
-            const parts = String(dateStr).split(' '); // "dd MMMM yyyy"
-            if (parts.length >= 3) {
-                const day = parseInt(parts[0], 10);
-                const month = months[parts[1].toLowerCase()];
-                const year = parseInt(parts[2], 10);
-                if (!isNaN(day) && month !== undefined && !isNaN(year)) {
-                    return new Date(year, month, day);
-                }
-            }
-            // Fallback per date ISO o altri formati
-            const isoDate = new Date(dateStr);
-            if (!isNaN(isoDate.getTime())) return isoDate;
-            throw new Error('Formato data non riconosciuto');
-        }
-        
-        /**
-         * Helper per bottoni (Req 4)
-         */
-        function getButtonInfo(stato) {
-            let primary = '', secondary = '';
-            // Link statici per i pulsanti (puntano allo shop o a se stessi)
-            const shopLink = 'https://luxhaven360.github.io/luxhaven360-site/index.html#shop';
-            
-            switch (stato) {
-                case 'In Transito':
-                    primary = `<a href="#" class="btn btn-primary"><span>Traccia Spedizione</span><span>→</span></a>`;
-                    secondary = `<a href="#" class="btn btn-secondary">Dettagli</a>`;
-                    break;
-                case 'Consegnato':
-                    primary = `<a href="${shopLink}" class="btn btn-primary"><span>Acquista di Nuovo</span></a>`;
-                    secondary = `<a href="#" class="btn btn-secondary">Lascia Recensione</a>`;
-                    break;
-                case 'In Preparazione':
-                case 'Confermato':
-                default:
-                    primary = `<a href="#" class="btn btn-primary"><span>Dettagli Ordine</span><span>→</span></a>`;
-                    secondary = `<a href="#" class="btn btn-secondary">Contatta Supporto</a>`;
-                    break;
-            }
-            return { primary, secondary };
-        }
+                <div class="progress-section">
+                    <div class="progress-steps">
+                        <div class="progress-line" style="width: 100%;"></div>
+                        <div class="step completed">
+                            <div class="step-icon">✓</div>
+                            <div class="step-label">Confermato</div>
+                        </div>
+                        <div class="step completed">
+                            <div class="step-icon">✓</div>
+                            <div class="step-label">Preparato</div>
+                        </div>
+                        <div class="step completed">
+                            <div class="step-icon">✓</div>
+                            <div class="step-label">In Viaggio</div>
+                        </div>
+                        <div class="step completed">
+                            <div class="step-icon">✓</div>
+                            <div class="step-label">Consegnato</div>
+                        </div>
+                    </div>
+                </div>
 
-        /**
-         * 7. Avvia il refresh automatico dei dati ogni 30 secondi
-         */
-        function startAutoRefresh() {
-            // Aggiorna i dati immediatamente
-            const localOrders = getLocalOrderKeys();
-            fetchTrackingData(localOrders);
+                <div class="order-details">
+                    <div class="detail-item">
+                        <div class="detail-label">Consegnato il</div>
+                        <div class="detail-value">30 Ottobre 2024</div>
+                    </div>
+                    <div class="detail-item">
+                        <div class="detail-label">Articoli</div>
+                        <div class="detail-value">2 articoli</div>
+                    </div>
+                    <div class="detail-item">
+                        <div class="detail-label">Totale</div>
+                        <div class="detail-value">€ 865,00</div>
+                    </div>
+                </div>
 
-            // Poi imposta un timer per aggiornare i dati ogni 30 secondi
-            setInterval(() => {
-                console.log('Aggiornamento automatico dei dati di tracciamento...');
-                const currentLocalOrders = getLocalOrderKeys();
-                fetchTrackingData(currentLocalOrders);
-            }, 30000); // 30000 millisecondi = 30 secondi
-        }
+                <div class="order-items">
+                    <div class="items-title">Articoli ordinati</div>
+                    <div class="items-list">
+                        <div class="item-image">
+                            <img src="https://images.unsplash.com/photo-1596755094514-f87e34085b2c?w=200&h=250&fit=crop" alt="Prodotto">
+                        </div>
+                        <div class="item-image">
+                            <img src="https://images.unsplash.com/photo-1598032895397-b9b7ab0f0619?w=200&h=250&fit=crop" alt="Prodotto">
+                        </div>
+                    </div>
+                </div>
 
-        /**
-         * 8. Avvio Iniziale e Refresh
-         */
-        document.addEventListener('DOMContentLoaded', () => {
-            // Avvia il ciclo di refresh automatico
-            startAutoRefresh();
-        });
-        
-    </script>
+                <div class="order-actions">
+                    <a href="#" class="btn btn-primary">
+                        <span>Acquista di Nuovo</span>
+                    </a>
+                    <a href="#" class="btn btn-secondary">Lascia Recensione</a>
+                </div>
+            </div>
+
+            <!-- Order 3 - Processing -->
+            <div class="order-card">
+                <div class="order-header">
+                    <div class="order-info">
+                        <h3>#OE-2024-10-065128</h3>
+                        <div class="order-date">15 Ottobre 2024</div>
+                    </div>
+                    <div class="status-badge processing">In Preparazione</div>
+                </div>
+
+                <div class="progress-section">
+                    <div class="progress-steps">
+                        <div class="progress-line" style="width: 30%;"></div>
+                        <div class="step completed">
+                            <div class="step-icon">✓</div>
+                            <div class="step-label">Confermato</div>
+                        </div>
+                        <div class="step active">
+                            <div class="step-icon">📦</div>
+                            <div class="step-label">Preparato</div>
+                        </div>
+                        <div class="step">
+                            <div class="step-icon">🚚</div>
+                            <div class="step-label">In Viaggio</div>
+                        </div>
+                        <div class="step">
+                            <div class="step-icon">🏠</div>
+                            <div class="step-label">Consegnato</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="order-details">
+                    <div class="detail-item">
+                        <div class="detail-label">Consegna Prevista</div>
+                        <div class="detail-value">18 Ottobre 2024</div>
+                    </div>
+                    <div class="detail-item">
+                        <div class="detail-label">Articoli</div>
+                        <div class="detail-value">1 articolo</div>
+                    </div>
+                    <div class="detail-item">
+                        <div class="detail-label">Totale</div>
+                        <div class="detail-value">€ 515,00</div>
+                    </div>
+                </div>
+
+                <div class="order-items">
+                    <div class="items-title">Articoli ordinati</div>
+                    <div class="items-list">
+                        <div class="item-image">
+                            <img src="https://images.unsplash.com/photo-1622445275463-afa2ab738c34?w=200&h=250&fit=crop" alt="Prodotto">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="order-actions">
+                    <a href="#" class="btn btn-primary">
+                        <span>Dettagli Ordine</span>
+                        <span>→</span>
+                    </a>
+                    <a href="#" class="btn btn-secondary">Contatta Supporto</a>
+                </div>
+            </div>
+        </div>
+    </div>
 </body>
 </html>
+
