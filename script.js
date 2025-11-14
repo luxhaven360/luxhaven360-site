@@ -190,9 +190,34 @@ function initDynamicProducts() {
     SECTIONS.forEach(s => loadSection(s));
 }
 
-// init al load
+const webAppUrl = 'https://script.google.com/macros/s/YOUR_WEB_APP_ID/exec'; // Sostituisci con URL web app
+
+// Funzione per aggiornare visibilità icona tracking
+function updateTrackingIcon() {
+    const email = localStorage.getItem('lh360_user_email');
+    const trackingIcon = document.getElementById('trackingIcon');
+    if (!email || !trackingIcon) return;
+
+    const callbackName = 'handleHasActive_' + Date.now();
+    window[callbackName] = function(resp) {
+        if (resp.has_active) {
+            trackingIcon.classList.add('show');
+        } else {
+            trackingIcon.classList.remove('show');
+        }
+        try { document.body.removeChild(script); } catch (e) {}
+    };
+
+    const script = document.createElement('script');
+    script.src = `${webAppUrl}?has_active_orders=1&email=${encodeURIComponent(email)}&callback=${callbackName}`;
+    script.onerror = () => trackingIcon.classList.remove('show');
+    document.body.appendChild(script);
+}
+
+// init al load (esistente, aggiungi call)
 window.addEventListener('DOMContentLoaded', () => {
     initDynamicProducts();
+    updateTrackingIcon(); // Aggiunto
 });
 
 // --- end ---
