@@ -543,7 +543,7 @@
 <body>
     <div id="luxhaven-loader" class="visible" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: #0a0a0a; z-index: 99999; display: flex; align-items: center; justify-content: center; transition: opacity 0.5s ease;">
         <div style="text-align: center;">
-            <div style="font-family: 'Georgia', serif; font-size: 2.5rem; color: #fafafa; margin-bottom: 1rem; letter-spacing: 0.2em;">LuxHaven360</div>
+            <div style="font-family: 'Georgia', serif; font-size: 2.5rem; color: #fafafa; margin-bottom: 1rem; letter-spacing: 0.2em;">LUXHAVEN360</div>
             <div style="color: #a1a1aa; font-size: 0.9rem; letter-spacing: 0.1em; text-transform: uppercase; animation: pulse 1.5s infinite;">Finalizzazione Ordine...</div>
         </div>
         <style>@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }</style>
@@ -682,7 +682,7 @@
     <script>
     // CONFIGURAZIONE
     // URL della tua Web App Google Apps Script
-    const webAppUrl = 'https://script.google.com/macros/s/AKfycbyiDu50VIVwzJ3qQNCWZmSk-_ovC7iBvxJGUYriRc3-PwMRbsgi8wb0baqxk3nLxti2/exec';
+    const webAppUrl = 'https://script.google.com/macros/s/AKfycbyGoU_1UkJubsBTcSXHZcEGibD5kVQuUiU0uYvX5Fm3eUQw3hTYPkyq2KDGCIfYnOCc/exec';
 
     // Variabile di sicurezza per evitare loop infiniti di caricamento
     let loadTimeout;
@@ -730,11 +730,6 @@
         if (content) {
             content.style.opacity = '1';
         }
-
-        // --- MODIFICA REQUISITO 3 ---
-        // La cancellazione del carrello è stata spostata in handleDetailsResponse
-        // per assicurarsi di salvare prima i dettagli.
-        // --- FINE MODIFICA ---
 
         // Svuota il carrello DOPO aver mostrato i dati
         // (Piccolo ritardo per assicurarsi che la UI sia renderizzata)
@@ -819,26 +814,36 @@ setTimeout(() => {
     }
 
     /**
-     * CALLBACK GLOBALE: Riceve i dati da Google Script (MODIFICATA)
-     */
-    window.handleDetailsResponse = function(response) {
-        const emailElem = document.getElementById('emailValue');
-        const paymentElem = document.getElementById('paymentValue');
-        const orderNumElem = document.getElementById('orderNumber');
+ * CALLBACK GLOBALE: Riceve i dati da Google Script
+ */
+window.handleDetailsResponse = function(response) {
+    const emailElem = document.getElementById('emailValue');
+    const paymentElem = document.getElementById('paymentValue');
+    const orderNumElem = document.getElementById('orderNumber');
 
-        let currentOrderId = null;
+    let currentOrderId = null;
 
-        if (response && !response.error) {
-            if (response.email && emailElem) emailElem.textContent = response.email;
-            if (paymentElem) {
-                if (response.last4) paymentElem.textContent = `•••• ${response.last4}`;
-                else paymentElem.textContent = 'Pagamento Online';
-            }
-            if (response.order_id && orderNumElem) {
-                orderNumElem.textContent = `Ordine #${response.order_id}`;
-                currentOrderId = response.order_id;
+    if (response && !response.error) {
+        // Aggiorna Email
+        if (response.email && emailElem) {
+            emailElem.textContent = response.email;
+        }
+
+        // Aggiorna Metodo Pagamento
+        if (paymentElem) {
+            if (response.last4) {
+                paymentElem.textContent = `•••• ${response.last4}`;
+            } else {
+                paymentElem.textContent = 'Pagamento Online';
             }
         }
+
+        // Aggiorna ID Ordine
+        if (response.order_id && orderNumElem) {
+            orderNumElem.textContent = `Ordine #${response.order_id}`;
+            currentOrderId = response.order_id;
+        }
+    }
 
     // === GESTIONE TIMESTAMP FISSO PER QUESTO ORDINE SPECIFICO ===
     let confirmedTime;
@@ -866,33 +871,6 @@ setTimeout(() => {
             localStorage.setItem(fallbackKey, confirmedTime);
         }
     }
-
-    // --- MODIFICA REQUISITO 3 ---
-        // Salva i dettagli del carrello (immagini/quantità) in una nuova chiave
-        // prima di cancellare il carrello originale.
-        const cartToSave = localStorage.getItem('lh360_cart');
-        if (cartToSave) {
-            let storageKey = null;
-            if (currentOrderId) {
-                // Chiave preferita basata su ID Ordine
-                storageKey = `lh360_order_details_${currentOrderId}`;
-            } else {
-                // Fallback (se ID ordine non è arrivato) usa session_id
-                const urlParams = new URLSearchParams(window.location.search);
-                const sessionId = urlParams.get('session_id');
-                if (sessionId) {
-                    storageKey = `lh360_order_details_session_${sessionId}`;
-                }
-            }
-            
-            if (storageKey) {
-                localStorage.setItem(storageKey, cartToSave);
-            }
-        }
-        // Ora cancella il carrello
-        localStorage.removeItem('lh360_cart');
-        localStorage.removeItem('lh360_selected_variant_id');
-    // --- FINE MODIFICA ---
 
     // Prepara i dati per la timeline
     const timelineData = {
