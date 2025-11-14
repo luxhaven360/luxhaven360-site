@@ -274,34 +274,3 @@ function hideLoader() {
         }, 500);
     }
 }
-
-// Nuova funzione per aggiornare icona tracciamento
-function updateTrackIcon() {
-    const trackIcon = document.getElementById('trackIcon');
-    if (!trackIcon) return;
-    const email = localStorage.getItem('lh360_user_email');
-    if (!email) {
-        trackIcon.classList.remove('show');
-        return;
-    }
-    const webAppUrl = 'https://script.google.com/macros/s/AKfycbz2bGalIvBlv2KRPmckRN7bzvlJGdcC1C1oOyh2A41XT3XKDLtCRzgmGopGkj3ANxnF/exec'; // Sostituisci con URL reale
-    fetch(`${webAppUrl}?action=get_has_active_orders&email=${encodeURIComponent(email)}&callback=handleHasActive`)
-      .then(res => res.text())
-      .then(text => {
-        // Esegui il JSONP
-        eval(text); // Nota: in produzione, usa un parser più sicuro
-      })
-      .catch(() => {
-        trackIcon.classList.remove('show');
-      });
-}
-
-// Callback per has_active
-window.handleHasActive = function(data) {
-  const trackIcon = document.getElementById('trackIcon');
-  if (data.error || !data.has_active) {
-    trackIcon.classList.remove('show');
-  } else {
-    trackIcon.classList.add('show');
-  }
-};
