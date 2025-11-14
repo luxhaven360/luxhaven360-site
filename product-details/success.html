@@ -731,6 +731,11 @@
             content.style.opacity = '1';
         }
 
+        // --- MODIFICA REQUISITO 3 ---
+        // La cancellazione del carrello è stata spostata in handleDetailsResponse
+        // per assicurarsi di salvare prima i dettagli.
+        // --- FINE MODIFICA ---
+
         // Svuota il carrello DOPO aver mostrato i dati
         // (Piccolo ritardo per assicurarsi che la UI sia renderizzata)
         setTimeout(() => {
@@ -814,36 +819,26 @@ setTimeout(() => {
     }
 
     /**
- * CALLBACK GLOBALE: Riceve i dati da Google Script
- */
-window.handleDetailsResponse = function(response) {
-    const emailElem = document.getElementById('emailValue');
-    const paymentElem = document.getElementById('paymentValue');
-    const orderNumElem = document.getElementById('orderNumber');
+     * CALLBACK GLOBALE: Riceve i dati da Google Script (MODIFICATA)
+     */
+    window.handleDetailsResponse = function(response) {
+        const emailElem = document.getElementById('emailValue');
+        const paymentElem = document.getElementById('paymentValue');
+        const orderNumElem = document.getElementById('orderNumber');
 
-    let currentOrderId = null;
+        let currentOrderId = null;
 
-    if (response && !response.error) {
-        // Aggiorna Email
-        if (response.email && emailElem) {
-            emailElem.textContent = response.email;
-        }
-
-        // Aggiorna Metodo Pagamento
-        if (paymentElem) {
-            if (response.last4) {
-                paymentElem.textContent = `•••• ${response.last4}`;
-            } else {
-                paymentElem.textContent = 'Pagamento Online';
+        if (response && !response.error) {
+            if (response.email && emailElem) emailElem.textContent = response.email;
+            if (paymentElem) {
+                if (response.last4) paymentElem.textContent = `•••• ${response.last4}`;
+                else paymentElem.textContent = 'Pagamento Online';
+            }
+            if (response.order_id && orderNumElem) {
+                orderNumElem.textContent = `Ordine #${response.order_id}`;
+                currentOrderId = response.order_id;
             }
         }
-
-        // Aggiorna ID Ordine
-        if (response.order_id && orderNumElem) {
-            orderNumElem.textContent = `Ordine #${response.order_id}`;
-            currentOrderId = response.order_id;
-        }
-    }
 
     // === GESTIONE TIMESTAMP FISSO PER QUESTO ORDINE SPECIFICO ===
     let confirmedTime;
@@ -871,6 +866,33 @@ window.handleDetailsResponse = function(response) {
             localStorage.setItem(fallbackKey, confirmedTime);
         }
     }
+
+    // --- MODIFICA REQUISITO 3 ---
+        // Salva i dettagli del carrello (immagini/quantità) in una nuova chiave
+        // prima di cancellare il carrello originale.
+        const cartToSave = localStorage.getItem('lh360_cart');
+        if (cartToSave) {
+            let storageKey = null;
+            if (currentOrderId) {
+                // Chiave preferita basata su ID Ordine
+                storageKey = `lh360_order_details_${currentOrderId}`;
+            } else {
+                // Fallback (se ID ordine non è arrivato) usa session_id
+                const urlParams = new URLSearchParams(window.location.search);
+                const sessionId = urlParams.get('session_id');
+                if (sessionId) {
+                    storageKey = `lh360_order_details_session_${sessionId}`;
+                }
+            }
+            
+            if (storageKey) {
+                localStorage.setItem(storageKey, cartToSave);
+            }
+        }
+        // Ora cancella il carrello
+        localStorage.removeItem('lh360_cart');
+        localStorage.removeItem('lh360_selected_variant_id');
+    // --- FINE MODIFICA ---
 
     // Prepara i dati per la timeline
     const timelineData = {
