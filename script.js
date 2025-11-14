@@ -274,3 +274,50 @@ function hideLoader() {
         }, 500);
     }
 }
+
+// Funzione per aggiornare la visibilità dell'icona tracciamento
+function updateTrackIcon() {
+    const email = localStorage.getItem('lh360_user_email');
+    if (!email) return;
+
+    const script = document.createElement('script');
+    script.src = webAppUrl + '?get_tracking=1&email=' + encodeURIComponent(email) + '&callback=handleTrackCheck';
+    document.body.appendChild(script);
+}
+
+// Callback per il check icona tracciamento
+window.handleTrackCheck = function(response) {
+    if (response.error) return;
+
+    const orders = response.orders || [];
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+
+    const hasActive = orders.some(order => {
+        let orderDate;
+        try {
+            const parts = order.order_date.split(', ');
+            const dparts = parts[0].split('/');
+            const tparts = parts[1].split(':');
+            orderDate = new Date(dparts[2], dparts[1] - 1, dparts[0]);
+        } catch (e) {
+            return false;
+        }
+        return orderDate > thirtyDaysAgo;
+    });
+
+    const trackIcon = document.getElementById('trackIcon');
+    if (hasActive) {
+        trackIcon.classList.add('show');
+    } else {
+        trackIcon.classList.remove('show');
+    }
+}
+
+// Listener per cambiamenti in localStorage (per aggiornamenti cross-tab)
+window.addEventListener('storage', (event) => {
+    if (event.key === 'lh360_user_email') {
+        updateTrackIcon();
+    }
+});
+</script>
