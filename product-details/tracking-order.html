@@ -331,217 +331,360 @@
 <body>
     <div class="container">
         <div class="header">
-            <div class="brand">LUXHAVEN360</div>
+            <div class="brand">LuxHaven360</div>
             <h1 class="title">I Tuoi Ordini</h1>
-            <p class="subtitle">Traccia lo stato delle tue spedizioni</p>
+            <p class="subtitle">Ordini degli ultimi 30 giorni</p>
         </div>
 
-        <div class="orders-list" id="ordersList">
-            <!-- Cards caricate dinamicamente -->
-        </div>
+        <div class="orders-list" id="ordersListContainer">
+            <div class="empty-state" id="loader">
+                <div class="empty-icon">⏳</div>
+                <h2 class="empty-title">Caricamento ordini...</h2>
+                <p class="empty-text">Recupero delle informazioni in corso...</p>
+            </div>
+            
+            </div>
     </div>
 
     <script>
-        // Globali
-        const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyg0X6N2r6Q0Q0f9J0Vq0v7P3fL7i6g4V6yG6c5/exec'; // Sostituisci con il tuo Web App URL
+        // URL della Web App Google Apps Script
+        const webAppUrl = 'https://script.google.com/macros/s/AKfycbyGoU_1UkJubsBTcSXHZcEGibD5kVQuUiU0uYvX5Fm3eUQw3hTYPkyq2KDGCIfYnOCc/exec';
+        const ordersListContainer = document.getElementById('ordersListContainer');
+        const loader = document.getElementById('loader');
 
-        // Callback per JSONP
-        window.handleOrdersResponse = function(response) {
-            if (response.error) {
-                console.error('Errore recupero ordini:', response.error);
+        /**
+         * 1. Trova ordini locali da localStorage (salvati da success.html)
+         */
+        function getLocalOrderKeys() {
+            const keys = [];
+            try {
+                for (let i = 0; i < localStorage.length; i++) {
+                    const key = localStorage.key(i);
+                    // Cerca sia le date (lh360_order_time_...) che i dettagli (lh360_order_details_...)
+                    if (key && (key.startsWith('lh360_order_time_') || key.startsWith('lh360_order_details_'))) {
+                        const orderId = key.replace('lh360_order_time_', '').replace('lh360_order_details_', '').replace('session_', '');
+                        const orderDate = localStorage.getItem(`lh360_order_time_${orderId}`) || localStorage.getItem(`lh360_order_time_session_${orderId}`);
+                        
+                        // Aggiungi solo se non già presente e se abbiamo una data
+                        if (orderDate && !keys.some(k => k.id === orderId)) {
+                             keys.push({ id: orderId, date: orderDate });
+                        }
+                    }
+                }
+            } catch (e) { console.error('Errore lettura localStorage', e); }
+            
+            // Ordina per data, più recente prima
+            keys.sort((a, b) => new Date(b.date) - new Date(a.date));
+            return keys;
+        }
+
+        /**
+         * 2. Fetch dati da Google Script
+         */
+        function fetchTrackingData(localOrders) {
+            if (localOrders.length === 0) {
                 renderEmptyState();
                 return;
             }
-            const orders = response.orders || [];
+            
+            const ids = localOrders.map(o => o.id).join(',');
+            const callback = 'handleTrackingResponse';
+            const script = document.createElement('script');
+            script.src = `${webAppUrl}?action=getTrackingDetails&ids=${encodeURIComponent(ids)}&callback=${callback}`;
+            
+            script.onerror = () => {
+                renderErrorState('Errore di connessione con il server di tracciamento.');
+            };
+            document.body.appendChild(script);
+        }
+
+        /**
+         * 3. Callback per JSONP (Req 3, 4, 5)
+         */
+        window.handleTrackingResponse = function(response) {
+            if (loader) loader.style.display = 'none';
+
+            if (!response || !response.success) {
+                renderErrorState(response ? response.error : 'Risposta non valida dal server.');
+                return;
+            }
+            
+            const localOrders = getLocalOrderKeys(); // Prendi di nuovo per mappare
+            const localOrderMap = new Map(localOrders.map(o => [o.id, o]));
+            
+            if (!response.orders || response.orders.length === 0) {
+                renderEmptyState(); // Nessun ordine trovato sul server (magari vecchi)
+                return;
+            }
+
+            // Unisci dati locali (data, items) e remoti (stato, totale)
+            const combinedOrders = response.orders.map(remoteOrder => {
+                const localData = localOrderMap.get(remoteOrder.id);
+                const cartDataRaw = localStorage.getItem(`lh360_order_details_${remoteOrder.id}`) || localStorage.getItem(`lh360_order_details_session_${remoteOrder.id}`) || '[]';
+                let cartData = [];
+                try { cartData = JSON.parse(cartDataRaw); } catch(e) {}
+                
+                let itemCount = 0;
+                let images = [];
+                if (Array.isArray(cartData)) {
+                    cartData.forEach(item => {
+                        itemCount += (item.qty || 1);
+                        if (item.image) images.push(item.image);
+                    });
+                }
+
+                return {
+                    ...remoteOrder,
+                    orderDate: localData ? localData.date : null,
+                    itemCount: itemCount,
+                    images: images.slice(0, 3) // Max 3 immagini
+                };
+            }).sort((a, b) => new Date(b.orderDate) - new Date(a.orderDate)); // Ordina di nuovo
+            
+            // 4. Renderizza
+            renderOrders(combinedOrders);
+        }
+
+        /**
+         * 5. Funzioni di Render
+         */
+        function renderOrders(orders) {
+            ordersListContainer.innerHTML = ''; // Svuota
             if (orders.length === 0) {
                 renderEmptyState();
                 return;
             }
-            renderOrders(orders);
-        };
-
-        // Render stato vuoto
+            orders.forEach((order, index) => {
+                const card = createOrderCard(order);
+                // Applica delay animazione come nell'originale statico
+                card.style.animationDelay = `${(index + 1) * 0.1}s`;
+                ordersListContainer.appendChild(card);
+            });
+        }
+        
         function renderEmptyState() {
-            const list = document.getElementById('ordersList');
-            list.innerHTML = `
-                <div class="empty-state">
-                    <h2>Nessun ordine attivo</h2>
-                    <p>Non hai ordini negli ultimi 30 giorni.</p>
+            if (loader) loader.style.display = 'none';
+            ordersListContainer.innerHTML = `
+                <div class="empty-state" style="text-align: center; padding: 6rem 2rem;">
+                    <div class="empty-icon">📦</div>
+                    <h2 class="empty-title">Nessun ordine attivo</h2>
+                    <p class="empty-text">Non ci sono ordini recenti (ultimi 30 giorni) da tracciare.</p>
+                    <a href="https://luxhaven360.github.io/luxhaven360-site/index.html#shop" class="btn btn-primary">Torna allo Shop</a>
                 </div>
             `;
         }
+        
+        function renderErrorState(message) {
+            if (loader) loader.style.display = 'none';
+            ordersListContainer.innerHTML = `<div class="empty-state" style="text-align: center; padding: 6rem 2rem;"><h2 class="empty-title">Errore</h2><p class="empty-text">${message}</p></div>`;
+        }
 
-        // Render orders
-        function renderOrders(orders) {
-            const list = document.getElementById('ordersList');
-            list.innerHTML = '';
-            orders.forEach((order, index) => {
-                const statusClass = getStatusClass(order.stato);
-                const statusText = getStatusText(order.stato);
-                const progressWidth = calculateProgress(order.date, order.consegna_prevista, order.stato);
-                const stepClasses = getStepClasses(order.stato);
-                const actions = getActions(order.stato, order.id);
+        /**
+         * 6. Funzione per creare una card (Req 3, 4, 5)
+         */
+        function createOrderCard(order) {
+            const card = document.createElement('div');
+            card.className = 'order-card';
+            
+            // Helpers per info dinamiche
+            const { statusBadge, statusClass } = getStatusInfo(order.stato);
+            const { progressPercent, activeStep } = getProgressInfo(order.stato, order.orderDate, order.consegna_prevista);
+            const buttons = getButtonInfo(order.stato);
+            
+            const orderDateFormatted = order.orderDate ? new Date(order.orderDate).toLocaleDateString('it-IT', { day: 'numeric', month: 'long', year: 'numeric' }) : 'Data non disponibile';
+            
+            // Gestisce Totale (che arriva come stringa "123.45 €" o numero)
+            let totalString = 'N/D';
+            if (typeof order.totale === 'string' && order.totale.includes('€')) {
+                totalString = order.totale;
+            } else if (typeof order.totale === 'number') {
+                totalString = `€ ${order.totale.toLocaleString('it-IT', {minimumFractionDigits: 2})}`;
+            } else if (order.totale) { // Altra stringa
+                 totalString = order.totale;
+            }
 
-                const imagesHTML = order.articoli.slice(0, 3).map(art => `
-                    <div class="item-image">
-                        <img src="${art.image || 'https://images.unsplash.com/photo-1591047139829-d91aecb6caea?w=200&h=250&fit=crop'}" alt="${art.title}">
+            const itemsLabel = order.itemCount === 0 ? 'N/D' : (order.itemCount === 1 ? '1 articolo' : `${order.itemCount} articoli`);
+            
+            // Immagini
+            let imagesHTML = order.images.map(imgSrc => `
+                <div class="item-image">
+                    <img src="${imgSrc}" alt="Prodotto">
+                </div>
+            `).join('');
+            if (order.images.length === 0) {
+                imagesHTML = `<div class="items-title" style="font-size: 0.8em; color: #71717a;">Dettagli prodotto non disponibili</div>`;
+            }
+
+            // HTML Card
+            card.innerHTML = `
+                <div class="order-header">
+                    <div class="order-info">
+                        <h3>${order.id}</h3>
+                        <div class="order-date">${orderDateFormatted}</div>
                     </div>
-                `).join('');
+                    <div class="status-badge ${statusClass}">${statusBadge}</div>
+                </div>
 
-                const card = document.createElement('div');
-                card.className = 'order-card';
-                card.style.animationDelay = `${0.1 * (index + 1)}s`;
-                card.innerHTML = `
-                    <div class="order-header">
-                        <div class="order-info">
-                            <h3>#${order.id}</h3>
-                            <div class="order-date">${formatDate(order.date)}</div>
+                <div class="progress-section">
+                    <div class="progress-steps">
+                        <div class="progress-line" style="width: ${progressPercent}%;"></div>
+                        <div class="step ${activeStep >= 0 ? 'completed' : ''}">
+                            <div class="step-icon">✓</div>
+                            <div class="step-label">Confermato</div>
                         </div>
-                        <div class="status-badge ${statusClass}">${statusText}</div>
-                    </div>
-
-                    <div class="progress-section">
-                        <div class="progress-steps">
-                            <div class="progress-line" style="width: ${progressWidth}%;"></div>
-                            <div class="step ${stepClasses[0]}">
-                                <div class="step-icon">✓</div>
-                                <div class="step-label">Confermato</div>
-                            </div>
-                            <div class="step ${stepClasses[1]}">
-                                <div class="step-icon">📦</div>
-                                <div class="step-label">Preparato</div>
-                            </div>
-                            <div class="step ${stepClasses[2]}">
-                                <div class="step-icon">🚚</div>
-                                <div class="step-label">In Viaggio</div>
-                            </div>
-                            <div class="step ${stepClasses[3]}">
-                                <div class="step-icon">🏠</div>
-                                <div class="step-label">Consegnato</div>
-                            </div>
+                        <div class="step ${activeStep === 1 ? 'active' : ''} ${activeStep > 1 ? 'completed' : ''}">
+                            <div class="step-icon">${activeStep > 1 ? '✓' : '📦'}</div>
+                            <div class="step-label">Preparato</div>
+                        </div>
+                        <div class="step ${activeStep === 2 ? 'active' : ''} ${activeStep > 2 ? 'completed' : ''}">
+                            <div class="step-icon">${activeStep > 2 ? '✓' : '🚚'}</div>
+                            <div class="step-label">In Viaggio</div>
+                        </div>
+                        <div class="step ${activeStep === 3 ? 'active' : ''} ${activeStep > 3 ? 'completed' : ''}">
+                            <div class="step-icon">${activeStep > 3 ? '✓' : '🏠'}</div>
+                            <div class="step-label">Consegnato</div>
                         </div>
                     </div>
+                </div>
 
-                    <div class="order-details">
-                        <div class="detail-item">
-                            <div class="detail-label">Consegna Prevista</div>
-                            <div class="detail-value">${order.consegna_prevista}</div>
-                        </div>
-                        <div class="detail-item">
-                            <div class="detail-label">Articoli</div>
-                            <div class="detail-value">${order.articoli.length} articoli</div>
-                        </div>
-                        <div class="detail-item">
-                            <div class="detail-label">Totale</div>
-                            <div class="detail-value">€ ${order.totale.toFixed(2)}</div>
-                        </div>
+                <div class="order-details">
+                    <div class="detail-item">
+                        <div class="detail-label">${order.stato === 'Consegnato' ? 'Consegnato il' : 'Consegna Prevista'}</div>
+                        <div class="detail-value">${order.consegna_prevista || 'Da definire'}</div>
                     </div>
-
-                    <div class="order-items">
-                        <div class="items-title">Articoli ordinati</div>
-                        <div class="items-list">
-                            ${imagesHTML}
-                        </div>
+                    <div class="detail-item">
+                        <div class="detail-label">Articoli</div>
+                        <div class="detail-value">${itemsLabel}</div>
                     </div>
-
-                    <div class="order-actions">
-                        ${actions}
+                    <div class="detail-item">
+                        <div class="detail-label">Totale</div>
+                        <div class="detail-value">${totalString}</div>
                     </div>
-                `;
-                list.appendChild(card);
-            });
+                </div>
+
+                <div class="order-items">
+                    <div class="items-title">Articoli ordinati</div>
+                    <div class="items-list">
+                        ${imagesHTML}
+                    </div>
+                </div>
+
+                <div class="order-actions">
+                    ${buttons.primary}
+                    ${buttons.secondary}
+                </div>
+            `;
+            return card;
         }
 
-        // Utility per classi status
-        function getStatusClass(stato) {
-            if (stato === 'In Transito') return 'transit';
-            if (stato === 'Consegnato') return 'delivered';
-            return 'processing';
-        }
-
-        function getStatusText(stato) {
-            if (stato === 'Consegnato') return 'Consegnato';
-            if (stato === 'In Transito') return 'In Transito';
-            return 'In Preparazione';
-        }
-
-        // Calcola progress time-based
-        function calculateProgress(orderDateStr, consegnaStr, stato) {
-            if (stato === 'Consegnato') return 100;
-            const orderDate = parseDate(orderDateStr);
-            const consegnaDate = parseDate(consegnaStr);
-            const now = new Date();
-            if (!orderDate || !consegnaDate || now < orderDate) return 0;
-            if (now >= consegnaDate) return 100;
-            const totalTime = consegnaDate - orderDate;
-            const elapsed = now - orderDate;
-            return Math.min(100, (elapsed / totalTime) * 100);
-        }
-
-        // Parse date (assume dd/MM/yyyy)
-        function parseDate(dateStr) {
-            if (!dateStr) return null;
-            const parts = dateStr.split('/');
-            if (parts.length !== 3) return null;
-            return new Date(parts[2], parts[1] - 1, parts[0]);
-        }
-
-        // Formatta data
-        function formatDate(dateStr) {
-            const d = parseDate(dateStr);
-            return d ? d.toLocaleDateString('it-IT', { day: 'numeric', month: 'long', year: 'numeric' }) : dateStr;
-        }
-
-        // Classi per steps
-        function getStepClasses(stato) {
-            if (stato === 'Consegnato') return ['completed', 'completed', 'completed', 'completed'];
-            if (stato === 'In Transito') return ['completed', 'completed', 'active', ''];
-            if (stato === 'In Preparazione') return ['completed', 'active', '', ''];
-            return ['active', '', '', ''];
-        }
-
-        // Pulsanti dinamici
-        function getActions(stato, id) {
-            if (stato === 'In Transito') {
-                return `
-                    <a href="#" class="btn btn-primary" onclick="alert('Tracciamento non implementato');">
-                        <span>Traccia Spedizione</span>
-                        <span>→</span>
-                    </a>
-                    <a href="#" class="btn btn-secondary" onclick="alert('Dettagli ordine #${id}');">Dettagli</a>
-                `;
-            } else if (stato === 'Consegnato') {
-                return `
-                    <a href="#" class="btn btn-primary" onclick="alert('Acquista di nuovo #${id}');">
-                        <span>Acquista di Nuovo</span>
-                    </a>
-                    <a href="#" class="btn btn-secondary" onclick="alert('Lascia recensione per #${id}');">Lascia Recensione</a>
-                `;
-            } else {
-                return `
-                    <a href="#" class="btn btn-primary" onclick="alert('Dettagli ordine #${id}');">
-                        <span>Dettagli Ordine</span>
-                        <span>→</span>
-                    </a>
-                    <a href="#" class="btn btn-secondary" onclick="alert('Contatta support per #${id}');">Contatta Supporto</a>
-                `;
+        /**
+         * Helper per stato (Req 3)
+         */
+        function getStatusInfo(stato) {
+            switch (stato) {
+                case 'In Transito': return { statusBadge: 'In Transito', statusClass: 'transit' };
+                case 'Consegnato': return { statusBadge: 'Consegnato', statusClass: 'delivered' };
+                case 'In Preparazione': return { statusBadge: 'In Preparazione', statusClass: 'processing' };
+                case 'Confermato': return { statusBadge: 'Confermato', statusClass: 'processing' };
+                default: return { statusBadge: stato || 'In Elaborazione', statusClass: 'processing' };
             }
         }
-
-        // Carica ordini
-        function loadOrders() {
-            const email = localStorage.getItem('lh360_email');
-            if (!email) {
-                renderEmptyState();
-                return;
+        
+        /**
+         * Helper per barra progresso (Req 5 - Logica Temporale)
+         */
+        function getProgressInfo(stato, orderDateStr, deliveryDateStr) {
+            let activeStep = 0;
+            let progressPercent = 0;
+            
+            const stepMap = { 'Confermato': 0, 'In Preparazione': 1, 'In Transito': 2, 'Consegnato': 3 };
+            activeStep = stepMap[stato] !== undefined ? stepMap[stato] : 0;
+            
+            if (stato === 'Consegnato') {
+                return { progressPercent: 100, activeStep: 3 };
             }
-            const script = document.createElement('script');
-            script.src = `${APPS_SCRIPT_URL}?get_orders&email=${encodeURIComponent(email)}&callback=handleOrdersResponse`;
-            document.body.appendChild(script);
+            
+            try {
+                // Tenta di parsare la data 'dd MMMM yyyy' o altri formati
+                const deliveryDate = parseItalianDate(deliveryDateStr);
+                const start = new Date(orderDateStr).getTime();
+                const end = deliveryDate.getTime();
+                const now = Date.now();
+                
+                if (!isNaN(start) && !isNaN(end) && end > start) {
+                    const totalDuration = end - start;
+                    const elapsed = now - start;
+                    // Calcola progresso, ma bloccalo tra 5% e 95% se non ancora consegnato
+                    progressPercent = Math.max(5, Math.min(95, (elapsed / totalDuration) * 100));
+                } else {
+                    // Fallback se date non valide, usa la logica a step
+                    const percents = [10, 33, 66, 100];
+                    progressPercent = percents[activeStep];
+                }
+            } catch (e) {
+                // Fallback se parsing fallisce
+                const percents = [10, 33, 66, 100];
+                progressPercent = percents[activeStep];
+            }
+            
+            return { progressPercent, activeStep };
         }
 
-        // Init
-        document.addEventListener('DOMContentLoaded', loadOrders);
+        function parseItalianDate(dateStr) {
+            if (!dateStr) throw new Error('Data non valida');
+            const months = {
+                'gennaio': 0, 'febbraio': 1, 'marzo': 2, 'aprile': 3, 'maggio': 4, 'giugno': 5,
+                'luglio': 6, 'agosto': 7, 'settembre': 8, 'ottobre': 9, 'novembre': 10, 'dicembre': 11
+            };
+            const parts = String(dateStr).split(' '); // "dd MMMM yyyy"
+            if (parts.length >= 3) {
+                const day = parseInt(parts[0], 10);
+                const month = months[parts[1].toLowerCase()];
+                const year = parseInt(parts[2], 10);
+                if (!isNaN(day) && month !== undefined && !isNaN(year)) {
+                    return new Date(year, month, day);
+                }
+            }
+            // Fallback per date ISO o altri formati
+            const isoDate = new Date(dateStr);
+            if (!isNaN(isoDate.getTime())) return isoDate;
+            throw new Error('Formato data non riconosciuto');
+        }
+        
+        /**
+         * Helper per bottoni (Req 4)
+         */
+        function getButtonInfo(stato) {
+            let primary = '', secondary = '';
+            // Link statici per i pulsanti (puntano allo shop o a se stessi)
+            const shopLink = 'https://luxhaven360.github.io/luxhaven360-site/index.html#shop';
+            
+            switch (stato) {
+                case 'In Transito':
+                    primary = `<a href="#" class="btn btn-primary"><span>Traccia Spedizione</span><span>→</span></a>`;
+                    secondary = `<a href="#" class="btn btn-secondary">Dettagli</a>`;
+                    break;
+                case 'Consegnato':
+                    primary = `<a href="${shopLink}" class="btn btn-primary"><span>Acquista di Nuovo</span></a>`;
+                    secondary = `<a href="#" class="btn btn-secondary">Lascia Recensione</a>`;
+                    break;
+                case 'In Preparazione':
+                case 'Confermato':
+                default:
+                    primary = `<a href="#" class="btn btn-primary"><span>Dettagli Ordine</span><span>→</span></a>`;
+                    secondary = `<a href="#" class="btn btn-secondary">Contatta Supporto</a>`;
+                    break;
+            }
+            return { primary, secondary };
+        }
+
+        /**
+         * 7. Avvio
+         */
+        document.addEventListener('DOMContentLoaded', () => {
+            const localOrders = getLocalOrderKeys();
+            fetchTrackingData(localOrders);
+        });
     </script>
 </body>
 </html>
