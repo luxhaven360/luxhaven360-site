@@ -193,6 +193,8 @@ function initDynamicProducts() {
 // init al load
 window.addEventListener('DOMContentLoaded', () => {
     initDynamicProducts();
+    updateTrackingIcon();
+    updateCartIcon();
 });
 
 // --- end ---
@@ -273,4 +275,23 @@ function hideLoader() {
             // loader.remove(); // Decommenta se vuoi rimuoverlo completamente
         }, 500);
     }
+}
+
+function updateTrackingIcon() {
+  const userEmail = localStorage.getItem('lh360_user_email');
+  if (!userEmail) return;
+  const webAppUrl = 'https://script.google.com/macros/s/your-deployment-id/dev'; // Replace with your web app URL
+  const url = `${webAppUrl}?get_has_active=1&email=${encodeURIComponent(userEmail)}&callback=handleHasActive`;
+  const script = document.createElement('script');
+  script.src = url;
+  document.body.appendChild(script);
+}
+
+window.handleHasActive = function(resp) {
+  const trackingIcon = document.getElementById('trackingIcon');
+  if (resp.has_active) {
+    trackingIcon.classList.add('show');
+  } else {
+    trackingIcon.classList.remove('show');
+  }
 }
