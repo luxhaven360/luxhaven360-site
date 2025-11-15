@@ -813,7 +813,7 @@ setTimeout(() => {
         document.body.appendChild(script);
     }
 
-    /**
+       /**
  * CALLBACK GLOBALE: Riceve i dati da Google Script
  */
 window.handleDetailsResponse = function(response) {
@@ -857,6 +857,9 @@ window.handleDetailsResponse = function(response) {
             confirmedTime = new Date().toISOString();
             localStorage.setItem(`lh360_order_time_${currentOrderId}`, confirmedTime); // Salva per questo ordine
         }
+        
+        // NUOVO: Salva anche l'ID dell'ultimo ordine per tracking
+        localStorage.setItem('lh360_last_order_id', currentOrderId);
     } else {
         // Fallback: usa session_id dall'URL (se presente)
         const urlParams = new URLSearchParams(window.location.search);
@@ -870,6 +873,33 @@ window.handleDetailsResponse = function(response) {
             confirmedTime = new Date().toISOString();
             localStorage.setItem(fallbackKey, confirmedTime);
         }
+    }
+
+    // NUOVO: Salva i dettagli completi dell'ordine per tracking immediato
+    if (currentOrderId) {
+        const cart = JSON.parse(localStorage.getItem('lh360_cart') || '[]');
+        const subtotal = cart.reduce((sum, item) => sum + (item.price * (item.qty || 1)), 0);
+        const shipping = subtotal >= 150 ? 0 : 15;
+        const total = subtotal + shipping;
+        
+        const orderDetails = {
+            id: currentOrderId,
+            data: new Date().toLocaleDateString('it-IT'),
+            stato: 'In Preparazione',
+            totale: total.toFixed(2),
+            consegna_prevista: calculateDeliveryDate(3), // 3 giorni da oggi
+            products: cart.map(item => ({
+                name: item.title || 'Prodotto',
+                quantity: item.qty || 1,
+                price: item.price || 0,
+                image: item.image || ''
+            })),
+            email: response?.email || '',
+            timestamp: confirmedTime
+        };
+        
+        localStorage.setItem('lh360_pending_order', JSON.stringify(orderDetails));
+        console.log('✅ Ordine salvato in localStorage per tracking immediato:', orderDetails);
     }
 
     // Prepara i dati per la timeline
@@ -897,6 +927,15 @@ window.handleDetailsResponse = function(response) {
     updateTimeline(timelineData);
     finalizePageLoad();
 };
+
+/**
+ * Helper: Calcola data di consegna prevista
+ */
+function calculateDeliveryDate(daysFromNow) {
+    const date = new Date();
+    date.setDate(date.getDate() + daysFromNow);
+    return date.toLocaleDateString('it-IT', { day: 'numeric', month: 'long', year: 'numeric' });
+}
 
     /**
      * FUNZIONE: Aggiorna la timeline dinamicamente
