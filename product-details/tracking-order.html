@@ -632,11 +632,40 @@
         }
 
         /**
+         * Format date in Italian long format (es. "14 novembre 2025")
+         */
+        function formatItalianDate(dateStr) {
+            if (!dateStr) return '';
+            
+            let date;
+            
+            // Try parsing dd/MM/yyyy format
+            const parts = dateStr.split('/');
+            if (parts.length === 3) {
+                date = new Date(parts[2], parts[1] - 1, parts[0]);
+            } else {
+                // Try parsing as Date string
+                date = new Date(dateStr);
+            }
+            
+            if (isNaN(date.getTime())) return dateStr; // Fallback to original if invalid
+            
+            return date.toLocaleDateString('it-IT', { 
+                day: 'numeric', 
+                month: 'long', 
+                year: 'numeric' 
+            });
+        }
+
+        /**
          * Create order card HTML
          */
         function createOrderCard(order, index) {
             const stateClass = order.stato.toLowerCase().replace(/\s+/g, '-');
             const itemCount = order.products ? order.products.length : 1;
+            
+            // Format date in Italian long format
+            const formattedDate = formatItalianDate(order.data);
             
             // Generate product images
             let imagesHTML = '';
@@ -662,7 +691,7 @@
                     <div class="order-header">
                         <div class="order-info">
                             <h3>${order.id}</h3>
-                            <div class="order-date">${order.data}</div>
+                            <div class="order-date">${formattedDate}</div>
                         </div>
                         <div class="status-badge ${stateClass}">${order.stato}</div>
                     </div>
@@ -847,6 +876,10 @@
                     
                     if (orderTimestamp > thirtyDaysAgo) {
                         console.log('✅ Trovato ordine pending in localStorage:', order.id);
+                        // Formatta la data in formato italiano lungo se necessario
+                        if (order.data && order.data.includes('/')) {
+                            order.data = formatItalianDate(order.data);
+                        }
                         orders.push(order);
                     } else {
                         // Rimuovi ordini vecchi
@@ -864,9 +897,17 @@
                 const cart = JSON.parse(localStorage.getItem('lh360_cart') || '[]');
                 const subtotal = cart.reduce((sum, item) => sum + (item.price * (item.qty || 1)), 0);
                 
+                // Usa formato italiano lungo per la data
+                const today = new Date();
+                const formattedDate = today.toLocaleDateString('it-IT', { 
+                    day: 'numeric', 
+                    month: 'long', 
+                    year: 'numeric' 
+                });
+                
                 orders.push({
                     id: recentOrderId,
-                    data: new Date().toLocaleDateString('it-IT'),
+                    data: formattedDate,
                     stato: 'In Preparazione',
                     consegna_prevista: calculateDeliveryDate(3),
                     totale: subtotal > 0 ? subtotal.toFixed(2) : '0,00',
