@@ -125,7 +125,7 @@
     <script src="script.js"></script>
     <script>
         // URL della Web App Google Apps Script
-        const WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbzuORsr4yTgVJ7w9hvz9VWmj6L0zey18wWFod1inD_X-Nip7cKtYJgGm6uv_L3fYbHX/exec';
+        const WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbyiDu50VIVwzJ3qQNCWZmSk-_ovC7iBvxJGUYriRc3-PwMRbsgi8wb0baqxk3nLxti2/exec';
 
         // Gestione hash per anchor link esterni
         window.onload = function() {
@@ -156,44 +156,102 @@
         function updateTrackingIcon() {
             const trackingIcon = document.getElementById('trackingIcon');
             
-            // Call Google Apps Script endpoint to get active orders count
-            const callbackName = 'handleActiveOrdersCount';
-            const script = document.createElement('script');
-            script.src = `${WEB_APP_URL}?get_active_count=1&callback=${callbackName}`;
+            // Fallback 1: Controlla localStorage PRIMA di chiamare API
+            const hasRecentOrder = checkLocalStorageForRecentOrders();
+            if (hasRecentOrder) {
+                trackingIcon.style.display = 'block';
+                console.log('✅ Icona tracking mostrata (fallback localStorage)');
+            }
             
-            window[callbackName] = function(response) {
-                if (response && response.count > 0) {
-                    trackingIcon.style.display = 'block';
-                } else {
+            // Prova comunque API per aggiornamento real-time
+            const callbackName = 'handleActiveOrdersCount_' + Date.now();
+            const script = document.createElement('script');
+            script.src = `${WEB_APP_URL}?get_active_count=1&callback=${callbackName}&t=${Date.now()}`;
+            
+            // Timeout di 5 secondi
+            const timeout = setTimeout(() => {
+                console.warn('⚠️ Timeout chiamata API tracking icon, uso fallback');
+                if (!hasRecentOrder) {
                     trackingIcon.style.display = 'none';
                 }
+                cleanup();
+            }, 5000);
+            
+            window[callbackName] = function(response) {
+                clearTimeout(timeout);
+                console.log('📡 Risposta API tracking icon:', response);
                 
-                // Cleanup
-                try {
-                    document.body.removeChild(script);
-                    delete window[callbackName];
-                } catch (e) {}
+                if (response && response.count > 0) {
+                    trackingIcon.style.display = 'block';
+                    console.log('✅ Icona tracking mostrata (API conferma)');
+                } else if (!hasRecentOrder) {
+                    trackingIcon.style.display = 'none';
+                    console.log('❌ Icona tracking nascosta (nessun ordine)');
+                }
+                
+                cleanup();
             };
             
             script.onerror = () => {
-                // Fallback: check localStorage for recent order
-                const lastOrderTime = localStorage.getItem('lh360_order_confirmed_time');
-                if (lastOrderTime) {
-                    const orderDate = new Date(lastOrderTime);
-                    const thirtyDaysAgo = new Date(Date.now() - (30 * 24 * 60 * 60 * 1000));
-                    if (orderDate > thirtyDaysAgo) {
-                        trackingIcon.style.display = 'block';
-                    }
+                clearTimeout(timeout);
+                console.error('❌ Errore chiamata API tracking icon, uso fallback');
+                if (!hasRecentOrder) {
+                    trackingIcon.style.display = 'none';
                 }
-                
-                // Cleanup
-                try {
-                    document.body.removeChild(script);
-                    delete window[callbackName];
-                } catch (e) {}
+                cleanup();
             };
             
+            function cleanup() {
+                try {
+                    if (script.parentNode) document.body.removeChild(script);
+                    delete window[callbackName];
+                } catch (e) {}
+            }
+            
             document.body.appendChild(script);
+        }
+
+        /**
+         * Fallback: Controlla ordini recenti in localStorage
+         */
+        function checkLocalStorageForRecentOrders() {
+            const thirtyDaysAgo = new Date(Date.now() - (30 * 24 * 60 * 60 * 1000));
+            
+            // Check 1: Timestamp ordine singolo
+            const lastOrderTime = localStorage.getItem('lh360_order_confirmed_time');
+            if (lastOrderTime) {
+                const orderDate = new Date(lastOrderTime);
+                if (orderDate > thirtyDaysAgo) {
+                    console.log('✓ Trovato ordine recente in localStorage (singolo)');
+                    return true;
+                }
+            }
+            
+            // Check 2: Cerca tutti i timestamp ordini (formato: lh360_order_time_*)
+            for (let i = 0; i < localStorage.length; i++) {
+                const key = localStorage.key(i);
+                if (key && key.startsWith('lh360_order_time_')) {
+                    const timestamp = localStorage.getItem(key);
+                    if (timestamp) {
+                        const orderDate = new Date(timestamp);
+                        if (orderDate > thirtyDaysAgo) {
+                            console.log('✓ Trovato ordine recente in localStorage:', key);
+                            return true;
+                        }
+                    }
+                }
+            }
+            
+            // Check 3: Verifica ultimo ID ordine salvato
+            const lastOrderId = localStorage.getItem('lh360_last_order_id');
+            if (lastOrderId) {
+                // Se c'è un ID ma non timestamp, assumiamo sia recente
+                console.log('✓ Trovato ID ordine recente:', lastOrderId);
+                return true;
+            }
+            
+            console.log('ℹ️ Nessun ordine recente trovato in localStorage');
+            return false;
         }
 
         // Listener per cambiamenti in localStorage (per aggiornamenti cross-tab)
