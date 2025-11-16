@@ -21,8 +21,8 @@
                 <li><a href="#" onclick="showSection('stays')">Esperienze</a></li>
                 <li><a href="#" onclick="showSection('shop')">Shop</a></li>
                 <li><a href="#" onclick="showSection('contact')">Contatti</a></li>
-                <!-- Icona Tracciamento Ordini (NASCOSTA di default, NO flash) -->
-                <li id="trackingIcon" class="cart-icon" style="display: none !important; opacity: 0; visibility: hidden;" onclick="window.location.href='product-details/tracking-order.html'" title="Traccia i tuoi ordini">📦</li>
+                <!-- Icona Tracciamento Ordini (NASCOSTA di default, classe 'hidden' in CSS) -->
+                <li id="trackingIcon" class="cart-icon tracking-icon-hidden" onclick="window.location.href='product-details/tracking-order.html'" title="Traccia i tuoi ordini">📦</li>
                 <li id="cartIcon" class="cart-icon" onclick="window.location.href='product-details/cart.html'">🛒</li>
             </ul>
         </div>
@@ -125,7 +125,7 @@
     <script src="script.js"></script>
     <script>
         // URL della Web App Google Apps Script
-        const WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbxiYGZ28691BtFrczDDgmlpXaji6tCz1ov0O1bTac2jM-YjKPPqoM-kdbgvfZWrNsZF/exec';
+        const WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbygI_JbcsC0x01erLW70bhS2SzohenAdEFGSOCmwhZETNgmWwZ4O4cTYPhq-Ni2JwDq/exec';
 
         // Gestione hash per anchor link esterni
         window.onload = function() {
@@ -150,93 +150,76 @@
         }
 
         /**
-         * AGGIORNATA: Icona tracking SENZA flash
-         * Mostra SOLO dopo conferma definitiva (localStorage + API agreement)
+         * AGGIORNATO: Aggiorna visibilità icona tracciamento
+         * SINCRONO E IMMEDIATO - Zero flash, zero ritardi
          */
         function updateTrackingIcon() {
             const trackingIcon = document.getElementById('trackingIcon');
             
-            // CRITICAL: Tripla protezione contro flash
-            trackingIcon.style.display = 'none';
-            trackingIcon.style.opacity = '0';
-            trackingIcon.style.visibility = 'hidden';
+            // STEP 1: Check SINCRONO localStorage (0ms)
+            const hasActiveOrders = checkForActiveOrders();
             
-            // NON mostrare basandosi solo su localStorage (causa flash)
-            // Attendi conferma API prima di decidere
-            
-            const callbackName = 'handleActiveOrdersCount_' + Date.now();
-            const script = document.createElement('script');
-            script.src = `${WEB_APP_URL}?get_active_count=1&callback=${callbackName}&t=${Date.now()}`;
-            
-            const timeout = setTimeout(() => {
-                // Timeout: usa localStorage come fallback SOLO se veramente sicuro
-                const hasActiveOrders = checkForActiveOrders();
-                if (hasActiveOrders) {
-                    showIcon();
-                    console.log('⚠️ API timeout, icona mostrata da localStorage fallback');
-                } else {
-                    console.log('❌ API timeout, nessun ordine attivo');
-                }
-                cleanup();
-            }, 5000);
-            
-            window[callbackName] = function(response) {
-                clearTimeout(timeout);
-                console.log('📡 Risposta API tracking icon:', response);
+            if (hasActiveOrders) {
+                // Mostra IMMEDIATAMENTE
+                trackingIcon.classList.remove('tracking-icon-hidden');
+                trackingIcon.classList.add('tracking-icon-visible');
+                console.log('✅ Icona tracking mostrata (IMMEDIATO - ordini attivi trovati)');
                 
-                // API è l'UNICA autorità - ignora localStorage se API dice "no"
-                if (response && response.count > 0) {
-                    showIcon();
-                    console.log('✅ Icona tracking mostrata (API conferma:', response.count, 'ordini attivi)');
-                } else {
-                    // API dice "no ordini" → NASCONDI sempre (anche se localStorage diceva sì)
-                    hideIcon();
-                    console.log('❌ Icona tracking nascosta (API: 0 ordini attivi)');
+                // Verifica API in background (non blocca UI)
+                verifyWithAPIBackground();
+            } else {
+                // Resta nascosta, verifica API per sicurezza
+                console.log('ℹ️ Nessun ordine attivo, verifico con API...');
+                verifyWithAPIBackground();
+            }
+            
+            function verifyWithAPIBackground() {
+                const callbackName = 'handleActiveOrdersCount_' + Date.now();
+                const script = document.createElement('script');
+                script.src = `${WEB_APP_URL}?get_active_count=1&callback=${callbackName}&t=${Date.now()}`;
+                
+                const timeout = setTimeout(() => {
+                    cleanup();
+                }, 5000);
+                
+                window[callbackName] = function(response) {
+                    clearTimeout(timeout);
                     
-                    // Cleanup localStorage per evitare futuri flash
-                    if (response && response.count === 0) {
-                        cleanupInactiveOrders();
+                    // API è autorità finale, ma aggiorna SOLO se diverso da stato corrente
+                    const currentlyVisible = trackingIcon.classList.contains('tracking-icon-visible');
+                    const shouldBeVisible = response && response.count > 0;
+                    
+                    if (currentlyVisible !== shouldBeVisible) {
+                        if (shouldBeVisible) {
+                            trackingIcon.classList.remove('tracking-icon-hidden');
+                            trackingIcon.classList.add('tracking-icon-visible');
+                            console.log('✅ Icona tracking mostrata (API conferma:', response.count, 'ordini)');
+                        } else {
+                            trackingIcon.classList.remove('tracking-icon-visible');
+                            trackingIcon.classList.add('tracking-icon-hidden');
+                            console.log('❌ Icona tracking nascosta (API: 0 ordini)');
+                            cleanupInactiveOrders();
+                        }
                     }
+                    
+                    cleanup();
+                };
+                
+                script.onerror = () => {
+                    clearTimeout(timeout);
+                    console.warn('⚠️ API non disponibile, uso solo localStorage');
+                    cleanup();
+                };
+                
+                function cleanup() {
+                    try {
+                        if (script.parentNode) document.body.removeChild(script);
+                        delete window[callbackName];
+                    } catch (e) {}
                 }
                 
-                cleanup();
-            };
-            
-            script.onerror = () => {
-                clearTimeout(timeout);
-                console.error('❌ Errore API tracking icon');
-                
-                // Errore API: usa localStorage ma con cautela estrema
-                const hasActiveOrders = checkForActiveOrders();
-                if (hasActiveOrders) {
-                    showIcon();
-                    console.log('⚠️ API error, icona mostrata da localStorage fallback');
-                } else {
-                    hideIcon();
-                }
-                cleanup();
-            };
-            
-            function showIcon() {
-                trackingIcon.style.display = 'block';
-                trackingIcon.style.opacity = '1';
-                trackingIcon.style.visibility = 'visible';
+                document.body.appendChild(script);
             }
-            
-            function hideIcon() {
-                trackingIcon.style.display = 'none';
-                trackingIcon.style.opacity = '0';
-                trackingIcon.style.visibility = 'hidden';
-            }
-            
-            function cleanup() {
-                try {
-                    if (script.parentNode) document.body.removeChild(script);
-                    delete window[callbackName];
-                } catch (e) {}
-            }
-            
-            document.body.appendChild(script);
         }
 
         /**
