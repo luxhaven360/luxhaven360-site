@@ -138,32 +138,77 @@
             }
         }
 
-        /**
-         * *** FIX PRINCIPALE: Logica corretta per visibilità icona tracking ***
-         * 
-         * REGOLE:
-         * 1. Mostra icona SE ci sono ordini attivi negli ultimi 30 giorni
-         * 2. Ordini attivi = Stati: "Confermato", "In Preparazione", "In Transito"
-         * 3. Ordini attivi = Stato "Consegnato" SOLO se < 2 giorni dalla consegna
-         * 4. Check localStorage PRIMA (immediato), poi API (aggiornamento)
-         */
         function updateTrackingIcon() {
-            const trackingIcon = document.getElementById('trackingIcon');
-            
-            // Step 1: Check localStorage (veloce, sincronizzato)
-            const hasActiveOrders = checkLocalStorageForActiveOrders();
-            
-            if (hasActiveOrders) {
-                trackingIcon.style.display = 'block';
-                console.log('✅ Icona tracking mostrata (localStorage: ordini attivi trovati)');
-            } else {
-                trackingIcon.style.display = 'none';
-                console.log('ℹ️ Icona tracking nascosta (localStorage: nessun ordine attivo)');
-            }
-            
-            // Step 2: Chiamata API per aggiornamento real-time (in background)
-            fetchActiveOrdersFromAPI(trackingIcon);
+    const trackingIcon = document.getElementById('trackingIcon');
+    if (!trackingIcon) return;
+    
+    // Inizia sempre nascosto per evitare flash
+    trackingIcon.style.display = 'none';
+    
+    // Fetch API prima (priorità ai dati fresh)
+    fetchActiveOrdersFromAPI(trackingIcon, () => {
+        // Callback per fallback su local se API fallisce
+        const hasActive = checkLocalStorageForActiveOrders();
+        trackingIcon.style.display = hasActive ? 'block' : 'none';
+        console.log(hasActive ? '✅ Fallback local: icona mostrata' : 'ℹ️ Fallback local: icona nascosta');
+    });
+}
+
+/**
+ * Fetch API con callback per error/timeout
+ * @param {Element} icon - L'elemento icona
+ * @param {Function} onFail - Callback se fail
+ */
+function fetchActiveOrdersFromAPI(icon, onFail) {
+    const callbackName = 'handleActiveOrdersCount_' + Date.now();
+    const script = document.createElement('script');
+    script.src = `${WEB_APP_URL}?get_active_count=1&callback=${callbackName}&t=${Date.now()}`;
+    
+    let handled = false;
+    const timeout = setTimeout(() => {
+        if (!handled) {
+            handled = true;
+            console.warn('⚠️ Timeout API tracking icon');
+            cleanup();
+            if (onFail) onFail();
         }
+    }, 5000);  // Ridotto a 5s per velocità
+    
+    window[callbackName] = function(response) {
+        if (handled) return;
+        handled = true;
+        clearTimeout(timeout);
+        console.log('📡 Risposta API tracking icon:', response);
+        
+        if (response && typeof response.count === 'number') {
+            icon.style.display = response.count > 0 ? 'block' : 'none';
+            console.log(`✅ API: ${response.count} ordini attivi`);
+            if (response.count === 0) cleanupOldOrders();
+        } else {
+            console.warn('⚠️ Risposta API invalida');
+            if (onFail) onFail();
+        }
+        cleanup();
+    };
+    
+    script.onerror = () => {
+        if (handled) return;
+        handled = true;
+        clearTimeout(timeout);
+        console.error('❌ Errore API tracking icon');
+        cleanup();
+        if (onFail) onFail();
+    };
+    
+    function cleanup() {
+        try {
+            if (script.parentNode) document.body.removeChild(script);
+            delete window[callbackName];
+        } catch (e) {}
+    }
+    
+    document.body.appendChild(script);
+}
 
         /**
          * Check localStorage per ordini attivi (ultimi 30 giorni)
@@ -268,56 +313,6 @@
             }
             
             return null;
-        }
-
-        /**
-         * Fetch API per conteggio ordini attivi (aggiornamento real-time)
-         */
-        function fetchActiveOrdersFromAPI(trackingIcon) {
-            const callbackName = 'handleActiveOrdersCount_' + Date.now();
-            const script = document.createElement('script');
-            script.src = `${WEB_APP_URL}?get_active_count=1&callback=${callbackName}&t=${Date.now()}`;
-            
-            const timeout = setTimeout(() => {
-                console.warn('⚠️ Timeout API tracking icon (manteniamo stato localStorage)');
-                cleanup();
-            }, 8000);
-            
-            window[callbackName] = function(response) {
-                clearTimeout(timeout);
-                console.log('📡 Risposta API tracking icon:', response);
-                
-                if (response && typeof response.count === 'number') {
-                    // API risposta valida: aggiorna visibilità
-                    if (response.count > 0) {
-                        trackingIcon.style.display = 'block';
-                        console.log(`✅ API conferma: ${response.count} ordini attivi`);
-                    } else {
-                        trackingIcon.style.display = 'none';
-                        console.log('✅ API conferma: 0 ordini attivi');
-                        cleanupOldOrders(); // Cleanup localStorage se API dice 0
-                    }
-                } else {
-                    console.warn('⚠️ Risposta API invalida, manteniamo stato localStorage');
-                }
-                
-                cleanup();
-            };
-            
-            script.onerror = () => {
-                clearTimeout(timeout);
-                console.error('❌ Errore chiamata API tracking icon (manteniamo stato localStorage)');
-                cleanup();
-            };
-            
-            function cleanup() {
-                try {
-                    if (script.parentNode) document.body.removeChild(script);
-                    delete window[callbackName];
-                } catch (e) {}
-            }
-            
-            document.body.appendChild(script);
         }
 
         /**
