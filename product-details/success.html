@@ -1113,63 +1113,6 @@ function calculateDeliveryDate(daysFromNow) {
 
         if (totalElem) totalElem.textContent = `€ ${total.toLocaleString('it-IT', {minimumFractionDigits: 2})}`;
     }
-
-    // Nuova funzione: Preload e cache ordini attivi dopo acquisto
-function preloadAndCacheOrders() {
-    const callbackName = 'preloadOrders_' + Date.now();
-    const script = document.createElement('script');
-    script.src = `${WEB_APP_URL}?action=get_orders&callback=${callbackName}&t=${Date.now()}`;
-    
-    window[callbackName] = function(response) {
-        console.log('📡 Preload API ordini:', response);
-        
-        let orders = [];
-        if (response && Array.isArray(response.orders)) {
-            orders = response.orders;
-        }
-        
-        // Merge con pending locale
-        const pending = localStorage.getItem('lh360_pending_order');
-        if (pending) {
-            try {
-                const pOrder = JSON.parse(pending);
-                if (!orders.find(o => o.id === pOrder.id)) {
-                    orders.push(pOrder);
-                }
-            } catch (e) {}
-        }
-        
-        // Cache
-        const data = {
-            orders: orders,
-            timestamp: Date.now()
-        };
-        localStorage.setItem('lh360_active_orders', JSON.stringify(data));
-        console.log(`💾 Pre-cachati ${orders.length} ordini attivi dopo acquisto`);
-        
-        cleanup();
-    };
-    
-    script.onerror = () => {
-        console.error('❌ Errore preload API');
-        cleanup();
-    };
-    
-    function cleanup() {
-        try {
-            if (script.parentNode) document.body.removeChild(script);
-            delete window[callbackName];
-        } catch (e) {}
-    }
-    
-    document.body.appendChild(script);
-}
-
-// Chiama dopo loadPurchasedItems
-document.addEventListener('DOMContentLoaded', () => {
-    init();
-    preloadAndCacheOrders();  // Nuova chiamata
-});
 </script>    
 </body>
 </html>
