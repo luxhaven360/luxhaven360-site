@@ -142,62 +142,49 @@
     const trackingIcon = document.getElementById('trackingIcon');
     if (!trackingIcon) return;
     
-    // Inizia sempre nascosto per evitare flash
-    trackingIcon.style.display = 'none';
+    // Check locale sincrono per decisione immediata
+    const hasActiveLocal = checkLocalStorageForActiveOrders();
+    trackingIcon.style.display = hasActiveLocal ? 'block' : 'none';
+    console.log(hasActiveLocal ? '✅ Local: icona mostrata immediatamente' : 'ℹ️ Local: icona nascosta immediatamente');
     
-    // Fetch API prima (priorità ai dati fresh)
-    fetchActiveOrdersFromAPI(trackingIcon, () => {
-        // Callback per fallback su local se API fallisce
-        const hasActive = checkLocalStorageForActiveOrders();
-        trackingIcon.style.display = hasActive ? 'block' : 'none';
-        console.log(hasActive ? '✅ Fallback local: icona mostrata' : 'ℹ️ Fallback local: icona nascosta');
-    });
+    // API asincrona per correzione
+    fetchActiveOrdersFromAPI(trackingIcon);
 }
 
 /**
- * Fetch API con callback per error/timeout
- * @param {Element} icon - L'elemento icona
- * @param {Function} onFail - Callback se fail
+ * Fetch API per aggiornamento
  */
-function fetchActiveOrdersFromAPI(icon, onFail) {
+function fetchActiveOrdersFromAPI(icon) {
     const callbackName = 'handleActiveOrdersCount_' + Date.now();
     const script = document.createElement('script');
     script.src = `${WEB_APP_URL}?get_active_count=1&callback=${callbackName}&t=${Date.now()}`;
     
-    let handled = false;
     const timeout = setTimeout(() => {
-        if (!handled) {
-            handled = true;
-            console.warn('⚠️ Timeout API tracking icon');
-            cleanup();
-            if (onFail) onFail();
-        }
-    }, 5000);  // Ridotto a 5s per velocità
+        console.warn('⚠️ Timeout API tracking icon (manteniamo stato locale)');
+        cleanup();
+    }, 5000);
     
     window[callbackName] = function(response) {
-        if (handled) return;
-        handled = true;
         clearTimeout(timeout);
         console.log('📡 Risposta API tracking icon:', response);
         
         if (response && typeof response.count === 'number') {
-            icon.style.display = response.count > 0 ? 'block' : 'none';
-            console.log(`✅ API: ${response.count} ordini attivi`);
-            if (response.count === 0) cleanupOldOrders();
+            const shouldShow = response.count > 0;
+            if (icon.style.display !== (shouldShow ? 'block' : 'none')) {
+                icon.style.display = shouldShow ? 'block' : 'none';
+                console.log(`✅ API correzione: ${shouldShow ? 'mostrata' : 'nascosta'}`);
+            }
+            if (!shouldShow) cleanupOldOrders();
         } else {
-            console.warn('⚠️ Risposta API invalida');
-            if (onFail) onFail();
+            console.warn('⚠️ Risposta API invalida (manteniamo stato locale)');
         }
         cleanup();
     };
     
     script.onerror = () => {
-        if (handled) return;
-        handled = true;
         clearTimeout(timeout);
-        console.error('❌ Errore API tracking icon');
+        console.error('❌ Errore API tracking icon (manteniamo stato locale)');
         cleanup();
-        if (onFail) onFail();
     };
     
     function cleanup() {
