@@ -21,8 +21,8 @@
                 <li><a href="#" onclick="showSection('stays')">Esperienze</a></li>
                 <li><a href="#" onclick="showSection('shop')">Shop</a></li>
                 <li><a href="#" onclick="showSection('contact')">Contatti</a></li>
-                <!-- Icona Tracciamento Ordini (NASCOSTA di default, classe 'hidden' in CSS) -->
-                <li id="trackingIcon" class="cart-icon tracking-icon-hidden" onclick="window.location.href='product-details/tracking-order.html'" title="Traccia i tuoi ordini">📦</li>
+                <!-- NUOVO: Icona Tracciamento Ordini (nascosta di default) -->
+                <li id="trackingIcon" class="cart-icon" style="display: none !important;" onclick="window.location.href='product-details/tracking-order.html'" title="Traccia i tuoi ordini">📦</li>
                 <li id="cartIcon" class="cart-icon" onclick="window.location.href='product-details/cart.html'">🛒</li>
             </ul>
         </div>
@@ -125,7 +125,7 @@
     <script src="script.js"></script>
     <script>
         // URL della Web App Google Apps Script
-        const WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbw6GMDjkeS4DpwQ_yTcbZjl5G76omMFhHU64SSZl4Zf2F9ycQmbbyXdN0cK9Lr21BqQ/exec';
+        const WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbyiDu50VIVwzJ3qQNCWZmSk-_ovC7iBvxJGUYriRc3-PwMRbsgi8wb0baqxk3nLxti2/exec';
 
         // Gestione hash per anchor link esterni
         window.onload = function() {
@@ -150,123 +150,115 @@
         }
 
         /**
-         * AGGIORNATO: Aggiorna visibilità icona tracciamento
-         * SINCRONO E IMMEDIATO - Zero flash, zero ritardi
+         * NUOVA FUNZIONE: Aggiorna visibilità icona tracciamento ordini
+         * Mostra l'icona SOLO se ci sono ordini attivi negli ultimi 30 giorni
          */
         function updateTrackingIcon() {
             const trackingIcon = document.getElementById('trackingIcon');
             
-            // STEP 1: Check SINCRONO localStorage (0ms)
-            const hasActiveOrders = checkForActiveOrders();
+            // IMPORTANTE: Nascondi di default
+            trackingIcon.style.display = 'none';
             
-            if (hasActiveOrders) {
-                // Mostra IMMEDIATAMENTE
-                trackingIcon.classList.remove('tracking-icon-hidden');
-                trackingIcon.classList.add('tracking-icon-visible');
-                console.log('✅ Icona tracking mostrata (IMMEDIATO - ordini attivi trovati)');
-                
-                // Verifica API in background (non blocca UI)
-                verifyWithAPIBackground();
+            // Fallback 1: Controlla localStorage PRIMA di chiamare API
+            const hasRecentOrder = checkLocalStorageForRecentOrders();
+            if (hasRecentOrder) {
+                trackingIcon.style.display = 'block';
+                console.log('✅ Icona tracking mostrata (fallback localStorage)');
             } else {
-                // Resta nascosta, verifica API per sicurezza
-                console.log('ℹ️ Nessun ordine attivo, verifico con API...');
-                verifyWithAPIBackground();
+                console.log('ℹ️ Nessun ordine recente in localStorage, provo API...');
             }
             
-            function verifyWithAPIBackground() {
-                const callbackName = 'handleActiveOrdersCount_' + Date.now();
-                const script = document.createElement('script');
-                script.src = `${WEB_APP_URL}?get_active_count=1&callback=${callbackName}&t=${Date.now()}`;
+            // Prova API per aggiornamento real-time
+            const callbackName = 'handleActiveOrdersCount_' + Date.now();
+            const script = document.createElement('script');
+            script.src = `${WEB_APP_URL}?get_active_count=1&callback=${callbackName}&t=${Date.now()}`;
+            
+            // Timeout di 5 secondi
+            const timeout = setTimeout(() => {
+                console.warn('⚠️ Timeout chiamata API tracking icon');
+                // Se API timeout E non c'è fallback, NASCONDI icona
+                if (!hasRecentOrder) {
+                    trackingIcon.style.display = 'none';
+                    console.log('❌ Icona tracking nascosta (timeout API + no localStorage)');
+                }
+                cleanup();
+            }, 5000);
+            
+            window[callbackName] = function(response) {
+                clearTimeout(timeout);
+                console.log('📡 Risposta API tracking icon:', response);
                 
-                const timeout = setTimeout(() => {
-                    cleanup();
-                }, 5000);
-                
-                window[callbackName] = function(response) {
-                    clearTimeout(timeout);
+                // Mostra SOLO se count > 0
+                if (response && response.count > 0) {
+                    trackingIcon.style.display = 'block';
+                    console.log('✅ Icona tracking mostrata (API conferma:', response.count, 'ordini)');
+                } else {
+                    // API dice "no ordini" → NASCONDI anche se localStorage aveva trovato qualcosa
+                    trackingIcon.style.display = 'none';
+                    console.log('❌ Icona tracking nascosta (API conferma: 0 ordini)');
                     
-                    // API è autorità finale, ma aggiorna SOLO se diverso da stato corrente
-                    const currentlyVisible = trackingIcon.classList.contains('tracking-icon-visible');
-                    const shouldBeVisible = response && response.count > 0;
-                    
-                    if (currentlyVisible !== shouldBeVisible) {
-                        if (shouldBeVisible) {
-                            trackingIcon.classList.remove('tracking-icon-hidden');
-                            trackingIcon.classList.add('tracking-icon-visible');
-                            console.log('✅ Icona tracking mostrata (API conferma:', response.count, 'ordini)');
-                        } else {
-                            trackingIcon.classList.remove('tracking-icon-visible');
-                            trackingIcon.classList.add('tracking-icon-hidden');
-                            console.log('❌ Icona tracking nascosta (API: 0 ordini)');
-                            cleanupInactiveOrders();
-                        }
+                    // Cleanup localStorage se API dice no ordini
+                    if (response && response.count === 0) {
+                        cleanupOldOrders();
                     }
-                    
-                    cleanup();
-                };
-                
-                script.onerror = () => {
-                    clearTimeout(timeout);
-                    console.warn('⚠️ API non disponibile, uso solo localStorage');
-                    cleanup();
-                };
-                
-                function cleanup() {
-                    try {
-                        if (script.parentNode) document.body.removeChild(script);
-                        delete window[callbackName];
-                    } catch (e) {}
                 }
                 
-                document.body.appendChild(script);
+                cleanup();
+            };
+            
+            script.onerror = () => {
+                clearTimeout(timeout);
+                console.error('❌ Errore chiamata API tracking icon');
+                // Se API fallisce E non c'è fallback localStorage, NASCONDI
+                if (!hasRecentOrder) {
+                    trackingIcon.style.display = 'none';
+                    console.log('❌ Icona tracking nascosta (errore API + no localStorage)');
+                }
+                cleanup();
+            };
+            
+            function cleanup() {
+                try {
+                    if (script.parentNode) document.body.removeChild(script);
+                    delete window[callbackName];
+                } catch (e) {}
             }
+            
+            document.body.appendChild(script);
         }
 
         /**
-         * Controlla se ci sono ORDINI ATTIVI in localStorage
-         * 
-         * LOGICA ORDINE ATTIVO:
-         * 1. Stati sempre attivi: "Confermato", "In Preparazione", "In Transito"
-         * 2. Stato "Consegnato": attivo SOLO se consegna < 2 giorni fa
-         * 3. Data ordine < 30 giorni (filtro generale)
+         * Fallback: Controlla ordini recenti in localStorage
+         * Restituisce TRUE solo se trova ordini REALMENTE recenti (< 30 giorni)
          */
-        function checkForActiveOrders() {
-            const now = new Date();
-            const thirtyDaysAgo = new Date(now.getTime() - (30 * 24 * 60 * 60 * 1000));
-            const twoDaysAgo = new Date(now.getTime() - (2 * 24 * 60 * 60 * 1000));
+        function checkLocalStorageForRecentOrders() {
+            const thirtyDaysAgo = new Date(Date.now() - (30 * 24 * 60 * 60 * 1000));
+            let foundRecent = false;
             
-            // Stati sempre attivi (senza limite temporale oltre i 30 giorni)
-            const alwaysActiveStates = ['Confermato', 'In Preparazione', 'In Transito'];
-            
-            // Check 1: Ordine pending (sempre considerato attivo se recente)
+            // Check 1: Ordine pending
             const pendingOrder = localStorage.getItem('lh360_pending_order');
             if (pendingOrder) {
                 try {
                     const order = JSON.parse(pendingOrder);
-                    const orderDate = parseOrderDate(order.timestamp || order.data);
-                    
-                    if (orderDate && orderDate > thirtyDaysAgo) {
-                        const stato = order.stato || 'In Preparazione';
-                        
-                        if (alwaysActiveStates.includes(stato)) {
-                            console.log('✓ Ordine pending ATTIVO:', order.id, '(stato:', stato + ')');
-                            return true;
-                        }
-                        
-                        if (stato === 'Consegnato') {
-                            const deliveryDate = parseOrderDate(order.consegna_prevista || order.data);
-                            if (deliveryDate && deliveryDate > twoDaysAgo) {
-                                console.log('✓ Ordine pending ATTIVO:', order.id, '(consegnato < 2 giorni fa)');
-                                return true;
-                            }
-                        }
+                    const orderDate = new Date(order.timestamp || order.data);
+                    if (!isNaN(orderDate.getTime()) && orderDate > thirtyDaysAgo) {
+                        console.log('✓ Trovato ordine pending recente:', order.id);
+                        foundRecent = true;
                     }
-                } catch (e) {
-                    console.error('Errore parsing pending order:', e);
+                } catch (e) {}
+            }
+            
+            // Check 2: Timestamp ordine singolo
+            const lastOrderTime = localStorage.getItem('lh360_order_confirmed_time');
+            if (lastOrderTime) {
+                const orderDate = new Date(lastOrderTime);
+                if (!isNaN(orderDate.getTime()) && orderDate > thirtyDaysAgo) {
+                    console.log('✓ Trovato ordine recente in localStorage (singolo)');
+                    foundRecent = true;
                 }
             }
             
-            // Check 2: Timestamp ordini con verifica < 30 giorni
+            // Check 3: Cerca tutti i timestamp ordini (formato: lh360_order_time_*)
             for (let i = 0; i < localStorage.length; i++) {
                 const key = localStorage.key(i);
                 if (key && key.startsWith('lh360_order_time_')) {
@@ -274,102 +266,56 @@
                     if (timestamp) {
                         const orderDate = new Date(timestamp);
                         if (!isNaN(orderDate.getTime()) && orderDate > thirtyDaysAgo) {
-                            // Assumiamo che se c'è un timestamp recente, l'ordine è attivo
-                            // (stati specifici vengono verificati da API)
-                            console.log('✓ Trovato timestamp ordine recente:', key);
-                            return true;
+                            console.log('✓ Trovato ordine recente in localStorage:', key);
+                            foundRecent = true;
+                            break; // Uno è sufficiente
                         }
                     }
                 }
             }
             
-            // Check 3: Ordine confermato recente (timestamp principale)
-            const lastOrderTime = localStorage.getItem('lh360_order_confirmed_time');
-            if (lastOrderTime) {
-                const orderDate = new Date(lastOrderTime);
-                if (!isNaN(orderDate.getTime()) && orderDate > thirtyDaysAgo) {
-                    console.log('✓ Trovato ordine confermato recente');
-                    return true;
+            // Check 4: Ultimo ID ordine (SOLO se ha anche timestamp)
+            const lastOrderId = localStorage.getItem('lh360_last_order_id');
+            if (lastOrderId && !foundRecent) {
+                // Cerca timestamp associato
+                const timestampKey = `lh360_order_time_${lastOrderId}`;
+                const timestamp = localStorage.getItem(timestampKey);
+                if (timestamp) {
+                    const orderDate = new Date(timestamp);
+                    if (!isNaN(orderDate.getTime()) && orderDate > thirtyDaysAgo) {
+                        console.log('✓ Trovato ID ordine recente con timestamp:', lastOrderId);
+                        foundRecent = true;
+                    }
                 }
             }
             
-            console.log('ℹ️ Nessun ordine attivo trovato in localStorage');
-            return false;
+            if (!foundRecent) {
+                console.log('ℹ️ Nessun ordine recente trovato in localStorage');
+            }
+            
+            return foundRecent;
         }
 
         /**
-         * Parse date da vari formati
+         * Cleanup: Rimuovi ordini vecchi da localStorage
          */
-        function parseOrderDate(dateStr) {
-            if (!dateStr) return null;
+        function cleanupOldOrders() {
+            const thirtyDaysAgo = new Date(Date.now() - (30 * 24 * 60 * 60 * 1000));
             
-            // ISO format
-            let date = new Date(dateStr);
-            if (!isNaN(date.getTime())) return date;
-            
-            // dd/MM/yyyy format
-            const parts = dateStr.toString().split('/');
-            if (parts.length === 3) {
-                date = new Date(parts[2], parts[1] - 1, parts[0]);
-                if (!isNaN(date.getTime())) return date;
-            }
-            
-            // "14 novembre 2025" format
-            const italianMonths = {
-                'gennaio': 0, 'febbraio': 1, 'marzo': 2, 'aprile': 3,
-                'maggio': 4, 'giugno': 5, 'luglio': 6, 'agosto': 7,
-                'settembre': 8, 'ottobre': 9, 'novembre': 10, 'dicembre': 11
-            };
-            
-            const match = dateStr.toString().match(/(\d{1,2})\s+(\w+)\s+(\d{4})/);
-            if (match) {
-                const day = parseInt(match[1]);
-                const monthName = match[2].toLowerCase();
-                const year = parseInt(match[3]);
-                
-                if (italianMonths[monthName] !== undefined) {
-                    date = new Date(year, italianMonths[monthName], day);
-                    if (!isNaN(date.getTime())) return date;
-                }
-            }
-            
-            return null;
-        }
-
-        /**
-         * Cleanup: Rimuovi ordini inattivi da localStorage
-         */
-        function cleanupInactiveOrders() {
-            const now = new Date();
-            const thirtyDaysAgo = new Date(now.getTime() - (30 * 24 * 60 * 60 * 1000));
-            const twoDaysAgo = new Date(now.getTime() - (2 * 24 * 60 * 60 * 1000));
-            
-            // Cleanup pending order se non più attivo
+            // Rimuovi pending order se vecchio
             const pendingOrder = localStorage.getItem('lh360_pending_order');
             if (pendingOrder) {
                 try {
                     const order = JSON.parse(pendingOrder);
-                    const orderDate = parseOrderDate(order.timestamp || order.data);
-                    
-                    let shouldRemove = false;
-                    
-                    if (!orderDate || orderDate < thirtyDaysAgo) {
-                        shouldRemove = true;
-                    } else if (order.stato === 'Consegnato') {
-                        const deliveryDate = parseOrderDate(order.consegna_prevista || order.data);
-                        if (deliveryDate && deliveryDate < twoDaysAgo) {
-                            shouldRemove = true;
-                        }
-                    }
-                    
-                    if (shouldRemove) {
+                    const orderDate = new Date(order.timestamp || order.data);
+                    if (orderDate < thirtyDaysAgo) {
                         localStorage.removeItem('lh360_pending_order');
-                        console.log('🗑️ Rimosso ordine pending non più attivo:', order.id);
+                        console.log('🗑️ Rimosso ordine pending vecchio');
                     }
                 } catch (e) {}
             }
             
-            // Cleanup timestamp vecchi
+            // Rimuovi timestamp vecchi
             for (let i = localStorage.length - 1; i >= 0; i--) {
                 const key = localStorage.key(i);
                 if (key && key.startsWith('lh360_order_time_')) {
