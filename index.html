@@ -142,16 +142,16 @@
     const trackingIcon = document.getElementById('trackingIcon');
     if (!trackingIcon) return;
     
-    // Pulisci dati vecchi PRIMA del check per evitare falsi positivi
+    // Pulisci dati vecchi basati su date
     cleanupOldOrders();
-    console.log('🧹 Cleanup eseguito: localStorage pulito da ordini scaduti');
+    console.log('🧹 Cleanup standard eseguito: rimossi ordini scaduti (>30 giorni o consegnati >2 giorni)');
     
-    // Check locale ora accurato
+    // Check locale post-cleanup
     const hasActiveLocal = checkLocalStorageForActiveOrders();
     trackingIcon.style.display = hasActiveLocal ? 'block' : 'none';
     console.log(hasActiveLocal ? '✅ Local (post-cleanup): icona mostrata immediatamente' : 'ℹ️ Local (post-cleanup): icona nascosta immediatamente');
     
-    // API per conferma/correzione
+    // API per conferma e clear forzato se 0
     fetchActiveOrdersFromAPI(trackingIcon);
 }
 
@@ -179,7 +179,9 @@ function fetchActiveOrdersFromAPI(icon) {
                 console.log(`✅ API correzione: ${shouldShow ? 'mostrata' : 'nascosta'}`);
             }
             if (!shouldShow) {
-                cleanupOldOrders();  // Extra cleanup se API conferma 0
+                cleanupOldOrders();  // Cleanup standard
+                clearAllLocalOrderData();  // Clear forzato completo
+                console.log('🗑️ API conferma 0 ordini: eseguito clear completo localStorage per ordini');
             }
         } else {
             console.warn('⚠️ Risposta API invalida (manteniamo stato post-cleanup)');
@@ -201,6 +203,30 @@ function fetchActiveOrdersFromAPI(icon) {
     }
     
     document.body.appendChild(script);
+}
+
+/**
+ * Clear forzato di tutte le key local relative a ordini
+ */
+function clearAllLocalOrderData() {
+    localStorage.removeItem('lh360_pending_order');
+    localStorage.removeItem('lh360_last_order_id');
+    localStorage.removeItem('lh360_order_confirmed_time');
+    
+    // Rimuovi tutte le key dinamiche
+    for (let i = localStorage.length - 1; i >= 0; i--) {
+        const key = localStorage.key(i);
+        if (key && (
+            key.startsWith('lh360_order_') ||
+            key.startsWith('lh360_pending_') ||
+            key.startsWith('lh360_order_time_') ||
+            key === 'lh360_last_product' ||  // Extra per sicurezza
+            key === 'lh360_selected_sku'
+        )) {
+            localStorage.removeItem(key);
+            console.log(`🗑️ Rimossa key outdated: ${key}`);
+        }
+    }
 }
 
         /**
