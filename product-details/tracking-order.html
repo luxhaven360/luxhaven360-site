@@ -420,8 +420,8 @@
 
     <script>
         // Configuration
-        const WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbw6GMDjkeS4DpwQ_yTcbZjl5G76omMFhHU64SSZl4Zf2F9ycQmbbyXdN0cK9Lr21BqQ/exec';
-        const SHEET_ID = '1zzfazUZIcHYYezRBC6CAunRL9YeCJHMbg90xW-ZuG4I'; // Sostituisci con il tuo Sheet ID
+        const WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbyiDu50VIVwzJ3qQNCWZmSk-_ovC7iBvxJGUYriRc3-PwMRbsgi8wb0baqxk3nLxti2/exec';
+        const SHEET_ID = '1YL3VKtDPIqFkTbE5IjglQ8GxC-N3QnDy9IYxkzZBXe8'; // Sostituisci con il tuo Sheet ID
 
         // State mapping
         const STATE_STEPS = {
@@ -728,92 +728,91 @@
         }
 
         /**
-         * Load orders - VERSIONE FINALE SENZA DOPPIO RENDER
-         * Strategia: Aspetta dati completi prima di renderizzare
+         * Load orders from Google Sheets (via Apps Script Web App endpoint)
          */
         async function loadOrders() {
             try {
+                // PRIORITY 1: Mostra subito ordini pending da localStorage
                 const pendingOrders = getPendingOrdersFromLocalStorage();
-                let finalOrders = [];
-                
-                // Prova API con timeout 2 secondi (veloce)
-                try {
-                    const apiOrders = await Promise.race([
-                        loadFromAPI(),
-                        new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 2000))
-                    ]);
-                    
-                    // API ha risposto in tempo
-                    if (apiOrders && apiOrders.length > 0) {
-                        // Merge con pending (rimuovi duplicati)
-                        const confirmedIds = apiOrders.map(o => o.id);
-                        const stillPending = pendingOrders.filter(p => !confirmedIds.includes(p.id));
-                        finalOrders = [...stillPending, ...apiOrders];
-                        
-                        // Cleanup pending confermati
-                        pendingOrders.forEach(p => {
-                            if (confirmedIds.includes(p.id)) {
-                                localStorage.removeItem('lh360_pending_order');
-                                console.log('✅ Pending confermato, rimosso:', p.id);
-                            }
-                        });
-                    } else {
-                        // API vuota, usa pending
-                        finalOrders = pendingOrders;
-                    }
-                } catch (timeoutError) {
-                    // API lenta o errore → usa pending
-                    console.warn('⚠️ API timeout/error, uso localStorage');
-                    finalOrders = pendingOrders.length > 0 ? pendingOrders : await loadFallbackData();
+                if (pendingOrders.length > 0) {
+                    document.getElementById('loadingState').style.display = 'none';
+                    renderOrders(pendingOrders);
+                    console.log('✅ Mostrati ordini pending da localStorage');
                 }
                 
-                // RENDER UNICO FINALE
-                document.getElementById('loadingState').style.display = 'none';
-                
-                if (finalOrders.length === 0) {
-                    showEmptyState();
-                } else {
-                    renderOrders(finalOrders);
-                    console.log(`✅ Renderizzati ${finalOrders.length} ordini (render singolo)`);
-                }
-                
-            } catch (error) {
-                console.error('Error:', error);
-                document.getElementById('loadingState').style.display = 'none';
-                
-                // Fallback finale
-                const fallbackOrders = getPendingOrdersFromLocalStorage();
-                if (fallbackOrders.length > 0) {
-                    renderOrders(fallbackOrders);
-                } else {
-                    showEmptyState();
-                }
-            }
-        }
-
-        /**
-         * Carica ordini da API (Promise per timeout)
-         */
-        function loadFromAPI() {
-            return new Promise((resolve, reject) => {
+                // PRIORITY 2: Carica ordini confermati da Google Sheets (in background)
                 const callbackName = 'handleOrdersData_' + Date.now();
                 const script = document.createElement('script');
                 script.src = `${WEB_APP_URL}?action=get_orders&callback=${callbackName}&t=${Date.now()}`;
                 
-                window[callbackName] = function(data) {
+                // Timeout di 8 secondi per API
+                const timeout = setTimeout(() => {
+                    console.warn('⚠️ Timeout caricamento ordini da API');
+                    if (pendingOrders.length === 0) {
+                        loadFromLocalStorage(); // Ultimo fallback
+                    }
                     cleanup();
+                }, 8000);
+                
+                window[callbackName] = function(data) {
+                    clearTimeout(timeout);
+                    document.getElementById('loadingState').style.display = 'none';
                     
                     if (data.error) {
-                        reject(new Error(data.error));
+                        console.error('Error loading orders:', data.error);
+                        if (pendingOrders.length === 0) {
+                            showEmptyState();
+                        }
+                        cleanup();
                         return;
                     }
                     
-                    resolve(data.orders || []);
+                    let allOrders = [];
+                    
+                    // Merge: pending orders + API orders (evita duplicati)
+                    if (pendingOrders.length > 0) {
+                        allOrders = [...pendingOrders];
+                        
+                        // Aggiungi ordini da API che non sono già in pending
+                        if (data.orders && data.orders.length > 0) {
+                            data.orders.forEach(apiOrder => {
+                                if (!allOrders.find(o => o.id === apiOrder.id)) {
+                                    allOrders.push(apiOrder);
+                                }
+                            });
+                        }
+                        
+                        // Rimuovi ordine pending se ora è confermato nell'API
+                        if (data.orders && data.orders.length > 0) {
+                            const confirmedIds = data.orders.map(o => o.id);
+                            pendingOrders.forEach(pending => {
+                                if (confirmedIds.includes(pending.id)) {
+                                    localStorage.removeItem('lh360_pending_order');
+                                    console.log('✅ Ordine pending confermato e rimosso da localStorage:', pending.id);
+                                }
+                            });
+                        }
+                    } else {
+                        allOrders = data.orders || [];
+                    }
+                    
+                    if (allOrders.length === 0) {
+                        showEmptyState();
+                    } else {
+                        renderOrders(allOrders);
+                        console.log(`✅ Caricati ${allOrders.length} ordini (${pendingOrders.length} pending, ${(data.orders || []).length} da API)`);
+                    }
+                    
+                    cleanup();
                 };
                 
                 script.onerror = () => {
+                    clearTimeout(timeout);
+                    console.error('Failed to load orders from API');
+                    if (pendingOrders.length === 0) {
+                        loadFromLocalStorage();
+                    }
                     cleanup();
-                    reject(new Error('Script load failed'));
                 };
                 
                 function cleanup() {
@@ -824,33 +823,11 @@
                 }
                 
                 document.body.appendChild(script);
-            });
-        }
-
-        /**
-         * Fallback data se tutto fallisce
-         */
-        async function loadFallbackData() {
-            const recentOrderId = localStorage.getItem('lh360_last_order_id');
-            if (!recentOrderId) return [];
-            
-            const cart = JSON.parse(localStorage.getItem('lh360_cart') || '[]');
-            const subtotal = cart.reduce((sum, item) => sum + (item.price * (item.qty || 1)), 0);
-            const today = new Date();
-            
-            return [{
-                id: recentOrderId,
-                data: today.toLocaleDateString('it-IT', { day: 'numeric', month: 'long', year: 'numeric' }),
-                stato: 'In Preparazione',
-                consegna_prevista: calculateDeliveryDate(3),
-                totale: subtotal > 0 ? subtotal.toFixed(2) : '0,00',
-                products: cart.map(item => ({
-                    name: item.title || 'Prodotto',
-                    quantity: item.qty || 1,
-                    price: item.price || 0,
-                    image: item.image || ''
-                }))
-            }];
+                
+            } catch (error) {
+                console.error('Error:', error);
+                loadFromLocalStorage();
+            }
         }
 
         /**
