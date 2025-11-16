@@ -39,7 +39,6 @@
             padding: 3rem 1.5rem;
         }
 
-        /* Header */
         .header {
             text-align: center;
             margin-bottom: 4rem;
@@ -66,7 +65,6 @@
             font-size: 1.125rem;
         }
 
-        /* Orders List */
         .orders-list {
             display: flex;
             flex-direction: column;
@@ -137,7 +135,6 @@
             color: #fbbf24;
         }
 
-        /* Progress Bar */
         .progress-section {
             margin-bottom: 2rem;
         }
@@ -210,7 +207,6 @@
             color: #34d399;
         }
 
-        /* Order Details */
         .order-details {
             display: grid;
             grid-template-columns: repeat(3, 1fr);
@@ -238,7 +234,6 @@
             font-size: 0.9375rem;
         }
 
-        /* Items */
         .order-items {
             margin-bottom: 2rem;
         }
@@ -269,7 +264,6 @@
             object-fit: cover;
         }
 
-        /* Actions */
         .order-actions {
             display: flex;
             gap: 1rem;
@@ -310,7 +304,6 @@
             background: rgba(24, 24, 27, 0.8);
         }
 
-        /* Empty State */
         .empty-state {
             text-align: center;
             padding: 6rem 2rem;
@@ -334,7 +327,6 @@
             margin-bottom: 2rem;
         }
 
-        /* Loading State */
         .loading-state {
             text-align: center;
             padding: 4rem 2rem;
@@ -391,38 +383,30 @@
 </head>
 <body>
     <div class="container">
-        <!-- Header -->
         <div class="header">
             <div class="brand">LuxHaven360</div>
             <h1 class="title">I Tuoi Ordini</h1>
             <p class="subtitle">Ordini degli ultimi 30 giorni</p>
         </div>
 
-        <!-- Loading State -->
         <div class="loading-state" id="loadingState">
             <div class="loading-spinner"></div>
             <p>Caricamento ordini in corso...</p>
         </div>
 
-        <!-- Orders List -->
-        <div class="orders-list" id="ordersList" style="display: none;">
-            <!-- Orders will be dynamically populated -->
-        </div>
+        <div class="orders-list" id="ordersList" style="display: none;"></div>
 
-        <!-- Empty State -->
         <div class="empty-state" id="emptyState" style="display: none;">
             <div class="empty-icon">📦</div>
             <h2 class="empty-title">Nessun ordine recente</h2>
-            <p class="empty-text">Non hai ordini attivi negli ultimi 30 giorni</p>
+            <p class="empty-text">Non hai ordini negli ultimi 30 giorni</p>
             <a href="../index.html#shop" class="btn btn-primary">Inizia a Fare Shopping</a>
         </div>
     </div>
 
     <script>
-        // Configuration
-        const WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbz9F8zFO9WqAH2e-b0_4up0jzHwerLAR1xkXcZ7qnzYR6oVEk86zMEYdJ8zu6Z3EMWT/exec';
+        const WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbw6GMDjkeS4DpwQ_yTcbZjl5G76omMFhHU64SSZl4Zf2F9ycQmbbyXdN0cK9Lr21BqQ/exec';
 
-        // State mapping
         const STATE_STEPS = {
             'Confermato': 0,
             'In Preparazione': 1,
@@ -433,24 +417,26 @@
         const STEP_ICONS_ACTIVE = ['📦', '📦', '🚚', '🏠'];
         const STEP_LABELS = ['Confermato', 'Preparato', 'In Viaggio', 'Consegnato'];
 
-        // VARIABILE GLOBALE: Flag per evitare rendering multipli
-        let ordersAlreadyRendered = false;
+        // *** FIX: Flag per prevenire rendering duplicato ***
+        let ordersRendered = false;
 
-        /**
-         * Calcola la percentuale di progresso basata sul tempo
-         */
         function calculateTimeBasedProgress(orderDate, deliveryDate, currentState) {
             const now = new Date();
             const start = parseItalianDate(orderDate);
             const end = parseItalianDate(deliveryDate);
             const currentStep = STATE_STEPS[currentState] || 0;
             
-            if (!start || !end || end - start <= 0) {
+            if (!start || !end) {
                 return (currentStep / 3) * 100;
             }
             
             const totalDuration = end - start;
             const elapsed = now - start;
+            
+            if (totalDuration <= 0) {
+                return (currentStep / 3) * 100;
+            }
+            
             let rawProgress = (elapsed / totalDuration) * 100;
             
             const milestones = {
@@ -475,12 +461,10 @@
             const smoothProgress = currentMilestone + (progressInPhase * (nextMilestone - currentMilestone));
             
             const finalProgress = Math.max(0, Math.min(100, smoothProgress));
+            
             return Math.round(finalProgress * 10) / 10;
         }
 
-        /**
-         * Parse date in formato italiano dd/MM/yyyy o dd MMMM yyyy
-         */
         function parseItalianDate(dateStr) {
             if (!dateStr) return null;
             
@@ -508,9 +492,6 @@
             return null;
         }
 
-        /**
-         * Format price
-         */
         function formatPrice(price) {
             if (typeof price === 'string') {
                 if (price.includes('€')) return price;
@@ -523,9 +504,6 @@
             return new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR' }).format(price);
         }
 
-        /**
-         * Create progress bar HTML
-         */
         function createProgressBar(orderDate, deliveryDate, currentState) {
             const progress = calculateTimeBasedProgress(orderDate, deliveryDate, currentState);
             const currentStep = STATE_STEPS[currentState] || 0;
@@ -561,9 +539,6 @@
             `;
         }
 
-        /**
-         * Get action buttons based on state
-         */
         function getActionButtons(state, orderId) {
             const normalizedState = state.toLowerCase().replace(/\s+/g, '-');
             
@@ -593,13 +568,11 @@
             }
         }
 
-        /**
-         * Format date in Italian long format
-         */
         function formatItalianDate(dateStr) {
             if (!dateStr) return '';
             
             let date;
+            
             const parts = dateStr.split('/');
             if (parts.length === 3) {
                 date = new Date(parts[2], parts[1] - 1, parts[0]);
@@ -616,12 +589,10 @@
             });
         }
 
-        /**
-         * Create order card HTML
-         */
         function createOrderCard(order, index) {
             const stateClass = order.stato.toLowerCase().replace(/\s+/g, '-');
             const itemCount = order.products ? order.products.length : 1;
+            
             const formattedDate = formatItalianDate(order.data);
             
             let imagesHTML = '';
@@ -683,30 +654,33 @@
             `;
         }
 
-        /**
-         * *** FIX: Load orders con gestione SINGOLO RENDERING ***
-         */
+        // *** FIX: Caricamento unificato senza duplicati ***
         async function loadOrders() {
+            // *** Prevenzione doppio rendering ***
+            if (ordersRendered) {
+                console.log('⚠️ Ordini già renderizzati, skip caricamento');
+                return;
+            }
+
             try {
-                // STEP 1: Check localStorage per ordini pending (SENZA renderizzare subito)
+                // Step 1: Mostra ordini pending da localStorage (immediato)
                 const pendingOrders = getPendingOrdersFromLocalStorage();
+                if (pendingOrders.length > 0) {
+                    document.getElementById('loadingState').style.display = 'none';
+                    renderOrders(pendingOrders);
+                    ordersRendered = true; // *** Imposta flag ***
+                    console.log('✅ Ordini pending mostrati (localStorage)');
+                }
                 
-                // STEP 2: Chiamata API (prioritaria)
+                // Step 2: Carica ordini da API in background
                 const callbackName = 'handleOrdersData_' + Date.now();
                 const script = document.createElement('script');
                 script.src = `${WEB_APP_URL}?action=get_orders&callback=${callbackName}&t=${Date.now()}`;
                 
                 const timeout = setTimeout(() => {
-                    console.warn('⚠️ Timeout chiamata API ordini');
-                    // Solo se API fallisce, usa localStorage
-                    if (!ordersAlreadyRendered) {
-                        document.getElementById('loadingState').style.display = 'none';
-                        if (pendingOrders.length > 0) {
-                            renderOrders(pendingOrders);
-                            console.log('✅ Mostrati ordini da localStorage (fallback)');
-                        } else {
-                            showEmptyState();
-                        }
+                    console.warn('⚠️ Timeout API ordini');
+                    if (!ordersRendered && pendingOrders.length === 0) {
+                        loadFromLocalStorage();
                     }
                     cleanup();
                 }, 8000);
@@ -715,18 +689,9 @@
                     clearTimeout(timeout);
                     document.getElementById('loadingState').style.display = 'none';
                     
-                    // Evita rendering multipli
-                    if (ordersAlreadyRendered) {
-                        console.log('🚫 Rendering già eseguito, skip');
-                        cleanup();
-                        return;
-                    }
-                    
                     if (data.error) {
-                        console.error('Errore API:', data.error);
-                        if (pendingOrders.length > 0) {
-                            renderOrders(pendingOrders);
-                        } else {
+                        console.error('Error loading orders:', data.error);
+                        if (!ordersRendered) {
                             showEmptyState();
                         }
                         cleanup();
@@ -747,13 +712,13 @@
                             });
                         }
                         
-                        // Cleanup localStorage per ordini confermati
+                        // Cleanup: rimuovi pending se confermato in API
                         if (data.orders && data.orders.length > 0) {
                             const confirmedIds = data.orders.map(o => o.id);
                             pendingOrders.forEach(pending => {
                                 if (confirmedIds.includes(pending.id)) {
                                     localStorage.removeItem('lh360_pending_order');
-                                    console.log('✅ Ordine pending confermato e rimosso:', pending.id);
+                                    console.log('✅ Ordine pending confermato:', pending.id);
                                 }
                             });
                         }
@@ -761,11 +726,15 @@
                         allOrders = data.orders || [];
                     }
                     
-                    if (allOrders.length === 0) {
-                        showEmptyState();
-                    } else {
-                        renderOrders(allOrders);
-                        console.log(`✅ Caricati ${allOrders.length} ordini`);
+                    // *** Rendering UNICO ***
+                    if (!ordersRendered) {
+                        if (allOrders.length === 0) {
+                            showEmptyState();
+                        } else {
+                            renderOrders(allOrders);
+                            ordersRendered = true; // *** Imposta flag ***
+                            console.log(`✅ Ordini caricati: ${allOrders.length} totali`);
+                        }
                     }
                     
                     cleanup();
@@ -773,14 +742,9 @@
                 
                 script.onerror = () => {
                     clearTimeout(timeout);
-                    console.error('Errore script API');
-                    if (!ordersAlreadyRendered) {
-                        document.getElementById('loadingState').style.display = 'none';
-                        if (pendingOrders.length > 0) {
-                            renderOrders(pendingOrders);
-                        } else {
-                            showEmptyState();
-                        }
+                    console.error('Errore API ordini');
+                    if (!ordersRendered && pendingOrders.length === 0) {
+                        loadFromLocalStorage();
                     }
                     cleanup();
                 };
@@ -795,15 +759,13 @@
                 document.body.appendChild(script);
                 
             } catch (error) {
-                console.error('Errore generale:', error);
-                document.getElementById('loadingState').style.display = 'none';
-                showEmptyState();
+                console.error('Error:', error);
+                if (!ordersRendered) {
+                    loadFromLocalStorage();
+                }
             }
         }
 
-        /**
-         * Recupera ordini pending da localStorage
-         */
         function getPendingOrdersFromLocalStorage() {
             const orders = [];
             const thirtyDaysAgo = new Date(Date.now() - (30 * 24 * 60 * 60 * 1000));
@@ -827,27 +789,76 @@
             return orders;
         }
 
-        /**
-         * Helper: Calcola data consegna
-         */
+        function loadFromLocalStorage() {
+            if (ordersRendered) return; // *** Prevenzione duplicati ***
+            
+            document.getElementById('loadingState').style.display = 'none';
+            
+            const orders = [];
+            
+            const pendingOrder = localStorage.getItem('lh360_pending_order');
+            if (pendingOrder) {
+                try {
+                    const order = JSON.parse(pendingOrder);
+                    const orderTimestamp = new Date(order.timestamp || order.data);
+                    const thirtyDaysAgo = new Date(Date.now() - (30 * 24 * 60 * 60 * 1000));
+                    
+                    if (orderTimestamp > thirtyDaysAgo) {
+                        if (order.data && order.data.includes('/')) {
+                            order.data = formatItalianDate(order.data);
+                        }
+                        orders.push(order);
+                    } else {
+                        localStorage.removeItem('lh360_pending_order');
+                    }
+                } catch (e) {
+                    console.error('Errore parsing ordine pending:', e);
+                }
+            }
+            
+            const recentOrderId = localStorage.getItem('lh360_last_order_id');
+            if (recentOrderId && !orders.find(o => o.id === recentOrderId)) {
+                const cart = JSON.parse(localStorage.getItem('lh360_cart') || '[]');
+                const subtotal = cart.reduce((sum, item) => sum + (item.price * (item.qty || 1)), 0);
+                
+                const today = new Date();
+                const formattedDate = today.toLocaleDateString('it-IT', { 
+                    day: 'numeric', 
+                    month: 'long', 
+                    year: 'numeric' 
+                });
+                
+                orders.push({
+                    id: recentOrderId,
+                    data: formattedDate,
+                    stato: 'In Preparazione',
+                    consegna_prevista: calculateDeliveryDate(3),
+                    totale: subtotal > 0 ? subtotal.toFixed(2) : '0,00',
+                    products: cart.map(item => ({
+                        name: item.title || 'Prodotto',
+                        quantity: item.qty || 1,
+                        price: item.price || 0,
+                        image: item.image || ''
+                    }))
+                });
+            }
+            
+            if (orders.length === 0) {
+                showEmptyState();
+                return;
+            }
+            
+            renderOrders(orders);
+            ordersRendered = true; // *** Imposta flag ***
+        }
+
         function calculateDeliveryDate(daysFromNow) {
             const date = new Date();
             date.setDate(date.getDate() + daysFromNow);
             return date.toLocaleDateString('it-IT', { day: 'numeric', month: 'long', year: 'numeric' });
         }
 
-        /**
-         * *** FIX: Render orders UNA SOLA VOLTA ***
-         */
         function renderOrders(orders) {
-            // Evita rendering multipli
-            if (ordersAlreadyRendered) {
-                console.log('🚫 renderOrders chiamato ma già renderizzato');
-                return;
-            }
-            
-            ordersAlreadyRendered = true;
-            
             const ordersList = document.getElementById('ordersList');
             ordersList.innerHTML = '';
             
@@ -856,19 +867,12 @@
             });
             
             ordersList.style.display = 'flex';
-            console.log('✅ Rendering completato');
         }
 
-        /**
-         * Show empty state
-         */
         function showEmptyState() {
-            if (ordersAlreadyRendered) return;
-            ordersAlreadyRendered = true;
             document.getElementById('emptyState').style.display = 'block';
         }
 
-        // Initialize
         loadOrders();
     </script>
 </body>
