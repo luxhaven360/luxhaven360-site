@@ -1113,6 +1113,48 @@ function calculateDeliveryDate(daysFromNow) {
 
         if (totalElem) totalElem.textContent = `€ ${total.toLocaleString('it-IT', {minimumFractionDigits: 2})}`;
     }
+
+        /**
+ * Forza sync API dopo success per update OT immediato
+ */
+function forceOrderTrackingSync(orderId) {
+    const callbackName = 'handleSync_' + Date.now();
+    const script = document.createElement('script');
+    script.src = `${WEB_APP_URL}?action=sync_orders&order_id=${encodeURIComponent(orderId)}&callback=${callbackName}&t=${Date.now()}`;
+    
+    window[callbackName] = function(response) {
+        if (response && response.success) {
+            console.log('✅ Sync OT completato via API');
+            // Aggiorna local con nuovo ordine attivo
+            const pending = localStorage.getItem('lh360_pending_order');
+            if (pending) {
+                const order = JSON.parse(pending);
+                order.stato = 'In Preparazione';  // Stato iniziale
+                localStorage.setItem('lh360_active_order_' + order.id, JSON.stringify(order));
+                localStorage.removeItem('lh360_pending_order');
+            }
+        } else {
+            console.warn('⚠️ Sync OT fallito');
+        }
+        cleanup();
+    };
+    
+    function cleanup() {
+        try {
+            document.body.removeChild(script);
+            delete window[callbackName];
+        } catch (e) {}
+    }
+    
+    document.body.appendChild(script);
+}
+
+// Chiama dopo loadOrderDetails (esistente)
+loadOrderDetails();  // Esistente
+const orderId = new URLSearchParams(window.location.search).get('id_ordine');
+if (orderId) {
+    forceOrderTrackingSync(orderId);
+}
 </script>    
 </body>
 </html>
