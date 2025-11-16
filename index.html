@@ -142,12 +142,16 @@
     const trackingIcon = document.getElementById('trackingIcon');
     if (!trackingIcon) return;
     
-    // Check locale sincrono per decisione immediata
+    // Pulisci dati vecchi PRIMA del check per evitare falsi positivi
+    cleanupOldOrders();
+    console.log('🧹 Cleanup eseguito: localStorage pulito da ordini scaduti');
+    
+    // Check locale ora accurato
     const hasActiveLocal = checkLocalStorageForActiveOrders();
     trackingIcon.style.display = hasActiveLocal ? 'block' : 'none';
-    console.log(hasActiveLocal ? '✅ Local: icona mostrata immediatamente' : 'ℹ️ Local: icona nascosta immediatamente');
+    console.log(hasActiveLocal ? '✅ Local (post-cleanup): icona mostrata immediatamente' : 'ℹ️ Local (post-cleanup): icona nascosta immediatamente');
     
-    // API asincrona per correzione
+    // API per conferma/correzione
     fetchActiveOrdersFromAPI(trackingIcon);
 }
 
@@ -160,7 +164,7 @@ function fetchActiveOrdersFromAPI(icon) {
     script.src = `${WEB_APP_URL}?get_active_count=1&callback=${callbackName}&t=${Date.now()}`;
     
     const timeout = setTimeout(() => {
-        console.warn('⚠️ Timeout API tracking icon (manteniamo stato locale)');
+        console.warn('⚠️ Timeout API tracking icon (manteniamo stato post-cleanup)');
         cleanup();
     }, 5000);
     
@@ -174,16 +178,18 @@ function fetchActiveOrdersFromAPI(icon) {
                 icon.style.display = shouldShow ? 'block' : 'none';
                 console.log(`✅ API correzione: ${shouldShow ? 'mostrata' : 'nascosta'}`);
             }
-            if (!shouldShow) cleanupOldOrders();
+            if (!shouldShow) {
+                cleanupOldOrders();  // Extra cleanup se API conferma 0
+            }
         } else {
-            console.warn('⚠️ Risposta API invalida (manteniamo stato locale)');
+            console.warn('⚠️ Risposta API invalida (manteniamo stato post-cleanup)');
         }
         cleanup();
     };
     
     script.onerror = () => {
         clearTimeout(timeout);
-        console.error('❌ Errore API tracking icon (manteniamo stato locale)');
+        console.error('❌ Errore API tracking icon (manteniamo stato post-cleanup)');
         cleanup();
     };
     
