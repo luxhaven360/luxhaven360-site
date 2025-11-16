@@ -159,9 +159,9 @@
  * Fetch API per aggiornamento
  */
 function fetchActiveOrdersFromAPI(icon) {
-    const callbackName = 'handleActiveOrdersCount_' + Date.now();
-    const script = document.createElement('script');
-    script.src = `${WEB_APP_URL}?get_active_count=1&callback=${callbackName}&t=${Date.now()}`;
+  const callbackName = 'handleActiveOrdersCount_' + Date.now();
+  const script = document.createElement('script');
+  script.src = `${WEB_APP_URL}?get_active_count=1&callback=${callbackName}&t=${Date.now()}`;
     
     const timeout = setTimeout(() => {
         console.warn('⚠️ Timeout API tracking icon (manteniamo stato post-cleanup)');
@@ -173,21 +173,24 @@ function fetchActiveOrdersFromAPI(icon) {
         console.log('📡 Risposta API tracking icon:', response);
         
         if (response && typeof response.count === 'number') {
-            const shouldShow = response.count > 0;
-            if (icon.style.display !== (shouldShow ? 'block' : 'none')) {
-                icon.style.display = shouldShow ? 'block' : 'none';
-                console.log(`✅ API correzione: ${shouldShow ? 'mostrata' : 'nascosta'}`);
-            }
-            if (!shouldShow) {
-                cleanupOldOrders();  // Cleanup standard
-                clearAllLocalOrderData();  // Clear forzato completo
-                console.log('🗑️ API conferma 0 ordini: eseguito clear completo localStorage per ordini');
-            }
-        } else {
-            console.warn('⚠️ Risposta API invalida (manteniamo stato post-cleanup)');
-        }
-        cleanup();
-    };
+      const shouldShow = response.count > 0;
+      if (icon.style.display !== (shouldShow ? 'block' : 'none')) {
+        icon.style.display = shouldShow ? 'block' : 'none';
+        console.log(`✅ API correzione: ${shouldShow ? 'mostrata' : 'nascosta'}`);
+      }
+      if (!shouldShow) {
+        cleanupOldOrders();  // Cleanup standard
+        clearAllLocalOrderData();  // Clear forzato completo
+        console.log('🗑️ API conferma 0 ordini: eseguito clear completo localStorage per ordini');
+      } else if (shouldShow && checkLocalStorageForActiveOrders() === false) {
+        // Se API ha >0 ma local 0, forse sync mancato: retry dopo 1s
+        setTimeout(() => updateTrackingIcon(), 1000);
+      }
+    } else {
+      console.warn('⚠️ Risposta API invalida (manteniamo stato post-cleanup)');
+    }
+    cleanup();
+  };
     
     script.onerror = () => {
         clearTimeout(timeout);
