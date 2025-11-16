@@ -420,8 +420,8 @@
 
     <script>
         // Configuration
-        const WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbzuORsr4yTgVJ7w9hvz9VWmj6L0zey18wWFod1inD_X-Nip7cKtYJgGm6uv_L3fYbHX/exec';
-        const SHEET_ID = '1zzfazUZIcHYYezRBC6CAunRL9YeCJHMbg90xW-ZuG4I'; // Sostituisci con il tuo Sheet ID
+        const WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbyiDu50VIVwzJ3qQNCWZmSk-_ovC7iBvxJGUYriRc3-PwMRbsgi8wb0baqxk3nLxti2/exec';
+        const SHEET_ID = '1YL3VKtDPIqFkTbE5IjglQ8GxC-N3QnDy9IYxkzZBXe8'; // Sostituisci con il tuo Sheet ID
 
         // State mapping
         const STATE_STEPS = {
@@ -729,29 +729,54 @@
 
         /**
          * Load orders from Google Sheets (via Apps Script Web App endpoint)
+         * OTTIMIZZATO: Evita doppio rendering
          */
         async function loadOrders() {
             try {
-                // PRIORITY 1: Mostra subito ordini pending da localStorage
+                let initialOrdersShown = false;
                 const pendingOrders = getPendingOrdersFromLocalStorage();
+                
+                // Mostra pending SOLO se non stiamo già caricando da API
                 if (pendingOrders.length > 0) {
-                    document.getElementById('loadingState').style.display = 'none';
-                    renderOrders(pendingOrders);
-                    console.log('✅ Mostrati ordini pending da localStorage');
+                    // Non renderizzare subito, aspetta 300ms per vedere se API risponde velocemente
+                    const quickAPIResponse = await Promise.race([
+                        loadFromAPI(),
+                        new Promise(resolve => setTimeout(() => resolve(null), 300))
+                    ]);
+                    
+                    if (quickAPIResponse === null) {
+                        // API lenta (>300ms), mostra pending orders per UX
+                        document.getElementById('loadingState').style.display = 'none';
+                        renderOrders(pendingOrders);
+                        initialOrdersShown = true;
+                        console.log('✅ Mostrati ordini pending (API lenta)');
+                    }
                 }
                 
-                // PRIORITY 2: Carica ordini confermati da Google Sheets (in background)
+                // Carica da API (se non già fatto nel race)
+                if (!initialOrdersShown) {
+                    await loadFromAPI();
+                }
+                
+            } catch (error) {
+                console.error('Error:', error);
+                loadFromLocalStorage();
+            }
+        }
+
+        /**
+         * Carica ordini da API (Promise-based per race condition)
+         */
+        function loadFromAPI() {
+            return new Promise((resolve, reject) => {
                 const callbackName = 'handleOrdersData_' + Date.now();
                 const script = document.createElement('script');
                 script.src = `${WEB_APP_URL}?action=get_orders&callback=${callbackName}&t=${Date.now()}`;
                 
-                // Timeout di 8 secondi per API
                 const timeout = setTimeout(() => {
                     console.warn('⚠️ Timeout caricamento ordini da API');
-                    if (pendingOrders.length === 0) {
-                        loadFromLocalStorage(); // Ultimo fallback
-                    }
                     cleanup();
+                    reject(new Error('API timeout'));
                 }, 8000);
                 
                 window[callbackName] = function(data) {
@@ -760,59 +785,51 @@
                     
                     if (data.error) {
                         console.error('Error loading orders:', data.error);
-                        if (pendingOrders.length === 0) {
-                            showEmptyState();
-                        }
                         cleanup();
+                        reject(new Error(data.error));
                         return;
                     }
                     
+                    const pendingOrders = getPendingOrdersFromLocalStorage();
                     let allOrders = [];
                     
-                    // Merge: pending orders + API orders (evita duplicati)
-                    if (pendingOrders.length > 0) {
-                        allOrders = [...pendingOrders];
+                    // Merge intelligente: pending + API (NO duplicati)
+                    if (pendingOrders.length > 0 && data.orders && data.orders.length > 0) {
+                        // Controlla se pending è ora confermato
+                        const confirmedIds = data.orders.map(o => o.id);
+                        const stillPending = pendingOrders.filter(p => !confirmedIds.includes(p.id));
                         
-                        // Aggiungi ordini da API che non sono già in pending
-                        if (data.orders && data.orders.length > 0) {
-                            data.orders.forEach(apiOrder => {
-                                if (!allOrders.find(o => o.id === apiOrder.id)) {
-                                    allOrders.push(apiOrder);
-                                }
-                            });
-                        }
+                        allOrders = [...stillPending, ...data.orders];
                         
-                        // Rimuovi ordine pending se ora è confermato nell'API
-                        if (data.orders && data.orders.length > 0) {
-                            const confirmedIds = data.orders.map(o => o.id);
-                            pendingOrders.forEach(pending => {
-                                if (confirmedIds.includes(pending.id)) {
-                                    localStorage.removeItem('lh360_pending_order');
-                                    console.log('✅ Ordine pending confermato e rimosso da localStorage:', pending.id);
-                                }
-                            });
-                        }
-                    } else {
-                        allOrders = data.orders || [];
+                        // Cleanup: rimuovi pending confermati
+                        pendingOrders.forEach(pending => {
+                            if (confirmedIds.includes(pending.id)) {
+                                localStorage.removeItem('lh360_pending_order');
+                                console.log('✅ Ordine pending confermato, rimosso da localStorage:', pending.id);
+                            }
+                        });
+                    } else if (data.orders && data.orders.length > 0) {
+                        allOrders = data.orders;
+                    } else if (pendingOrders.length > 0) {
+                        allOrders = pendingOrders;
                     }
                     
                     if (allOrders.length === 0) {
                         showEmptyState();
                     } else {
                         renderOrders(allOrders);
-                        console.log(`✅ Caricati ${allOrders.length} ordini (${pendingOrders.length} pending, ${(data.orders || []).length} da API)`);
+                        console.log(`✅ Caricati ${allOrders.length} ordini totali`);
                     }
                     
                     cleanup();
+                    resolve(allOrders);
                 };
                 
                 script.onerror = () => {
                     clearTimeout(timeout);
                     console.error('Failed to load orders from API');
-                    if (pendingOrders.length === 0) {
-                        loadFromLocalStorage();
-                    }
                     cleanup();
+                    reject(new Error('Script load failed'));
                 };
                 
                 function cleanup() {
@@ -823,11 +840,7 @@
                 }
                 
                 document.body.appendChild(script);
-                
-            } catch (error) {
-                console.error('Error:', error);
-                loadFromLocalStorage();
-            }
+            });
         }
 
         /**
