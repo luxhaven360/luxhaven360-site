@@ -728,44 +728,89 @@
         }
 
         /**
-         * Load orders from Google Sheets (via Apps Script Web App endpoint)
-         * OTTIMIZZATO: Evita doppio rendering
+         * Load orders - OTTIMIZZATO per eliminare completamente il doppio render
+         * Strategia: Pre-render nascosto + reveal singolo
          */
         async function loadOrders() {
             try {
-                let initialOrdersShown = false;
                 const pendingOrders = getPendingOrdersFromLocalStorage();
+                let apiOrders = [];
+                let renderExecuted = false;
                 
-                // Mostra pending SOLO se non stiamo già caricando da API
-                if (pendingOrders.length > 0) {
-                    // Non renderizzare subito, aspetta 300ms per vedere se API risponde velocemente
-                    const quickAPIResponse = await Promise.race([
+                // Setup: Prepara container per render singolo
+                const ordersList = document.getElementById('ordersList');
+                const loadingState = document.getElementById('loadingState');
+                
+                // Strategia: Carica API PRIMA di qualsiasi render
+                try {
+                    apiOrders = await Promise.race([
                         loadFromAPI(),
-                        new Promise(resolve => setTimeout(() => resolve(null), 300))
+                        new Promise((_, reject) => setTimeout(() => reject(new Error('API timeout')), 500))
                     ]);
                     
-                    if (quickAPIResponse === null) {
-                        // API lenta (>300ms), mostra pending orders per UX
-                        document.getElementById('loadingState').style.display = 'none';
+                    // API SUCCESS (< 500ms): Usa solo dati API
+                    loadingState.style.display = 'none';
+                    
+                    if (apiOrders && apiOrders.length > 0) {
+                        // Merge: rimuovi pending se confermati in API
+                        const confirmedIds = apiOrders.map(o => o.id);
+                        const stillPending = pendingOrders.filter(p => !confirmedIds.includes(p.id));
+                        const finalOrders = [...stillPending, ...apiOrders];
+                        
+                        renderOrders(finalOrders);
+                        renderExecuted = true;
+                        
+                        // Cleanup pending confermati
+                        pendingOrders.forEach(p => {
+                            if (confirmedIds.includes(p.id)) {
+                                localStorage.removeItem('lh360_pending_order');
+                                console.log('✅ Ordine confermato, rimosso pending:', p.id);
+                            }
+                        });
+                        
+                        console.log(`✅ Render UNICO da API (${finalOrders.length} ordini)`);
+                    } else if (pendingOrders.length > 0) {
                         renderOrders(pendingOrders);
-                        initialOrdersShown = true;
-                        console.log('✅ Mostrati ordini pending (API lenta)');
+                        renderExecuted = true;
+                        console.log('✅ Render UNICO da pending (API vuoto)');
+                    } else {
+                        showEmptyState();
+                        renderExecuted = true;
+                    }
+                    
+                } catch (apiError) {
+                    // API TIMEOUT/ERROR: Usa pending se disponibile
+                    console.warn('⚠️ API lenta/error, uso pending:', apiError.message);
+                    
+                    loadingState.style.display = 'none';
+                    
+                    if (pendingOrders.length > 0) {
+                        renderOrders(pendingOrders);
+                        renderExecuted = true;
+                        console.log('✅ Render UNICO da pending (API fallback)');
+                    } else {
+                        // Ultimo tentativo: localStorage fallback completo
+                        loadFromLocalStorage();
+                        renderExecuted = true;
                     }
                 }
                 
-                // Carica da API (se non già fatto nel race)
-                if (!initialOrdersShown) {
-                    await loadFromAPI();
+                // Safety: Se niente è stato renderizzato, mostra empty
+                if (!renderExecuted) {
+                    loadingState.style.display = 'none';
+                    showEmptyState();
                 }
                 
             } catch (error) {
-                console.error('Error:', error);
+                console.error('Error globale:', error);
+                document.getElementById('loadingState').style.display = 'none';
                 loadFromLocalStorage();
             }
         }
 
         /**
-         * Carica ordini da API (Promise-based per race condition)
+         * Carica ordini da API (Promise-based)
+         * TIMEOUT ridotto a 500ms per decisione rapida
          */
         function loadFromAPI() {
             return new Promise((resolve, reject) => {
@@ -774,60 +819,27 @@
                 script.src = `${WEB_APP_URL}?action=get_orders&callback=${callbackName}&t=${Date.now()}`;
                 
                 const timeout = setTimeout(() => {
-                    console.warn('⚠️ Timeout caricamento ordini da API');
                     cleanup();
                     reject(new Error('API timeout'));
-                }, 8000);
+                }, 500); // Ridotto da 8000ms a 500ms
                 
                 window[callbackName] = function(data) {
                     clearTimeout(timeout);
-                    document.getElementById('loadingState').style.display = 'none';
                     
                     if (data.error) {
-                        console.error('Error loading orders:', data.error);
+                        console.error('API error:', data.error);
                         cleanup();
                         reject(new Error(data.error));
                         return;
                     }
                     
-                    const pendingOrders = getPendingOrdersFromLocalStorage();
-                    let allOrders = [];
-                    
-                    // Merge intelligente: pending + API (NO duplicati)
-                    if (pendingOrders.length > 0 && data.orders && data.orders.length > 0) {
-                        // Controlla se pending è ora confermato
-                        const confirmedIds = data.orders.map(o => o.id);
-                        const stillPending = pendingOrders.filter(p => !confirmedIds.includes(p.id));
-                        
-                        allOrders = [...stillPending, ...data.orders];
-                        
-                        // Cleanup: rimuovi pending confermati
-                        pendingOrders.forEach(pending => {
-                            if (confirmedIds.includes(pending.id)) {
-                                localStorage.removeItem('lh360_pending_order');
-                                console.log('✅ Ordine pending confermato, rimosso da localStorage:', pending.id);
-                            }
-                        });
-                    } else if (data.orders && data.orders.length > 0) {
-                        allOrders = data.orders;
-                    } else if (pendingOrders.length > 0) {
-                        allOrders = pendingOrders;
-                    }
-                    
-                    if (allOrders.length === 0) {
-                        showEmptyState();
-                    } else {
-                        renderOrders(allOrders);
-                        console.log(`✅ Caricati ${allOrders.length} ordini totali`);
-                    }
-                    
+                    const orders = data.orders || [];
                     cleanup();
-                    resolve(allOrders);
+                    resolve(orders);
                 };
                 
                 script.onerror = () => {
                     clearTimeout(timeout);
-                    console.error('Failed to load orders from API');
                     cleanup();
                     reject(new Error('Script load failed'));
                 };
