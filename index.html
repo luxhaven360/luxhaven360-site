@@ -21,8 +21,9 @@
                 <li><a href="#" onclick="showSection('stays')">Esperienze</a></li>
                 <li><a href="#" onclick="showSection('shop')">Shop</a></li>
                 <li><a href="#" onclick="showSection('contact')">Contatti</a></li>
-                <li id="trackingIcon" class="cart-icon" onclick="window.location.href='product-details/tracking-order.html'"
-                    title="Traccia i tuoi ordini" hidden aria-hidden="true">📦</li>
+                <!-- Icona Tracking: visibilità gestita da JS -->
+                <li id="trackingIcon" class="cart-icon" onclick="window.location.href='product-details/tracking-order.html'" title="Traccia i tuoi ordini" style="display: none;">📦</li>
+                <li id="cartIcon" class="cart-icon" onclick="window.location.href='product-details/cart.html'">🛒</li>
             </ul>
         </div>
     </nav>
@@ -140,77 +141,70 @@
         function updateTrackingIcon() {
     const trackingIcon = document.getElementById('trackingIcon');
     if (!trackingIcon) return;
-
-    // Garanzia immediata: nascondi a priori e rimuovi eventuali classi residue
-    trackingIcon.hidden = true;
-    trackingIcon.style.display = 'none';
-    trackingIcon.classList.remove('show');
-    trackingIcon.setAttribute('aria-hidden', 'true');
-
-    // Pulizia locale (non influisce sulla visibilità) — mantiene ordine nel localStorage
+    
+    // Pulisci dati vecchi basati su date
     cleanupOldOrders();
-
-    // Chiedi conferma al server: SOLO SE server dice count>0 mostriamo l'icona
+    console.log('🧹 Cleanup standard eseguito: rimossi ordini scaduti (>30 giorni o consegnati >2 giorni)');
+    
+    // Check locale post-cleanup
+    const hasActiveLocal = checkLocalStorageForActiveOrders();
+    trackingIcon.style.display = hasActiveLocal ? 'block' : 'none';
+    console.log(hasActiveLocal ? '✅ Local (post-cleanup): icona mostrata immediatamente' : 'ℹ️ Local (post-cleanup): icona nascosta immediatamente');
+    
+    // API per conferma e clear forzato se 0
     fetchActiveOrdersFromAPI(trackingIcon);
 }
 
-        function fetchActiveOrdersFromAPI(icon) {
-    const callbackName = 'handleActiveOrdersCount_' + Date.now();
-    const script = document.createElement('script');
-    script.src = `${WEB_APP_URL}?get_active_count=1&callback=${callbackName}&t=${Date.now()}`;
-
-    // Timeout relativamente breve: se non risponde manteniamo icona nascosta (no flicker)
-    const timeoutMs = 5000;
+/**
+ * Fetch API per aggiornamento
+ */
+function fetchActiveOrdersFromAPI(icon) {
+  const callbackName = 'handleActiveOrdersCount_' + Date.now();
+  const script = document.createElement('script');
+  script.src = `${WEB_APP_URL}?get_active_count=1&callback=${callbackName}&t=${Date.now()}`;
+    
     const timeout = setTimeout(() => {
-        console.warn('⚠️ Timeout API tracking icon - manteniamo icona nascosta.');
+        console.warn('⚠️ Timeout API tracking icon (manteniamo stato post-cleanup)');
         cleanup();
-    }, timeoutMs);
-
+    }, 5000);
+    
     window[callbackName] = function(response) {
         clearTimeout(timeout);
-        try {
-            if (response && typeof response.count === 'number' && response.count > 0) {
-                // Server conferma ordini attivi -> mostra icona in modo controllato
-                icon.hidden = false;
-                icon.style.display = 'block';
-                icon.removeAttribute('aria-hidden');
-                console.log('✅ API conferma ordini attivi: icona mostrata');
-            } else {
-                // Server conferma 0 ordini attivi -> assicurati che local storage non contenga semafori residui
-                icon.hidden = true;
-                icon.style.display = 'none';
-                icon.setAttribute('aria-hidden', 'true');
-                console.log('ℹ️ API conferma 0 ordini attivi: icona nascosta');
-
-                // Pulizia locale forzata (opzionale ma consigliata)
-                clearAllLocalOrderData();
-                console.log('🗑️ LocalStorage relativo ordini pulito (API = 0)');
-            }
-        } catch (e) {
-            console.error('Errore nella callback API tracking:', e);
-            // fallback: mantieni nascosto
-            icon.hidden = true;
-            icon.style.display = 'none';
-            icon.setAttribute('aria-hidden', 'true');
-        } finally {
-            cleanup();
-        }
-    };
-
+        console.log('📡 Risposta API tracking icon:', response);
+        
+        if (response && typeof response.count === 'number') {
+      const shouldShow = response.count > 0;
+      if (icon.style.display !== (shouldShow ? 'block' : 'none')) {
+        icon.style.display = shouldShow ? 'block' : 'none';
+        console.log(`✅ API correzione: ${shouldShow ? 'mostrata' : 'nascosta'}`);
+      }
+      if (!shouldShow) {
+        cleanupOldOrders();  // Cleanup standard
+        clearAllLocalOrderData();  // Clear forzato completo
+        console.log('🗑️ API conferma 0 ordini: eseguito clear completo localStorage per ordini');
+      } else if (shouldShow && checkLocalStorageForActiveOrders() === false) {
+        // Se API ha >0 ma local 0, forse sync mancato: retry dopo 1s
+        setTimeout(() => updateTrackingIcon(), 1000);
+      }
+    } else {
+      console.warn('⚠️ Risposta API invalida (manteniamo stato post-cleanup)');
+    }
+    cleanup();
+  };
+    
     script.onerror = () => {
         clearTimeout(timeout);
-        console.error('❌ Errore fetch API tracking icon, manteniamo icona nascosta');
+        console.error('❌ Errore API tracking icon (manteniamo stato post-cleanup)');
         cleanup();
     };
-
+    
     function cleanup() {
         try {
             if (script.parentNode) document.body.removeChild(script);
             delete window[callbackName];
         } catch (e) {}
     }
-
-    // Append script per JSONP
+    
     document.body.appendChild(script);
 }
 
