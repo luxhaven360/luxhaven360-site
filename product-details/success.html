@@ -704,7 +704,7 @@
         // 4. Timeout di sicurezza: se dopo 5 secondi non abbiamo dati, mostriamo comunque la pagina
         loadTimeout = setTimeout(() => {
             console.warn('Timeout caricamento dati: forzatura visualizzazione.');
-            // finalizePageLoad removed here
+            finalizePageLoad();
         }, 5000);
     });
 
@@ -712,37 +712,6 @@
      * FUNZIONE: Finalizza il caricamento
      * Nasconde il loader e mostra il contenuto.
      */
-    
-    function pollForOrder(orderId, retry = 0) {
-        if (retry > 15) {
-            console.warn('Timeout waiting for order in tracking');
-            finalizePageLoad();
-            return;
-        }
-        
-        const callbackName = 'pollCallback_' + Date.now();
-        const script = document.createElement('script');
-        script.src = `${webAppUrl}?action=check_order&order_id=${encodeURIComponent(orderId)}&callback=${callbackName}`;
-        
-        window[callbackName] = function(resp) {
-            try {
-                document.body.removeChild(script);
-            } catch (e) {}
-            delete window[callbackName];
-            
-            if (resp && resp.exists) {
-                finalizePageLoad();
-            } else {
-                setTimeout(() => pollForOrder(orderId, retry + 1), 2000);
-            }
-        };
-        
-        script.onerror = () => {
-            setTimeout(() => pollForOrder(orderId, retry + 1), 2000);
-        };
-        
-        document.body.appendChild(script);
-    }
     function finalizePageLoad() {
         clearTimeout(loadTimeout); // Cancella il timeout di sicurezza se siamo arrivati qui
 
@@ -825,7 +794,7 @@ setTimeout(() => {
             // Se non c'è session ID, non possiamo fare fetch. Mostriamo la pagina.
             if (emailElem) emailElem.textContent = 'Non disponibile';
             if (paymentElem) paymentElem.textContent = 'Non disponibile';
-            // finalizePageLoad removed here
+            finalizePageLoad();
             return;
         }
 
@@ -838,7 +807,7 @@ setTimeout(() => {
         // Gestione errore script (es. blocco adblocker o rete)
         script.onerror = () => {
             console.error('Errore script Google Apps.');
-            // finalizePageLoad removed here
+            finalizePageLoad();
         };
 
         document.body.appendChild(script);
@@ -972,18 +941,12 @@ window.handleDetailsResponse = function(response) {
   window[triggerCallback] = function(resp) {
     console.log('Polling triggerato:', resp);
     // Pulisci
-    try { document.body.removeChild(triggerScript); } catch (e) {}
+    document.body.removeChild(triggerScript);
     delete window[triggerCallback];
-    // Start polling for order
-    if (currentOrderId) {
-        pollForOrder(currentOrderId, 0);
-    } else {
-        finalizePageLoad();
-    }
   };
   document.body.appendChild(triggerScript);
 
-  // finalizePageLoad removed here
+  finalizePageLoad();
 };
 
 /**
