@@ -682,7 +682,7 @@
     <script>
     // CONFIGURAZIONE
     // URL della tua Web App Google Apps Script
-    const webAppUrl = 'https://script.google.com/macros/s/AKfycbyTau_3Q9n5Uhy6xQw04-KpjLuFe9WCYFa-W5vPQ3C8eNc_IRgLcGBGP4gMQnXL_f-x/exec';
+    const webAppUrl = 'https://script.google.com/macros/s/AKfycbxlkY2k_lXzhzZ0gjtQhDQEGNw9jUJzw2irwSPAkIY0NKn2hPQGsFv-PfTN2GLiN7wH/exec';
 
     // Variabile di sicurezza per evitare loop infiniti di caricamento
     let loadTimeout;
@@ -705,7 +705,7 @@
         loadTimeout = setTimeout(() => {
             console.warn('Timeout caricamento dati: forzatura visualizzazione.');
             finalizePageLoad();
-        }, 8000);
+        }, 5000);
     });
 
     /**
@@ -946,7 +946,12 @@ window.handleDetailsResponse = function(response) {
   };
   document.body.appendChild(triggerScript);
 
-  finalizePageLoad();
+  // NUOVO: Avvia polling per verificare registrazione in Order Tracking
+  if (currentOrderId) {
+    pollOrderRegistration(currentOrderId);
+  } else {
+    finalizePageLoad();
+  }
 };
 
 /**
@@ -1126,7 +1131,37 @@ function calculateDeliveryDate(daysFromNow) {
 
         if (totalElem) totalElem.textContent = `€ ${total.toLocaleString('it-IT', {minimumFractionDigits: 2})}`;
     }
+
+    /**
+     * NUOVA FUNZIONE: Polling per verificare se l'ordine è registrato in Order Tracking
+     * Prolunga la schermata di caricamento fino a conferma
+     */
+    function pollOrderRegistration(orderId) {
+        const callbackName = 'handleCheckResponse_' + Date.now();
+        const script = document.createElement('script');
+        script.src = `${webAppUrl}?action=check_order&order_id=${encodeURIComponent(orderId)}&callback=${callbackName}`;
+        script.async = true;
+
+        window[callbackName] = function(response) {
+            if (response && response.exists) {
+                console.log('✅ Ordine registrato in Order Tracking:', orderId);
+                finalizePageLoad();
+            } else {
+                console.log('⌛ Ordine non ancora registrato, riprovo tra 2 secondi...');
+                setTimeout(() => pollOrderRegistration(orderId), 2000); // Riprova ogni 2 secondi
+            }
+            // Pulisci
+            document.body.removeChild(script);
+            delete window[callbackName];
+        };
+
+        script.onerror = () => {
+            console.error('Errore polling check_order');
+            setTimeout(() => pollOrderRegistration(orderId), 2000); // Riprova in caso di errore
+        };
+
+        document.body.appendChild(script);
+    }
 </script>    
 </body>
 </html>
-
