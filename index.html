@@ -141,65 +141,77 @@
         function updateTrackingIcon() {
     const trackingIcon = document.getElementById('trackingIcon');
     if (!trackingIcon) return;
-    
-    // Pulisci dati vecchi basati su date
+
+    // IMMEDIATELY hide the icon to prevent any flash on first paint
+    trackingIcon.style.display = 'none';
+
+    // Pulisci ordini locali obsoleti (manteniamo la logica di cleanup)
     cleanupOldOrders();
     console.log('🧹 Cleanup standard eseguito: rimossi ordini scaduti (>30 giorni o consegnati >2 giorni)');
-    
-    // API per conferma e clear forzato se 0
+
+    // Chiamiamo l'API per la conferma definitiva: l'icona verrà mostrata SOLO se l'API conferma count > 0
     fetchActiveOrdersFromAPI(trackingIcon);
 }
 
+
 /**
- * Fetch API per aggiornamento
+ * Fetch API per aggiornamento: mostra l'icona SOLO dopo risposta API
  */
 function fetchActiveOrdersFromAPI(icon) {
-  const callbackName = 'handleActiveOrdersCount_' + Date.now();
-  const script = document.createElement('script');
-  script.src = `${WEB_APP_URL}?get_active_count=1&callback=${callbackName}&t=${Date.now()}`;
-    
+    const callbackName = 'handleActiveOrdersCount_' + Date.now();
+    const script = document.createElement('script');
+    script.async = true;
+    script.src = `${WEB_APP_URL}?get_active_count=1&callback=${callbackName}&t=${Date.now()}`;
+
+    // Timeout: se l'API non risponde entro 5s manteniamo l'icona nascosta (NO flashing)
     const timeout = setTimeout(() => {
-        console.warn('⚠️ Timeout API tracking icon (manteniamo stato post-cleanup)');
+        console.warn('⚠️ Timeout API tracking icon (manteniamo icona nascosta)');
         cleanup();
     }, 5000);
-    
+
     window[callbackName] = function(response) {
         clearTimeout(timeout);
         console.log('📡 Risposta API tracking icon:', response);
-        
-        if (response && typeof response.count === 'number') {
-      const shouldShow = response.count > 0;
-      if (icon.style.display !== (shouldShow ? 'block' : 'none')) {
-        icon.style.display = shouldShow ? 'block' : 'none';
-        console.log(`✅ API correzione: ${shouldShow ? 'mostrata' : 'nascosta'}`);
-      }
-      if (!shouldShow) {
-        cleanupOldOrders();  // Cleanup standard
-        clearAllLocalOrderData();  // Clear forzato completo
-        console.log('🗑️ API conferma 0 ordini: eseguito clear completo localStorage per ordini');
-      } else if (shouldShow && checkLocalStorageForActiveOrders() === false) {
-        // Se API ha >0 ma local 0, forse sync mancato: retry dopo 1s
-        setTimeout(() => updateTrackingIcon(), 1000);
-      }
-    } else {
-      console.warn('⚠️ Risposta API invalida (manteniamo stato post-cleanup)');
-    }
-    cleanup();
-  };
-    
+
+        try {
+            if (response && typeof response.count === 'number') {
+                const shouldShow = response.count > 0;
+                // Mostra / nascondi in base alla risposta SERVER (questa è la fonte di verità)
+                icon.style.display = shouldShow ? 'block' : 'none';
+
+                if (!shouldShow) {
+                    // Se l'API dice 0 ordini: puliamo il localStorage relativo agli ordini
+                    cleanupOldOrders();  // ripetiamo cleanup per sicurezza
+                    clearAllLocalOrderData();
+                    console.log('🗑️ API conferma 0 ordini: eseguito clear completo localStorage per ordini');
+                } else {
+                    console.log('✅ API conferma ordini attivi: icona mostrata');
+                }
+            } else {
+                console.warn('⚠️ Risposta API invalida (manteniamo icona nascosta)');
+                icon.style.display = 'none';
+            }
+        } catch (e) {
+            console.error('Errore gestione risposta API tracking icon:', e);
+            icon.style.display = 'none';
+        } finally {
+            cleanup();
+        }
+    };
+
     script.onerror = () => {
         clearTimeout(timeout);
-        console.error('❌ Errore API tracking icon (manteniamo stato post-cleanup)');
+        console.error('❌ Errore API tracking icon (manteniamo icona nascosta)');
         cleanup();
     };
-    
+
     function cleanup() {
         try {
             if (script.parentNode) document.body.removeChild(script);
             delete window[callbackName];
         } catch (e) {}
     }
-    
+
     document.body.appendChild(script);
 }
 
