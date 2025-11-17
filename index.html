@@ -137,6 +137,83 @@
             }
         }
 
+        function updateTrackingIcon() {
+    const trackingIcon = document.getElementById('trackingIcon');
+    if (!trackingIcon) return;
+
+    // Garanzia immediata: nascondi a priori e rimuovi eventuali classi residue
+    trackingIcon.hidden = true;
+    trackingIcon.style.display = 'none';
+    trackingIcon.classList.remove('show');
+    trackingIcon.setAttribute('aria-hidden', 'true');
+
+    // Pulizia locale (non influisce sulla visibilità) — mantiene ordine nel localStorage
+    cleanupOldOrders();
+
+    // Chiedi conferma al server: SOLO SE server dice count>0 mostriamo l'icona
+    fetchActiveOrdersFromAPI(trackingIcon);
+}
+
+        function fetchActiveOrdersFromAPI(icon) {
+    const callbackName = 'handleActiveOrdersCount_' + Date.now();
+    const script = document.createElement('script');
+    script.src = `${WEB_APP_URL}?get_active_count=1&callback=${callbackName}&t=${Date.now()}`;
+
+    // Timeout relativamente breve: se non risponde manteniamo icona nascosta (no flicker)
+    const timeoutMs = 5000;
+    const timeout = setTimeout(() => {
+        console.warn('⚠️ Timeout API tracking icon - manteniamo icona nascosta.');
+        cleanup();
+    }, timeoutMs);
+
+    window[callbackName] = function(response) {
+        clearTimeout(timeout);
+        try {
+            if (response && typeof response.count === 'number' && response.count > 0) {
+                // Server conferma ordini attivi -> mostra icona in modo controllato
+                icon.hidden = false;
+                icon.style.display = 'block';
+                icon.removeAttribute('aria-hidden');
+                console.log('✅ API conferma ordini attivi: icona mostrata');
+            } else {
+                // Server conferma 0 ordini attivi -> assicurati che local storage non contenga semafori residui
+                icon.hidden = true;
+                icon.style.display = 'none';
+                icon.setAttribute('aria-hidden', 'true');
+                console.log('ℹ️ API conferma 0 ordini attivi: icona nascosta');
+
+                // Pulizia locale forzata (opzionale ma consigliata)
+                clearAllLocalOrderData();
+                console.log('🗑️ LocalStorage relativo ordini pulito (API = 0)');
+            }
+        } catch (e) {
+            console.error('Errore nella callback API tracking:', e);
+            // fallback: mantieni nascosto
+            icon.hidden = true;
+            icon.style.display = 'none';
+            icon.setAttribute('aria-hidden', 'true');
+        } finally {
+            cleanup();
+        }
+    };
+
+    script.onerror = () => {
+        clearTimeout(timeout);
+        console.error('❌ Errore fetch API tracking icon, manteniamo icona nascosta');
+        cleanup();
+    };
+
+    function cleanup() {
+        try {
+            if (script.parentNode) document.body.removeChild(script);
+            delete window[callbackName];
+        } catch (e) {}
+    }
+
+    // Append script per JSONP
+    document.body.appendChild(script);
+}
+
 /**
  * Clear forzato di tutte le key local relative a ordini
  */
