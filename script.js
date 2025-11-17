@@ -206,21 +206,8 @@ function injectLoader() {
 
     const loaderHTML = `
     <div id="luxhaven-loader">
-        <div class="lh-bg-gradient"></div>
         <div class="lh-loader-content">
             <img src="assets/logo-azienda.png" alt="LuxHaven360" class="lh-logo">
-            <div class="lh-tagline">Curating Excellence</div>
-            
-            <div class="lh-loader-wrapper">
-                <div class="lh-ring"></div>
-                <div class="lh-ring"></div>
-                <div class="lh-ring"></div>
-            </div>
-
-            <div class="lh-progress-container">
-                <div class="lh-progress-fill"></div>
-            </div>
-            <div class="lh-loading-text">Caricamento</div>
         </div>
     </div>`;
     
@@ -247,15 +234,15 @@ window.addEventListener('pageshow', (event) => {
     }
 });
 
-// Modifica per caricamento iniziale: Mostra il loader per 3 secondi al load completo
+// Modifica per caricamento iniziale: Mostra il loader per 5 secondi al load completo
 window.addEventListener('load', () => {
     // Mostra il loader all'inizio (se non già visibile)
     showLoader();
     
-    // Nascondi dopo 3 secondi (3000ms)
+    // Nascondi dopo 5 secondi (5000ms)
     setTimeout(() => {
         hideLoader();
-    }, 3000);
+    }, 5000);
 });
 
 // Mostra il loader
