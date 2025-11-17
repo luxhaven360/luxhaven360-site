@@ -237,29 +237,14 @@ function hideLoaderImmediately() {
     }
 }
 
-// Forza nascondimento su pageshow (compreso persisted=true)
+// Aggiungi listener per nascondere loader su pageshow (quando si torna indietro) e load
 window.addEventListener('pageshow', (event) => {
-    const trackingIcon = document.getElementById('trackingIcon');
-    if (trackingIcon) {
-        trackingIcon.hidden = true;
-        trackingIcon.style.display = 'none';
-        trackingIcon.classList.remove('show');
-        trackingIcon.setAttribute('aria-hidden', 'true');
-    }
-    // Rilancia la verifica server per aggiornare lo stato
-    updateTrackingIcon();
-});
-
-// Listener storage: non mostrare in base a sola info locale
-window.addEventListener('storage', (event) => {
-    if (event.key === 'lh360_cart') updateCartIcon();
-    // Quando cambiano dati ordine in altre tab, verifica con server
-    if (event.key && (event.key.startsWith('lh360_order_') || event.key.startsWith('lh360_pending_'))) {
-        // Non mostrare basandosi sul locale: sempre richedi server
-        updateTrackingIcon();
+    hideLoaderImmediately();
+    if (event.persisted) {
+        // Reinit opzionali se la pagina è ripristinata dalla cache
+        initDynamicProducts(); // Esempio: ricarica prodotti se necessario
     }
 });
-
 
 window.addEventListener('load', hideLoaderImmediately);
 
