@@ -682,7 +682,7 @@
     <script>
     // CONFIGURAZIONE
     // URL della tua Web App Google Apps Script
-    const webAppUrl = 'https://script.google.com/macros/s/AKfycbxlkY2k_lXzhzZ0gjtQhDQEGNw9jUJzw2irwSPAkIY0NKn2hPQGsFv-PfTN2GLiN7wH/exec';
+    const webAppUrl = 'https://script.google.com/macros/s/AKfycbyTJwL6iy0NYLtx1_1tzHyLgq0GWkhqXx92wiGvT6oUzPinfeUJPQ1aC0lYmhaBB1eA/exec';
 
     // Variabile di sicurezza per evitare loop infiniti di caricamento
     let loadTimeout;
@@ -692,6 +692,8 @@
      * Al caricamento della pagina, inizia il recupero dati.
      */
     window.addEventListener('load', () => {
+        const startTime = Date.now();
+
         // 1. Imposta i link corretti per i pulsanti
         setupButtons();
 
@@ -701,11 +703,11 @@
         // 3. Recupera i dettagli dell'ordine (Email, ID, Pagamento)
         loadOrderDetails();
 
-        // 4. Timeout di sicurezza: se dopo 5 secondi non abbiamo dati, mostriamo comunque la pagina
+        // 4. Timeout di sicurezza: se dopo 10 secondi non abbiamo dati, mostriamo comunque la pagina (aumentato per adattarsi al ritardo minimo)
         loadTimeout = setTimeout(() => {
             console.warn('Timeout caricamento dati: forzatura visualizzazione.');
-            finalizePageLoad();
-        }, 5000);
+            delayFinalize(startTime);
+        }, 10000);
     });
 
     /**
@@ -756,6 +758,19 @@ setTimeout(() => {
     }
 
     /**
+     * FUNZIONE: Ritarda la finalizzazione per garantire almeno 8 secondi di visualizzazione del loader
+     */
+    function delayFinalize(startTime) {
+        const elapsed = Date.now() - startTime;
+        const remaining = 8000 - elapsed;
+        if (remaining > 0) {
+            setTimeout(finalizePageLoad, remaining);
+        } else {
+            finalizePageLoad();
+        }
+    }
+
+    /**
      * FUNZIONE: Configura i pulsanti CTA con i link assoluti corretti
      */
     function setupButtons() {
@@ -776,6 +791,7 @@ setTimeout(() => {
      * FUNZIONE: Recupera dettagli da Google Script (JSONP)
      */
     function loadOrderDetails() {
+        const startTime = Date.now(); // Riferimento al startTime dal window.load
         const urlParams = new URLSearchParams(window.location.search);
         const sessionId = urlParams.get('session_id');
         const orderIdParam = urlParams.get('id_ordine'); // Se passato via URL (fallback)
@@ -794,7 +810,7 @@ setTimeout(() => {
             // Se non c'è session ID, non possiamo fare fetch. Mostriamo la pagina.
             if (emailElem) emailElem.textContent = 'Non disponibile';
             if (paymentElem) paymentElem.textContent = 'Non disponibile';
-            finalizePageLoad();
+            delayFinalize(startTime);
             return;
         }
 
@@ -807,7 +823,7 @@ setTimeout(() => {
         // Gestione errore script (es. blocco adblocker o rete)
         script.onerror = () => {
             console.error('Errore script Google Apps.');
-            finalizePageLoad();
+            delayFinalize(startTime);
         };
 
         document.body.appendChild(script);
@@ -817,6 +833,7 @@ setTimeout(() => {
  * CALLBACK GLOBALE: Riceve i dati da Google Script
  */
 window.handleDetailsResponse = function(response) {
+    const startTime = Date.now() - (Date.now() - startTime); // Riferimento, ma meglio passare da load
     const emailElem = document.getElementById('emailValue');
     const paymentElem = document.getElementById('paymentValue');
     const orderNumElem = document.getElementById('orderNumber');
@@ -946,12 +963,7 @@ window.handleDetailsResponse = function(response) {
   };
   document.body.appendChild(triggerScript);
 
-  // NUOVO: Avvia polling per verificare registrazione in Order Tracking
-  if (currentOrderId) {
-    pollOrderRegistration(currentOrderId);
-  } else {
-    finalizePageLoad();
-  }
+  delayFinalize(startTime);
 };
 
 /**
@@ -1130,37 +1142,6 @@ function calculateDeliveryDate(daysFromNow) {
         }
 
         if (totalElem) totalElem.textContent = `€ ${total.toLocaleString('it-IT', {minimumFractionDigits: 2})}`;
-    }
-
-    /**
-     * NUOVA FUNZIONE: Polling per verificare se l'ordine è registrato in Order Tracking
-     * Prolunga la schermata di caricamento fino a conferma
-     */
-    function pollOrderRegistration(orderId) {
-        const callbackName = 'handleCheckResponse_' + Date.now();
-        const script = document.createElement('script');
-        script.src = `${webAppUrl}?action=check_order&order_id=${encodeURIComponent(orderId)}&callback=${callbackName}`;
-        script.async = true;
-
-        window[callbackName] = function(response) {
-            if (response && response.exists) {
-                console.log('✅ Ordine registrato in Order Tracking:', orderId);
-                finalizePageLoad();
-            } else {
-                console.log('⌛ Ordine non ancora registrato, riprovo tra 2 secondi...');
-                setTimeout(() => pollOrderRegistration(orderId), 2000); // Riprova ogni 2 secondi
-            }
-            // Pulisci
-            document.body.removeChild(script);
-            delete window[callbackName];
-        };
-
-        script.onerror = () => {
-            console.error('Errore polling check_order');
-            setTimeout(() => pollOrderRegistration(orderId), 2000); // Riprova in caso di errore
-        };
-
-        document.body.appendChild(script);
     }
 </script>    
 </body>
