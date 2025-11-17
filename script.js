@@ -1,3 +1,4 @@
+// filename: script.js
 // --- Nav & UI (tuo script esistente mantenuto e ampliato) ---
 
 // Navigation
@@ -246,7 +247,16 @@ window.addEventListener('pageshow', (event) => {
     }
 });
 
-window.addEventListener('load', hideLoaderImmediately);
+// Modifica per caricamento iniziale: Mostra il loader per 3 secondi al load completo
+window.addEventListener('load', () => {
+    // Mostra il loader all'inizio (se non già visibile)
+    showLoader();
+    
+    // Nascondi dopo 3 secondi (3000ms)
+    setTimeout(() => {
+        hideLoader();
+    }, 3000);
+});
 
 // Mostra il loader
 function showLoader() {
