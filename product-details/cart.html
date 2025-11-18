@@ -375,9 +375,14 @@
             margin-bottom: 2rem;
         }
 
-        .checkout-btn:hover {
+        .checkout-btn:hover:not(:disabled) {
             background: #f4f4f5;
             transform: scale(1.02);
+        }
+
+        .checkout-btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
         }
 
         /* Trust Badges */
@@ -699,119 +704,118 @@
         // Initialize
         renderCart();
 
-        /* --- INTEGRATION CHECKOUT (Sostituisci il blocco checkoutBtn esistente in cart.html) --- */
-const checkoutBtn = document.getElementById('checkoutBtn');
+        /* --- INTEGRATION CHECKOUT (FIX MOBILE) --- */
+        const checkoutBtn = document.getElementById('checkoutBtn');
 
-// Callback globale per la risposta da Google
-window.handleCheckoutResponse = function(response) {
-    if (response.error) {
-        // Nascondi il loader in caso di errore
-        const loader = document.getElementById('luxhaven-loader') || document.getElementById('temp-loader');
-        if (loader) loader.style.display = 'none';
-        
-        alert('Errore dal server: ' + response.error);
-    } else {
-        // Redirect al pagamento Stripe
-        window.location.href = response.url;
-    }
-    
-    // Rimuovi script temporaneo
-    const script = document.getElementById('checkout-script');
-    if (script) script.remove();
-};
+        // Callback globale per la risposta da Google
+        window.handleCheckoutResponse = function(response) {
+            if (response.error) {
+                // Nascondi il loader in caso di errore
+                const loader = document.getElementById('luxhaven-loader') || document.getElementById('temp-loader');
+                if (loader) loader.style.display = 'none';
+                
+                alert('Errore dal server: ' + response.error);
+            } else {
+                // Redirect al pagamento Stripe
+                window.location.href = response.url;
+            }
+            
+            // Rimuovi script temporaneo
+            const script = document.getElementById('checkout-script');
+            if (script) script.remove();
+        };
 
-// FIX MOBILE: Usa addEventListener con opzioni passive
-checkoutBtn.addEventListener('click', handleCheckout, { passive: false });
-checkoutBtn.addEventListener('touchend', handleCheckout, { passive: false });
+        // FIX MOBILE: Usa addEventListener con opzioni passive
+        checkoutBtn.addEventListener('click', handleCheckout, { passive: false });
+        checkoutBtn.addEventListener('touchend', handleCheckout, { passive: false });
 
-function handleCheckout(e) {
-    e.preventDefault();
-    e.stopPropagation();
-    
-    // Previeni doppio click
-    if (checkoutBtn.disabled) return;
-    checkoutBtn.disabled = true;
+        function handleCheckout(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            
+            // Previeni doppio click
+            if (checkoutBtn.disabled) return;
+            checkoutBtn.disabled = true;
 
-    // 1. Ricarica i dati freschi dal LocalStorage
-    const freshCart = JSON.parse(localStorage.getItem('lh360_cart')) || [];
+            // 1. Ricarica i dati freschi dal LocalStorage
+            const freshCart = JSON.parse(localStorage.getItem('lh360_cart')) || [];
 
-    // 2. Filtra eventuali elementi corrotti o nulli
-    const validItems = freshCart.filter(item => item && item.title && item.price);
+            // 2. Filtra eventuali elementi corrotti o nulli
+            const validItems = freshCart.filter(item => item && item.title && item.price);
 
-    if (validItems.length === 0) {
-        alert('Il carrello è vuoto!');
-        checkoutBtn.disabled = false;
-        return;
-    }
+            if (validItems.length === 0) {
+                alert('Il carrello è vuoto!');
+                checkoutBtn.disabled = false;
+                return;
+            }
 
-    // 3. Mostra il Loader
-    const btnOriginalText = checkoutBtn.innerHTML;
-    if (typeof showLoader === 'function') {
-        showLoader();
-    } else {
-        // Fallback rapido se non hai caricato il loader globale
-        checkoutBtn.innerHTML = 'Elaborazione...';
-    }
+            // 3. Mostra il Loader
+            const btnOriginalText = checkoutBtn.innerHTML;
+            if (typeof showLoader === 'function') {
+                showLoader();
+            } else {
+                // Fallback rapido se non hai caricato il loader globale
+                checkoutBtn.innerHTML = 'Elaborazione...';
+            }
 
-    // 4. Ricalcola totali e spedizione sui dati freschi
-    const subtotal = validItems.reduce((sum, item) => sum + (item.price * (item.qty || 1)), 0);
-    const shipping = subtotal >= 150 ? 0 : 15;
+            // 4. Ricalcola totali e spedizione sui dati freschi
+            const subtotal = validItems.reduce((sum, item) => sum + (item.price * (item.qty || 1)), 0);
+            const shipping = subtotal >= 150 ? 0 : 15;
 
-    // 5. Prepara il pacchetto dati pulito
-    const data = {
-        cart: validItems.map(item => ({
-            title: item.title,
-            price: item.price,
-            qty: item.qty || 1,
-            color: item.color || '',
-            size: item.size || '',
-            currency: item.currency || 'EUR'
-        })),
-        shipping: shipping
-    };
+            // 5. Prepara il pacchetto dati pulito
+            const data = {
+                cart: validItems.map(item => ({
+                    title: item.title,
+                    price: item.price,
+                    qty: item.qty || 1,
+                    color: item.color || '',
+                    size: item.size || '',
+                    currency: item.currency || 'EUR'
+                })),
+                shipping: shipping
+            };
 
-    console.log("Invio dati a Google Script:", data);
+            console.log("Invio dati a Google Script:", data);
 
-    // 6. Invia richiesta JSONP
-    const dataStr = encodeURIComponent(JSON.stringify(data));
-    const callback = 'handleCheckoutResponse';
-    const webAppUrl = 'https://script.google.com/macros/s/AKfycbyTJwL6iy0NYLtx1_1tzHyLgq0GWkhqXx92wiGvT6oUzPinfeUJPQ1aC0lYmhaBB1eA/exec';
-    const scriptUrl = `${webAppUrl}?data=${dataStr}&callback=${callback}&t=${Date.now()}`;
+            // 6. Invia richiesta JSONP
+            const dataStr = encodeURIComponent(JSON.stringify(data));
+            const callback = 'handleCheckoutResponse';
+            const scriptUrl = `${webAppUrl}?data=${dataStr}&callback=${callback}&t=${Date.now()}`;
 
-    const script = document.createElement('script');
-    script.id = 'checkout-script';
-    script.src = scriptUrl;
-    
-    // Gestione errore di rete (es. script bloccato)
-    script.onerror = () => {
-        alert("Errore di connessione al server di pagamento. Riprova.");
-        if (typeof hideLoader === 'function') {
-            hideLoader();
-        } else {
-            checkoutBtn.innerHTML = btnOriginalText;
+            const script = document.createElement('script');
+            script.id = 'checkout-script';
+            script.src = scriptUrl;
+            
+            // Gestione errore di rete (es. script bloccato)
+            script.onerror = () => {
+                alert("Errore di connessione al server di pagamento. Riprova.");
+                if (typeof hideLoader === 'function') {
+                    hideLoader();
+                } else {
+                    checkoutBtn.innerHTML = btnOriginalText;
+                }
+                checkoutBtn.disabled = false;
+            };
+
+            // Timeout di sicurezza (15 secondi)
+            const timeout = setTimeout(() => {
+                alert("Il server impiega troppo tempo a rispondere. Riprova.");
+                if (script.parentNode) script.remove();
+                if (typeof hideLoader === 'function') {
+                    hideLoader();
+                } else {
+                    checkoutBtn.innerHTML = btnOriginalText;
+                }
+                checkoutBtn.disabled = false;
+            }, 15000);
+
+            // Cleanup timeout se lo script carica
+            script.onload = () => {
+                clearTimeout(timeout);
+            };
+
+            document.body.appendChild(script);
         }
-        checkoutBtn.disabled = false;
-    };
-
-    // Timeout di sicurezza (15 secondi)
-    const timeout = setTimeout(() => {
-        alert("Il server impiega troppo tempo a rispondere. Riprova.");
-        if (script.parentNode) script.remove();
-        if (typeof hideLoader === 'function') {
-            hideLoader();
-        } else {
-            checkoutBtn.innerHTML = btnOriginalText;
-        }
-        checkoutBtn.disabled = false;
-    }, 15000);
-
-    // Cleanup timeout se lo script carica
-    script.onload = () => {
-        clearTimeout(timeout);
-    };
-
-    document.body.appendChild(script);
-}
     </script>
 </body>
 </html>
