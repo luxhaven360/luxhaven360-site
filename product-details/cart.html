@@ -687,98 +687,94 @@
 
         renderCart();
 
-/* --- CHECKOUT LOGIC (MOBILE FIX) --- */
-// Definizione globale della callback
-window.handleCheckoutResponse = function(response) {
-    console.log("Risposta server ricevuta:", response);
-    
-    const btn = document.getElementById('checkoutBtn');
-    if (!response || response.error) {
-        alert('Errore dal server: ' + (response ? response.error : 'Risposta vuota'));
-        if(btn) {
-            btn.innerHTML = 'Procedi al Checkout';
-            btn.disabled = false;
-            btn.style.opacity = '1';
+/* --- CHECKOUT LOGIC (MOBILE FIX v2) --- */
+        window.handleCheckoutResponse = function(response) {
+            const btn = document.getElementById('checkoutBtn');
+            
+            if (!response || response.error) {
+                alert('Nota dal server: ' + (response ? response.error : 'Errore sconosciuto'));
+                if(btn) {
+                    btn.innerText = 'Procedi al Checkout';
+                    btn.style.opacity = '1';
+                    btn.style.pointerEvents = 'auto'; // Riabilita click
+                }
+            } else if (response.url) {
+                // Redirect sicuro per mobile
+                window.location.assign(response.url);
+            }
+            
+            const script = document.getElementById('checkout-script');
+            if (script) script.remove();
+        };
+
+        function initiateCheckout(e) {
+            // Importante: NON usare preventDefault() se non strettamente necessario su mobile,
+            // ma qui serve perché è un button type="button".
+            if (e) e.preventDefault();
+
+            const btn = document.getElementById('checkoutBtn');
+            if (!btn) return;
+            
+            // Controllo anti-doppio click basato su stile
+            if (btn.style.pointerEvents === 'none') return;
+
+            const freshCart = JSON.parse(localStorage.getItem('lh360_cart')) || [];
+            const validItems = freshCart.filter(item => item && item.title && item.price);
+
+            if (validItems.length === 0) {
+                alert('Il carrello è vuoto!');
+                return;
+            }
+
+            // FIX MOBILE: Invece di 'disabled = true' (che può killare la fetch su iOS),
+            // usiamo pointer-events: none per bloccare i click visivamente ma mantenere l'elemento attivo.
+            btn.innerText = 'Elaborazione...';
+            btn.style.opacity = '0.7';
+            btn.style.pointerEvents = 'none';
+
+            const subtotal = validItems.reduce((sum, item) => sum + (item.price * (item.qty || 1)), 0);
+            const shipping = subtotal >= 150 ? 0 : 15;
+
+            const data = {
+                cart: validItems.map(item => ({
+                    title: item.title,
+                    price: item.price,
+                    qty: item.qty || 1,
+                    color: item.color || '',
+                    size: item.size || '',
+                    currency: item.currency || 'EUR'
+                })),
+                shipping: shipping
+            };
+
+            const dataStr = encodeURIComponent(JSON.stringify(data));
+            const callback = 'handleCheckoutResponse';
+            // Timestamp per evitare cache
+            const scriptUrl = `${webAppUrl}?data=${dataStr}&callback=${callback}&t=${Date.now()}`;
+
+            const script = document.createElement('script');
+            script.id = 'checkout-script';
+            script.src = scriptUrl;
+            
+            // Gestione Errore (Script non caricato)
+            script.onerror = () => {
+                alert("Impossibile connettersi al server di pagamento. Riprova.");
+                btn.innerText = 'Procedi al Checkout';
+                btn.style.opacity = '1';
+                btn.style.pointerEvents = 'auto';
+            };
+
+            // Appending a BODY è più sicuro per l'esecuzione su alcuni browser mobili
+            document.body.appendChild(script);
         }
-    } else if (response.url) {
-        // Usa assign per redirect più affidabile su mobile
-        window.location.assign(response.url);
-    }
-    
-    // Pulizia script
-    const script = document.getElementById('checkout-script');
-    if (script) script.remove();
-};
 
-function initiateCheckout(e) {
-    if (e) e.preventDefault(); // Importante per touch events
-
-    const btn = document.getElementById('checkoutBtn');
-    if (!btn || btn.disabled) return;
-
-    // Recupera dati freschi
-    const freshCart = JSON.parse(localStorage.getItem('lh360_cart')) || [];
-    const validItems = freshCart.filter(item => item && item.title && item.price);
-
-    if (validItems.length === 0) {
-        alert('Il carrello è vuoto!');
-        return;
-    }
-
-    // Feedback Visivo Immediato
-    btn.innerHTML = 'Elaborazione in corso...';
-    btn.disabled = true;
-    btn.style.opacity = '0.7';
-
-    const subtotal = validItems.reduce((sum, item) => sum + (item.price * (item.qty || 1)), 0);
-    const shipping = subtotal >= 150 ? 0 : 15;
-
-    const data = {
-        cart: validItems.map(item => ({
-            title: item.title,
-            price: item.price,
-            qty: item.qty || 1,
-            color: item.color || '',
-            size: item.size || '',
-            currency: item.currency || 'EUR'
-        })),
-        shipping: shipping
-    };
-
-    // Creazione Script JSONP
-    const dataStr = encodeURIComponent(JSON.stringify(data));
-    const callback = 'handleCheckoutResponse';
-    // Aggiungi timestamp per evitare caching mobile
-    const scriptUrl = `${webAppUrl}?data=${dataStr}&callback=${callback}&t=${Date.now()}`;
-
-    const script = document.createElement('script');
-    script.id = 'checkout-script';
-    script.src = scriptUrl;
-    
-    script.onerror = () => {
-        alert("Errore di connessione. Verifica la tua rete.");
-        btn.innerHTML = 'Procedi al Checkout';
-        btn.disabled = false;
-        btn.style.opacity = '1';
-    };
-
-    // Append a HEAD è più pulito per scripts
-    document.head.appendChild(script);
-}
-
-// Binding Eventi Robusto per Mobile
-const checkoutBtn = document.getElementById('checkoutBtn');
-if (checkoutBtn) {
-    // Gestione standard click (Desktop)
-    checkoutBtn.addEventListener('click', initiateCheckout);
-    
-    // Gestione fallback touch (Mobile) se click fallisce
-    checkoutBtn.addEventListener('touchend', function(e) {
-        // Previene doppio trigger se il browser supporta entrambi bene
-        e.preventDefault(); 
-        initiateCheckout(e);
-    }, { passive: false });
-}
+        // Binding Eventi Semplificato
+        const checkoutBtn = document.getElementById('checkoutBtn');
+        if (checkoutBtn) {
+            // Usiamo SOLO 'click'. I browser moderni (iOS/Android) gestiscono il click perfettamente.
+            // Rimuovere 'touchstart'/'touchend' risolve i conflitti di ghost clicks.
+            checkoutBtn.onclick = initiateCheckout;
+        }
     </script>
 </body>
 </html>
