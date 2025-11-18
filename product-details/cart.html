@@ -583,36 +583,11 @@
         </div>
     </div>
 
-    <script src="../script.js"></script>  <!-- Included for loader utilities and consistency -->
     <script>
         let cart = JSON.parse(localStorage.getItem('lh360_cart')) || [];
 
         // URL CORRETTO della Web App
         const webAppUrl = 'https://script.google.com/macros/s/AKfycbyTJwL6iy0NYLtx1_1tzHyLgq0GWkhqXx92wiGvT6oUzPinfeUJPQ1aC0lYmhaBB1eA/exec';
-
-        // Callback globale per la risposta da Google
-        window.handleCheckoutResponse = function(response) {
-            if (response.error) {
-                // Nascondi il loader in caso di errore (se presente)
-                if (typeof hideLoader === 'function') hideLoader();
-                
-                alert('Errore dal server: ' + response.error);
-                
-                // Reset button state
-                checkoutBtn.innerHTML = 'Procedi al Checkout';
-                checkoutBtn.disabled = false;
-            } else {
-                // Nascondi loader prima del redirect
-                if (typeof hideLoader === 'function') hideLoader();
-                
-                // Redirect al pagamento Stripe
-                window.location.href = response.url;
-            }
-            
-            // Rimuovi script temporaneo
-            const script = document.getElementById('checkout-script');
-            if (script) script.remove();
-        };
 
         // Render cart items dynamically (no quantity display/modify)
         function renderCart() {
@@ -731,17 +706,11 @@ const checkoutBtn = document.getElementById('checkoutBtn');
 window.handleCheckoutResponse = function(response) {
     if (response.error) {
         // Nascondi il loader in caso di errore (se presente)
-        if (typeof hideLoader === 'function') hideLoader();
+        const loader = document.getElementById('luxhaven-loader') || document.getElementById('temp-loader');
+        if (loader) loader.style.display = 'none';
         
         alert('Errore dal server: ' + response.error);
-        
-        // Reset button state for fallback cases
-        checkoutBtn.innerHTML = 'Procedi al Checkout';
-        checkoutBtn.disabled = false;
     } else {
-        // Nascondi loader prima del redirect
-        if (typeof hideLoader === 'function') hideLoader();
-        
         // Redirect al pagamento Stripe
         window.location.href = response.url;
     }
@@ -765,8 +734,15 @@ checkoutBtn.addEventListener('click', (e) => {
         return;
     }
 
-    // 3. Mostra il Loader (ora disponibile da script.js)
-    showLoader();
+    // 3. Mostra il Loader (usa la funzione showLoader se hai integrato lo script precedente, o fallback)
+    if (typeof showLoader === 'function') {
+        showLoader();
+    } else {
+        // Fallback rapido se non hai caricato il loader globale
+        const btnText = checkoutBtn.innerHTML;
+        checkoutBtn.innerHTML = 'Elaborazione...';
+        checkoutBtn.disabled = true;
+    }
 
     // 4. Ricalcola totali e spedizione sui dati freschi
     const subtotal = validItems.reduce((sum, item) => sum + (item.price * (item.qty || 1)), 0);
@@ -798,8 +774,8 @@ checkoutBtn.addEventListener('click', (e) => {
     
     // Gestione errore di rete (es. script bloccato)
     script.onerror = () => {
-        hideLoader();
         alert("Errore di connessione al server di pagamento.");
+        if (typeof hideLoader === 'function') hideLoader();
         checkoutBtn.innerHTML = 'Procedi al Checkout';
         checkoutBtn.disabled = false;
     };
