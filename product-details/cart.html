@@ -579,10 +579,10 @@
     <script>
         let cart = JSON.parse(localStorage.getItem('lh360_cart')) || [];
 
-        // URL CORRETTO della Web App
+        // URL della Web App Google
         const webAppUrl = 'https://script.google.com/macros/s/AKfycbyTJwL6iy0NYLtx1_1tzHyLgq0GWkhqXx92wiGvT6oUzPinfeUJPQ1aC0lYmhaBB1eA/exec';
 
-        // Render cart items dynamically (no quantity display/modify)
+        // --- FUNZIONI DI RENDERING CARRELLO (Invariate) ---
         function renderCart() {
             const cartItemsContainer = document.getElementById('cartItems');
             cartItemsContainer.innerHTML = '';
@@ -594,19 +594,10 @@
                     if (item.color || item.size) {
                         variantHTML = '<div class="item-variant">';
                         if (item.color) {
-                            variantHTML += `
-                                <div class="variant-detail">
-                                    <span class="color-dot" style="background-color: ${item.color};"></span>
-                                    <span>Colore</span>
-                                </div>
-                            `;
+                            variantHTML += `<div class="variant-detail"><span class="color-dot" style="background-color: ${item.color};"></span><span>Colore</span></div>`;
                         }
                         if (item.size) {
-                            variantHTML += `
-                                <div class="variant-detail">
-                                    <span>Taglia ${item.size}</span>
-                                </div>
-                            `;
+                            variantHTML += `<div class="variant-detail"><span>Taglia ${item.size}</span></div>`;
                         }
                         variantHTML += '</div>';
                     }
@@ -650,30 +641,25 @@
         function updateSummary() {
             let subtotal = 0;
             let itemCount = 0;
-            let discount = 0;
-
             cart.forEach(item => {
                 subtotal += item.price * (item.qty || 1);
                 itemCount += (item.qty || 1);
             });
-
             const shipping = subtotal >= 150 ? 0 : 15;
-            const total = subtotal - discount + shipping;
+            const total = subtotal + shipping;
 
             document.getElementById('subtotal').textContent = `€ ${subtotal.toLocaleString('it-IT', { minimumFractionDigits: 2 })}`;
             document.getElementById('shipping').textContent = shipping === 0 ? 'Gratuita' : `€ ${shipping.toFixed(2)}`;
-            document.getElementById('discount').textContent = `- € ${discount.toFixed(2)}`;
             document.getElementById('total').textContent = `€ ${total.toLocaleString('it-IT', { minimumFractionDigits: 2 })}`;
             document.getElementById('itemCount').textContent = `${itemCount} Articoli`;
-
+            
             const progress = Math.min(100, (subtotal / 150) * 100);
             document.getElementById('progressFill').style.width = `${progress}%`;
         }
 
         function checkEmptyCart() {
             document.querySelector('.cart-layout').style.gridTemplateColumns = '1fr';
-            const container = document.getElementById('cartItems');
-            container.innerHTML = `
+            document.getElementById('cartItems').innerHTML = `
                 <div class="empty-cart">
                     <div class="empty-cart-icon">🛒</div>
                     <h2>Il tuo carrello è vuoto</h2>
@@ -682,42 +668,20 @@
                 </div>
             `;
             document.querySelector('.cart-summary').style.display = 'none';
-            updateSummary();
         }
 
         renderCart();
 
-/* --- CHECKOUT LOGIC (MOBILE FIX v2) --- */
-        window.handleCheckoutResponse = function(response) {
-            const btn = document.getElementById('checkoutBtn');
-            
-            if (!response || response.error) {
-                alert('Nota dal server: ' + (response ? response.error : 'Errore sconosciuto'));
-                if(btn) {
-                    btn.innerText = 'Procedi al Checkout';
-                    btn.style.opacity = '1';
-                    btn.style.pointerEvents = 'auto'; // Riabilita click
-                }
-            } else if (response.url) {
-                // Redirect sicuro per mobile
-                window.location.assign(response.url);
-            }
-            
-            const script = document.getElementById('checkout-script');
-            if (script) script.remove();
-        };
-
-        function initiateCheckout(e) {
-            // Importante: NON usare preventDefault() se non strettamente necessario su mobile,
-            // ma qui serve perché è un button type="button".
+        /* --- NUOVA LOGICA CHECKOUT (MOBILE FIX FETCH) --- */
+        
+        async function initiateCheckout(e) {
+            // Previene comportamenti di default su mobile
             if (e) e.preventDefault();
 
             const btn = document.getElementById('checkoutBtn');
-            if (!btn) return;
+            if (!btn || btn.disabled) return;
             
-            // Controllo anti-doppio click basato su stile
-            if (btn.style.pointerEvents === 'none') return;
-
+            // 1. Controllo carrello
             const freshCart = JSON.parse(localStorage.getItem('lh360_cart')) || [];
             const validItems = freshCart.filter(item => item && item.title && item.price);
 
@@ -726,12 +690,13 @@
                 return;
             }
 
-            // FIX MOBILE: Invece di 'disabled = true' (che può killare la fetch su iOS),
-            // usiamo pointer-events: none per bloccare i click visivamente ma mantenere l'elemento attivo.
-            btn.innerText = 'Elaborazione...';
+            // 2. Feedback Visivo
+            const originalText = btn.innerText;
+            btn.innerText = 'Connessione sicura...';
             btn.style.opacity = '0.7';
-            btn.style.pointerEvents = 'none';
+            btn.disabled = true; // Disabilita temporaneamente
 
+            // 3. Preparazione Dati
             const subtotal = validItems.reduce((sum, item) => sum + (item.price * (item.qty || 1)), 0);
             const shipping = subtotal >= 150 ? 0 : 15;
 
@@ -747,32 +712,57 @@
                 shipping: shipping
             };
 
-            const dataStr = encodeURIComponent(JSON.stringify(data));
-            const callback = 'handleCheckoutResponse';
-            // Timestamp per evitare cache
-            const scriptUrl = `${webAppUrl}?data=${dataStr}&callback=${callback}&t=${Date.now()}`;
+            // 4. Esecuzione Fetch (Metodo Moderno)
+            try {
+                const dataStr = encodeURIComponent(JSON.stringify(data));
+                const callbackName = 'handleCheckoutResponse'; // Nome fittizio per il server
+                // Aggiungiamo un timestamp per evitare che il browser usi una risposta vecchia in cache
+                const targetUrl = `${webAppUrl}?data=${dataStr}&callback=${callbackName}&t=${Date.now()}`;
 
-            const script = document.createElement('script');
-            script.id = 'checkout-script';
-            script.src = scriptUrl;
-            
-            // Gestione Errore (Script non caricato)
-            script.onerror = () => {
-                alert("Impossibile connettersi al server di pagamento. Riprova.");
-                btn.innerText = 'Procedi al Checkout';
+                const response = await fetch(targetUrl, {
+                    method: 'GET',
+                    mode: 'cors', // Importante per permettere la richiesta
+                    headers: {
+                        'Content-Type': 'text/plain'
+                    }
+                });
+
+                if (!response.ok) throw new Error('Errore di rete Google');
+
+                // 5. Parsing Manuale della Risposta
+                // Il server risponde con: handleCheckoutResponse({...})
+                // Noi prendiamo il testo e estraiamo il JSON interno
+                const textResponse = await response.text();
+                
+                // Estrae tutto ciò che c'è tra la prima parentesi aperta e l'ultima chiusa
+                const jsonString = textResponse.substring(textResponse.indexOf('(') + 1, textResponse.lastIndexOf(')'));
+                const result = JSON.parse(jsonString);
+
+                // 6. Gestione Risultato
+                if (result.error) {
+                    throw new Error(result.error);
+                } else if (result.url) {
+                    // Successo! Redirect
+                    btn.innerText = 'Reindirizzamento...';
+                    window.location.assign(result.url);
+                } else {
+                    throw new Error('Risposta non valida dal server');
+                }
+
+            } catch (err) {
+                console.error(err);
+                alert("Impossibile avviare il pagamento: " + err.message);
+                // Ripristina il bottone in caso di errore
+                btn.innerText = originalText;
                 btn.style.opacity = '1';
-                btn.style.pointerEvents = 'auto';
-            };
-
-            // Appending a BODY è più sicuro per l'esecuzione su alcuni browser mobili
-            document.body.appendChild(script);
+                btn.disabled = false;
+            }
         }
 
-        // Binding Eventi Semplificato
+        // Binding Eventi
         const checkoutBtn = document.getElementById('checkoutBtn');
         if (checkoutBtn) {
-            // Usiamo SOLO 'click'. I browser moderni (iOS/Android) gestiscono il click perfettamente.
-            // Rimuovere 'touchstart'/'touchend' risolve i conflitti di ghost clicks.
+            // Usiamo 'onclick' che è universalmente supportato
             checkoutBtn.onclick = initiateCheckout;
         }
     </script>
