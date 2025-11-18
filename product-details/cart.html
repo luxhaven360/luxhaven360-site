@@ -699,13 +699,13 @@
         // Initialize
         renderCart();
 
-        /* --- INTEGRATION CHECKOUT (Sostituisci il blocco checkoutBtn esistente) --- */
+        /* --- INTEGRATION CHECKOUT (Sostituisci il blocco checkoutBtn esistente in cart.html) --- */
 const checkoutBtn = document.getElementById('checkoutBtn');
 
 // Callback globale per la risposta da Google
 window.handleCheckoutResponse = function(response) {
     if (response.error) {
-        // Nascondi il loader in caso di errore (se presente)
+        // Nascondi il loader in caso di errore
         const loader = document.getElementById('luxhaven-loader') || document.getElementById('temp-loader');
         if (loader) loader.style.display = 'none';
         
@@ -720,10 +720,19 @@ window.handleCheckoutResponse = function(response) {
     if (script) script.remove();
 };
 
-checkoutBtn.addEventListener('click', (e) => {
-    e.preventDefault();
+// FIX MOBILE: Usa addEventListener con opzioni passive
+checkoutBtn.addEventListener('click', handleCheckout, { passive: false });
+checkoutBtn.addEventListener('touchend', handleCheckout, { passive: false });
 
-    // 1. Ricarica i dati freschi dal LocalStorage per evitare errori di stato
+function handleCheckout(e) {
+    e.preventDefault();
+    e.stopPropagation();
+    
+    // Previeni doppio click
+    if (checkoutBtn.disabled) return;
+    checkoutBtn.disabled = true;
+
+    // 1. Ricarica i dati freschi dal LocalStorage
     const freshCart = JSON.parse(localStorage.getItem('lh360_cart')) || [];
 
     // 2. Filtra eventuali elementi corrotti o nulli
@@ -731,17 +740,17 @@ checkoutBtn.addEventListener('click', (e) => {
 
     if (validItems.length === 0) {
         alert('Il carrello è vuoto!');
+        checkoutBtn.disabled = false;
         return;
     }
 
-    // 3. Mostra il Loader (usa la funzione showLoader se hai integrato lo script precedente, o fallback)
+    // 3. Mostra il Loader
+    const btnOriginalText = checkoutBtn.innerHTML;
     if (typeof showLoader === 'function') {
         showLoader();
     } else {
         // Fallback rapido se non hai caricato il loader globale
-        const btnText = checkoutBtn.innerHTML;
         checkoutBtn.innerHTML = 'Elaborazione...';
-        checkoutBtn.disabled = true;
     }
 
     // 4. Ricalcola totali e spedizione sui dati freschi
@@ -761,12 +770,13 @@ checkoutBtn.addEventListener('click', (e) => {
         shipping: shipping
     };
 
-    console.log("Invio dati a Google Script:", data); // Debug console (F12)
+    console.log("Invio dati a Google Script:", data);
 
     // 6. Invia richiesta JSONP
     const dataStr = encodeURIComponent(JSON.stringify(data));
     const callback = 'handleCheckoutResponse';
-    const scriptUrl = `${webAppUrl}?data=${dataStr}&callback=${callback}`;
+    const webAppUrl = 'https://script.google.com/macros/s/AKfycbyTJwL6iy0NYLtx1_1tzHyLgq0GWkhqXx92wiGvT6oUzPinfeUJPQ1aC0lYmhaBB1eA/exec';
+    const scriptUrl = `${webAppUrl}?data=${dataStr}&callback=${callback}&t=${Date.now()}`;
 
     const script = document.createElement('script');
     script.id = 'checkout-script';
@@ -774,14 +784,34 @@ checkoutBtn.addEventListener('click', (e) => {
     
     // Gestione errore di rete (es. script bloccato)
     script.onerror = () => {
-        alert("Errore di connessione al server di pagamento.");
-        if (typeof hideLoader === 'function') hideLoader();
-        checkoutBtn.innerHTML = 'Procedi al Checkout';
+        alert("Errore di connessione al server di pagamento. Riprova.");
+        if (typeof hideLoader === 'function') {
+            hideLoader();
+        } else {
+            checkoutBtn.innerHTML = btnOriginalText;
+        }
         checkoutBtn.disabled = false;
     };
 
+    // Timeout di sicurezza (15 secondi)
+    const timeout = setTimeout(() => {
+        alert("Il server impiega troppo tempo a rispondere. Riprova.");
+        if (script.parentNode) script.remove();
+        if (typeof hideLoader === 'function') {
+            hideLoader();
+        } else {
+            checkoutBtn.innerHTML = btnOriginalText;
+        }
+        checkoutBtn.disabled = false;
+    }, 15000);
+
+    // Cleanup timeout se lo script carica
+    script.onload = () => {
+        clearTimeout(timeout);
+    };
+
     document.body.appendChild(script);
-});
+}
     </script>
 </body>
 </html>
