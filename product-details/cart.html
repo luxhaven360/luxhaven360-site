@@ -474,23 +474,18 @@
 </head>
 <body>
     <div class="container">
-        <!-- Header -->
         <div class="cart-header">
             <h1 class="cart-title">Il Tuo Carrello</h1>
             <p class="cart-subtitle" id="itemCount">0 Articoli</p>
         </div>
 
         <div class="cart-layout">
-            <!-- Cart Items -->
             <div class="cart-items" id="cartItems">
-                <!-- Items will be generated dynamically -->
-            </div>
+                </div>
 
-            <!-- Summary Sidebar -->
             <div class="cart-summary">
                 <h2 class="summary-title">Riepilogo Ordine</h2>
 
-                <!-- Progress to Free Shipping -->
                 <div class="progress-section">
                     <div class="progress-text">
                         <span>Spedizione gratuita a</span>
@@ -514,7 +509,6 @@
                     <span class="summary-value" id="discount" style="color: #34d399;">- € 0,00</span>
                 </div>
 
-                <!-- Promo Code -->
                 <div class="promo-code">
                     <label class="promo-label">Codice Promozionale</label>
                     <div class="promo-input-wrapper">
@@ -528,7 +522,7 @@
                     <span class="summary-value" id="total">€ 0,00</span>
                 </div>
 
-                <button class="checkout-btn" id="checkoutBtn">Procedi al Checkout</button>
+                <button type="button" class="checkout-btn" id="checkoutBtn">Procedi al Checkout</button>
 
                 <div class="trust-badges">
                     <div class="trust-badge">
@@ -547,7 +541,6 @@
             </div>
         </div>
 
-        <!-- Recommended Products -->
         <div class="recommended-section">
             <h2 class="recommended-title">Potrebbero interessarti anche</h2>
             <div class="recommended-grid">
@@ -641,7 +634,6 @@
             updateSummary();
         }
 
-        // Remove item
         function removeItem(index) {
             const itemElement = document.querySelector(`[data-id="${index}"]`);
             if (itemElement) {
@@ -655,15 +647,14 @@
             }
         }
 
-        // Update summary (uses internal qty for calculations, no display)
         function updateSummary() {
             let subtotal = 0;
             let itemCount = 0;
             let discount = 0;
 
             cart.forEach(item => {
-                subtotal += item.price * item.qty;
-                itemCount += item.qty;
+                subtotal += item.price * (item.qty || 1);
+                itemCount += (item.qty || 1);
             });
 
             const shipping = subtotal >= 150 ? 0 : 15;
@@ -675,12 +666,10 @@
             document.getElementById('total').textContent = `€ ${total.toLocaleString('it-IT', { minimumFractionDigits: 2 })}`;
             document.getElementById('itemCount').textContent = `${itemCount} Articoli`;
 
-            // Update progress bar
             const progress = Math.min(100, (subtotal / 150) * 100);
             document.getElementById('progressFill').style.width = `${progress}%`;
         }
 
-        // Check if cart is empty
         function checkEmptyCart() {
             document.querySelector('.cart-layout').style.gridTemplateColumns = '1fr';
             const container = document.getElementById('cartItems');
@@ -696,37 +685,39 @@
             updateSummary();
         }
 
-        // Initialize
         renderCart();
 
-        /* --- INTEGRATION CHECKOUT (Sostituisci il blocco checkoutBtn esistente) --- */
-const checkoutBtn = document.getElementById('checkoutBtn');
-
-// Callback globale per la risposta da Google
+/* --- CHECKOUT LOGIC (MOBILE FIX) --- */
+// Definizione globale della callback
 window.handleCheckoutResponse = function(response) {
-    if (response.error) {
-        // Nascondi il loader in caso di errore (se presente)
-        const loader = document.getElementById('luxhaven-loader') || document.getElementById('temp-loader');
-        if (loader) loader.style.display = 'none';
-        
-        alert('Errore dal server: ' + response.error);
-    } else {
-        // Redirect al pagamento Stripe
-        window.location.href = response.url;
+    console.log("Risposta server ricevuta:", response);
+    
+    const btn = document.getElementById('checkoutBtn');
+    if (!response || response.error) {
+        alert('Errore dal server: ' + (response ? response.error : 'Risposta vuota'));
+        if(btn) {
+            btn.innerHTML = 'Procedi al Checkout';
+            btn.disabled = false;
+            btn.style.opacity = '1';
+        }
+    } else if (response.url) {
+        // Usa assign per redirect più affidabile su mobile
+        window.location.assign(response.url);
     }
     
-    // Rimuovi script temporaneo
+    // Pulizia script
     const script = document.getElementById('checkout-script');
     if (script) script.remove();
 };
 
-checkoutBtn.addEventListener('click', (e) => {
-    e.preventDefault();
+function initiateCheckout(e) {
+    if (e) e.preventDefault(); // Importante per touch events
 
-    // 1. Ricarica i dati freschi dal LocalStorage per evitare errori di stato
+    const btn = document.getElementById('checkoutBtn');
+    if (!btn || btn.disabled) return;
+
+    // Recupera dati freschi
     const freshCart = JSON.parse(localStorage.getItem('lh360_cart')) || [];
-
-    // 2. Filtra eventuali elementi corrotti o nulli
     const validItems = freshCart.filter(item => item && item.title && item.price);
 
     if (validItems.length === 0) {
@@ -734,21 +725,14 @@ checkoutBtn.addEventListener('click', (e) => {
         return;
     }
 
-    // 3. Mostra il Loader (usa la funzione showLoader se hai integrato lo script precedente, o fallback)
-    if (typeof showLoader === 'function') {
-        showLoader();
-    } else {
-        // Fallback rapido se non hai caricato il loader globale
-        const btnText = checkoutBtn.innerHTML;
-        checkoutBtn.innerHTML = 'Elaborazione...';
-        checkoutBtn.disabled = true;
-    }
+    // Feedback Visivo Immediato
+    btn.innerHTML = 'Elaborazione in corso...';
+    btn.disabled = true;
+    btn.style.opacity = '0.7';
 
-    // 4. Ricalcola totali e spedizione sui dati freschi
     const subtotal = validItems.reduce((sum, item) => sum + (item.price * (item.qty || 1)), 0);
     const shipping = subtotal >= 150 ? 0 : 15;
 
-    // 5. Prepara il pacchetto dati pulito
     const data = {
         cart: validItems.map(item => ({
             title: item.title,
@@ -761,27 +745,40 @@ checkoutBtn.addEventListener('click', (e) => {
         shipping: shipping
     };
 
-    console.log("Invio dati a Google Script:", data); // Debug console (F12)
-
-    // 6. Invia richiesta JSONP
+    // Creazione Script JSONP
     const dataStr = encodeURIComponent(JSON.stringify(data));
     const callback = 'handleCheckoutResponse';
-    const scriptUrl = `${webAppUrl}?data=${dataStr}&callback=${callback}`;
+    // Aggiungi timestamp per evitare caching mobile
+    const scriptUrl = `${webAppUrl}?data=${dataStr}&callback=${callback}&t=${Date.now()}`;
 
     const script = document.createElement('script');
     script.id = 'checkout-script';
     script.src = scriptUrl;
     
-    // Gestione errore di rete (es. script bloccato)
     script.onerror = () => {
-        alert("Errore di connessione al server di pagamento.");
-        if (typeof hideLoader === 'function') hideLoader();
-        checkoutBtn.innerHTML = 'Procedi al Checkout';
-        checkoutBtn.disabled = false;
+        alert("Errore di connessione. Verifica la tua rete.");
+        btn.innerHTML = 'Procedi al Checkout';
+        btn.disabled = false;
+        btn.style.opacity = '1';
     };
 
-    document.body.appendChild(script);
-});
+    // Append a HEAD è più pulito per scripts
+    document.head.appendChild(script);
+}
+
+// Binding Eventi Robusto per Mobile
+const checkoutBtn = document.getElementById('checkoutBtn');
+if (checkoutBtn) {
+    // Gestione standard click (Desktop)
+    checkoutBtn.addEventListener('click', initiateCheckout);
+    
+    // Gestione fallback touch (Mobile) se click fallisce
+    checkoutBtn.addEventListener('touchend', function(e) {
+        // Previene doppio trigger se il browser supporta entrambi bene
+        e.preventDefault(); 
+        initiateCheckout(e);
+    }, { passive: false });
+}
     </script>
 </body>
 </html>
