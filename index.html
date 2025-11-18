@@ -7,7 +7,7 @@
     <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
-        <!-- PRE-LOADER (Aggiungi subito dopo <body>) -->
+    <!-- PRE-LOADER -->
     <div id="luxhaven-preloader">
         <div class="preloader-bg"></div>
         <div class="preloader-pattern"></div>
@@ -37,7 +37,7 @@
             <div class="loading-text">Loading</div>
         </div>
     </div>
-    
+
     <!-- Navigation -->
     <nav id="navbar">
         <div class="nav-content">
@@ -149,13 +149,24 @@
     <script>
         const WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbyTJwL6iy0NYLtx1_1tzHyLgq0GWkhqXx92wiGvT6oUzPinfeUJPQ1aC0lYmhaBB1eA/exec';
 
+        // Pre-loader fisso 4 secondi
+        setTimeout(function() {
+            const preloader = document.getElementById('luxhaven-preloader');
+            if (preloader) {
+                preloader.classList.add('hidden');
+                setTimeout(function() {
+                    preloader.remove();
+                }, 800);
+            }
+        }, 4000);
+
         window.onload = function() {
             const hash = window.location.hash.substring(1);
             if (hash && typeof showSection === 'function') {
                 showSection(hash);
             }
             updateCartIcon();
-            updateTrackingIcon(); // Check immediato ordini attivi
+            updateTrackingIcon();
         };
 
         function updateCartIcon() {
@@ -170,112 +181,95 @@
         }
 
         function updateTrackingIcon() {
-    const trackingIcon = document.getElementById('trackingIcon');
-    if (!trackingIcon) return;
-    
-    // Pulisci dati vecchi basati su date
-    cleanupOldOrders();
-    console.log('🧹 Cleanup standard eseguito: rimossi ordini scaduti (>30 giorni o consegnati >2 giorni)');
-    
-    // Check locale post-cleanup
-    const hasActiveLocal = checkLocalStorageForActiveOrders();
-    trackingIcon.style.display = hasActiveLocal ? 'block' : 'none';
-    console.log(hasActiveLocal ? '✅ Local (post-cleanup): icona mostrata immediatamente' : 'ℹ️ Local (post-cleanup): icona nascosta immediatamente');
-    
-    // API per conferma e clear forzato se 0
-    fetchActiveOrdersFromAPI(trackingIcon);
-}
-
-/**
- * Fetch API per aggiornamento
- */
-function fetchActiveOrdersFromAPI(icon) {
-  const callbackName = 'handleActiveOrdersCount_' + Date.now();
-  const script = document.createElement('script');
-  script.src = `${WEB_APP_URL}?get_active_count=1&callback=${callbackName}&t=${Date.now()}`;
-    
-    const timeout = setTimeout(() => {
-        console.warn('⚠️ Timeout API tracking icon (manteniamo stato post-cleanup)');
-        cleanup();
-    }, 5000);
-    
-    window[callbackName] = function(response) {
-        clearTimeout(timeout);
-        console.log('📡 Risposta API tracking icon:', response);
-        
-        if (response && typeof response.count === 'number') {
-      const shouldShow = response.count > 0;
-      if (icon.style.display !== (shouldShow ? 'block' : 'none')) {
-        icon.style.display = shouldShow ? 'block' : 'none';
-        console.log(`✅ API correzione: ${shouldShow ? 'mostrata' : 'nascosta'}`);
-      }
-      if (!shouldShow) {
-        cleanupOldOrders();  // Cleanup standard
-        clearAllLocalOrderData();  // Clear forzato completo
-        console.log('🗑️ API conferma 0 ordini: eseguito clear completo localStorage per ordini');
-      } else if (shouldShow && checkLocalStorageForActiveOrders() === false) {
-        // Se API ha >0 ma local 0, forse sync mancato: retry dopo 1s
-        setTimeout(() => updateTrackingIcon(), 1000);
-      }
-    } else {
-      console.warn('⚠️ Risposta API invalida (manteniamo stato post-cleanup)');
-    }
-    cleanup();
-  };
-    
-    script.onerror = () => {
-        clearTimeout(timeout);
-        console.error('❌ Errore API tracking icon (manteniamo stato post-cleanup)');
-        cleanup();
-    };
-    
-    function cleanup() {
-        try {
-            if (script.parentNode) document.body.removeChild(script);
-            delete window[callbackName];
-        } catch (e) {}
-    }
-    
-    document.body.appendChild(script);
-}
-
-/**
- * Clear forzato di tutte le key local relative a ordini
- */
-function clearAllLocalOrderData() {
-    localStorage.removeItem('lh360_pending_order');
-    localStorage.removeItem('lh360_last_order_id');
-    localStorage.removeItem('lh360_order_confirmed_time');
-    
-    // Rimuovi tutte le key dinamiche
-    for (let i = localStorage.length - 1; i >= 0; i--) {
-        const key = localStorage.key(i);
-        if (key && (
-            key.startsWith('lh360_order_') ||
-            key.startsWith('lh360_pending_') ||
-            key.startsWith('lh360_order_time_') ||
-            key === 'lh360_last_product' ||  // Extra per sicurezza
-            key === 'lh360_selected_sku'
-        )) {
-            localStorage.removeItem(key);
-            console.log(`🗑️ Rimossa key outdated: ${key}`);
+            const trackingIcon = document.getElementById('trackingIcon');
+            if (!trackingIcon) return;
+            
+            cleanupOldOrders();
+            console.log('🧹 Cleanup standard eseguito: rimossi ordini scaduti (>30 giorni o consegnati >2 giorni)');
+            
+            const hasActiveLocal = checkLocalStorageForActiveOrders();
+            trackingIcon.style.display = hasActiveLocal ? 'block' : 'none';
+            console.log(hasActiveLocal ? '✅ Local (post-cleanup): icona mostrata immediatamente' : 'ℹ️ Local (post-cleanup): icona nascosta immediatamente');
+            
+            fetchActiveOrdersFromAPI(trackingIcon);
         }
-    }
-}
 
-        /**
-         * Check localStorage per ordini attivi (ultimi 30 giorni)
-         * Applica regola dei 2 giorni per "Consegnato"
-         */
+        function fetchActiveOrdersFromAPI(icon) {
+            const callbackName = 'handleActiveOrdersCount_' + Date.now();
+            const script = document.createElement('script');
+            script.src = `${WEB_APP_URL}?get_active_count=1&callback=${callbackName}&t=${Date.now()}`;
+            
+            const timeout = setTimeout(() => {
+                console.warn('⚠️ Timeout API tracking icon (manteniamo stato post-cleanup)');
+                cleanup();
+            }, 5000);
+            
+            window[callbackName] = function(response) {
+                clearTimeout(timeout);
+                console.log('📡 Risposta API tracking icon:', response);
+                
+                if (response && typeof response.count === 'number') {
+                    const shouldShow = response.count > 0;
+                    if (icon.style.display !== (shouldShow ? 'block' : 'none')) {
+                        icon.style.display = shouldShow ? 'block' : 'none';
+                        console.log(`✅ API correzione: ${shouldShow ? 'mostrata' : 'nascosta'}`);
+                    }
+                    if (!shouldShow) {
+                        cleanupOldOrders();
+                        clearAllLocalOrderData();
+                        console.log('🗑️ API conferma 0 ordini: eseguito clear completo localStorage per ordini');
+                    } else if (shouldShow && checkLocalStorageForActiveOrders() === false) {
+                        setTimeout(() => updateTrackingIcon(), 1000);
+                    }
+                } else {
+                    console.warn('⚠️ Risposta API invalida (manteniamo stato post-cleanup)');
+                }
+                cleanup();
+            };
+            
+            script.onerror = () => {
+                clearTimeout(timeout);
+                console.error('❌ Errore API tracking icon (manteniamo stato post-cleanup)');
+                cleanup();
+            };
+            
+            function cleanup() {
+                try {
+                    if (script.parentNode) document.body.removeChild(script);
+                    delete window[callbackName];
+                } catch (e) {}
+            }
+            
+            document.body.appendChild(script);
+        }
+
+        function clearAllLocalOrderData() {
+            localStorage.removeItem('lh360_pending_order');
+            localStorage.removeItem('lh360_last_order_id');
+            localStorage.removeItem('lh360_order_confirmed_time');
+            
+            for (let i = localStorage.length - 1; i >= 0; i--) {
+                const key = localStorage.key(i);
+                if (key && (
+                    key.startsWith('lh360_order_') ||
+                    key.startsWith('lh360_pending_') ||
+                    key.startsWith('lh360_order_time_') ||
+                    key === 'lh360_last_product' ||
+                    key === 'lh360_selected_sku'
+                )) {
+                    localStorage.removeItem(key);
+                    console.log(`🗑️ Rimossa key outdated: ${key}`);
+                }
+            }
+        }
+
         function checkLocalStorageForActiveOrders() {
             const now = new Date();
             const thirtyDaysAgo = new Date(now.getTime() - (30 * 24 * 60 * 60 * 1000));
             const twoDaysAgo = new Date(now.getTime() - (2 * 24 * 60 * 60 * 1000));
             
-            // Stati attivi (escluso "Consegnato" che ha regola speciale)
             const activeStates = ['Confermato', 'In Preparazione', 'In Transito'];
             
-            // Check 1: Ordine pending
             const pendingOrder = localStorage.getItem('lh360_pending_order');
             if (pendingOrder) {
                 try {
@@ -283,13 +277,11 @@ function clearAllLocalOrderData() {
                     const orderDate = new Date(order.timestamp || order.data);
                     
                     if (!isNaN(orderDate.getTime()) && orderDate > thirtyDaysAgo) {
-                        // Check stato
                         if (activeStates.includes(order.stato)) {
                             console.log('✓ Ordine pending attivo:', order.id, order.stato);
                             return true;
                         }
                         
-                        // Check "Consegnato" con regola 2 giorni
                         if (order.stato === 'Consegnato') {
                             const deliveryDate = parseDeliveryDate(order.consegna_prevista);
                             if (deliveryDate && deliveryDate > twoDaysAgo) {
@@ -303,7 +295,6 @@ function clearAllLocalOrderData() {
                 }
             }
             
-            // Check 2: Timestamp ordini individuali (formato: lh360_order_time_*)
             for (let i = 0; i < localStorage.length; i++) {
                 const key = localStorage.key(i);
                 if (key && key.startsWith('lh360_order_time_')) {
@@ -312,14 +303,12 @@ function clearAllLocalOrderData() {
                         const orderDate = new Date(timestamp);
                         if (!isNaN(orderDate.getTime()) && orderDate > thirtyDaysAgo) {
                             console.log('✓ Ordine recente trovato (timestamp):', key);
-                            // Assumiamo attivo se nei 30 giorni (stato preciso viene da API)
                             return true;
                         }
                     }
                 }
             }
             
-            // Check 3: Ultimo ordine registrato
             const lastOrderTime = localStorage.getItem('lh360_order_confirmed_time');
             if (lastOrderTime) {
                 const orderDate = new Date(lastOrderTime);
@@ -332,14 +321,10 @@ function clearAllLocalOrderData() {
             return false;
         }
 
-        /**
-         * Parse data di consegna (formato: "dd MMMM yyyy" o "dd/MM/yyyy")
-         */
         function parseDeliveryDate(dateStr) {
             if (!dateStr || dateStr === 'Da definire') return null;
             
             try {
-                // Prova formato: "dd MMMM yyyy"
                 const months = {
                     'gennaio': 0, 'febbraio': 1, 'marzo': 2, 'aprile': 3,
                     'maggio': 4, 'giugno': 5, 'luglio': 6, 'agosto': 7,
@@ -356,7 +341,6 @@ function clearAllLocalOrderData() {
                     }
                 }
                 
-                // Prova formato: "dd/MM/yyyy"
                 const parts = dateStr.split('/');
                 if (parts.length === 3) {
                     return new Date(parts[2], parts[1] - 1, parts[0]);
@@ -368,13 +352,9 @@ function clearAllLocalOrderData() {
             return null;
         }
 
-        /**
-         * Cleanup: Rimuovi ordini vecchi da localStorage
-         */
         function cleanupOldOrders() {
             const thirtyDaysAgo = new Date(Date.now() - (30 * 24 * 60 * 60 * 1000));
             
-            // Rimuovi pending order se vecchio
             const pendingOrder = localStorage.getItem('lh360_pending_order');
             if (pendingOrder) {
                 try {
@@ -387,7 +367,6 @@ function clearAllLocalOrderData() {
                 } catch (e) {}
             }
             
-            // Rimuovi timestamp vecchi
             for (let i = localStorage.length - 1; i >= 0; i--) {
                 const key = localStorage.key(i);
                 if (key && key.startsWith('lh360_order_time_')) {
@@ -402,7 +381,6 @@ function clearAllLocalOrderData() {
                 }
             }
             
-            // Rimuovi confirmed_time se vecchio
             const lastOrderTime = localStorage.getItem('lh360_order_confirmed_time');
             if (lastOrderTime) {
                 const orderDate = new Date(lastOrderTime);
@@ -413,7 +391,6 @@ function clearAllLocalOrderData() {
             }
         }
 
-        // Listener per cambiamenti localStorage (cross-tab sync)
         window.addEventListener('storage', (event) => {
             if (event.key === 'lh360_cart') {
                 updateCartIcon();
@@ -423,7 +400,6 @@ function clearAllLocalOrderData() {
             }
         });
 
-        // Aggiorna icone periodicamente (ogni 5 minuti)
         setInterval(() => {
             updateTrackingIcon();
         }, 5 * 60 * 1000);
