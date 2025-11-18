@@ -699,56 +699,42 @@
         // Initialize
         renderCart();
 
-        /* --- INTEGRATION CHECKOUT (Sostituisci il blocco checkoutBtn esistente) --- */
+        /* --- INTEGRATION CHECKOUT ROBUSTA (MOBILE FIX) --- */
 const checkoutBtn = document.getElementById('checkoutBtn');
 
-// Callback globale per la risposta da Google
-window.handleCheckoutResponse = function(response) {
-    if (response.error) {
-        // Nascondi il loader in caso di errore (se presente)
-        const loader = document.getElementById('luxhaven-loader') || document.getElementById('temp-loader');
-        if (loader) loader.style.display = 'none';
-        
-        alert('Errore dal server: ' + response.error);
-    } else {
-        // Redirect al pagamento Stripe
-        window.location.href = response.url;
-    }
-    
-    // Rimuovi script temporaneo
-    const script = document.getElementById('checkout-script');
-    if (script) script.remove();
-};
-
-checkoutBtn.addEventListener('click', (e) => {
+checkoutBtn.addEventListener('click', function(e) {
+    // Prevenire comportamenti di default e propagazione (utile per mobile)
     e.preventDefault();
+    e.stopPropagation();
 
-    // 1. Ricarica i dati freschi dal LocalStorage per evitare errori di stato
+    // 1. Feedback immediato all'utente
+    const originalBtnText = checkoutBtn.innerHTML;
+    checkoutBtn.innerHTML = 'Elaborazione...';
+    checkoutBtn.disabled = true;
+    checkoutBtn.style.opacity = '0.7';
+    checkoutBtn.style.cursor = 'wait';
+
+    // Mostra il loader globale se presente (fallback visivo)
+    if (typeof showLoader === 'function') {
+        showLoader();
+    }
+
+    // 2. Ricarica dati e validazione
     const freshCart = JSON.parse(localStorage.getItem('lh360_cart')) || [];
-
-    // 2. Filtra eventuali elementi corrotti o nulli
     const validItems = freshCart.filter(item => item && item.title && item.price);
 
     if (validItems.length === 0) {
         alert('Il carrello è vuoto!');
+        resetBtn();
+        if (typeof hideLoader === 'function') hideLoader();
         return;
     }
 
-    // 3. Mostra il Loader (usa la funzione showLoader se hai integrato lo script precedente, o fallback)
-    if (typeof showLoader === 'function') {
-        showLoader();
-    } else {
-        // Fallback rapido se non hai caricato il loader globale
-        const btnText = checkoutBtn.innerHTML;
-        checkoutBtn.innerHTML = 'Elaborazione...';
-        checkoutBtn.disabled = true;
-    }
-
-    // 4. Ricalcola totali e spedizione sui dati freschi
+    // 3. Calcoli
     const subtotal = validItems.reduce((sum, item) => sum + (item.price * (item.qty || 1)), 0);
     const shipping = subtotal >= 150 ? 0 : 15;
 
-    // 5. Prepara il pacchetto dati pulito
+    // 4. Preparazione Dati
     const data = {
         cart: validItems.map(item => ({
             title: item.title,
@@ -761,26 +747,60 @@ checkoutBtn.addEventListener('click', (e) => {
         shipping: shipping
     };
 
-    console.log("Invio dati a Google Script:", data); // Debug console (F12)
+    // 5. Creazione Callback Dinamica (Cruciale per Mobile)
+    // Usiamo un timestamp per rendere il nome della funzione unico ed evitare cache
+    const callbackName = 'checkoutCallback_' + Date.now();
+    
+    // Definiamo la funzione globalmente
+    window[callbackName] = function(response) {
+        // Pulizia: rimuovi lo script e la funzione globale
+        cleanup();
 
-    // 6. Invia richiesta JSONP
+        if (response.error) {
+            console.error("Checkout Error:", response.error);
+            alert('Errore durante la creazione dell\'ordine: ' + response.error);
+            resetBtn();
+            if (typeof hideLoader === 'function') hideLoader();
+        } else if (response.url) {
+            // Successo: Redirect
+            console.log("Redirecting to Stripe:", response.url);
+            window.location.href = response.url;
+        }
+    };
+
+    // 6. Iniezione Script JSONP
     const dataStr = encodeURIComponent(JSON.stringify(data));
-    const callback = 'handleCheckoutResponse';
-    const scriptUrl = `${webAppUrl}?data=${dataStr}&callback=${callback}`;
+    // Aggiungiamo anche un parametro random 't' all'URL per forzare il refresh su mobile
+    const scriptUrl = `${webAppUrl}?data=${dataStr}&callback=${callbackName}&t=${Date.now()}`;
 
     const script = document.createElement('script');
-    script.id = 'checkout-script';
     script.src = scriptUrl;
+    script.id = 'chk_script_' + Date.now();
     
-    // Gestione errore di rete (es. script bloccato)
-    script.onerror = () => {
-        alert("Errore di connessione al server di pagamento.");
+    // Gestione errori di rete (es. script bloccato o offline)
+    script.onerror = function() {
+        alert("Impossibile connettersi al server di pagamento. Controlla la tua connessione.");
+        cleanup();
+        resetBtn();
         if (typeof hideLoader === 'function') hideLoader();
-        checkoutBtn.innerHTML = 'Procedi al Checkout';
-        checkoutBtn.disabled = false;
     };
 
     document.body.appendChild(script);
+
+    // Funzioni di utilità interne allo scope
+    function cleanup() {
+        try {
+            if (script.parentNode) script.parentNode.removeChild(script);
+            delete window[callbackName];
+        } catch (e) { console.log(e); }
+    }
+
+    function resetBtn() {
+        checkoutBtn.innerHTML = originalBtnText;
+        checkoutBtn.disabled = false;
+        checkoutBtn.style.opacity = '1';
+        checkoutBtn.style.cursor = 'pointer';
+    }
 });
     </script>
 </body>
