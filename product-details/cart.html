@@ -25,6 +25,7 @@
             padding: 3rem 1.5rem;
         }
 
+        /* Header */
         .cart-header {
             margin-bottom: 3rem;
             padding-bottom: 2rem;
@@ -43,6 +44,7 @@
             font-size: 1.125rem;
         }
 
+        /* Cart Layout */
         .cart-layout {
             display: grid;
             grid-template-columns: 1fr 400px;
@@ -50,6 +52,7 @@
             align-items: start;
         }
 
+        /* Cart Items */
         .cart-items {
             display: flex;
             flex-direction: column;
@@ -181,6 +184,7 @@
             text-decoration: line-through;
         }
 
+        /* Empty Cart */
         .empty-cart {
             text-align: center;
             padding: 6rem 2rem;
@@ -225,6 +229,7 @@
             transform: scale(1.02);
         }
 
+        /* Summary Sidebar */
         .cart-summary {
             position: sticky;
             top: 2rem;
@@ -309,6 +314,7 @@
             transition: width 0.3s ease;
         }
 
+        /* Promo Code */
         .promo-code {
             margin: 1.5rem 0;
         }
@@ -354,6 +360,7 @@
             background: #f4f4f5;
         }
 
+        /* Checkout Button */
         .checkout-btn {
             width: 100%;
             padding: 1.25rem;
@@ -368,16 +375,12 @@
             margin-bottom: 2rem;
         }
 
-        .checkout-btn:hover:not(:disabled) {
+        .checkout-btn:hover {
             background: #f4f4f5;
             transform: scale(1.02);
         }
 
-        .checkout-btn:disabled {
-            opacity: 0.6;
-            cursor: not-allowed;
-        }
-
+        /* Trust Badges */
         .trust-badges {
             display: flex;
             flex-direction: column;
@@ -397,6 +400,7 @@
             opacity: 0.8;
         }
 
+        /* Recommended Section */
         .recommended-section {
             margin-top: 6rem;
         }
@@ -470,17 +474,23 @@
 </head>
 <body>
     <div class="container">
+        <!-- Header -->
         <div class="cart-header">
             <h1 class="cart-title">Il Tuo Carrello</h1>
             <p class="cart-subtitle" id="itemCount">0 Articoli</p>
         </div>
 
         <div class="cart-layout">
-            <div class="cart-items" id="cartItems"></div>
+            <!-- Cart Items -->
+            <div class="cart-items" id="cartItems">
+                <!-- Items will be generated dynamically -->
+            </div>
 
+            <!-- Summary Sidebar -->
             <div class="cart-summary">
                 <h2 class="summary-title">Riepilogo Ordine</h2>
 
+                <!-- Progress to Free Shipping -->
                 <div class="progress-section">
                     <div class="progress-text">
                         <span>Spedizione gratuita a</span>
@@ -504,6 +514,7 @@
                     <span class="summary-value" id="discount" style="color: #34d399;">- € 0,00</span>
                 </div>
 
+                <!-- Promo Code -->
                 <div class="promo-code">
                     <label class="promo-label">Codice Promozionale</label>
                     <div class="promo-input-wrapper">
@@ -536,6 +547,7 @@
             </div>
         </div>
 
+        <!-- Recommended Products -->
         <div class="recommended-section">
             <h2 class="recommended-title">Potrebbero interessarti anche</h2>
             <div class="recommended-grid">
@@ -571,10 +583,38 @@
         </div>
     </div>
 
+    <script src="../script.js"></script>  <!-- Included for loader utilities and consistency -->
     <script>
         let cart = JSON.parse(localStorage.getItem('lh360_cart')) || [];
+
+        // URL CORRETTO della Web App
         const webAppUrl = 'https://script.google.com/macros/s/AKfycbyTJwL6iy0NYLtx1_1tzHyLgq0GWkhqXx92wiGvT6oUzPinfeUJPQ1aC0lYmhaBB1eA/exec';
 
+        // Callback globale per la risposta da Google
+        window.handleCheckoutResponse = function(response) {
+            if (response.error) {
+                // Nascondi il loader in caso di errore (se presente)
+                if (typeof hideLoader === 'function') hideLoader();
+                
+                alert('Errore dal server: ' + response.error);
+                
+                // Reset button state
+                checkoutBtn.innerHTML = 'Procedi al Checkout';
+                checkoutBtn.disabled = false;
+            } else {
+                // Nascondi loader prima del redirect
+                if (typeof hideLoader === 'function') hideLoader();
+                
+                // Redirect al pagamento Stripe
+                window.location.href = response.url;
+            }
+            
+            // Rimuovi script temporaneo
+            const script = document.getElementById('checkout-script');
+            if (script) script.remove();
+        };
+
+        // Render cart items dynamically (no quantity display/modify)
         function renderCart() {
             const cartItemsContainer = document.getElementById('cartItems');
             cartItemsContainer.innerHTML = '';
@@ -626,6 +666,7 @@
             updateSummary();
         }
 
+        // Remove item
         function removeItem(index) {
             const itemElement = document.querySelector(`[data-id="${index}"]`);
             if (itemElement) {
@@ -639,6 +680,7 @@
             }
         }
 
+        // Update summary (uses internal qty for calculations, no display)
         function updateSummary() {
             let subtotal = 0;
             let itemCount = 0;
@@ -658,10 +700,12 @@
             document.getElementById('total').textContent = `€ ${total.toLocaleString('it-IT', { minimumFractionDigits: 2 })}`;
             document.getElementById('itemCount').textContent = `${itemCount} Articoli`;
 
+            // Update progress bar
             const progress = Math.min(100, (subtotal / 150) * 100);
             document.getElementById('progressFill').style.width = `${progress}%`;
         }
 
+        // Check if cart is empty
         function checkEmptyCart() {
             document.querySelector('.cart-layout').style.gridTemplateColumns = '1fr';
             const container = document.getElementById('cartItems');
@@ -677,161 +721,91 @@
             updateSummary();
         }
 
+        // Initialize
         renderCart();
 
-        // ===== CHECKOUT INTEGRATION - MOBILE FIX =====
-        const checkoutBtn = document.getElementById('checkoutBtn');
+        /* --- INTEGRATION CHECKOUT (Sostituisci il blocco checkoutBtn esistente) --- */
+const checkoutBtn = document.getElementById('checkoutBtn');
 
-        // Callback globale per risposta da Google Apps Script
-        window.handleCheckoutResponse = function(response) {
-            console.log('📩 Risposta ricevuta:', response);
-            
-            // Nascondi loader e riabilita pulsante
-            checkoutBtn.textContent = 'Procedi al Checkout';
-            checkoutBtn.disabled = false;
-            
-            // Rimuovi script temporaneo
-            const script = document.getElementById('checkout-script');
-            if (script && script.parentNode) {
-                script.parentNode.removeChild(script);
-            }
-            
-            if (response.error) {
-                alert('⚠️ Errore: ' + response.error);
-                return;
-            }
-            
-            if (response.url) {
-                console.log('✅ Redirect a Stripe:', response.url);
-                // Redirect immediato usando window.location (più affidabile su mobile)
-                window.location.href = response.url;
-            } else {
-                alert('⚠️ Errore: URL di checkout non ricevuto');
-            }
-        };
+// Callback globale per la risposta da Google
+window.handleCheckoutResponse = function(response) {
+    if (response.error) {
+        // Nascondi il loader in caso di errore (se presente)
+        if (typeof hideLoader === 'function') hideLoader();
+        
+        alert('Errore dal server: ' + response.error);
+        
+        // Reset button state for fallback cases
+        checkoutBtn.innerHTML = 'Procedi al Checkout';
+        checkoutBtn.disabled = false;
+    } else {
+        // Nascondi loader prima del redirect
+        if (typeof hideLoader === 'function') hideLoader();
+        
+        // Redirect al pagamento Stripe
+        window.location.href = response.url;
+    }
+    
+    // Rimuovi script temporaneo
+    const script = document.getElementById('checkout-script');
+    if (script) script.remove();
+};
 
-        checkoutBtn.addEventListener('click', function(e) {
-            e.preventDefault();
-            e.stopPropagation();
-            
-            console.log('🛒 Click su Checkout rilevato');
-            
-            // Ricarica carrello fresco
-            const freshCart = JSON.parse(localStorage.getItem('lh360_cart')) || [];
-            const validItems = freshCart.filter(item => item && item.title && item.price);
+checkoutBtn.addEventListener('click', (e) => {
+    e.preventDefault();
 
-            if (validItems.length === 0) {
-                alert('❌ Il carrello è vuoto!');
-                return;
-            }
+    // 1. Ricarica i dati freschi dal LocalStorage per evitare errori di stato
+    const freshCart = JSON.parse(localStorage.getItem('lh360_cart')) || [];
 
-            // Disabilita pulsante e mostra loading
-            checkoutBtn.disabled = true;
-            checkoutBtn.textContent = 'Elaborazione...';
+    // 2. Filtra eventuali elementi corrotti o nulli
+    const validItems = freshCart.filter(item => item && item.title && item.price);
 
-            // Calcola totali
-            const subtotal = validItems.reduce((sum, item) => sum + (item.price * (item.qty || 1)), 0);
-            const shipping = subtotal >= 150 ? 0 : 15;
+    if (validItems.length === 0) {
+        alert('Il carrello è vuoto!');
+        return;
+    }
 
-            // Prepara dati
-            const data = {
-                cart: validItems.map(item => ({
-                    title: item.title,
-                    price: item.price,
-                    qty: item.qty || 1,
-                    color: item.color || '',
-                    size: item.size || '',
-                    currency: item.currency || 'EUR'
-                })),
-                shipping: shipping
-            };
+    // 3. Mostra il Loader (ora disponibile da script.js)
+    showLoader();
 
-            console.log('📤 Invio dati:', data);
+    // 4. Ricalcola totali e spedizione sui dati freschi
+    const subtotal = validItems.reduce((sum, item) => sum + (item.price * (item.qty || 1)), 0);
+    const shipping = subtotal >= 150 ? 0 : 15;
 
-            // METODO 1: Tentativo JSONP (preferito)
-            try {
-                const dataStr = encodeURIComponent(JSON.stringify(data));
-                const callback = 'handleCheckoutResponse';
-                const scriptUrl = `${webAppUrl}?data=${dataStr}&callback=${callback}&t=${Date.now()}`;
+    // 5. Prepara il pacchetto dati pulito
+    const data = {
+        cart: validItems.map(item => ({
+            title: item.title,
+            price: item.price,
+            qty: item.qty || 1,
+            color: item.color || '',
+            size: item.size || '',
+            currency: item.currency || 'EUR'
+        })),
+        shipping: shipping
+    };
 
-                const script = document.createElement('script');
-                script.id = 'checkout-script';
-                script.src = scriptUrl;
-                
-                // Timeout di sicurezza (8s su mobile)
-                const timeout = setTimeout(() => {
-                    console.warn('⏱️ Timeout JSONP - Fallback a POST');
-                    if (script.parentNode) script.parentNode.removeChild(script);
-                    fallbackToPost(data);
-                }, 8000);
+    console.log("Invio dati a Google Script:", data); // Debug console (F12)
 
-                script.onerror = function() {
-                    console.error('❌ Errore JSONP - Fallback a POST');
-                    clearTimeout(timeout);
-                    if (script.parentNode) script.parentNode.removeChild(script);
-                    fallbackToPost(data);
-                };
+    // 6. Invia richiesta JSONP
+    const dataStr = encodeURIComponent(JSON.stringify(data));
+    const callback = 'handleCheckoutResponse';
+    const scriptUrl = `${webAppUrl}?data=${dataStr}&callback=${callback}`;
 
-                script.onload = function() {
-                    clearTimeout(timeout);
-                    console.log('✅ Script JSONP caricato');
-                };
+    const script = document.createElement('script');
+    script.id = 'checkout-script';
+    script.src = scriptUrl;
+    
+    // Gestione errore di rete (es. script bloccato)
+    script.onerror = () => {
+        hideLoader();
+        alert("Errore di connessione al server di pagamento.");
+        checkoutBtn.innerHTML = 'Procedi al Checkout';
+        checkoutBtn.disabled = false;
+    };
 
-                document.body.appendChild(script);
-                
-            } catch (error) {
-                console.error('❌ Errore setup JSONP:', error);
-                fallbackToPost(data);
-            }
-        }, { passive: false }); // Importante per preventDefault su mobile
-
-        // METODO 2: Fallback con fetch POST (per dispositivi che bloccano JSONP)
-        function fallbackToPost(data) {
-            console.log('🔄 Tentativo fallback con fetch POST');
-            
-            fetch(webAppUrl, {
-                method: 'POST',
-                mode: 'no-cors', // Necessario per Apps Script
-                headers: {
-                    'Content-Type': 'application/x-www-form-urlencoded'
-                },
-                body: 'data=' + encodeURIComponent(JSON.stringify(data))
-            })
-            .then(() => {
-                console.log('📨 Richiesta POST inviata');
-                // Con no-cors non possiamo leggere la risposta, quindi polling
-                pollForOrderId();
-            })
-            .catch(error => {
-                console.error('❌ Errore POST:', error);
-                alert('⚠️ Errore di connessione. Verifica la connessione internet e riprova.');
-                checkoutBtn.disabled = false;
-                checkoutBtn.textContent = 'Procedi al Checkout';
-            });
-        }
-
-        // Polling per ordine (ultimo tentativo)
-        function pollForOrderId() {
-            console.log('🔍 Polling per Order ID...');
-            let attempts = 0;
-            const maxAttempts = 10;
-            
-            const interval = setInterval(() => {
-                attempts++;
-                console.log(`🔄 Tentativo ${attempts}/${maxAttempts}`);
-                
-                if (attempts >= maxAttempts) {
-                    clearInterval(interval);
-                    alert('⏱️ Timeout: impossibile completare il checkout. Riprova.');
-                    checkoutBtn.disabled = false;
-                    checkoutBtn.textContent = 'Procedi al Checkout';
-                    return;
-                }
-                
-                // Verifica se handleCheckoutResponse è stata chiamata nel frattempo
-                // (questo succede se JSONP funziona in ritardo)
-            }, 1000);
-        }
+    document.body.appendChild(script);
+});
     </script>
 </body>
 </html>
