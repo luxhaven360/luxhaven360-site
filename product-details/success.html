@@ -832,92 +832,137 @@ setTimeout(() => {
     /**
  * CALLBACK GLOBALE: Riceve i dati da Google Script
  */
-   window.handleDetailsResponse = function(response) {
+window.handleDetailsResponse = function(response) {
     const emailElem = document.getElementById('emailValue');
     const paymentElem = document.getElementById('paymentValue');
     const orderNumElem = document.getElementById('orderNumber');
-    const dateConfirmedElem = document.getElementById('date-confirmed'); // Elemento timeline
 
     let currentOrderId = null;
 
     if (response && !response.error) {
-        // 1. Aggiorna Email
+        // Aggiorna Email
         if (response.email && emailElem) {
             emailElem.textContent = response.email;
         }
 
-        // 2. Aggiorna Metodo Pagamento (Last 4 digits)
+        // Aggiorna Metodo Pagamento
         if (paymentElem) {
             if (response.last4) {
                 paymentElem.textContent = `•••• ${response.last4}`;
             } else {
-                paymentElem.textContent = 'Carta di Credito';
+                paymentElem.textContent = 'Pagamento Online';
             }
         }
 
-        // 3. Aggiorna ID Ordine
+        // Aggiorna ID Ordine
         if (response.order_id && orderNumElem) {
             orderNumElem.textContent = `Ordine #${response.order_id}`;
             currentOrderId = response.order_id;
         }
-
-        // 4. Aggiorna Data Conferma (es. 14 nov, 16:48)
-        if (response.order_date && dateConfirmedElem) {
-            dateConfirmedElem.textContent = response.order_date;
-        }
-    } else {
-        // Fallback visuale in caso di errore parziale
-        if (paymentElem) paymentElem.textContent = 'Pagamento Online';
     }
 
-    // === GESTIONE TIMESTAMP E TRACKING (Logica esistente mantenuta per il tracking) ===
+    // === GESTIONE TIMESTAMP FISSO PER QUESTO ORDINE SPECIFICO ===
     let confirmedTime;
 
+    // Se abbiamo l'ID ordine dal backend (più affidabile)
     if (currentOrderId) {
         const storedTime = localStorage.getItem(`lh360_order_time_${currentOrderId}`);
+        if (storedTime) {
+            confirmedTime = storedTime; // Usa il timestamp salvato per questo ordine
+        } else {
+            confirmedTime = new Date().toISOString();
+            localStorage.setItem(`lh360_order_time_${currentOrderId}`, confirmedTime); // Salva per questo ordine
+        }
+        
+        // NUOVO: Salva anche l'ID dell'ultimo ordine per tracking
+        localStorage.setItem('lh360_last_order_id', currentOrderId);
+    } else {
+        // Fallback: usa session_id dall'URL (se presente)
+        const urlParams = new URLSearchParams(window.location.search);
+        const sessionId = urlParams.get('session_id');
+        const fallbackKey = sessionId ? `lh360_order_time_session_${sessionId}` : 'lh360_order_time_fallback';
+
+        const storedTime = localStorage.getItem(fallbackKey);
         if (storedTime) {
             confirmedTime = storedTime;
         } else {
             confirmedTime = new Date().toISOString();
-            localStorage.setItem(`lh360_order_time_${currentOrderId}`, confirmedTime);
+            localStorage.setItem(fallbackKey, confirmedTime);
         }
-        localStorage.setItem('lh360_last_order_id', currentOrderId);
-    } else {
-        const urlParams = new URLSearchParams(window.location.search);
-        const sessionId = urlParams.get('session_id');
-        const fallbackKey = sessionId ? `lh360_order_time_session_${sessionId}` : 'lh360_order_time_fallback';
-        confirmedTime = new Date().toISOString();
-        localStorage.setItem(fallbackKey, confirmedTime);
     }
 
-    // Setup dati timeline
+    // NUOVO: Salva i dettagli completi dell'ordine per tracking immediato
+    if (currentOrderId) {
+        const cart = JSON.parse(localStorage.getItem('lh360_cart') || '[]');
+        const subtotal = cart.reduce((sum, item) => sum + (item.price * (item.qty || 1)), 0);
+        const shipping = subtotal >= 150 ? 0 : 15;
+        const total = subtotal + shipping;
+        
+        // Formatta data in italiano lungo
+        const today = new Date();
+        const formattedDate = today.toLocaleDateString('it-IT', { 
+            day: 'numeric', 
+            month: 'long', 
+            year: 'numeric' 
+        });
+        
+        const orderDetails = {
+            id: currentOrderId,
+            data: formattedDate, // Formato: "14 novembre 2025"
+            stato: 'In Preparazione',
+            totale: total.toFixed(2),
+            consegna_prevista: calculateDeliveryDate(3), // 3 giorni da oggi
+            products: cart.map(item => ({
+                name: item.title || 'Prodotto',
+                quantity: item.qty || 1,
+                price: item.price || 0,
+                image: item.image || ''
+            })),
+            email: response?.email || '',
+            timestamp: confirmedTime
+        };
+        
+        localStorage.setItem('lh360_pending_order', JSON.stringify(orderDetails));
+        console.log('✅ Ordine salvato in localStorage per tracking immediato:', orderDetails);
+    }
+
+    // Prepara i dati per la timeline
     const timelineData = {
-        current_status: 'confirmed',
+        current_status: response?.current_status || 'preparing',
         status_dates: {
-            confirmed: confirmedTime
+            confirmed: confirmedTime,
+            preparing: response?.status_dates?.preparing || null,
+            shipped: response?.status_dates?.shipped || null,
+            delivered: response?.status_dates?.delivered || null
         },
-        estimated_dates: {
+        estimated_dates: response?.estimated_dates || {
             preparing: 'In corso',
-            shipped: '24-48h',
-            delivered: '3-5 giorni'
+            shipped: '7-8 Nov',
+            delivered: '8-9 Nov'
         }
     };
+
+    // Fallback completo se response è vuoto
+    if (!response || response.error) {
+        timelineData.current_status = 'confirmed';
+        timelineData.status_dates = { confirmed: confirmedTime };
+    }
 
     updateTimeline(timelineData);
     
-    // Trigger polling immediato
-    const triggerCallback = 'handlePollResponse_' + Date.now();
-    const triggerScript = document.createElement('script');
-    triggerScript.src = `${webAppUrl}?action=trigger_poll&callback=${triggerCallback}`;
-    window[triggerCallback] = function(resp) {
-        try {
-             document.body.removeChild(triggerScript);
-             delete window[triggerCallback];
-        } catch(e){}
-    };
-    document.body.appendChild(triggerScript);
+    // NUOVO: Trigger polling per update immediato Sheets
+  const triggerCallback = 'handlePollResponse_' + Date.now();
+  const triggerScript = document.createElement('script');
+  triggerScript.src = `${webAppUrl}?action=trigger_poll&callback=${triggerCallback}`;
+  window[triggerCallback] = function(resp) {
+    console.log('Polling triggerato:', resp);
+    // Pulisci
+    document.body.removeChild(triggerScript);
+    delete window[triggerCallback];
+  };
+  document.body.appendChild(triggerScript);
 
-    delayFinalize(startTime);
+  delayFinalize(startTime);
 };
 
 /**
@@ -1100,4 +1145,3 @@ function calculateDeliveryDate(daysFromNow) {
 </script>    
 </body>
 </html>
-
