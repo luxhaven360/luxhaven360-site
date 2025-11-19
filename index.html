@@ -156,40 +156,29 @@
             const trackingIcon = document.getElementById('trackingIcon');
             if (!trackingIcon) return;
 
-            // 1. Check Locale (immediato per evitare blink)
-            const hasLocal = checkLocalStorageForActiveOrders();
-            if (hasLocal) {
-                trackingIcon.style.display = 'block';
-                // Su mobile, forza visibility nel caso CSS nasconda
-                trackingIcon.style.visibility = 'visible';
-                trackingIcon.style.opacity = '1';
+            // Funzione helper per mostrare l'icona
+            const showIcon = () => {
+                trackingIcon.style.display = 'block'; 
+                trackingIcon.classList.add('show'); // Fondamentale per il CSS mobile
+            };
+
+            // 1. Controllo Locale
+            if (checkLocalStorageForActiveOrders()) {
+                showIcon();
             }
 
-            // 2. Check Server (autorità finale)
+            // 2. Controllo Server (con timestamp anti-cache per mobile)
             const callbackName = 'handleActiveOrdersCount_' + Date.now();
             const script = document.createElement('script');
             script.src = `${WEB_APP_URL}?get_active_count=1&callback=${callbackName}&t=${Date.now()}`;
             
             window[callbackName] = function(response) {
-                if (response && typeof response.count === 'number') {
-                    if (response.count > 0) {
-                        trackingIcon.style.display = 'block';
-                        trackingIcon.style.visibility = 'visible';
-                        trackingIcon.style.opacity = '1';
-                    } else {
-                        // Nascondi solo se anche il locale dice 0, o forza nascondi se server dice 0 (più sicuro)
-                        // Se il server dice 0, probabilmente l'ordine è vecchio o non esiste
-                        if (!hasLocal) {
-                            trackingIcon.style.display = 'none';
-                        }
-                    }
+                if (response && response.count > 0) {
+                    showIcon();
+                } else if (!checkLocalStorageForActiveOrders()) {
+                    trackingIcon.style.display = 'none';
+                    trackingIcon.classList.remove('show');
                 }
-                // Cleanup
-                try { document.body.removeChild(script); delete window[callbackName]; } catch(e){}
-            };
-            
-            // Gestione errore silenziosa
-            script.onerror = function() {
                 try { document.body.removeChild(script); delete window[callbackName]; } catch(e){}
             };
             
@@ -387,4 +376,5 @@ function clearAllLocalOrderData() {
     </script>
 </body>
 </html>
+
 
