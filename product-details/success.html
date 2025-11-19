@@ -679,88 +679,51 @@
         </div>
     </div>
     
-    <script>
+        <script>
     // CONFIGURAZIONE
-    // URL della tua Web App Google Apps Script
-    const webAppUrl = 'https://script.google.com/macros/s/AKfycbyl-SrRgn4ZGCL-wPYy8fLBKLaUtxY7V08KGujaihbz1tPX47BM36yw6Mj60UUT8ftv/exec';
+    const webAppUrl = 'https://script.google.com/macros/s/AKfycbyTJwL6iy0NYLtx1_1tzHyLgq0GWkhqXx92wiGvT6oUzPinfeUJPQ1aC0lYmhaBB1eA/exec';
 
-    // Variabile di sicurezza per evitare loop infiniti di caricamento
     let loadTimeout;
     let startTime;
 
-    /**
-     * AVVIO
-     * Al caricamento della pagina, inizia il recupero dati.
-     */
     window.addEventListener('load', () => {
         startTime = Date.now();
-
-        // 1. Imposta i link corretti per i pulsanti
         setupButtons();
-
-        // 2. Carica gli articoli dal LocalStorage (prima di cancellarli)
         loadPurchasedItems();
-
-        // 3. Recupera i dettagli dell'ordine (Email, ID, Pagamento)
         loadOrderDetails();
-
-        // 4. Timeout di sicurezza: se dopo 10 secondi non abbiamo dati, mostriamo comunque la pagina (aumentato per adattarsi al ritardo minimo)
         loadTimeout = setTimeout(() => {
             console.warn('Timeout caricamento dati: forzatura visualizzazione.');
             delayFinalize(startTime);
         }, 10000);
     });
 
-    /**
-     * FUNZIONE: Finalizza il caricamento
-     * Nasconde il loader e mostra il contenuto.
-     */
     function finalizePageLoad() {
-        clearTimeout(loadTimeout); // Cancella il timeout di sicurezza se siamo arrivati qui
-
+        clearTimeout(loadTimeout);
         const loader = document.getElementById('luxhaven-loader');
         const content = document.querySelector('.container');
-
-        // Fade out loader
         if (loader) {
             loader.style.opacity = '0';
-            setTimeout(() => {
-                loader.style.display = 'none';
-            }, 500);
+            setTimeout(() => { loader.style.display = 'none'; }, 500);
         }
-
-        // Fade in contenuto
-        if (content) {
-            content.style.opacity = '1';
-        }
-
-        // Svuota il carrello DOPO aver mostrato i dati
-        // (Piccolo ritardo per assicurarsi che la UI sia renderizzata)
+        if (content) content.style.opacity = '1';
         setTimeout(() => {
             localStorage.removeItem('lh360_cart');
-            // Rimuoviamo anche SKU selezionati o varianti per pulizia
             localStorage.removeItem('lh360_selected_variant_id');
-            // Nota: Non rimuoviamo 'lh360_order_confirmed_time' per persistere la data
         }, 1000);
-
-        // Rimuovi dati molto vecchi (es. ordini di oltre 90 giorni)
-setTimeout(() => {
-    const now = Date.now();
-    for (let i = 0; i < localStorage.length; i++) {
-        const key = localStorage.key(i);
-        if (key.startsWith('lh360_order_time_')) {
-            const timestamp = localStorage.getItem(key);
-            if (timestamp && (now - new Date(timestamp).getTime()) > 90 * 24 * 60 * 60 * 1000) {
-                localStorage.removeItem(key);
+        setTimeout(() => {
+            const now = Date.now();
+            for (let i = 0; i < localStorage.length; i++) {
+                const key = localStorage.key(i);
+                if (key.startsWith('lh360_order_time_')) {
+                    const timestamp = localStorage.getItem(key);
+                    if (timestamp && (now - new Date(timestamp).getTime()) > 90 * 24 * 60 * 60 * 1000) {
+                        localStorage.removeItem(key);
+                    }
+                }
             }
-        }
-    }
-}, 5000);
+        }, 5000);
     }
 
-    /**
-     * FUNZIONE: Ritarda la finalizzazione per garantire almeno 8 secondi di visualizzazione del loader
-     */
     function delayFinalize(startTime) {
         const elapsed = Date.now() - startTime;
         const remaining = 8000 - elapsed;
@@ -771,199 +734,266 @@ setTimeout(() => {
         }
     }
 
-    /**
-     * FUNZIONE: Configura i pulsanti CTA con i link assoluti corretti
-     */
     function setupButtons() {
-        // Link 1: Traccia il mio Ordine
         const trackBtn = document.querySelector('.btn-primary');
         if (trackBtn) {
             trackBtn.href = 'https://luxhaven360.github.io/luxhaven360-site/product-details/tracking-order.html';
         }
-
-        // Link 2: Torna allo Shop
         const shopBtn = document.querySelector('.btn-secondary');
         if (shopBtn) {
             shopBtn.href = 'https://luxhaven360.github.io/luxhaven360-site/index.html#shop';
         }
     }
 
-    /**
-     * FUNZIONE: Recupera dettagli da Google Script (JSONP)
-     */
-    function loadOrderDetails() {
+    // ---------- Robust JSONP loader with retries and fetch fallback ----------
+    function loadOrderDetails(maxRetries = 3) {
         const urlParams = new URLSearchParams(window.location.search);
         const sessionId = urlParams.get('session_id');
-        const orderIdParam = urlParams.get('id_ordine'); // Se passato via URL (fallback)
+        const orderIdParam = urlParams.get('id_ordine');
 
-        // Elementi DOM
         const orderNumElem = document.getElementById('orderNumber');
         const emailElem = document.getElementById('emailValue');
         const paymentElem = document.getElementById('paymentValue');
 
-        // Fallback immediato se c'è l'ID nell'URL
         if (orderIdParam && orderNumElem) {
             orderNumElem.textContent = `Ordine #${orderIdParam}`;
         }
 
         if (!sessionId) {
-            // Se non c'è session ID, non possiamo fare fetch. Mostriamo la pagina.
             if (emailElem) emailElem.textContent = 'Non disponibile';
             if (paymentElem) paymentElem.textContent = 'Non disponibile';
             delayFinalize(startTime);
             return;
         }
 
-        // Creazione chiamata JSONP
-        const callbackName = 'handleDetailsResponse';
-        const script = document.createElement('script');
-        script.src = `${webAppUrl}?get_details=1&session_id=${encodeURIComponent(sessionId)}&callback=${callbackName}`;
-        script.async = true;
+        // Try JSONP with retries. If JSONP appears to fail, try a fetch fallback (if CORS allows).
+        let attempts = 0;
+        let finished = false;
 
-        // Gestione errore script (es. blocco adblocker o rete)
-        script.onerror = () => {
-            console.error('Errore script Google Apps.');
-            delayFinalize(startTime);
-        };
+        function tryRequest() {
+            if (finished) return;
+            attempts++;
+            const callbackName = 'handleDetailsResponse_' + Date.now() + '_' + Math.floor(Math.random() * 10000);
+            const script = document.createElement('script');
+            const src = `${webAppUrl}?get_details=1&session_id=${encodeURIComponent(sessionId)}&callback=${callbackName}&t=${Date.now()}`;
+            script.src = src;
+            script.async = true;
 
-        document.body.appendChild(script);
-    }
+            const cleanup = () => {
+                try { if (script.parentNode) script.parentNode.removeChild(script); } catch (e) {}
+                try { delete window[callbackName]; } catch (e) {}
+            };
 
-    /**
- * CALLBACK GLOBALE: Riceve i dati da Google Script
- */
-window.handleDetailsResponse = function(response) {
-    const emailElem = document.getElementById('emailValue');
-    const paymentElem = document.getElementById('paymentValue');
-    const orderNumElem = document.getElementById('orderNumber');
+            // Define the temporary global callback
+            window[callbackName] = function(response) {
+                if (finished) { cleanup(); return; }
+                finished = true;
+                cleanup();
+                // Delegate to the regular handler for processing (keeps existing logic)
+                handleDetailsResponse(response);
+            };
 
-    let currentOrderId = null;
+            // Error handling + retry
+            script.onerror = function() {
+                cleanup();
+                if (attempts <= maxRetries) {
+                    console.warn('JSONP load error, retrying...', attempts);
+                    setTimeout(tryRequest, 1200 + attempts * 300);
+                } else {
+                    // Try fetch fallback (may fail due to CORS - it's best-effort)
+                    tryFetchFallback().then(resp => {
+                        if (resp) {
+                            finished = true;
+                            handleDetailsResponse(resp);
+                        } else {
+                            // final fallback: show minimal info and finalize
+                            console.warn('Fallback fetch failed. Mostriamo contenuto parziale.');
+                            if (emailElem) emailElem.textContent = 'Non disponibile';
+                            if (paymentElem) paymentElem.textContent = 'Non disponibile';
+                            finalizePageLoad();
+                        }
+                    }).catch(err => {
+                        console.warn('Fallback fetch exception', err);
+                        if (emailElem) emailElem.textContent = 'Non disponibile';
+                        if (paymentElem) paymentElem.textContent = 'Non disponibile';
+                        finalizePageLoad();
+                    });
+                }
+            };
 
-    if (response && !response.error) {
-        // Aggiorna Email
-        if (response.email && emailElem) {
-            emailElem.textContent = response.email;
+            // Append script to trigger JSONP
+            document.body.appendChild(script);
+
+            // Also guard: if callback hasn't run within 5s, treat as failure -> try retry/fallback
+            setTimeout(() => {
+                if (!finished) {
+                    // remove this callback and retry or fallback
+                    try {
+                        cleanup();
+                    } catch (e) {}
+                    if (attempts <= maxRetries) {
+                        console.warn('JSONP timeout, retrying...', attempts);
+                        setTimeout(tryRequest, 800 + attempts * 200);
+                    } else {
+                        tryFetchFallback().then(resp => {
+                            if (resp) {
+                                finished = true;
+                                handleDetailsResponse(resp);
+                            } else {
+                                if (emailElem) emailElem.textContent = 'Non disponibile';
+                                if (paymentElem) paymentElem.textContent = 'Non disponibile';
+                                finalizePageLoad();
+                            }
+                        }).catch(err => {
+                            if (emailElem) emailElem.textContent = 'Non disponibile';
+                            if (paymentElem) paymentElem.textContent = 'Non disponibile';
+                            finalizePageLoad();
+                        });
+                    }
+                }
+            }, 5000);
         }
 
-        // Aggiorna Metodo Pagamento
-        if (paymentElem) {
-            if (response.last4) {
-                paymentElem.textContent = `•••• ${response.last4}`;
-            } else {
-                paymentElem.textContent = 'Pagamento Online';
+        // Best-effort fetch fallback which attempts to GET the JSONP URL and extract JSON payload.
+        async function tryFetchFallback() {
+            try {
+                const fetchUrl = `${webAppUrl}?get_details=1&session_id=${encodeURIComponent(sessionId)}&callback=__FALLBACK_CB&no_cache=${Date.now()}`;
+                const res = await fetch(fetchUrl, { method: 'GET', cache: 'no-store' });
+                if (!res.ok) {
+                    console.warn('Fetch fallback response not ok', res.status);
+                    return null;
+                }
+                const text = await res.text();
+                // text is like: __FALLBACK_CB({...})
+                const start = text.indexOf('(');
+                const end = text.lastIndexOf(')');
+                if (start === -1 || end === -1) return null;
+                const jsonStr = text.substring(start + 1, end);
+                const parsed = JSON.parse(jsonStr);
+                return parsed;
+            } catch (e) {
+                // Likely CORS or network error; swallow and return null
+                console.warn('Fetch fallback failed (CORS/network?)', e);
+                return null;
             }
         }
 
-        // Aggiorna ID Ordine
-        if (response.order_id && orderNumElem) {
-            orderNumElem.textContent = `Ordine #${response.order_id}`;
-            currentOrderId = response.order_id;
-        }
+        tryRequest();
     }
 
-    // === GESTIONE TIMESTAMP FISSO PER QUESTO ORDINE SPECIFICO ===
-    let confirmedTime;
+    // ---------- Existing global handler (unchanged) ----------
+    window.handleDetailsResponse = function(response) {
+        const emailElem = document.getElementById('emailValue');
+        const paymentElem = document.getElementById('paymentValue');
+        const orderNumElem = document.getElementById('orderNumber');
 
-    // Se abbiamo l'ID ordine dal backend (più affidabile)
-    if (currentOrderId) {
-        const storedTime = localStorage.getItem(`lh360_order_time_${currentOrderId}`);
-        if (storedTime) {
-            confirmedTime = storedTime; // Usa il timestamp salvato per questo ordine
-        } else {
-            confirmedTime = new Date().toISOString();
-            localStorage.setItem(`lh360_order_time_${currentOrderId}`, confirmedTime); // Salva per questo ordine
+        let currentOrderId = null;
+
+        if (response && !response.error) {
+            if (response.email && emailElem) {
+                emailElem.textContent = response.email;
+            }
+            if (paymentElem) {
+                if (response.last4) {
+                    paymentElem.textContent = `•••• ${response.last4}`;
+                } else {
+                    paymentElem.textContent = 'Pagamento Online';
+                }
+            }
+            if (response.order_id && orderNumElem) {
+                orderNumElem.textContent = `Ordine #${response.order_id}`;
+                currentOrderId = response.order_id;
+            }
         }
-        
-        // NUOVO: Salva anche l'ID dell'ultimo ordine per tracking
-        localStorage.setItem('lh360_last_order_id', currentOrderId);
-    } else {
-        // Fallback: usa session_id dall'URL (se presente)
-        const urlParams = new URLSearchParams(window.location.search);
-        const sessionId = urlParams.get('session_id');
-        const fallbackKey = sessionId ? `lh360_order_time_session_${sessionId}` : 'lh360_order_time_fallback';
 
-        const storedTime = localStorage.getItem(fallbackKey);
-        if (storedTime) {
-            confirmedTime = storedTime;
+        let confirmedTime;
+        if (currentOrderId) {
+            const storedTime = localStorage.getItem(`lh360_order_time_${currentOrderId}`);
+            if (storedTime) {
+                confirmedTime = storedTime;
+            } else {
+                confirmedTime = new Date().toISOString();
+                localStorage.setItem(`lh360_order_time_${currentOrderId}`, confirmedTime);
+            }
+            localStorage.setItem('lh360_last_order_id', currentOrderId);
         } else {
-            confirmedTime = new Date().toISOString();
-            localStorage.setItem(fallbackKey, confirmedTime);
+            const urlParams = new URLSearchParams(window.location.search);
+            const sessionId = urlParams.get('session_id');
+            const fallbackKey = sessionId ? `lh360_order_time_session_${sessionId}` : 'lh360_order_time_fallback';
+            const storedTime = localStorage.getItem(fallbackKey);
+            if (storedTime) {
+                confirmedTime = storedTime;
+            } else {
+                confirmedTime = new Date().toISOString();
+                localStorage.setItem(fallbackKey, confirmedTime);
+            }
         }
-    }
 
-    // NUOVO: Salva i dettagli completi dell'ordine per tracking immediato
-    if (currentOrderId) {
-        const cart = JSON.parse(localStorage.getItem('lh360_cart') || '[]');
-        const subtotal = cart.reduce((sum, item) => sum + (item.price * (item.qty || 1)), 0);
-        const shipping = subtotal >= 150 ? 0 : 15;
-        const total = subtotal + shipping;
-        
-        // Formatta data in italiano lungo
-        const today = new Date();
-        const formattedDate = today.toLocaleDateString('it-IT', { 
-            day: 'numeric', 
-            month: 'long', 
-            year: 'numeric' 
-        });
-        
-        const orderDetails = {
-            id: currentOrderId,
-            data: formattedDate, // Formato: "14 novembre 2025"
-            stato: 'In Preparazione',
-            totale: total.toFixed(2),
-            consegna_prevista: calculateDeliveryDate(3), // 3 giorni da oggi
-            products: cart.map(item => ({
-                name: item.title || 'Prodotto',
-                quantity: item.qty || 1,
-                price: item.price || 0,
-                image: item.image || ''
-            })),
-            email: response?.email || '',
-            timestamp: confirmedTime
+        if (currentOrderId) {
+            const cart = JSON.parse(localStorage.getItem('lh360_cart') || '[]');
+            const subtotal = cart.reduce((sum, item) => sum + (item.price * (item.qty || 1)), 0);
+            const shipping = subtotal >= 150 ? 0 : 15;
+            const total = subtotal + shipping;
+            const today = new Date();
+            const formattedDate = today.toLocaleDateString('it-IT', {
+                day: 'numeric',
+                month: 'long',
+                year: 'numeric'
+            });
+            const orderDetails = {
+                id: currentOrderId,
+                data: formattedDate,
+                stato: 'In Preparazione',
+                totale: total.toFixed(2),
+                consegna_prevista: calculateDeliveryDate(3),
+                products: cart.map(item => ({
+                    name: item.title || 'Prodotto',
+                    quantity: item.qty || 1,
+                    price: item.price || 0,
+                    image: item.image || ''
+                })),
+                email: response?.email || '',
+                timestamp: confirmedTime
+            };
+            localStorage.setItem('lh360_pending_order', JSON.stringify(orderDetails));
+            console.log('✅ Ordine salvato in localStorage per tracking immediato:', orderDetails);
+        }
+
+        const timelineData = {
+            current_status: response?.current_status || 'preparing',
+            status_dates: {
+                confirmed: confirmedTime,
+                preparing: response?.status_dates?.preparing || null,
+                shipped: response?.status_dates?.shipped || null,
+                delivered: response?.status_dates?.delivered || null
+            },
+            estimated_dates: response?.estimated_dates || {
+                preparing: 'In corso',
+                shipped: '7-8 Nov',
+                delivered: '8-9 Nov'
+            }
         };
-        
-        localStorage.setItem('lh360_pending_order', JSON.stringify(orderDetails));
-        console.log('✅ Ordine salvato in localStorage per tracking immediato:', orderDetails);
-    }
 
-    // Prepara i dati per la timeline
-    const timelineData = {
-        current_status: response?.current_status || 'preparing',
-        status_dates: {
-            confirmed: confirmedTime,
-            preparing: response?.status_dates?.preparing || null,
-            shipped: response?.status_dates?.shipped || null,
-            delivered: response?.status_dates?.delivered || null
-        },
-        estimated_dates: response?.estimated_dates || {
-            preparing: 'In corso',
-            shipped: '7-8 Nov',
-            delivered: '8-9 Nov'
+        if (!response || response.error) {
+            timelineData.current_status = 'confirmed';
+            timelineData.status_dates = { confirmed: confirmedTime };
         }
+
+        updateTimeline(timelineData);
+
+        // Trigger polling light (best-effort)
+        const triggerCallback = 'handlePollResponse_' + Date.now();
+        const triggerScript = document.createElement('script');
+        triggerScript.src = `${webAppUrl}?action=trigger_poll&callback=${triggerCallback}`;
+        window[triggerCallback] = function(resp) {
+            try { if (triggerScript.parentNode) triggerScript.parentNode.removeChild(triggerScript); } catch(e){}
+            try { delete window[triggerCallback]; } catch(e){}
+            console.log('Polling triggerato:', resp);
+        };
+        document.body.appendChild(triggerScript);
+
+        delayFinalize(startTime);
     };
-
-    // Fallback completo se response è vuoto
-    if (!response || response.error) {
-        timelineData.current_status = 'confirmed';
-        timelineData.status_dates = { confirmed: confirmedTime };
-    }
-
-    updateTimeline(timelineData);
-    
-    // NUOVO: Trigger polling per update immediato Sheets
-  const triggerCallback = 'handlePollResponse_' + Date.now();
-  const triggerScript = document.createElement('script');
-  triggerScript.src = `${webAppUrl}?action=trigger_poll&callback=${triggerCallback}`;
-  window[triggerCallback] = function(resp) {
-    console.log('Polling triggerato:', resp);
-    // Pulisci
-    document.body.removeChild(triggerScript);
-    delete window[triggerCallback];
-  };
-  document.body.appendChild(triggerScript);
-
-  delayFinalize(startTime);
-};
 
 /**
  * Helper: Calcola data di consegna prevista
@@ -1145,3 +1175,4 @@ function calculateDeliveryDate(daysFromNow) {
 </script>    
 </body>
 </html>
+
