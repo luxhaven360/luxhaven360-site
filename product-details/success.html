@@ -681,89 +681,55 @@
     
     <script>
     // CONFIGURAZIONE
-    // URL della tua Web App Google Apps Script
     const webAppUrl = 'https://script.google.com/macros/s/AKfycbyTJwL6iy0NYLtx1_1tzHyLgq0GWkhqXx92wiGvT6oUzPinfeUJPQ1aC0lYmhaBB1eA/exec';
 
-    // Variabile di sicurezza per evitare loop infiniti di caricamento
     let loadTimeout;
     let startTime;
 
-    /**
-     * AVVIO
-     * Al caricamento della pagina, inizia il recupero dati.
-     */
+    // Gestione caricamento anche quando si torna indietro con la navigazione (Mobile fix)
+    window.addEventListener('pageshow', (event) => {
+        if (event.persisted) {
+            loadOrderDetails();
+        }
+    });
+
     window.addEventListener('load', () => {
         startTime = Date.now();
-
-        // 1. Imposta i link corretti per i pulsanti
         setupButtons();
-
-        // 2. Carica gli articoli dal LocalStorage (prima di cancellarli)
         loadPurchasedItems();
-
-        // 3. Recupera i dettagli dell'ordine (Email, ID, Pagamento)
         loadOrderDetails();
 
-        // 4. Timeout di sicurezza: se dopo 10 secondi non abbiamo dati, mostriamo comunque la pagina (aumentato per adattarsi al ritardo minimo)
+        // Timeout di sicurezza
         loadTimeout = setTimeout(() => {
             console.warn('Timeout caricamento dati: forzatura visualizzazione.');
             delayFinalize(startTime);
         }, 10000);
     });
 
-    /**
-     * FUNZIONE: Finalizza il caricamento
-     * Nasconde il loader e mostra il contenuto.
-     */
     function finalizePageLoad() {
-        clearTimeout(loadTimeout); // Cancella il timeout di sicurezza se siamo arrivati qui
-
+        clearTimeout(loadTimeout);
         const loader = document.getElementById('luxhaven-loader');
         const content = document.querySelector('.container');
 
-        // Fade out loader
         if (loader) {
             loader.style.opacity = '0';
-            setTimeout(() => {
-                loader.style.display = 'none';
-            }, 500);
+            setTimeout(() => { loader.style.display = 'none'; }, 500);
         }
-
-        // Fade in contenuto
         if (content) {
             content.style.opacity = '1';
         }
 
-        // Svuota il carrello DOPO aver mostrato i dati
-        // (Piccolo ritardo per assicurarsi che la UI sia renderizzata)
         setTimeout(() => {
+            // Pulizia carrello ma manteniamo i dati dell'ordine corrente
             localStorage.removeItem('lh360_cart');
-            // Rimuoviamo anche SKU selezionati o varianti per pulizia
             localStorage.removeItem('lh360_selected_variant_id');
-            // Nota: Non rimuoviamo 'lh360_order_confirmed_time' per persistere la data
         }, 1000);
-
-        // Rimuovi dati molto vecchi (es. ordini di oltre 90 giorni)
-setTimeout(() => {
-    const now = Date.now();
-    for (let i = 0; i < localStorage.length; i++) {
-        const key = localStorage.key(i);
-        if (key.startsWith('lh360_order_time_')) {
-            const timestamp = localStorage.getItem(key);
-            if (timestamp && (now - new Date(timestamp).getTime()) > 90 * 24 * 60 * 60 * 1000) {
-                localStorage.removeItem(key);
-            }
-        }
-    }
-}, 5000);
     }
 
-    /**
-     * FUNZIONE: Ritarda la finalizzazione per garantire almeno 8 secondi di visualizzazione del loader
-     */
     function delayFinalize(startTime) {
         const elapsed = Date.now() - startTime;
-        const remaining = 8000 - elapsed;
+        // Riduciamo il tempo minimo di attesa per migliorare UX mobile
+        const remaining = 4000 - elapsed; 
         if (remaining > 0) {
             setTimeout(finalizePageLoad, remaining);
         } else {
@@ -771,56 +737,38 @@ setTimeout(() => {
         }
     }
 
-    /**
-     * FUNZIONE: Configura i pulsanti CTA con i link assoluti corretti
-     */
     function setupButtons() {
-        // Link 1: Traccia il mio Ordine
         const trackBtn = document.querySelector('.btn-primary');
-        if (trackBtn) {
-            trackBtn.href = 'https://luxhaven360.github.io/luxhaven360-site/product-details/tracking-order.html';
-        }
-
-        // Link 2: Torna allo Shop
+        if (trackBtn) trackBtn.href = 'https://luxhaven360.github.io/luxhaven360-site/product-details/tracking-order.html';
         const shopBtn = document.querySelector('.btn-secondary');
-        if (shopBtn) {
-            shopBtn.href = 'https://luxhaven360.github.io/luxhaven360-site/index.html#shop';
-        }
+        if (shopBtn) shopBtn.href = 'https://luxhaven360.github.io/luxhaven360-site/index.html#shop';
     }
 
-    /**
-     * FUNZIONE: Recupera dettagli da Google Script (JSONP)
-     */
     function loadOrderDetails() {
         const urlParams = new URLSearchParams(window.location.search);
         const sessionId = urlParams.get('session_id');
-        const orderIdParam = urlParams.get('id_ordine'); // Se passato via URL (fallback)
+        const orderIdParam = urlParams.get('id_ordine');
 
-        // Elementi DOM
         const orderNumElem = document.getElementById('orderNumber');
         const emailElem = document.getElementById('emailValue');
         const paymentElem = document.getElementById('paymentValue');
 
-        // Fallback immediato se c'è l'ID nell'URL
         if (orderIdParam && orderNumElem) {
             orderNumElem.textContent = `Ordine #${orderIdParam}`;
         }
 
         if (!sessionId) {
-            // Se non c'è session ID, non possiamo fare fetch. Mostriamo la pagina.
             if (emailElem) emailElem.textContent = 'Non disponibile';
-            if (paymentElem) paymentElem.textContent = 'Non disponibile';
             delayFinalize(startTime);
             return;
         }
 
-        // Creazione chiamata JSONP
         const callbackName = 'handleDetailsResponse';
+        // FIX MOBILE: Aggiunto parametro timestamp (&t=) per evitare cache aggressiva su iOS/Android
         const script = document.createElement('script');
-        script.src = `${webAppUrl}?get_details=1&session_id=${encodeURIComponent(sessionId)}&callback=${callbackName}`;
+        script.src = `${webAppUrl}?get_details=1&session_id=${encodeURIComponent(sessionId)}&callback=${callbackName}&t=${Date.now()}`;
         script.async = true;
-
-        // Gestione errore script (es. blocco adblocker o rete)
+        
         script.onerror = () => {
             console.error('Errore script Google Apps.');
             delayFinalize(startTime);
@@ -829,319 +777,157 @@ setTimeout(() => {
         document.body.appendChild(script);
     }
 
-    /**
- * CALLBACK GLOBALE: Riceve i dati da Google Script
- */
-window.handleDetailsResponse = function(response) {
-    const emailElem = document.getElementById('emailValue');
-    const paymentElem = document.getElementById('paymentValue');
-    const orderNumElem = document.getElementById('orderNumber');
+    window.handleDetailsResponse = function(response) {
+        const emailElem = document.getElementById('emailValue');
+        const paymentElem = document.getElementById('paymentValue');
+        const orderNumElem = document.getElementById('orderNumber');
+        const dateConfirmedElem = document.getElementById('date-confirmed');
 
-    let currentOrderId = null;
+        let currentOrderId = null;
 
-    if (response && !response.error) {
-        // Aggiorna Email
-        if (response.email && emailElem) {
-            emailElem.textContent = response.email;
-        }
-
-        // Aggiorna Metodo Pagamento
-        if (paymentElem) {
-            if (response.last4) {
-                paymentElem.textContent = `•••• ${response.last4}`;
-            } else {
-                paymentElem.textContent = 'Pagamento Online';
+        if (response && !response.error) {
+            if (response.email && emailElem) {
+                emailElem.textContent = response.email;
+            }
+            if (paymentElem) {
+                if (response.last4) {
+                    paymentElem.textContent = `•••• ${response.last4}`;
+                } else {
+                    paymentElem.textContent = 'Pagamento Online';
+                }
+            }
+            if (response.order_id && orderNumElem) {
+                orderNumElem.textContent = `Ordine #${response.order_id}`;
+                currentOrderId = response.order_id;
             }
         }
 
-        // Aggiorna ID Ordine
-        if (response.order_id && orderNumElem) {
-            orderNumElem.textContent = `Ordine #${response.order_id}`;
-            currentOrderId = response.order_id;
-        }
-    }
-
-    // === GESTIONE TIMESTAMP FISSO PER QUESTO ORDINE SPECIFICO ===
-    let confirmedTime;
-
-    // Se abbiamo l'ID ordine dal backend (più affidabile)
-    if (currentOrderId) {
-        const storedTime = localStorage.getItem(`lh360_order_time_${currentOrderId}`);
-        if (storedTime) {
-            confirmedTime = storedTime; // Usa il timestamp salvato per questo ordine
-        } else {
-            confirmedTime = new Date().toISOString();
-            localStorage.setItem(`lh360_order_time_${currentOrderId}`, confirmedTime); // Salva per questo ordine
-        }
+        // Gestione Data/Ora Conferma
+        let confirmedTime;
+        const now = new Date();
         
-        // NUOVO: Salva anche l'ID dell'ultimo ordine per tracking
-        localStorage.setItem('lh360_last_order_id', currentOrderId);
-    } else {
-        // Fallback: usa session_id dall'URL (se presente)
-        const urlParams = new URLSearchParams(window.location.search);
-        const sessionId = urlParams.get('session_id');
-        const fallbackKey = sessionId ? `lh360_order_time_session_${sessionId}` : 'lh360_order_time_fallback';
-
-        const storedTime = localStorage.getItem(fallbackKey);
-        if (storedTime) {
-            confirmedTime = storedTime;
+        // Se abbiamo ID ordine, usiamo localStorage per persistere la data esatta di "prima visualizzazione"
+        if (currentOrderId) {
+            const storedTime = localStorage.getItem(`lh360_order_time_${currentOrderId}`);
+            if (storedTime) {
+                confirmedTime = storedTime;
+            } else {
+                confirmedTime = now.toISOString();
+                localStorage.setItem(`lh360_order_time_${currentOrderId}`, confirmedTime);
+                localStorage.setItem('lh360_last_order_id', currentOrderId);
+            }
         } else {
-            confirmedTime = new Date().toISOString();
-            localStorage.setItem(fallbackKey, confirmedTime);
+            confirmedTime = now.toISOString();
         }
-    }
 
-    // NUOVO: Salva i dettagli completi dell'ordine per tracking immediato
-    if (currentOrderId) {
-        const cart = JSON.parse(localStorage.getItem('lh360_cart') || '[]');
-        const subtotal = cart.reduce((sum, item) => sum + (item.price * (item.qty || 1)), 0);
-        const shipping = subtotal >= 150 ? 0 : 15;
-        const total = subtotal + shipping;
-        
-        // Formatta data in italiano lungo
-        const today = new Date();
-        const formattedDate = today.toLocaleDateString('it-IT', { 
-            day: 'numeric', 
-            month: 'long', 
-            year: 'numeric' 
+        // Formattazione Data Richiesta: "14 nov, 16:48"
+        const dateObj = new Date(confirmedTime);
+        const dateStr = dateObj.toLocaleDateString('it-IT', { day: 'numeric', month: 'short' });
+        const timeStr = dateObj.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
+        const formattedDateTime = `${dateStr}, ${timeStr}`;
+
+        // Aggiorna UI Data
+        if (dateConfirmedElem) dateConfirmedElem.textContent = formattedDateTime;
+
+        // Salva ordine pending per tracking immediato
+        if (currentOrderId) {
+            const cart = JSON.parse(localStorage.getItem('lh360_cart') || '[]');
+            const subtotal = cart.reduce((sum, item) => sum + (item.price * (item.qty || 1)), 0);
+            const shipping = subtotal >= 150 ? 0 : 15;
+            
+            const orderDetails = {
+                id: currentOrderId,
+                data: dateObj.toLocaleDateString('it-IT', { day: 'numeric', month: 'long', year: 'numeric' }),
+                stato: 'In Preparazione', // Stato iniziale forzato
+                totale: (subtotal + shipping).toFixed(2),
+                consegna_prevista: calculateDeliveryDate(3),
+                products: cart.map(item => ({
+                    name: item.title || 'Prodotto',
+                    quantity: item.qty || 1,
+                    price: item.price || 0,
+                    image: item.image || ''
+                })),
+                email: response?.email || '',
+                timestamp: confirmedTime
+            };
+            
+            localStorage.setItem('lh360_pending_order', JSON.stringify(orderDetails));
+        }
+
+        // Aggiorna Timeline UI
+        updateTimeline({
+            current_status: 'confirmed',
+            status_dates: { confirmed: confirmedTime },
+            estimated_dates: { preparing: 'In corso' } // Fallback
         });
         
-        const orderDetails = {
-            id: currentOrderId,
-            data: formattedDate, // Formato: "14 novembre 2025"
-            stato: 'In Preparazione',
-            totale: total.toFixed(2),
-            consegna_prevista: calculateDeliveryDate(3), // 3 giorni da oggi
-            products: cart.map(item => ({
-                name: item.title || 'Prodotto',
-                quantity: item.qty || 1,
-                price: item.price || 0,
-                image: item.image || ''
-            })),
-            email: response?.email || '',
-            timestamp: confirmedTime
-        };
-        
-        localStorage.setItem('lh360_pending_order', JSON.stringify(orderDetails));
-        console.log('✅ Ordine salvato in localStorage per tracking immediato:', orderDetails);
-    }
+        // Trigger Sheets polling in background
+        const triggerCallback = 'handlePollResponse_' + Date.now();
+        const triggerScript = document.createElement('script');
+        triggerScript.src = `${webAppUrl}?action=trigger_poll&callback=${triggerCallback}`;
+        document.body.appendChild(triggerScript);
 
-    // Prepara i dati per la timeline
-    const timelineData = {
-        current_status: response?.current_status || 'preparing',
-        status_dates: {
-            confirmed: confirmedTime,
-            preparing: response?.status_dates?.preparing || null,
-            shipped: response?.status_dates?.shipped || null,
-            delivered: response?.status_dates?.delivered || null
-        },
-        estimated_dates: response?.estimated_dates || {
-            preparing: 'In corso',
-            shipped: '7-8 Nov',
-            delivered: '8-9 Nov'
-        }
+        delayFinalize(startTime);
     };
 
-    // Fallback completo se response è vuoto
-    if (!response || response.error) {
-        timelineData.current_status = 'confirmed';
-        timelineData.status_dates = { confirmed: confirmedTime };
+    function calculateDeliveryDate(days) {
+        const d = new Date();
+        d.setDate(d.getDate() + days);
+        return d.toLocaleDateString('it-IT', { day: 'numeric', month: 'long', year: 'numeric' });
     }
 
-    updateTimeline(timelineData);
-    
-    // NUOVO: Trigger polling per update immediato Sheets
-  const triggerCallback = 'handlePollResponse_' + Date.now();
-  const triggerScript = document.createElement('script');
-  triggerScript.src = `${webAppUrl}?action=trigger_poll&callback=${triggerCallback}`;
-  window[triggerCallback] = function(resp) {
-    console.log('Polling triggerato:', resp);
-    // Pulisci
-    document.body.removeChild(triggerScript);
-    delete window[triggerCallback];
-  };
-  document.body.appendChild(triggerScript);
-
-  delayFinalize(startTime);
-};
-
-/**
- * Helper: Calcola data di consegna prevista
- */
-function calculateDeliveryDate(daysFromNow) {
-    const date = new Date();
-    date.setDate(date.getDate() + daysFromNow);
-    return date.toLocaleDateString('it-IT', { day: 'numeric', month: 'long', year: 'numeric' });
-}
-
-/**
- * Helper: Calcola data di consegna prevista
- */
-function calculateDeliveryDate(daysFromNow) {
-    const date = new Date();
-    date.setDate(date.getDate() + daysFromNow);
-    return date.toLocaleDateString('it-IT', { day: 'numeric', month: 'long', year: 'numeric' });
-}
-
-    /**
-     * FUNZIONE: Aggiorna la timeline dinamicamente
-     */
     function updateTimeline(data) {
-        const steps = {
-            confirmed: document.getElementById('step-confirmed'),
-            preparing: document.getElementById('step-preparing'),
-            shipped: document.getElementById('step-shipped'),
-            delivered: document.getElementById('step-delivered')
-        };
-
-        const dateElems = {
-            confirmed: document.getElementById('date-confirmed'),
-            preparing: document.getElementById('date-preparing'),
-            shipped: document.getElementById('date-shipped'),
-            delivered: document.getElementById('date-delivered')
-        };
-
-        const icons = {
-            confirmed: '✓',
-            preparing: '📦',
-            shipped: '🚚',
-            delivered: '🏠'
-        };
-
-        const stepOrder = ['confirmed', 'preparing', 'shipped', 'delivered'];
-        const currentIndex = stepOrder.indexOf(data.current_status);
-
-        // Aggiorna classi, icone e date
-        stepOrder.forEach((step, index) => {
-            const elem = steps[step];
-            if (!elem) return;
-
-            // Rimuovi classi esistenti
-            elem.classList.remove('completed', 'active', 'pending');
-
-            // Aggiungi classe appropriata
-            if (index < currentIndex) {
-                elem.classList.add('completed');
-            } else if (index === currentIndex) {
-                elem.classList.add('active');
-            } else {
-                elem.classList.add('pending');
-            }
-
-            // Aggiorna icona del dot
-            const dot = elem.querySelector('.timeline-dot');
-            if (dot) {
-                if (index < currentIndex) {
-                    dot.innerHTML = '✓'; // Spunta per completati
-                } else {
-                    dot.innerHTML = icons[step]; // Icona specifica per active/pending
-                }
-            }
-
-            // Aggiorna data
-            const dateElem = dateElems[step];
-            if (dateElem) {
-                const actualDate = data.status_dates[step];
-                if (actualDate) {
-                    const date = new Date(actualDate);
-                    dateElem.textContent = date.toLocaleDateString('it-IT', { day: 'numeric', month: 'short' }) + ', ' + date.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
-                } else {
-                    dateElem.textContent = data.estimated_dates[step] || 'Da definire';
-                }
-            }
-        });
-
-        // Aggiorna barra di progresso dinamicamente
-        const timelineElem = document.querySelector('.timeline');
-        if (timelineElem) {
-            const progress = (currentIndex / (stepOrder.length - 1)) * 100;
-            timelineElem.style.setProperty('--progress-percent', `${progress}%`);
+        const stepConfirmed = document.getElementById('step-confirmed');
+        if (stepConfirmed) {
+            stepConfirmed.classList.add('active');
+            const dot = stepConfirmed.querySelector('.timeline-dot');
+            if (dot) dot.innerHTML = '✓';
         }
+        // Reset altri step visuali a pending
+        ['preparing', 'shipped', 'delivered'].forEach(id => {
+            const el = document.getElementById(`step-${id}`);
+            if(el) el.classList.remove('active', 'completed');
+            if(el) el.classList.add('pending');
+        });
     }
 
-    /**
-     * FUNZIONE: Carica articoli dal LocalStorage
-     */
     function loadPurchasedItems() {
-        const cartRaw = localStorage.getItem('lh360_cart');
-        const cart = cartRaw ? JSON.parse(cartRaw) : [];
-        
+        const cart = JSON.parse(localStorage.getItem('lh360_cart') || '[]');
         const itemsContainer = document.querySelector('.summary-items');
         const subtotalElem = document.querySelector('.summary-totals .summary-row:nth-child(1) span:last-child');
-        const shippingElem = document.querySelector('.summary-totals .summary-row:nth-child(2) span:last-child');
         const totalElem = document.querySelector('.summary-total span:last-child');
 
         if (!itemsContainer) return;
-
-        // Svuota container (per sicurezza)
         itemsContainer.innerHTML = '';
 
-        if (cart.length === 0) {
-            itemsContainer.innerHTML = '<div style="padding:1rem; color:#a1a1aa; text-align:center;">Dettagli articoli non disponibili (Sessione scaduta)</div>';
-            return;
-        }
+        if (cart.length === 0) return;
 
         let subtotal = 0;
-
-        // Mappa colori per visualizzazione più carina
-        const colorNames = {
-            '#000000': 'Nero', '#FFFFFF': 'Bianco', '#008000': 'Verde', 
-            '#FF0000': 'Rosso', '#0000FF': 'Blu'
-        };
-
         cart.forEach(item => {
-            // Calcolo subtotale
-            const itemPrice = parseFloat(item.price) || 0;
-            const itemQty = parseInt(item.qty) || 1;
-            subtotal += itemPrice * itemQty;
+            const price = parseFloat(item.price) || 0;
+            const qty = parseInt(item.qty) || 1;
+            subtotal += price * qty;
 
-            // Formattazione variante
-            let displayColor = item.color || '';
-            if (displayColor.startsWith('#') && colorNames[displayColor]) {
-                displayColor = colorNames[displayColor];
-            }
-            
-            let variantText = '';
-            if(displayColor) variantText += displayColor;
-            if(displayColor && item.size) variantText += ' · ';
-            if(item.size) variantText += `Taglia ${item.size}`;
-            if(!variantText) variantText = 'Taglia Unica';
-
-            // Creazione HTML Item
             const div = document.createElement('div');
             div.className = 'summary-item';
             div.innerHTML = `
                 <div class="summary-item-image">
-                    <img src="${item.image || 'https://via.placeholder.com/150'}" alt="${item.title}">
+                    <img src="${item.image || 'https://via.placeholder.com/150'}" alt="${item.title}" style="width:100%;height:100%;object-fit:cover;">
                 </div>
                 <div class="summary-item-details">
-                    <div class="summary-item-name">${item.title} <span style="font-size:0.8em; color:#71717a;">(x${itemQty})</span></div>
-                    <div class="summary-item-variant">${variantText}</div>
+                    <div class="summary-item-name">${item.title} <span style="font-size:0.8em;">x${qty}</span></div>
+                    <div class="summary-item-variant">${item.color || ''} ${item.size ? '· ' + item.size : ''}</div>
                 </div>
-                <div class="summary-item-price">€ ${(itemPrice * itemQty).toLocaleString('it-IT', {minimumFractionDigits: 2})}</div>
+                <div class="summary-item-price">€ ${(price * qty).toLocaleString('it-IT', {minimumFractionDigits: 2})}</div>
             `;
             itemsContainer.appendChild(div);
         });
 
-        // Calcolo Totali
-        const shippingCost = subtotal >= 150 ? 0 : 15;
-        const total = subtotal + shippingCost;
-
-        // Aggiornamento UI Totali
-        if (subtotalElem) subtotalElem.textContent = `€ ${subtotal.toLocaleString('it-IT', {minimumFractionDigits: 2})}`;
-        
-        if (shippingElem) {
-            if (shippingCost === 0) {
-                shippingElem.textContent = 'Gratuita';
-                shippingElem.style.color = '#34d399';
-            } else {
-                shippingElem.textContent = `€ ${shippingCost.toLocaleString('it-IT', {minimumFractionDigits: 2})}`;
-                shippingElem.style.color = '#fafafa';
-            }
-        }
-
-        if (totalElem) totalElem.textContent = `€ ${total.toLocaleString('it-IT', {minimumFractionDigits: 2})}`;
+        const shipping = subtotal >= 150 ? 0 : 15;
+        if(subtotalElem) subtotalElem.textContent = `€ ${subtotal.toLocaleString('it-IT', {minimumFractionDigits: 2})}`;
+        if(totalElem) totalElem.textContent = `€ ${(subtotal + shipping).toLocaleString('it-IT', {minimumFractionDigits: 2})}`;
     }
-</script>    
+</script>
 </body>
 </html>
+
