@@ -33,9 +33,15 @@
                 <li><a href="#" onclick="showSection('stays')">Esperienze</a></li>
                 <li><a href="#" onclick="showSection('shop')">Shop</a></li>
                 <li><a href="#" onclick="showSection('contact')">Contatti</a></li>
+                <!-- Icona tracking (desktop/menu) -->
                 <li id="trackingIcon" class="cart-icon" onclick="window.location.href='product-details/tracking-order.html'" title="Traccia i tuoi ordini" style="display: none;">📦</li>
                 <li id="cartIcon" class="cart-icon" onclick="window.location.href='product-details/cart.html'">🛒</li>
             </ul>
+
+            <!-- Icona tracking mobile: elemento separato, fuori dal menu a comparsa.
+                 Viene mostrato/ nascosto via JS per garantire visibilità anche quando il menu è chiuso. -->
+            <div id="trackingIconMobile" class="mobile-tracking-icon" onclick="window.location.href='product-details/tracking-order.html'" title="Traccia i tuoi ordini" aria-hidden="true" style="display:none;">📦</div>
+
         </div>
     </nav>
 
@@ -118,9 +124,9 @@
         </div>
     </footer>
 
-    <script src="script.js"></script>
+            <script src="script.js"></script>
     <script>
-        const WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbyl-SrRgn4ZGCL-wPYy8fLBKLaUtxY7V08KGujaihbz1tPX47BM36yw6Mj60UUT8ftv/exec';
+        const WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbyTJwL6iy0NYLtx1_1tzHyLgq0GWkhqXx92wiGvT6oUzPinfeUJPQ1aC0lYmhaBB1eA/exec';
 
         window.onload = function() {
             const introLoader = document.getElementById('intro-loader');
@@ -137,7 +143,6 @@
             if (hash && typeof showSection === 'function') showSection(hash);
             
             updateCartIcon();
-            // Avvio tracking immediato
             updateTrackingIcon();
         };
 
@@ -151,90 +156,77 @@
             }
         }
 
-        // --- FIX TRACKING ICON STABILE ---
+        // --- FIX TRACKING ICON STABILE (aggiornato per mobile) ---
         function updateTrackingIcon() {
             const trackingIcon = document.getElementById('trackingIcon');
-            if (!trackingIcon) return;
+            const trackingIconMobile = document.getElementById('trackingIconMobile');
+            if (!trackingIcon && !trackingIconMobile) return;
 
-            // 1. Controllo Locale (UI Ottimistica): Se abbiamo dati locali validi, MOSTRA SUBITO.
-            // Non nascondiamo preventivamente per evitare il "blink".
-            cleanupOldOrders(); // Rimuove solo roba scaduta (>30gg)
+            cleanupOldOrders();
             const hasLocal = checkLocalStorageForActiveOrders();
-            
+
             if (hasLocal) {
-                if (trackingIcon.style.display !== 'block') trackingIcon.style.display = 'block';
+                if (trackingIcon) trackingIcon.style.display = 'block';
+                if (trackingIconMobile) trackingIconMobile.style.display = 'flex';
             }
 
-            // 2. Chiamata Server Silenziosa (Aggiornamento "Truth")
-            // Il server deciderà se dobbiamo nasconderla.
-            fetchActiveOrdersFromAPI(trackingIcon);
+            // Chiamata server silenziosa per confermare lo stato "truth"
+            fetchActiveOrdersFromAPI(trackingIcon, trackingIconMobile);
         }
 
-        function fetchActiveOrdersFromAPI(icon) {
+        function fetchActiveOrdersFromAPI(icon, iconMobile) {
             const callbackName = 'handleActiveOrdersCount_' + Date.now();
             const script = document.createElement('script');
-            // Aggiunto parametro &t= random per evitare cache browser aggressiva
             script.src = `${WEB_APP_URL}?get_active_count=1&callback=${callbackName}&t=${Date.now()}`;
-            
-            // Timeout di sicurezza: se il server non risponde, NON nascondiamo l'icona se è già visibile
-            const timeout = setTimeout(() => {
-                cleanupScript();
-            }, 8000); // Aumentato timeout a 8s per mobile networks
+            const timeout = setTimeout(() => { cleanupScript(); }, 8000);
 
             window[callbackName] = function(response) {
                 clearTimeout(timeout);
                 if (response && typeof response.count === 'number') {
                     if (response.count > 0) {
-                        // Conferma positiva: Assicurati che sia visibile
-                        if (icon.style.display !== 'block') icon.style.display = 'block';
+                        if (icon) icon.style.display = 'block';
+                        if (iconMobile) iconMobile.style.display = 'flex';
                     } else {
-                        // Conferma negativa: Solo ora nascondiamo e puliamo
-                        if (icon.style.display !== 'none') icon.style.display = 'none';
+                        if (icon) icon.style.display = 'none';
+                        if (iconMobile) iconMobile.style.display = 'none';
                         clearAllLocalOrderData();
                     }
                 }
                 cleanupScript();
             };
-            
+
             script.onerror = () => {
                 clearTimeout(timeout);
                 cleanupScript();
-                // In caso di errore rete, manteniamo lo stato locale (non nascondiamo)
+                // in caso di errore rete, manteniamo lo stato locale (non nascondiamo)
             };
-            
+
             function cleanupScript() {
-                try {
-                    if (script.parentNode) document.body.removeChild(script);
-                    delete window[callbackName];
-                } catch (e) {}
+                try { if (script.parentNode) document.body.removeChild(script); } catch (e) {}
+                try { delete window[callbackName]; } catch (e) {}
             }
-            
+
             document.body.appendChild(script);
         }
 
-/**
- * Clear forzato di tutte le key local relative a ordini
- */
-function clearAllLocalOrderData() {
-    localStorage.removeItem('lh360_pending_order');
-    localStorage.removeItem('lh360_last_order_id');
-    localStorage.removeItem('lh360_order_confirmed_time');
-    
-    // Rimuovi tutte le key dinamiche
-    for (let i = localStorage.length - 1; i >= 0; i--) {
-        const key = localStorage.key(i);
-        if (key && (
-            key.startsWith('lh360_order_') ||
-            key.startsWith('lh360_pending_') ||
-            key.startsWith('lh360_order_time_') ||
-            key === 'lh360_last_product' ||  // Extra per sicurezza
-            key === 'lh360_selected_sku'
-        )) {
-            localStorage.removeItem(key);
-            console.log(`🗑️ Rimossa key outdated: ${key}`);
+        function clearAllLocalOrderData() {
+            localStorage.removeItem('lh360_pending_order');
+            localStorage.removeItem('lh360_last_order_id');
+            localStorage.removeItem('lh360_order_confirmed_time');
+            for (let i = localStorage.length - 1; i >= 0; i--) {
+                const key = localStorage.key(i);
+                if (key && (
+                    key.startsWith('lh360_order_') ||
+                    key.startsWith('lh360_pending_') ||
+                    key.startsWith('lh360_order_time_') ||
+                    key === 'lh360_last_product' ||
+                    key === 'lh360_selected_sku'
+                )) {
+                    localStorage.removeItem(key);
+                    console.log(`🗑️ Rimossa key outdated: ${key}`);
+                }
+            }
         }
-    }
-}
 
         /**
          * Check localStorage per ordini attivi (ultimi 30 giorni)
@@ -403,3 +395,4 @@ function clearAllLocalOrderData() {
     </script>
 </body>
 </html>
+
