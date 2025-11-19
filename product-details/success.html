@@ -682,7 +682,7 @@
     <script>
     // CONFIGURAZIONE
     // URL della tua Web App Google Apps Script
-    const webAppUrl = 'https://script.google.com/macros/s/AKfycbyl-SrRgn4ZGCL-wPYy8fLBKLaUtxY7V08KGujaihbz1tPX47BM36yw6Mj60UUT8ftv/exec';
+    const webAppUrl = 'https://script.google.com/macros/s/AKfycbyTJwL6iy0NYLtx1_1tzHyLgq0GWkhqXx92wiGvT6oUzPinfeUJPQ1aC0lYmhaBB1eA/exec';
 
     // Variabile di sicurezza per evitare loop infiniti di caricamento
     let loadTimeout;
@@ -791,48 +791,28 @@ setTimeout(() => {
     /**
      * FUNZIONE: Recupera dettagli da Google Script (JSONP)
      */
-   function loadOrderDetails(retryCount = 0) {
-        const sessionId = new URLSearchParams(window.location.search).get('session_id');
+    function loadOrderDetails() {
+        const urlParams = new URLSearchParams(window.location.search);
+        const sessionId = urlParams.get('session_id');
+        const orderIdParam = urlParams.get('id_ordine'); // Se passato via URL (fallback)
+
+        // Elementi DOM
+        const orderNumElem = document.getElementById('orderNumber');
+        const emailElem = document.getElementById('emailValue');
+        const paymentElem = document.getElementById('paymentValue');
+
+        // Fallback immediato se c'è l'ID nell'URL
+        if (orderIdParam && orderNumElem) {
+            orderNumElem.textContent = `Ordine #${orderIdParam}`;
+        }
+
         if (!sessionId) {
-            console.error('Nessun session_id trovato');
+            // Se non c'è session ID, non possiamo fare fetch. Mostriamo la pagina.
+            if (emailElem) emailElem.textContent = 'Non disponibile';
+            if (paymentElem) paymentElem.textContent = 'Non disponibile';
+            delayFinalize(startTime);
             return;
         }
-
-        const callbackName = 'handleDetailsResponse_' + Date.now();
-        window[callbackName] = function(data) {
-            if (data.error) {
-                console.error('Errore API:', data.error);
-                return;
-            }
-            document.querySelector('.order-number').textContent = data.order_id || 'Non disponibile';
-            document.getElementById('orderEmail').textContent = data.email || 'Non disponibile';
-            document.getElementById('paymentLast4').textContent = data.last4 ? `**** ${data.last4}` : 'Non disponibile';
-            try { delete window[callbackName]; } catch(e) {} // Pulizia
-        };
-
-        const script = document.createElement('script');
-        script.src = `${WEB_APP_URL}?action=get_details&session_id=${encodeURIComponent(sessionId)}&callback=${callbackName}`;
-        script.onerror = () => {
-            console.error('Errore caricamento dettagli (retry ' + retryCount + ')');
-            if (retryCount < 3) {
-                setTimeout(() => loadOrderDetails(retryCount + 1), 1500); // Retry con delay 1.5s
-            }
-        };
-        document.body.appendChild(script);
-    }
-
-    // Chiamata iniziale
-    loadOrderDetails();
-
-    // Gestione bfcache (mobile restore)
-    window.addEventListener('pageshow', function(event) {
-        if (event.persisted) {
-            console.log('Pagina ripristinata da cache: ricarico dettagli');
-            loadOrderDetails(); // Ri-carica API
-            loadPurchasedItems(); // Ri-carica items da localStorage (se presente)
-            updateTimeline();
-        }
-    });
 
         // Creazione chiamata JSONP
         const callbackName = 'handleDetailsResponse';
