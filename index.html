@@ -156,38 +156,40 @@
             const trackingIcon = document.getElementById('trackingIcon');
             if (!trackingIcon) return;
 
-            cleanupOldOrders(); 
+            // 1. Controllo Locale (UI Ottimistica): Se abbiamo dati locali validi, MOSTRA SUBITO.
+            // Non nascondiamo preventivamente per evitare il "blink".
+            cleanupOldOrders(); // Rimuove solo roba scaduta (>30gg)
             const hasLocal = checkLocalStorageForActiveOrders();
             
             if (hasLocal) {
-                // Forza visualizzazione immediata basata su cache locale
-                trackingIcon.style.cssText = "display: block !important;";
-                trackingIcon.classList.add('show');
+                if (trackingIcon.style.display !== 'block') trackingIcon.style.display = 'block';
             }
 
+            // 2. Chiamata Server Silenziosa (Aggiornamento "Truth")
+            // Il server deciderà se dobbiamo nasconderla.
             fetchActiveOrdersFromAPI(trackingIcon);
         }
 
         function fetchActiveOrdersFromAPI(icon) {
             const callbackName = 'handleActiveOrdersCount_' + Date.now();
             const script = document.createElement('script');
+            // Aggiunto parametro &t= random per evitare cache browser aggressiva
             script.src = `${WEB_APP_URL}?get_active_count=1&callback=${callbackName}&t=${Date.now()}`;
             
+            // Timeout di sicurezza: se il server non risponde, NON nascondiamo l'icona se è già visibile
             const timeout = setTimeout(() => {
                 cleanupScript();
-            }, 8000); 
+            }, 8000); // Aumentato timeout a 8s per mobile networks
 
             window[callbackName] = function(response) {
                 clearTimeout(timeout);
                 if (response && typeof response.count === 'number') {
                     if (response.count > 0) {
-                        // MOSTRA ICONA: Forza display block e flag !important via cssText per mobile
-                        icon.style.cssText = "display: block !important;";
-                        icon.classList.add('show'); // Assicura che la classe show sia presente
+                        // Conferma positiva: Assicurati che sia visibile
+                        if (icon.style.display !== 'block') icon.style.display = 'block';
                     } else {
-                        // NASCONDI ICONA
-                        icon.style.display = 'none';
-                        icon.classList.remove('show');
+                        // Conferma negativa: Solo ora nascondiamo e puliamo
+                        if (icon.style.display !== 'none') icon.style.display = 'none';
                         clearAllLocalOrderData();
                     }
                 }
@@ -197,6 +199,7 @@
             script.onerror = () => {
                 clearTimeout(timeout);
                 cleanupScript();
+                // In caso di errore rete, manteniamo lo stato locale (non nascondiamo)
             };
             
             function cleanupScript() {
@@ -400,4 +403,3 @@ function clearAllLocalOrderData() {
     </script>
 </body>
 </html>
-
