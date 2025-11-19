@@ -681,180 +681,467 @@
     
     <script>
     // CONFIGURAZIONE
+    // URL della tua Web App Google Apps Script
     const webAppUrl = 'https://script.google.com/macros/s/AKfycbyTJwL6iy0NYLtx1_1tzHyLgq0GWkhqXx92wiGvT6oUzPinfeUJPQ1aC0lYmhaBB1eA/exec';
+
+    // Variabile di sicurezza per evitare loop infiniti di caricamento
     let loadTimeout;
     let startTime;
 
+    /**
+     * AVVIO
+     * Al caricamento della pagina, inizia il recupero dati.
+     */
     window.addEventListener('load', () => {
         startTime = Date.now();
+
+        // 1. Imposta i link corretti per i pulsanti
         setupButtons();
+
+        // 2. Carica gli articoli dal LocalStorage (prima di cancellarli)
         loadPurchasedItems();
+
+        // 3. Recupera i dettagli dell'ordine (Email, ID, Pagamento)
         loadOrderDetails();
-        
-        // Timeout di sicurezza per nascondere loader anche se API fallisce su mobile
+
+        // 4. Timeout di sicurezza: se dopo 10 secondi non abbiamo dati, mostriamo comunque la pagina (aumentato per adattarsi al ritardo minimo)
         loadTimeout = setTimeout(() => {
-            console.warn('Timeout sicurezza caricamento.');
-            finalizePageLoad();
-        }, 8000);
+            console.warn('Timeout caricamento dati: forzatura visualizzazione.');
+            delayFinalize(startTime);
+        }, 10000);
     });
 
+    /**
+     * FUNZIONE: Finalizza il caricamento
+     * Nasconde il loader e mostra il contenuto.
+     */
     function finalizePageLoad() {
-        clearTimeout(loadTimeout);
+        clearTimeout(loadTimeout); // Cancella il timeout di sicurezza se siamo arrivati qui
+
         const loader = document.getElementById('luxhaven-loader');
+        const content = document.querySelector('.container');
+
+        // Fade out loader
         if (loader) {
             loader.style.opacity = '0';
-            setTimeout(() => loader.style.display = 'none', 500);
+            setTimeout(() => {
+                loader.style.display = 'none';
+            }, 500);
         }
-        // Svuota carrello dopo visualizzazione
+
+        // Fade in contenuto
+        if (content) {
+            content.style.opacity = '1';
+        }
+
+        // Svuota il carrello DOPO aver mostrato i dati
+        // (Piccolo ritardo per assicurarsi che la UI sia renderizzata)
         setTimeout(() => {
             localStorage.removeItem('lh360_cart');
+            // Rimuoviamo anche SKU selezionati o varianti per pulizia
             localStorage.removeItem('lh360_selected_variant_id');
+            // Nota: Non rimuoviamo 'lh360_order_confirmed_time' per persistere la data
         }, 1000);
+
+        // Rimuovi dati molto vecchi (es. ordini di oltre 90 giorni)
+setTimeout(() => {
+    const now = Date.now();
+    for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key.startsWith('lh360_order_time_')) {
+            const timestamp = localStorage.getItem(key);
+            if (timestamp && (now - new Date(timestamp).getTime()) > 90 * 24 * 60 * 60 * 1000) {
+                localStorage.removeItem(key);
+            }
+        }
+    }
+}, 5000);
     }
 
+    /**
+     * FUNZIONE: Ritarda la finalizzazione per garantire almeno 8 secondi di visualizzazione del loader
+     */
+    function delayFinalize(startTime) {
+        const elapsed = Date.now() - startTime;
+        const remaining = 8000 - elapsed;
+        if (remaining > 0) {
+            setTimeout(finalizePageLoad, remaining);
+        } else {
+            finalizePageLoad();
+        }
+    }
+
+    /**
+     * FUNZIONE: Configura i pulsanti CTA con i link assoluti corretti
+     */
     function setupButtons() {
-        // Link assoluti per sicurezza
-        document.querySelector('.btn-primary').href = 'tracking-order.html';
-        document.querySelector('.btn-secondary').href = '../index.html#shop';
+        // Link 1: Traccia il mio Ordine
+        const trackBtn = document.querySelector('.btn-primary');
+        if (trackBtn) {
+            trackBtn.href = 'https://luxhaven360.github.io/luxhaven360-site/product-details/tracking-order.html';
+        }
+
+        // Link 2: Torna allo Shop
+        const shopBtn = document.querySelector('.btn-secondary');
+        if (shopBtn) {
+            shopBtn.href = 'https://luxhaven360.github.io/luxhaven360-site/index.html#shop';
+        }
     }
 
+    /**
+     * FUNZIONE: Recupera dettagli da Google Script (JSONP)
+     */
     function loadOrderDetails() {
         const urlParams = new URLSearchParams(window.location.search);
         const sessionId = urlParams.get('session_id');
-        const orderIdParam = urlParams.get('id_ordine');
+        const orderIdParam = urlParams.get('id_ordine'); // Se passato via URL (fallback)
 
-        // Fallback immediato ID
-        if (orderIdParam) document.getElementById('orderNumber').textContent = `Ordine #${orderIdParam}`;
+        // Elementi DOM
+        const orderNumElem = document.getElementById('orderNumber');
+        const emailElem = document.getElementById('emailValue');
+        const paymentElem = document.getElementById('paymentValue');
 
-        // Timestamp immediato per la timeline (Mobile fix)
-        const now = new Date();
-        const dateString = now.toLocaleDateString('it-IT', { day: 'numeric', month: 'short' }) + ', ' + now.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
-        document.getElementById('date-confirmed').textContent = dateString;
-        document.getElementById('orderDateValue').textContent = now.toLocaleDateString('it-IT', { day: 'numeric', month: 'long', year: 'numeric' });
+        // Fallback immediato se c'è l'ID nell'URL
+        if (orderIdParam && orderNumElem) {
+            orderNumElem.textContent = `Ordine #${orderIdParam}`;
+        }
 
         if (!sessionId) {
-            document.getElementById('emailValue').textContent = 'N/A';
-            document.getElementById('paymentValue').textContent = 'Carta di Credito';
-            finalizePageLoad();
+            // Se non c'è session ID, non possiamo fare fetch. Mostriamo la pagina.
+            if (emailElem) emailElem.textContent = 'Non disponibile';
+            if (paymentElem) paymentElem.textContent = 'Non disponibile';
+            delayFinalize(startTime);
             return;
         }
 
-        // Fetch Dati da Google Script con CACHE BUSTING (Fix Mobile)
-        const callbackName = 'handleDetailsResponse_' + Date.now(); // Nome univoco
+        // Creazione chiamata JSONP
+        const callbackName = 'handleDetailsResponse';
         const script = document.createElement('script');
-        // Aggiunto &t=Date.now() per evitare che iOS usi la cache
-        script.src = `${webAppUrl}?get_details=1&session_id=${encodeURIComponent(sessionId)}&callback=${callbackName}&t=${Date.now()}`;
-        
-        window[callbackName] = function(response) {
-            if (response && !response.error) {
-                // Email
-                if (response.email) document.getElementById('emailValue').textContent = response.email;
-                
-                // Carta (Last4)
-                if (response.last4) {
-                    document.getElementById('paymentValue').textContent = `•••• ${response.last4}`;
-                } else {
-                    document.getElementById('paymentValue').textContent = 'Pagamento Online';
-                }
+        script.src = `${webAppUrl}?get_details=1&session_id=${encodeURIComponent(sessionId)}&callback=${callbackName}`;
+        script.async = true;
 
-                // ID Ordine (Conferma dal server)
-                if (response.order_id) {
-                    document.getElementById('orderNumber').textContent = `Ordine #${response.order_id}`;
-                    saveOrderForTracking(response.order_id, response.email);
-                }
-            }
-            finalizePageLoad();
-            // Cleanup script
-            try { delete window[callbackName]; document.body.removeChild(script); } catch(e){}
-        };
-
+        // Gestione errore script (es. blocco adblocker o rete)
         script.onerror = () => {
-            console.error('Errore fetch dettagli.');
-            document.getElementById('emailValue').textContent = 'Cliente'; 
-            document.getElementById('paymentValue').textContent = 'Pagamento Sicuro';
-            finalizePageLoad();
+            console.error('Errore script Google Apps.');
+            delayFinalize(startTime);
         };
 
         document.body.appendChild(script);
     }
 
-    function saveOrderForTracking(orderId, email) {
-        // Salva dati per tracking immediato sulla Home
+    /**
+ * CALLBACK GLOBALE: Riceve i dati da Google Script
+ */
+window.handleDetailsResponse = function(response) {
+    const emailElem = document.getElementById('emailValue');
+    const paymentElem = document.getElementById('paymentValue');
+    const orderNumElem = document.getElementById('orderNumber');
+
+    let currentOrderId = null;
+
+    if (response && !response.error) {
+        // Aggiorna Email
+        if (response.email && emailElem) {
+            emailElem.textContent = response.email;
+        }
+
+        // Aggiorna Metodo Pagamento
+        if (paymentElem) {
+            if (response.last4) {
+                paymentElem.textContent = `•••• ${response.last4}`;
+            } else {
+                paymentElem.textContent = 'Pagamento Online';
+            }
+        }
+
+        // Aggiorna ID Ordine
+        if (response.order_id && orderNumElem) {
+            orderNumElem.textContent = `Ordine #${response.order_id}`;
+            currentOrderId = response.order_id;
+        }
+    }
+
+    // === GESTIONE TIMESTAMP FISSO PER QUESTO ORDINE SPECIFICO ===
+    let confirmedTime;
+
+    // Se abbiamo l'ID ordine dal backend (più affidabile)
+    if (currentOrderId) {
+        const storedTime = localStorage.getItem(`lh360_order_time_${currentOrderId}`);
+        if (storedTime) {
+            confirmedTime = storedTime; // Usa il timestamp salvato per questo ordine
+        } else {
+            confirmedTime = new Date().toISOString();
+            localStorage.setItem(`lh360_order_time_${currentOrderId}`, confirmedTime); // Salva per questo ordine
+        }
+        
+        // NUOVO: Salva anche l'ID dell'ultimo ordine per tracking
+        localStorage.setItem('lh360_last_order_id', currentOrderId);
+    } else {
+        // Fallback: usa session_id dall'URL (se presente)
+        const urlParams = new URLSearchParams(window.location.search);
+        const sessionId = urlParams.get('session_id');
+        const fallbackKey = sessionId ? `lh360_order_time_session_${sessionId}` : 'lh360_order_time_fallback';
+
+        const storedTime = localStorage.getItem(fallbackKey);
+        if (storedTime) {
+            confirmedTime = storedTime;
+        } else {
+            confirmedTime = new Date().toISOString();
+            localStorage.setItem(fallbackKey, confirmedTime);
+        }
+    }
+
+    // NUOVO: Salva i dettagli completi dell'ordine per tracking immediato
+    if (currentOrderId) {
         const cart = JSON.parse(localStorage.getItem('lh360_cart') || '[]');
         const subtotal = cart.reduce((sum, item) => sum + (item.price * (item.qty || 1)), 0);
         const shipping = subtotal >= 150 ? 0 : 15;
         const total = subtotal + shipping;
         
+        // Formatta data in italiano lungo
         const today = new Date();
-        // Salva timestamp ISO per controlli futuri
-        localStorage.setItem(`lh360_order_time_${orderId}`, today.toISOString());
-        localStorage.setItem('lh360_order_confirmed_time', today.toISOString()); // Flag generale
-
-        // Oggetto ordine completo per tracking locale
+        const formattedDate = today.toLocaleDateString('it-IT', { 
+            day: 'numeric', 
+            month: 'long', 
+            year: 'numeric' 
+        });
+        
         const orderDetails = {
-            id: orderId,
-            data: today.toLocaleDateString('it-IT', { day: 'numeric', month: 'long', year: 'numeric' }),
+            id: currentOrderId,
+            data: formattedDate, // Formato: "14 novembre 2025"
             stato: 'In Preparazione',
             totale: total.toFixed(2),
-            consegna_prevista: calculateDeliveryDate(3),
-            products: cart.map(i => ({ name: i.title, image: i.image })),
-            email: email || '',
-            timestamp: today.toISOString()
+            consegna_prevista: calculateDeliveryDate(3), // 3 giorni da oggi
+            products: cart.map(item => ({
+                name: item.title || 'Prodotto',
+                quantity: item.qty || 1,
+                price: item.price || 0,
+                image: item.image || ''
+            })),
+            email: response?.email || '',
+            timestamp: confirmedTime
         };
         
         localStorage.setItem('lh360_pending_order', JSON.stringify(orderDetails));
-        
-        // Trigger polling backend per aggiornamento sheet rapido
-        const triggerScript = document.createElement('script');
-        triggerScript.src = `${webAppUrl}?action=trigger_poll&t=${Date.now()}`; // Cache busting
-        document.body.appendChild(triggerScript);
+        console.log('✅ Ordine salvato in localStorage per tracking immediato:', orderDetails);
     }
 
-    function calculateDeliveryDate(days) {
-        const d = new Date();
-        d.setDate(d.getDate() + days);
-        return d.toLocaleDateString('it-IT', { day: 'numeric', month: 'long', year: 'numeric' });
+    // Prepara i dati per la timeline
+    const timelineData = {
+        current_status: response?.current_status || 'preparing',
+        status_dates: {
+            confirmed: confirmedTime,
+            preparing: response?.status_dates?.preparing || null,
+            shipped: response?.status_dates?.shipped || null,
+            delivered: response?.status_dates?.delivered || null
+        },
+        estimated_dates: response?.estimated_dates || {
+            preparing: 'In corso',
+            shipped: '7-8 Nov',
+            delivered: '8-9 Nov'
+        }
+    };
+
+    // Fallback completo se response è vuoto
+    if (!response || response.error) {
+        timelineData.current_status = 'confirmed';
+        timelineData.status_dates = { confirmed: confirmedTime };
     }
 
+    updateTimeline(timelineData);
+    
+    // NUOVO: Trigger polling per update immediato Sheets
+  const triggerCallback = 'handlePollResponse_' + Date.now();
+  const triggerScript = document.createElement('script');
+  triggerScript.src = `${webAppUrl}?action=trigger_poll&callback=${triggerCallback}`;
+  window[triggerCallback] = function(resp) {
+    console.log('Polling triggerato:', resp);
+    // Pulisci
+    document.body.removeChild(triggerScript);
+    delete window[triggerCallback];
+  };
+  document.body.appendChild(triggerScript);
+
+  delayFinalize(startTime);
+};
+
+/**
+ * Helper: Calcola data di consegna prevista
+ */
+function calculateDeliveryDate(daysFromNow) {
+    const date = new Date();
+    date.setDate(date.getDate() + daysFromNow);
+    return date.toLocaleDateString('it-IT', { day: 'numeric', month: 'long', year: 'numeric' });
+}
+
+/**
+ * Helper: Calcola data di consegna prevista
+ */
+function calculateDeliveryDate(daysFromNow) {
+    const date = new Date();
+    date.setDate(date.getDate() + daysFromNow);
+    return date.toLocaleDateString('it-IT', { day: 'numeric', month: 'long', year: 'numeric' });
+}
+
+    /**
+     * FUNZIONE: Aggiorna la timeline dinamicamente
+     */
+    function updateTimeline(data) {
+        const steps = {
+            confirmed: document.getElementById('step-confirmed'),
+            preparing: document.getElementById('step-preparing'),
+            shipped: document.getElementById('step-shipped'),
+            delivered: document.getElementById('step-delivered')
+        };
+
+        const dateElems = {
+            confirmed: document.getElementById('date-confirmed'),
+            preparing: document.getElementById('date-preparing'),
+            shipped: document.getElementById('date-shipped'),
+            delivered: document.getElementById('date-delivered')
+        };
+
+        const icons = {
+            confirmed: '✓',
+            preparing: '📦',
+            shipped: '🚚',
+            delivered: '🏠'
+        };
+
+        const stepOrder = ['confirmed', 'preparing', 'shipped', 'delivered'];
+        const currentIndex = stepOrder.indexOf(data.current_status);
+
+        // Aggiorna classi, icone e date
+        stepOrder.forEach((step, index) => {
+            const elem = steps[step];
+            if (!elem) return;
+
+            // Rimuovi classi esistenti
+            elem.classList.remove('completed', 'active', 'pending');
+
+            // Aggiungi classe appropriata
+            if (index < currentIndex) {
+                elem.classList.add('completed');
+            } else if (index === currentIndex) {
+                elem.classList.add('active');
+            } else {
+                elem.classList.add('pending');
+            }
+
+            // Aggiorna icona del dot
+            const dot = elem.querySelector('.timeline-dot');
+            if (dot) {
+                if (index < currentIndex) {
+                    dot.innerHTML = '✓'; // Spunta per completati
+                } else {
+                    dot.innerHTML = icons[step]; // Icona specifica per active/pending
+                }
+            }
+
+            // Aggiorna data
+            const dateElem = dateElems[step];
+            if (dateElem) {
+                const actualDate = data.status_dates[step];
+                if (actualDate) {
+                    const date = new Date(actualDate);
+                    dateElem.textContent = date.toLocaleDateString('it-IT', { day: 'numeric', month: 'short' }) + ', ' + date.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
+                } else {
+                    dateElem.textContent = data.estimated_dates[step] || 'Da definire';
+                }
+            }
+        });
+
+        // Aggiorna barra di progresso dinamicamente
+        const timelineElem = document.querySelector('.timeline');
+        if (timelineElem) {
+            const progress = (currentIndex / (stepOrder.length - 1)) * 100;
+            timelineElem.style.setProperty('--progress-percent', `${progress}%`);
+        }
+    }
+
+    /**
+     * FUNZIONE: Carica articoli dal LocalStorage
+     */
     function loadPurchasedItems() {
-        const cart = JSON.parse(localStorage.getItem('lh360_cart') || '[]');
-        const container = document.querySelector('.summary-items');
+        const cartRaw = localStorage.getItem('lh360_cart');
+        const cart = cartRaw ? JSON.parse(cartRaw) : [];
         
-        if (!container || cart.length === 0) return;
-        container.innerHTML = '';
+        const itemsContainer = document.querySelector('.summary-items');
+        const subtotalElem = document.querySelector('.summary-totals .summary-row:nth-child(1) span:last-child');
+        const shippingElem = document.querySelector('.summary-totals .summary-row:nth-child(2) span:last-child');
+        const totalElem = document.querySelector('.summary-total span:last-child');
+
+        if (!itemsContainer) return;
+
+        // Svuota container (per sicurezza)
+        itemsContainer.innerHTML = '';
+
+        if (cart.length === 0) {
+            itemsContainer.innerHTML = '<div style="padding:1rem; color:#a1a1aa; text-align:center;">Dettagli articoli non disponibili (Sessione scaduta)</div>';
+            return;
+        }
 
         let subtotal = 0;
+
+        // Mappa colori per visualizzazione più carina
+        const colorNames = {
+            '#000000': 'Nero', '#FFFFFF': 'Bianco', '#008000': 'Verde', 
+            '#FF0000': 'Rosso', '#0000FF': 'Blu'
+        };
+
         cart.forEach(item => {
-            const price = parseFloat(item.price) || 0;
-            const qty = parseInt(item.qty) || 1;
-            subtotal += price * qty;
+            // Calcolo subtotale
+            const itemPrice = parseFloat(item.price) || 0;
+            const itemQty = parseInt(item.qty) || 1;
+            subtotal += itemPrice * itemQty;
 
-            let variant = '';
-            if (item.color) variant += item.color;
-            if (item.size) variant += (variant ? ' · ' : '') + `Taglia ${item.size}`;
+            // Formattazione variante
+            let displayColor = item.color || '';
+            if (displayColor.startsWith('#') && colorNames[displayColor]) {
+                displayColor = colorNames[displayColor];
+            }
+            
+            let variantText = '';
+            if(displayColor) variantText += displayColor;
+            if(displayColor && item.size) variantText += ' · ';
+            if(item.size) variantText += `Taglia ${item.size}`;
+            if(!variantText) variantText = 'Taglia Unica';
 
+            // Creazione HTML Item
             const div = document.createElement('div');
             div.className = 'summary-item';
             div.innerHTML = `
-                <div class="summary-item-image"><img src="${item.image || 'https://via.placeholder.com/150'}" alt="Img"></div>
-                <div class="summary-item-details">
-                    <div class="summary-item-name">${item.title} <span style="font-size:0.8em; color:#71717a;">(x${qty})</span></div>
-                    <div class="summary-item-variant">${variant || 'Standard'}</div>
+                <div class="summary-item-image">
+                    <img src="${item.image || 'https://via.placeholder.com/150'}" alt="${item.title}">
                 </div>
-                <div class="summary-item-price">€ ${(price * qty).toLocaleString('it-IT', {minimumFractionDigits: 2})}</div>
+                <div class="summary-item-details">
+                    <div class="summary-item-name">${item.title} <span style="font-size:0.8em; color:#71717a;">(x${itemQty})</span></div>
+                    <div class="summary-item-variant">${variantText}</div>
+                </div>
+                <div class="summary-item-price">€ ${(itemPrice * itemQty).toLocaleString('it-IT', {minimumFractionDigits: 2})}</div>
             `;
-            container.appendChild(div);
+            itemsContainer.appendChild(div);
         });
 
-        const shipping = subtotal >= 150 ? 0 : 15;
-        document.getElementById('subtotalValue').textContent = `€ ${subtotal.toLocaleString('it-IT', {minimumFractionDigits: 2})}`;
-        
-        const shipEl = document.getElementById('shippingValue');
-        if(shipping === 0) { shipEl.textContent = 'Gratuita'; shipEl.style.color = '#34d399'; }
-        else { shipEl.textContent = `€ ${shipping.toLocaleString('it-IT', {minimumFractionDigits: 2})}`; shipEl.style.color = '#fafafa'; }
+        // Calcolo Totali
+        const shippingCost = subtotal >= 150 ? 0 : 15;
+        const total = subtotal + shippingCost;
 
-        document.getElementById('totalValue').textContent = `€ ${(subtotal + shipping).toLocaleString('it-IT', {minimumFractionDigits: 2})}`;
+        // Aggiornamento UI Totali
+        if (subtotalElem) subtotalElem.textContent = `€ ${subtotal.toLocaleString('it-IT', {minimumFractionDigits: 2})}`;
+        
+        if (shippingElem) {
+            if (shippingCost === 0) {
+                shippingElem.textContent = 'Gratuita';
+                shippingElem.style.color = '#34d399';
+            } else {
+                shippingElem.textContent = `€ ${shippingCost.toLocaleString('it-IT', {minimumFractionDigits: 2})}`;
+                shippingElem.style.color = '#fafafa';
+            }
+        }
+
+        if (totalElem) totalElem.textContent = `€ ${total.toLocaleString('it-IT', {minimumFractionDigits: 2})}`;
     }
-    </script>    
+</script>    
 </body>
 </html>
