@@ -120,7 +120,7 @@
 
     <script src="script.js"></script>
     <script>
-        const WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbyTJwL6iy0NYLtx1_1tzHyLgq0GWkhqXx92wiGvT6oUzPinfeUJPQ1aC0lYmhaBB1eA/exec';
+        const WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbxm3rf7pssc29BWktiVmt3wjU_xFjsbFefebIiVc4lDmLgAfBRy1TGXCk310alpihtH/exec';
 
         window.onload = function() {
             const introLoader = document.getElementById('intro-loader');
@@ -151,63 +151,47 @@
             }
         }
 
-        // --- FIX TRACKING ICON STABILE ---
+        // --- FIX TRACKING ICON MOBILE & DESKTOP ---
         function updateTrackingIcon() {
             const trackingIcon = document.getElementById('trackingIcon');
             if (!trackingIcon) return;
 
-            // 1. Controllo Locale (UI Ottimistica): Se abbiamo dati locali validi, MOSTRA SUBITO.
-            // Non nascondiamo preventivamente per evitare il "blink".
-            cleanupOldOrders(); // Rimuove solo roba scaduta (>30gg)
+            // 1. Check Locale (immediato per evitare blink)
             const hasLocal = checkLocalStorageForActiveOrders();
-            
             if (hasLocal) {
-                if (trackingIcon.style.display !== 'block') trackingIcon.style.display = 'block';
+                trackingIcon.style.display = 'block';
+                // Su mobile, forza visibility nel caso CSS nasconda
+                trackingIcon.style.visibility = 'visible';
+                trackingIcon.style.opacity = '1';
             }
 
-            // 2. Chiamata Server Silenziosa (Aggiornamento "Truth")
-            // Il server deciderà se dobbiamo nasconderla.
-            fetchActiveOrdersFromAPI(trackingIcon);
-        }
-
-        function fetchActiveOrdersFromAPI(icon) {
+            // 2. Check Server (autorità finale)
             const callbackName = 'handleActiveOrdersCount_' + Date.now();
             const script = document.createElement('script');
-            // Aggiunto parametro &t= random per evitare cache browser aggressiva
             script.src = `${WEB_APP_URL}?get_active_count=1&callback=${callbackName}&t=${Date.now()}`;
             
-            // Timeout di sicurezza: se il server non risponde, NON nascondiamo l'icona se è già visibile
-            const timeout = setTimeout(() => {
-                cleanupScript();
-            }, 8000); // Aumentato timeout a 8s per mobile networks
-
             window[callbackName] = function(response) {
-                clearTimeout(timeout);
                 if (response && typeof response.count === 'number') {
                     if (response.count > 0) {
-                        // Conferma positiva: Assicurati che sia visibile
-                        if (icon.style.display !== 'block') icon.style.display = 'block';
+                        trackingIcon.style.display = 'block';
+                        trackingIcon.style.visibility = 'visible';
+                        trackingIcon.style.opacity = '1';
                     } else {
-                        // Conferma negativa: Solo ora nascondiamo e puliamo
-                        if (icon.style.display !== 'none') icon.style.display = 'none';
-                        clearAllLocalOrderData();
+                        // Nascondi solo se anche il locale dice 0, o forza nascondi se server dice 0 (più sicuro)
+                        // Se il server dice 0, probabilmente l'ordine è vecchio o non esiste
+                        if (!hasLocal) {
+                            trackingIcon.style.display = 'none';
+                        }
                     }
                 }
-                cleanupScript();
+                // Cleanup
+                try { document.body.removeChild(script); delete window[callbackName]; } catch(e){}
             };
             
-            script.onerror = () => {
-                clearTimeout(timeout);
-                cleanupScript();
-                // In caso di errore rete, manteniamo lo stato locale (non nascondiamo)
+            // Gestione errore silenziosa
+            script.onerror = function() {
+                try { document.body.removeChild(script); delete window[callbackName]; } catch(e){}
             };
-            
-            function cleanupScript() {
-                try {
-                    if (script.parentNode) document.body.removeChild(script);
-                    delete window[callbackName];
-                } catch (e) {}
-            }
             
             document.body.appendChild(script);
         }
@@ -403,3 +387,4 @@ function clearAllLocalOrderData() {
     </script>
 </body>
 </html>
+
