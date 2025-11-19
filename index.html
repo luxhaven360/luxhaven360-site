@@ -120,7 +120,7 @@
 
     <script src="script.js"></script>
     <script>
-        const WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbwl-GVuu00toJ3ZBl_JBJaKhnp80Vpdz0AxWk-KuLLbZgWvS0RN2sehvKGGTBSWjOk/exec';
+        const WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbyTJwL6iy0NYLtx1_1tzHyLgq0GWkhqXx92wiGvT6oUzPinfeUJPQ1aC0lYmhaBB1eA/exec';
 
         window.onload = function() {
             const introLoader = document.getElementById('intro-loader');
@@ -151,36 +151,63 @@
             }
         }
 
-        // --- FIX TRACKING ICON MOBILE & DESKTOP ---
+        // --- FIX TRACKING ICON STABILE ---
         function updateTrackingIcon() {
             const trackingIcon = document.getElementById('trackingIcon');
             if (!trackingIcon) return;
 
-            // Funzione helper per mostrare l'icona
-            const showIcon = () => {
-                trackingIcon.style.display = 'block'; 
-                trackingIcon.classList.add('show'); // Fondamentale per il CSS mobile
-            };
-
-            // 1. Controllo Locale
-            if (checkLocalStorageForActiveOrders()) {
-                showIcon();
+            // 1. Controllo Locale (UI Ottimistica): Se abbiamo dati locali validi, MOSTRA SUBITO.
+            // Non nascondiamo preventivamente per evitare il "blink".
+            cleanupOldOrders(); // Rimuove solo roba scaduta (>30gg)
+            const hasLocal = checkLocalStorageForActiveOrders();
+            
+            if (hasLocal) {
+                if (trackingIcon.style.display !== 'block') trackingIcon.style.display = 'block';
             }
 
-            // 2. Controllo Server (con timestamp anti-cache per mobile)
+            // 2. Chiamata Server Silenziosa (Aggiornamento "Truth")
+            // Il server deciderà se dobbiamo nasconderla.
+            fetchActiveOrdersFromAPI(trackingIcon);
+        }
+
+        function fetchActiveOrdersFromAPI(icon) {
             const callbackName = 'handleActiveOrdersCount_' + Date.now();
             const script = document.createElement('script');
+            // Aggiunto parametro &t= random per evitare cache browser aggressiva
             script.src = `${WEB_APP_URL}?get_active_count=1&callback=${callbackName}&t=${Date.now()}`;
             
+            // Timeout di sicurezza: se il server non risponde, NON nascondiamo l'icona se è già visibile
+            const timeout = setTimeout(() => {
+                cleanupScript();
+            }, 8000); // Aumentato timeout a 8s per mobile networks
+
             window[callbackName] = function(response) {
-                if (response && response.count > 0) {
-                    showIcon();
-                } else if (!checkLocalStorageForActiveOrders()) {
-                    trackingIcon.style.display = 'none';
-                    trackingIcon.classList.remove('show');
+                clearTimeout(timeout);
+                if (response && typeof response.count === 'number') {
+                    if (response.count > 0) {
+                        // Conferma positiva: Assicurati che sia visibile
+                        if (icon.style.display !== 'block') icon.style.display = 'block';
+                    } else {
+                        // Conferma negativa: Solo ora nascondiamo e puliamo
+                        if (icon.style.display !== 'none') icon.style.display = 'none';
+                        clearAllLocalOrderData();
+                    }
                 }
-                try { document.body.removeChild(script); delete window[callbackName]; } catch(e){}
+                cleanupScript();
             };
+            
+            script.onerror = () => {
+                clearTimeout(timeout);
+                cleanupScript();
+                // In caso di errore rete, manteniamo lo stato locale (non nascondiamo)
+            };
+            
+            function cleanupScript() {
+                try {
+                    if (script.parentNode) document.body.removeChild(script);
+                    delete window[callbackName];
+                } catch (e) {}
+            }
             
             document.body.appendChild(script);
         }
@@ -376,6 +403,3 @@ function clearAllLocalOrderData() {
     </script>
 </body>
 </html>
-
-
-
