@@ -791,43 +791,71 @@ setTimeout(() => {
     /**
      * FUNZIONE: Recupera dettagli da Google Script (JSONP)
      */
-    function loadOrderDetails() {
-        const urlParams = new URLSearchParams(window.location.search);
-        const sessionId = urlParams.get('session_id');
-        const orderIdParam = urlParams.get('id_ordine'); // Se passato via URL (fallback)
-
-        // Elementi DOM
-        const orderNumElem = document.getElementById('orderNumber');
-        const emailElem = document.getElementById('emailValue');
-        const paymentElem = document.getElementById('paymentValue');
-
-        // Fallback immediato se c'è l'ID nell'URL
-        if (orderIdParam && orderNumElem) {
-            orderNumElem.textContent = `Ordine #${orderIdParam}`;
-        }
-
-        if (!sessionId) {
-            // Se non c'è session ID, non possiamo fare fetch. Mostriamo la pagina.
-            if (emailElem) emailElem.textContent = 'Non disponibile';
-            if (paymentElem) paymentElem.textContent = 'Non disponibile';
-            delayFinalize(startTime);
-            return;
-        }
-
-        // Creazione chiamata JSONP
-        const callbackName = 'handleDetailsResponse';
-        const script = document.createElement('script');
-        script.src = `${webAppUrl}?get_details=1&session_id=${encodeURIComponent(sessionId)}&callback=${callbackName}`;
-        script.async = true;
-
-        // Gestione errore script (es. blocco adblocker o rete)
-        script.onerror = () => {
-            console.error('Errore script Google Apps.');
-            delayFinalize(startTime);
-        };
-
-        document.body.appendChild(script);
+    async function loadOrderDetails() {
+    const urlParams = new URLSearchParams(window.location.search);
+    const sessionId = urlParams.get('session_id');
+    if (!sessionId) {
+        showError('ID sessione non trovato. Contatta il supporto.');
+        return;
     }
+
+    // Salva pending in localStorage (per fallback)
+    localStorage.setItem('lh360_pending_session', sessionId);
+
+    // Funzione fetch con retry (fino a 3 tentativi, delay 1s)
+    async function fetchWithRetry(url, retries = 3, delay = 1000) {
+        for (let i = 0; i < retries; i++) {
+            try {
+                const response = await fetch(url);
+                if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                return await response.json();
+            } catch (error) {
+                if (i === retries - 1) throw error;
+                await new Promise(resolve => setTimeout(resolve, delay));
+            }
+        }
+    }
+
+    try {
+        // Endpoint: Assumi WEB_APP_URL da Code.gs (es. 'https://script.google.com/macros/s/.../exec')
+        const webAppUrl = 'https://script.google.com/macros/s/AKfycbyTJwL6iy0NYLtx1_1tzHyLgq0GWkhqXx92wiGvT6oUzPinfeUJPQ1aC0lYmhaBB1eA/exec'; // Sostituisci con il tuo
+        const detailsUrl = `${webAppUrl}?action=get_details&session_id=${encodeURIComponent(sessionId)}`;
+
+        const data = await fetchWithRetry(detailsUrl);
+
+        if (data.error) throw new Error(data.error);
+
+        // Aggiorna UI
+        document.getElementById('orderNumber').textContent = data.order_id || 'In elaborazione...';
+        document.getElementById('userEmail').textContent = data.email || 'Non disponibile';
+        document.getElementById('cardLast4').textContent = data.last4 ? `**** ${data.last4}` : 'Non disponibile';
+
+        // Salva ordine confermato
+        localStorage.setItem('lh360_order_confirmed_time', new Date().toISOString());
+        localStorage.setItem('lh360_last_order_id', data.order_id || '');
+        localStorage.removeItem('lh360_cart'); // Pulisci carrello
+
+    } catch (error) {
+        console.error('Errore caricamento dettagli:', error);
+        showError('Impossibile caricare dettagli. Riprova o contatta il supporto.');
+
+        // Fallback: Prova da localStorage (dati pre-pagamento)
+        const pendingOrder = JSON.parse(localStorage.getItem('lh360_pending_order') || '{}');
+        if (pendingOrder.email) {
+            document.getElementById('userEmail').textContent = pendingOrder.email;
+        }
+    }
+}
+
+function showError(message) {
+    const errorElem = document.createElement('div');
+    errorElem.className = 'error-message';
+    errorElem.textContent = message;
+    document.querySelector('.container').appendChild(errorElem);
+}
+
+// Chiama al load
+window.addEventListener('load', loadOrderDetails);
 
     /**
  * CALLBACK GLOBALE: Riceve i dati da Google Script
@@ -1145,3 +1173,4 @@ function calculateDeliveryDate(daysFromNow) {
 </script>    
 </body>
 </html>
+
