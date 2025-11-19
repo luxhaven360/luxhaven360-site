@@ -580,9 +580,9 @@
         let cart = JSON.parse(localStorage.getItem('lh360_cart')) || [];
 
         // URL della Web App Google
-        const webAppUrl = 'https://script.google.com/macros/s/AKfycbzYjct3AE7ML_mSnwwIo4hz8550bEANbt7tTkVrDcWTRT2rc-_MCMUYYaDOSb0JswE/exec';
+        const webAppUrl = 'https://script.google.com/macros/s/AKfycbyTJwL6iy0NYLtx1_1tzHyLgq0GWkhqXx92wiGvT6oUzPinfeUJPQ1aC0lYmhaBB1eA/exec';
 
-        // --- FUNZIONI DI RENDERING CARRELLO ---
+        // --- FUNZIONI DI RENDERING CARRELLO (Invariate) ---
         function renderCart() {
             const cartItemsContainer = document.getElementById('cartItems');
             cartItemsContainer.innerHTML = '';
@@ -601,15 +601,12 @@
                         }
                         variantHTML += '</div>';
                     }
-                    // Fallback immagine
-                    const imgSrc = item.image || 'https://via.placeholder.com/140x186?text=Prodotto';
-                    
                     const itemElement = document.createElement('div');
                     itemElement.className = 'cart-item';
                     itemElement.dataset.id = index;
                     itemElement.innerHTML = `
                         <div class="item-image">
-                            <img src="${imgSrc}" alt="${item.title}">
+                            <img src="${item.image || 'https://via.placeholder.com/140x186?text=' + encodeURIComponent(item.title)}" alt="${item.title}">
                         </div>
                         <div class="item-details">
                             <div class="item-name">${item.title}</div>
@@ -619,7 +616,7 @@
                             </div>
                         </div>
                         <div class="item-price-section">
-                            <div class="item-price">€ ${parseFloat(item.price).toFixed(2)}</div>
+                            <div class="item-price">€ ${item.price.toFixed(2)}</div>
                         </div>
                     `;
                     cartItemsContainer.appendChild(itemElement);
@@ -637,9 +634,6 @@
                     cart.splice(index, 1);
                     localStorage.setItem('lh360_cart', JSON.stringify(cart));
                     renderCart();
-                    // Aggiorna icona carrello nella navbar se presente
-                    const event = new Event('storage'); // Trigger manuale per sync
-                    window.dispatchEvent(event);
                 }, 300);
             }
         }
@@ -654,53 +648,40 @@
             const shipping = subtotal >= 150 ? 0 : 15;
             const total = subtotal + shipping;
 
-            const subElem = document.getElementById('subtotal');
-            const shipElem = document.getElementById('shipping');
-            const totElem = document.getElementById('total');
-            const countElem = document.getElementById('itemCount');
-            const progFill = document.getElementById('progressFill');
-
-            if(subElem) subElem.textContent = `€ ${subtotal.toLocaleString('it-IT', { minimumFractionDigits: 2 })}`;
-            if(shipElem) shipElem.textContent = shipping === 0 ? 'Gratuita' : `€ ${shipping.toFixed(2)}`;
-            if(totElem) totElem.textContent = `€ ${total.toLocaleString('it-IT', { minimumFractionDigits: 2 })}`;
-            if(countElem) countElem.textContent = `${itemCount} Articoli`;
+            document.getElementById('subtotal').textContent = `€ ${subtotal.toLocaleString('it-IT', { minimumFractionDigits: 2 })}`;
+            document.getElementById('shipping').textContent = shipping === 0 ? 'Gratuita' : `€ ${shipping.toFixed(2)}`;
+            document.getElementById('total').textContent = `€ ${total.toLocaleString('it-IT', { minimumFractionDigits: 2 })}`;
+            document.getElementById('itemCount').textContent = `${itemCount} Articoli`;
             
-            if(progFill) {
-                const progress = Math.min(100, (subtotal / 150) * 100);
-                progFill.style.width = `${progress}%`;
-            }
+            const progress = Math.min(100, (subtotal / 150) * 100);
+            document.getElementById('progressFill').style.width = `${progress}%`;
         }
 
         function checkEmptyCart() {
-            const layout = document.querySelector('.cart-layout');
-            if(layout) layout.style.gridTemplateColumns = '1fr';
-            
-            const items = document.getElementById('cartItems');
-            if(items) {
-                items.innerHTML = `
-                    <div class="empty-cart">
-                        <div class="empty-cart-icon">🛒</div>
-                        <h2>Il tuo carrello è vuoto</h2>
-                        <p>Scopri la nostra collezione e trova il capo perfetto per te</p>
-                        <a href="../index.html#shop" class="btn-continue">Continua lo Shopping</a>
-                    </div>
-                `;
-            }
-            const summary = document.querySelector('.cart-summary');
-            if(summary) summary.style.display = 'none';
+            document.querySelector('.cart-layout').style.gridTemplateColumns = '1fr';
+            document.getElementById('cartItems').innerHTML = `
+                <div class="empty-cart">
+                    <div class="empty-cart-icon">🛒</div>
+                    <h2>Il tuo carrello è vuoto</h2>
+                    <p>Scopri la nostra collezione e trova il capo perfetto per te</p>
+                    <a href="/luxhaven360-site/index.html#shop" class="btn-continue">Continua lo Shopping</a>
+                </div>
+            `;
+            document.querySelector('.cart-summary').style.display = 'none';
         }
 
-        // Avvio rendering iniziale
         renderCart();
 
-        /* --- NUOVA LOGICA CHECKOUT JSONP (NO CORS ERROR) --- */
-        function initiateCheckout(e) {
+        /* --- NUOVA LOGICA CHECKOUT (MOBILE FIX FETCH) --- */
+        
+        async function initiateCheckout(e) {
+            // Previene comportamenti di default su mobile
             if (e) e.preventDefault();
 
             const btn = document.getElementById('checkoutBtn');
             if (!btn || btn.disabled) return;
             
-            // 1. Validazione
+            // 1. Controllo carrello
             const freshCart = JSON.parse(localStorage.getItem('lh360_cart')) || [];
             const validItems = freshCart.filter(item => item && item.title && item.price);
 
@@ -709,11 +690,11 @@
                 return;
             }
 
-            // 2. UI Feedback
+            // 2. Feedback Visivo
             const originalText = btn.innerText;
-            btn.innerText = 'Inizializzazione...';
+            btn.innerText = 'Connessione sicura...';
             btn.style.opacity = '0.7';
-            btn.disabled = true;
+            btn.disabled = true; // Disabilita temporaneamente
 
             // 3. Preparazione Dati
             const subtotal = validItems.reduce((sum, item) => sum + (item.price * (item.qty || 1)), 0);
@@ -731,64 +712,59 @@
                 shipping: shipping
             };
 
-            // 4. JSONP - Creazione Script Dinamico (Bypassa CORS)
-            const dataStr = encodeURIComponent(JSON.stringify(data));
-            // Nome univoco per la callback
-            const callbackName = 'checkout_' + Date.now(); 
-            const script = document.createElement('script');
-            
-            // Costruiamo l'URL: aggiungiamo t=timestamp per evitare cache del browser
-            script.src = `${webAppUrl}?data=${dataStr}&callback=${callbackName}&t=${Date.now()}`;
+            // 4. Esecuzione Fetch (Metodo Moderno)
+            try {
+                const dataStr = encodeURIComponent(JSON.stringify(data));
+                const callbackName = 'handleCheckoutResponse'; // Nome fittizio per il server
+                // Aggiungiamo un timestamp per evitare che il browser usi una risposta vecchia in cache
+                const targetUrl = `${webAppUrl}?data=${dataStr}&callback=${callbackName}&t=${Date.now()}`;
 
-            // Definiamo la funzione che Google Script chiamerà
-            window[callbackName] = function(response) {
-                // Pulizia
-                cleanup();
+                const response = await fetch(targetUrl, {
+                    method: 'GET',
+                    mode: 'cors', // Importante per permettere la richiesta
+                    headers: {
+                        'Content-Type': 'text/plain'
+                    }
+                });
 
-                if (response.error) {
-                    alert("Errore dal server: " + response.error);
-                    resetBtn();
-                } else if (response.url) {
-                    btn.innerText = 'Reindirizzamento a Stripe...';
-                    // Redirect finale
-                    window.location.href = response.url;
+                if (!response.ok) throw new Error('Errore di rete Google');
+
+                // 5. Parsing Manuale della Risposta
+                // Il server risponde con: handleCheckoutResponse({...})
+                // Noi prendiamo il testo e estraiamo il JSON interno
+                const textResponse = await response.text();
+                
+                // Estrae tutto ciò che c'è tra la prima parentesi aperta e l'ultima chiusa
+                const jsonString = textResponse.substring(textResponse.indexOf('(') + 1, textResponse.lastIndexOf(')'));
+                const result = JSON.parse(jsonString);
+
+                // 6. Gestione Risultato
+                if (result.error) {
+                    throw new Error(result.error);
+                } else if (result.url) {
+                    // Successo! Redirect
+                    btn.innerText = 'Reindirizzamento...';
+                    window.location.assign(result.url);
                 } else {
-                    alert("Errore sconosciuto nella risposta.");
-                    resetBtn();
+                    throw new Error('Risposta non valida dal server');
                 }
-            };
 
-            // Gestione errori di caricamento script (es. blocco rete)
-            script.onerror = function() {
-                cleanup();
-                alert("Impossibile connettersi al server di pagamento. Riprova.");
-                resetBtn();
-            };
-
-            // Inseriamo lo script nel documento per avviarlo
-            document.body.appendChild(script);
-
-            // Funzioni helper interne
-            function cleanup() {
-                try {
-                    delete window[callbackName];
-                    if (script.parentNode) document.body.removeChild(script);
-                } catch(e) {}
-            }
-
-            function resetBtn() {
+            } catch (err) {
+                console.error(err);
+                alert("Impossibile avviare il pagamento: " + err.message);
+                // Ripristina il bottone in caso di errore
                 btn.innerText = originalText;
                 btn.style.opacity = '1';
                 btn.disabled = false;
             }
         }
 
-        // Binding evento click
+        // Binding Eventi
         const checkoutBtn = document.getElementById('checkoutBtn');
         if (checkoutBtn) {
+            // Usiamo 'onclick' che è universalmente supportato
             checkoutBtn.onclick = initiateCheckout;
         }
     </script>
 </body>
 </html>
-
