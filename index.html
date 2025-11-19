@@ -120,111 +120,93 @@
 
     <script src="script.js"></script>
     <script>
-        // --- INIZIO AGGIORNAMENTO SCRIPT INDEX.HTML ---
+        const WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbyTJwL6iy0NYLtx1_1tzHyLgq0GWkhqXx92wiGvT6oUzPinfeUJPQ1aC0lYmhaBB1eA/exec';
 
-const WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbyTJwL6iy0NYLtx1_1tzHyLgq0GWkhqXx92wiGvT6oUzPinfeUJPQ1aC0lYmhaBB1eA/exec';
+        window.onload = function() {
+            const introLoader = document.getElementById('intro-loader');
+            if (introLoader) {
+                document.body.style.overflow = 'hidden';
+                setTimeout(() => {
+                    introLoader.classList.add('fade-out');
+                    document.body.style.overflow = '';
+                    setTimeout(() => { introLoader.style.display = 'none'; }, 800);
+                }, 4000);
+            }
 
-// Esegui al caricamento e quando la pagina torna visibile (es. tasto back su mobile)
-window.addEventListener('load', initTrackingCheck);
-window.addEventListener('pageshow', initTrackingCheck);
-document.addEventListener('visibilitychange', () => {
-    if (!document.hidden) initTrackingCheck();
-});
+            const hash = window.location.hash.substring(1);
+            if (hash && typeof showSection === 'function') showSection(hash);
+            
+            updateCartIcon();
+            // Avvio tracking immediato
+            updateTrackingIcon();
+        };
 
-function initTrackingCheck() {
-    const introLoader = document.getElementById('intro-loader');
-    if (introLoader && !introLoader.classList.contains('done')) {
-        document.body.style.overflow = 'hidden';
-        setTimeout(() => {
-            introLoader.classList.add('fade-out');
-            introLoader.classList.add('done'); // Previene doppio fade
-            document.body.style.overflow = '';
-            setTimeout(() => { introLoader.style.display = 'none'; }, 800);
-        }, 4000);
-    }
-    
-    // Check hash URL per navigazione interna
-    const hash = window.location.hash.substring(1);
-    if (hash && typeof showSection === 'function') showSection(hash);
-    
-    updateCartIcon();
-    updateTrackingIcon();
-}
-
-function updateCartIcon() {
-    const cart = JSON.parse(localStorage.getItem('lh360_cart')) || [];
-    const totalQty = cart.reduce((sum, item) => sum + (item.qty || 1), 0);
-    const cartIcon = document.getElementById('cartIcon');
-    if (cartIcon) {
-        if (totalQty > 0) cartIcon.classList.add('show');
-        else cartIcon.classList.remove('show');
-    }
-}
-
-function updateTrackingIcon() {
-    const trackingIcon = document.getElementById('trackingIcon');
-    if (!trackingIcon) return;
-
-    // 1. Check Locale Immediato (UI Ottimistica per mobile)
-    // Se c'è un ordine pendente salvato da success.html, mostra SUBITO l'icona
-    if (checkLocalStorageForActiveOrders()) {
-        trackingIcon.style.display = 'block';
-    }
-
-    // 2. Validazione Server (Con Cache Busting)
-    fetchActiveOrdersFromAPI(trackingIcon);
-}
-
-function checkLocalStorageForActiveOrders() {
-    // Logica locale per reattività immediata
-    const pending = localStorage.getItem('lh360_pending_order');
-    if (pending) return true; // Se success.html ha scritto questo, mostriamo l'icona
-
-    // Check timestamp generici
-    const now = Date.now();
-    const thirtyDays = 30 * 24 * 60 * 60 * 1000;
-    
-    for (let i = 0; i < localStorage.length; i++) {
-        const key = localStorage.key(i);
-        if (key && key.startsWith('lh360_order_time_')) {
-            const ts = localStorage.getItem(key);
-            // Se c'è un ordine negli ultimi 30 giorni
-            if (ts && (now - new Date(ts).getTime() < thirtyDays)) return true; 
-        }
-    }
-    return false;
-}
-
-function fetchActiveOrdersFromAPI(icon) {
-    // Aggiunge timestamp per evitare cache iOS/Android
-    const callbackName = 'handleActiveOrdersCount_' + Date.now() + Math.floor(Math.random() * 1000);
-    const script = document.createElement('script');
-    script.src = `${WEB_APP_URL}?get_active_count=1&callback=${callbackName}&t=${Date.now()}`;
-    
-    window[callbackName] = function(response) {
-        if (response && typeof response.count === 'number') {
-            if (response.count > 0) {
-                icon.style.display = 'block';
-            } else {
-                // Nascondi solo se anche il local storage dice che non c'è nulla
-                // Questo evita che l'icona sparisca mentre il server si aggiorna
-                if (!checkLocalStorageForActiveOrders()) {
-                    icon.style.display = 'none';
-                }
+        function updateCartIcon() {
+            const cart = JSON.parse(localStorage.getItem('lh360_cart')) || [];
+            const totalQty = cart.reduce((sum, item) => sum + (item.qty || 1), 0);
+            const cartIcon = document.getElementById('cartIcon');
+            if (cartIcon) {
+                 if (totalQty > 0) cartIcon.classList.add('show');
+                 else cartIcon.classList.remove('show');
             }
         }
-        try { delete window[callbackName]; document.body.removeChild(script); } catch(e){}
-    };
-    
-    // Fallback silenzioso in caso di errore rete
-    script.onerror = () => { try { delete window[callbackName]; document.body.removeChild(script); } catch(e){} };
-    
-    document.body.appendChild(script);
-}
 
-// Polling ogni 60 secondi per aggiornamenti stato
-setInterval(updateTrackingIcon, 60000);
-// --- FINE SCRIPT ---
+        window.addEventListener('pageshow', (event) => {
+        // Forza aggiornamento icona quando la pagina viene visualizzata (anche da cache history)
+        updateTrackingIcon();
+    });
+
+    function updateTrackingIcon() {
+        const trackingIcon = document.getElementById('trackingIcon');
+        if (!trackingIcon) return;
+
+        // Check locale veloce
+        const hasLocal = checkLocalStorageForActiveOrders();
+        if (hasLocal) {
+            trackingIcon.style.display = 'block';
+        }
+
+        // Fetch aggiornata con cache busting
+        fetchActiveOrdersFromAPI(trackingIcon);
+    }
+
+    function fetchActiveOrdersFromAPI(icon) {
+        const callbackName = 'handleActiveOrdersCount_' + Date.now();
+        const script = document.createElement('script');
+        // FIX MOBILE: parametro &t= essenziale
+        script.src = `${WEB_APP_URL}?get_active_count=1&callback=${callbackName}&t=${Date.now()}`;
+        
+        const timeout = setTimeout(() => {
+            cleanupScript();
+        }, 8000);
+
+        window[callbackName] = function(response) {
+            clearTimeout(timeout);
+            if (response && typeof response.count === 'number') {
+                if (response.count > 0) {
+                    icon.style.display = 'block';
+                } else {
+                    icon.style.display = 'none';
+                    clearAllLocalOrderData(); // Pulisce se non ci sono ordini server-side
+                }
+            }
+            cleanupScript();
+        };
+        
+        script.onerror = () => {
+            clearTimeout(timeout);
+            cleanupScript();
+        };
+        
+        function cleanupScript() {
+            try {
+                if (script.parentNode) document.body.removeChild(script);
+                delete window[callbackName];
+            } catch (e) {}
+        }
+        
+        document.body.appendChild(script);
+    }
 
 /**
  * Clear forzato di tutte le key local relative a ordini
@@ -416,5 +398,4 @@ function clearAllLocalOrderData() {
         }, 5 * 60 * 1000);
     </script>
 </body>
-
 </html>
