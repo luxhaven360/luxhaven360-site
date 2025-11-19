@@ -832,7 +832,7 @@ setTimeout(() => {
     /**
  * CALLBACK GLOBALE: Riceve i dati da Google Script
  */
-window.handleDetailsResponse = function(response) {
+  window.handleDetailsResponse = function(response) {
     const emailElem = document.getElementById('emailValue');
     const paymentElem = document.getElementById('paymentValue');
     const orderNumElem = document.getElementById('orderNumber');
@@ -840,21 +840,29 @@ window.handleDetailsResponse = function(response) {
     let currentOrderId = null;
 
     if (response && !response.error) {
-        // Aggiorna Email
-        if (response.email && emailElem) {
-            emailElem.textContent = response.email;
+        // 1. Aggiorna Email (con fallback visivo)
+        if (emailElem) {
+            emailElem.textContent = response.email || 'Cliente';
+            // Fix mobile: forza repaint
+            emailElem.style.display = 'none';
+            emailElem.offsetHeight; 
+            emailElem.style.display = 'block';
         }
 
-        // Aggiorna Metodo Pagamento
+        // 2. Aggiorna Metodo Pagamento / Last4
         if (paymentElem) {
             if (response.last4) {
-                paymentElem.textContent = `•••• ${response.last4}`;
+                paymentElem.innerHTML = `Carta &bull;&bull;&bull;&bull; ${response.last4}`;
+            } else if (response.method) {
+                // Capitalizza prima lettera (es. 'paypal' -> 'Paypal')
+                const method = response.method.charAt(0).toUpperCase() + response.method.slice(1);
+                paymentElem.textContent = method;
             } else {
                 paymentElem.textContent = 'Pagamento Online';
             }
         }
 
-        // Aggiorna ID Ordine
+        // 3. Aggiorna ID Ordine
         if (response.order_id && orderNumElem) {
             orderNumElem.textContent = `Ordine #${response.order_id}`;
             currentOrderId = response.order_id;
@@ -1044,9 +1052,16 @@ function calculateDeliveryDate(daysFromNow) {
                 const actualDate = data.status_dates[step];
                 if (actualDate) {
                     const date = new Date(actualDate);
-                    dateElem.textContent = date.toLocaleDateString('it-IT', { day: 'numeric', month: 'short' }) + ', ' + date.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
+                    // FORMATTAZIONE RICHIESTA: "14 nov, 16:48"
+                    const day = date.getDate();
+                    const month = date.toLocaleDateString('it-IT', { month: 'short' }).replace('.', '');
+                    const hours = date.getHours().toString().padStart(2, '0');
+                    const minutes = date.getMinutes().toString().padStart(2, '0');
+                    
+                    dateElem.textContent = `${day} ${month}, ${hours}:${minutes}`;
+                    dateElem.style.color = '#fafafa'; // Evidenzia data confermata
                 } else {
-                    dateElem.textContent = data.estimated_dates[step] || 'Da definire';
+                    dateElem.textContent = data.estimated_dates[step] || '';
                 }
             }
         });
@@ -1145,3 +1160,4 @@ function calculateDeliveryDate(daysFromNow) {
 </script>    
 </body>
 </html>
+
