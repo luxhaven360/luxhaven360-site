@@ -33,15 +33,10 @@
                 <li><a href="#" onclick="showSection('stays')">Esperienze</a></li>
                 <li><a href="#" onclick="showSection('shop')">Shop</a></li>
                 <li><a href="#" onclick="showSection('contact')">Contatti</a></li>
-                <!-- Icona tracking (desktop/menu) -->
+                <!-- Icona tracking (solo nel menu) -->
                 <li id="trackingIcon" class="cart-icon" onclick="window.location.href='product-details/tracking-order.html'" title="Traccia i tuoi ordini" style="display: none;">📦</li>
                 <li id="cartIcon" class="cart-icon" onclick="window.location.href='product-details/cart.html'">🛒</li>
             </ul>
-
-            <!-- Icona tracking mobile: elemento separato, fuori dal menu a comparsa.
-                 Viene mostrato/ nascosto via JS per garantire visibilità anche quando il menu è chiuso. -->
-            <div id="trackingIconMobile" class="mobile-tracking-icon" onclick="window.location.href='product-details/tracking-order.html'" title="Traccia i tuoi ordini" aria-hidden="true" style="display:none;">📦</div>
-
         </div>
     </nav>
 
@@ -156,28 +151,26 @@
             }
         }
 
-        // --- FIX TRACKING ICON STABILE (aggiornato per mobile) ---
+        // --- FIX TRACKING ICON STABILE (solo nel menu, nascosto su desktop) ---
         function updateTrackingIcon() {
             const trackingIcon = document.getElementById('trackingIcon');
-            const trackingIconMobile = document.getElementById('trackingIconMobile');
-            if (!trackingIcon && !trackingIconMobile) return;
+            if (!trackingIcon) return;
 
             cleanupOldOrders();
             const hasLocal = checkLocalStorageForActiveOrders();
 
-            
-if (hasLocal) {
-    const isDesktop = window.innerWidth >= 769;
-    if (trackingIconMobile) trackingIconMobile.style.display = 'flex';
-    if (!isDesktop && trackingIcon) trackingIcon.style.display = 'block';
-}
-
+            if (hasLocal) {
+                const isDesktop = window.innerWidth >= 769;
+                if (!isDesktop) {
+                    trackingIcon.style.display = 'block';
+                }
+            }
 
             // Chiamata server silenziosa per confermare lo stato "truth"
-            fetchActiveOrdersFromAPI(trackingIcon, trackingIconMobile);
+            fetchActiveOrdersFromAPI(trackingIcon);
         }
 
-        function fetchActiveOrdersFromAPI(icon, iconMobile) {
+        function fetchActiveOrdersFromAPI(icon) {
             const callbackName = 'handleActiveOrdersCount_' + Date.now();
             const script = document.createElement('script');
             script.src = `${WEB_APP_URL}?get_active_count=1&callback=${callbackName}&t=${Date.now()}`;
@@ -186,17 +179,17 @@ if (hasLocal) {
             window[callbackName] = function(response) {
                 clearTimeout(timeout);
                 
-if (response && typeof response.count === 'number') {
-    if (response.count > 0) {
-        const isDesktop = window.innerWidth >= 769;
-        if (iconMobile) iconMobile.style.display = 'flex';
-        if (!isDesktop && icon) icon.style.display = 'block';
-    } else {
-        if (icon) icon.style.display = 'none';
-        if (iconMobile) iconMobile.style.display = 'none';
-        clearAllLocalOrderData();
-    }
-}
+                if (response && typeof response.count === 'number') {
+                    if (response.count > 0) {
+                        const isDesktop = window.innerWidth >= 769;
+                        if (!isDesktop) {
+                            icon.style.display = 'block';
+                        }
+                    } else {
+                        icon.style.display = 'none';
+                        clearAllLocalOrderData();
+                    }
+                }
 
                 cleanupScript();
             };
