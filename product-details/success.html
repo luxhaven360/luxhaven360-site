@@ -573,22 +573,22 @@
 
         <!-- Info Cards -->
         <div class="info-cards">
-            <div class="info-card">
-                <span class="info-icon">📧</span>
-                <div class="info-label">Conferma Inviata</div>
-                <div class="info-value" id="emailValue">Caricamento...</div>
-            </div>
-            <div class="info-card">
-                <span class="info-icon">📅</span>
-                <div class="info-label">Consegna Prevista</div>
-                <div class="info-value">8-9 Novembre 2024</div>
-            </div>
-            <div class="info-card">
-                <span class="info-icon">💳</span>
-                <div class="info-label">Metodo di Pagamento</div>
-                <div class="info-value" id="paymentValue">Caricamento...</div>
-            </div>
-        </div>
+    <div class="info-card">
+        <span class="info-icon">📧</span>
+        <div class="info-label">Conferma Inviata</div>
+        <div class="info-value" id="emailValue">Caricamento...</div>
+    </div>
+    <div class="info-card">
+        <span class="info-icon">📅</span>
+        <div class="info-label">Consegna Prevista</div>
+        <div class="info-value" id="deliveryValue">Calcolo...</div>
+    </div>
+    <div class="info-card">
+        <span class="info-icon">💳</span>
+        <div class="info-label">Metodo di Pagamento</div>
+        <div class="info-value" id="paymentValue">Caricamento...</div>
+    </div>
+</div>
 
         <!-- Order Summary -->
         <div class="order-summary">
@@ -679,7 +679,7 @@
         </div>
     </div>
     
-        <script>
+    <script>
     // CONFIGURAZIONE
     const webAppUrl = 'https://script.google.com/macros/s/AKfycbyl-SrRgn4ZGCL-wPYy8fLBKLaUtxY7V08KGujaihbz1tPX47BM36yw6Mj60UUT8ftv/exec';
 
@@ -706,27 +706,17 @@
             setTimeout(() => { loader.style.display = 'none'; }, 500);
         }
         if (content) content.style.opacity = '1';
+        
+        // Pulizia carrello dopo breve delay
         setTimeout(() => {
             localStorage.removeItem('lh360_cart');
             localStorage.removeItem('lh360_selected_variant_id');
         }, 1000);
-        setTimeout(() => {
-            const now = Date.now();
-            for (let i = 0; i < localStorage.length; i++) {
-                const key = localStorage.key(i);
-                if (key.startsWith('lh360_order_time_')) {
-                    const timestamp = localStorage.getItem(key);
-                    if (timestamp && (now - new Date(timestamp).getTime()) > 90 * 24 * 60 * 60 * 1000) {
-                        localStorage.removeItem(key);
-                    }
-                }
-            }
-        }, 5000);
     }
 
     function delayFinalize(startTime) {
         const elapsed = Date.now() - startTime;
-        const remaining = 8000 - elapsed;
+        const remaining = 2000 - elapsed; // Ridotto a 2s per UX più veloce
         if (remaining > 0) {
             setTimeout(finalizePageLoad, remaining);
         } else {
@@ -736,444 +726,293 @@
 
     function setupButtons() {
         const trackBtn = document.querySelector('.btn-primary');
-        if (trackBtn) {
-            trackBtn.href = 'https://luxhaven360.github.io/luxhaven360-site/product-details/tracking-order.html';
-        }
+        if (trackBtn) trackBtn.href = 'product-details/tracking-order.html';
         const shopBtn = document.querySelector('.btn-secondary');
-        if (shopBtn) {
-            shopBtn.href = 'https://luxhaven360.github.io/luxhaven360-site/index.html#shop';
-        }
+        if (shopBtn) shopBtn.href = 'index.html#shop';
     }
 
-    // ---------- Robust JSONP loader with retries and fetch fallback ----------
-    function loadOrderDetails(maxRetries = 3) {
+    // Caricamento dati tramite JSONP
+    function loadOrderDetails() {
         const urlParams = new URLSearchParams(window.location.search);
         const sessionId = urlParams.get('session_id');
         const orderIdParam = urlParams.get('id_ordine');
-
         const orderNumElem = document.getElementById('orderNumber');
-        const emailElem = document.getElementById('emailValue');
-        const paymentElem = document.getElementById('paymentValue');
 
         if (orderIdParam && orderNumElem) {
             orderNumElem.textContent = `Ordine #${orderIdParam}`;
         }
 
         if (!sessionId) {
-            if (emailElem) emailElem.textContent = 'Non disponibile';
-            if (paymentElem) paymentElem.textContent = 'Non disponibile';
+            document.getElementById('emailValue').textContent = 'Non disponibile';
             delayFinalize(startTime);
             return;
         }
 
-        // Try JSONP with retries. If JSONP appears to fail, try a fetch fallback (if CORS allows).
-        let attempts = 0;
-        let finished = false;
-
-        function tryRequest() {
-            if (finished) return;
-            attempts++;
-            const callbackName = 'handleDetailsResponse_' + Date.now() + '_' + Math.floor(Math.random() * 10000);
-            const script = document.createElement('script');
-            const src = `${webAppUrl}?get_details=1&session_id=${encodeURIComponent(sessionId)}&callback=${callbackName}&t=${Date.now()}`;
-            script.src = src;
-            script.async = true;
-
-            const cleanup = () => {
-                try { if (script.parentNode) script.parentNode.removeChild(script); } catch (e) {}
-                try { delete window[callbackName]; } catch (e) {}
-            };
-
-            // Define the temporary global callback
-            window[callbackName] = function(response) {
-                if (finished) { cleanup(); return; }
-                finished = true;
-                cleanup();
-                // Delegate to the regular handler for processing (keeps existing logic)
-                handleDetailsResponse(response);
-            };
-
-            // Error handling + retry
-            script.onerror = function() {
-                cleanup();
-                if (attempts <= maxRetries) {
-                    console.warn('JSONP load error, retrying...', attempts);
-                    setTimeout(tryRequest, 1200 + attempts * 300);
-                } else {
-                    // Try fetch fallback (may fail due to CORS - it's best-effort)
-                    tryFetchFallback().then(resp => {
-                        if (resp) {
-                            finished = true;
-                            handleDetailsResponse(resp);
-                        } else {
-                            // final fallback: show minimal info and finalize
-                            console.warn('Fallback fetch failed. Mostriamo contenuto parziale.');
-                            if (emailElem) emailElem.textContent = 'Non disponibile';
-                            if (paymentElem) paymentElem.textContent = 'Non disponibile';
-                            finalizePageLoad();
-                        }
-                    }).catch(err => {
-                        console.warn('Fallback fetch exception', err);
-                        if (emailElem) emailElem.textContent = 'Non disponibile';
-                        if (paymentElem) paymentElem.textContent = 'Non disponibile';
-                        finalizePageLoad();
-                    });
-                }
-            };
-
-            // Append script to trigger JSONP
-            document.body.appendChild(script);
-
-            // Also guard: if callback hasn't run within 5s, treat as failure -> try retry/fallback
-            setTimeout(() => {
-                if (!finished) {
-                    // remove this callback and retry or fallback
-                    try {
-                        cleanup();
-                    } catch (e) {}
-                    if (attempts <= maxRetries) {
-                        console.warn('JSONP timeout, retrying...', attempts);
-                        setTimeout(tryRequest, 800 + attempts * 200);
-                    } else {
-                        tryFetchFallback().then(resp => {
-                            if (resp) {
-                                finished = true;
-                                handleDetailsResponse(resp);
-                            } else {
-                                if (emailElem) emailElem.textContent = 'Non disponibile';
-                                if (paymentElem) paymentElem.textContent = 'Non disponibile';
-                                finalizePageLoad();
-                            }
-                        }).catch(err => {
-                            if (emailElem) emailElem.textContent = 'Non disponibile';
-                            if (paymentElem) paymentElem.textContent = 'Non disponibile';
-                            finalizePageLoad();
-                        });
-                    }
-                }
-            }, 5000);
-        }
-
-        // Best-effort fetch fallback which attempts to GET the JSONP URL and extract JSON payload.
-        async function tryFetchFallback() {
-            try {
-                const fetchUrl = `${webAppUrl}?get_details=1&session_id=${encodeURIComponent(sessionId)}&callback=__FALLBACK_CB&no_cache=${Date.now()}`;
-                const res = await fetch(fetchUrl, { method: 'GET', cache: 'no-store' });
-                if (!res.ok) {
-                    console.warn('Fetch fallback response not ok', res.status);
-                    return null;
-                }
-                const text = await res.text();
-                // text is like: __FALLBACK_CB({...})
-                const start = text.indexOf('(');
-                const end = text.lastIndexOf(')');
-                if (start === -1 || end === -1) return null;
-                const jsonStr = text.substring(start + 1, end);
-                const parsed = JSON.parse(jsonStr);
-                return parsed;
-            } catch (e) {
-                // Likely CORS or network error; swallow and return null
-                console.warn('Fetch fallback failed (CORS/network?)', e);
-                return null;
-            }
-        }
-
-        tryRequest();
+        const callbackName = 'handleDetailsResponse';
+        const script = document.createElement('script');
+        // Richiede dettagli estesi (status reale da Sheet)
+        script.src = `${webAppUrl}?get_details=1&session_id=${encodeURIComponent(sessionId)}&callback=${callbackName}&t=${Date.now()}`;
+        document.body.appendChild(script);
     }
 
-    // ---------- Existing global handler (unchanged) ----------
+    // CALLBACK PRINCIPALE
     window.handleDetailsResponse = function(response) {
         const emailElem = document.getElementById('emailValue');
         const paymentElem = document.getElementById('paymentValue');
         const orderNumElem = document.getElementById('orderNumber');
-
-        let currentOrderId = null;
+        const deliveryElem = document.getElementById('deliveryValue');
 
         if (response && !response.error) {
-            if (response.email && emailElem) {
-                emailElem.textContent = response.email;
-            }
-            if (paymentElem) {
-                if (response.last4) {
-                    paymentElem.textContent = `•••• ${response.last4}`;
-                } else {
-                    paymentElem.textContent = 'Pagamento Online';
-                }
-            }
-            if (response.order_id && orderNumElem) {
-                orderNumElem.textContent = `Ordine #${response.order_id}`;
-                currentOrderId = response.order_id;
-            }
-        }
+            // 1. Info Base
+            if (response.email) emailElem.textContent = response.email;
+            if (response.order_id) orderNumElem.textContent = `Ordine #${response.order_id}`;
+            if (response.last4) paymentElem.textContent = `•••• ${response.last4}`;
+            else paymentElem.textContent = 'Pagamento Online';
 
-        let confirmedTime;
-        if (currentOrderId) {
-            const storedTime = localStorage.getItem(`lh360_order_time_${currentOrderId}`);
-            if (storedTime) {
-                confirmedTime = storedTime;
-            } else {
-                confirmedTime = new Date().toISOString();
-                localStorage.setItem(`lh360_order_time_${currentOrderId}`, confirmedTime);
-            }
-            localStorage.setItem('lh360_last_order_id', currentOrderId);
-        } else {
-            const urlParams = new URLSearchParams(window.location.search);
-            const sessionId = urlParams.get('session_id');
-            const fallbackKey = sessionId ? `lh360_order_time_session_${sessionId}` : 'lh360_order_time_fallback';
-            const storedTime = localStorage.getItem(fallbackKey);
-            if (storedTime) {
-                confirmedTime = storedTime;
-            } else {
-                confirmedTime = new Date().toISOString();
-                localStorage.setItem(fallbackKey, confirmedTime);
-            }
-        }
+            // 2. Gestione Data Consegna Card (Dinamica)
+            let deliveryStr = response.delivery_date || 'Da definire';
+            if (deliveryElem) deliveryElem.textContent = deliveryStr;
 
-        if (currentOrderId) {
-            const cart = JSON.parse(localStorage.getItem('lh360_cart') || '[]');
-            const subtotal = cart.reduce((sum, item) => sum + (item.price * (item.qty || 1)), 0);
-            const shipping = subtotal >= 150 ? 0 : 15;
-            const total = subtotal + shipping;
-            const today = new Date();
-            const formattedDate = today.toLocaleDateString('it-IT', {
-                day: 'numeric',
-                month: 'long',
-                year: 'numeric'
-            });
-            const orderDetails = {
-                id: currentOrderId,
-                data: formattedDate,
-                stato: 'In Preparazione',
-                totale: total.toFixed(2),
-                consegna_prevista: calculateDeliveryDate(3),
-                products: cart.map(item => ({
-                    name: item.title || 'Prodotto',
-                    quantity: item.qty || 1,
-                    price: item.price || 0,
-                    image: item.image || ''
-                })),
-                email: response?.email || '',
-                timestamp: confirmedTime
+            // 3. Preparazione dati Timeline
+            // Recupera timestamp conferma (o usa ora corrente se manca)
+            let confirmedTime = localStorage.getItem(`lh360_order_time_${response.order_id}`) || new Date().toISOString();
+            
+            const timelineData = {
+                status: response.current_status || 'preparing', // preparing, shipped, delivered
+                realStatusText: response.real_status_text,
+                deliveryDateStr: response.delivery_date, // Es: "24 Novembre 2025"
+                lastUpdateStr: response.last_update, // Es: "21/11/2025, 19:30"
+                confirmedDate: confirmedTime
             };
-            localStorage.setItem('lh360_pending_order', JSON.stringify(orderDetails));
-            console.log('✅ Ordine salvato in localStorage per tracking immediato:', orderDetails);
+
+            updateTimeline(timelineData);
+
+            // Salva dati per tracking futuro
+            saveOrderLocally(response.order_id, response, confirmedTime);
+        } else {
+            // Fallback errore
+            if (deliveryElem) deliveryElem.textContent = 'In elaborazione...';
+            updateTimeline({ status: 'confirmed', confirmedDate: new Date().toISOString() });
         }
-
-        const timelineData = {
-            current_status: response?.current_status || 'preparing',
-            status_dates: {
-                confirmed: confirmedTime,
-                preparing: response?.status_dates?.preparing || null,
-                shipped: response?.status_dates?.shipped || null,
-                delivered: response?.status_dates?.delivered || null
-            },
-            estimated_dates: response?.estimated_dates || {
-                preparing: 'In corso',
-                shipped: '7-8 Nov',
-                delivered: '8-9 Nov'
-            }
-        };
-
-        if (!response || response.error) {
-            timelineData.current_status = 'confirmed';
-            timelineData.status_dates = { confirmed: confirmedTime };
-        }
-
-        updateTimeline(timelineData);
-
-        // Trigger polling light (best-effort)
-        const triggerCallback = 'handlePollResponse_' + Date.now();
-        const triggerScript = document.createElement('script');
-        triggerScript.src = `${webAppUrl}?action=trigger_poll&callback=${triggerCallback}`;
-        window[triggerCallback] = function(resp) {
-            try { if (triggerScript.parentNode) triggerScript.parentNode.removeChild(triggerScript); } catch(e){}
-            try { delete window[triggerCallback]; } catch(e){}
-            console.log('Polling triggerato:', resp);
-        };
-        document.body.appendChild(triggerScript);
 
         delayFinalize(startTime);
     };
 
-/**
- * Helper: Calcola data di consegna prevista
- */
-function calculateDeliveryDate(daysFromNow) {
-    const date = new Date();
-    date.setDate(date.getDate() + daysFromNow);
-    return date.toLocaleDateString('it-IT', { day: 'numeric', month: 'long', year: 'numeric' });
-}
-
-/**
- * Helper: Calcola data di consegna prevista
- */
-function calculateDeliveryDate(daysFromNow) {
-    const date = new Date();
-    date.setDate(date.getDate() + daysFromNow);
-    return date.toLocaleDateString('it-IT', { day: 'numeric', month: 'long', year: 'numeric' });
-}
-
-    /**
-     * FUNZIONE: Aggiorna la timeline dinamicamente
-     */
+    // --- LOGICA CORE DELLA TIMELINE DINAMICA ---
     function updateTimeline(data) {
-        const steps = {
-            confirmed: document.getElementById('step-confirmed'),
-            preparing: document.getElementById('step-preparing'),
-            shipped: document.getElementById('step-shipped'),
-            delivered: document.getElementById('step-delivered')
-        };
+        const steps = ['confirmed', 'preparing', 'shipped', 'delivered'];
+        const currentStatus = data.status; // 'confirmed', 'preparing', 'shipped', 'delivered'
+        const currentIndex = steps.indexOf(currentStatus);
 
-        const dateElems = {
-            confirmed: document.getElementById('date-confirmed'),
-            preparing: document.getElementById('date-preparing'),
-            shipped: document.getElementById('date-shipped'),
-            delivered: document.getElementById('date-delivered')
-        };
-
-        const icons = {
+        // Icone originali
+        const iconsMap = {
             confirmed: '✓',
             preparing: '📦',
             shipped: '🚚',
             delivered: '🏠'
         };
 
-        const stepOrder = ['confirmed', 'preparing', 'shipped', 'delivered'];
-        const currentIndex = stepOrder.indexOf(data.current_status);
+        // Parsing Date Helper (Italiano -> Date Object)
+        function parseItDate(str) {
+            if(!str) return null;
+            const months = {
+                'gennaio':0, 'febbraio':1, 'marzo':2, 'aprile':3, 'maggio':4, 'giugno':5,
+                'luglio':6, 'agosto':7, 'settembre':8, 'ottobre':9, 'novembre':10, 'dicembre':11
+            };
+            const match = str.match(/(\d{1,2})\s+(\w+)\s+(\d{4})/);
+            if(match) {
+                return new Date(match[3], months[match[2].toLowerCase()], match[1]);
+            }
+            return null;
+        }
 
-        // Aggiorna classi, icone e date
-        stepOrder.forEach((step, index) => {
-            const elem = steps[step];
-            if (!elem) return;
+        // Format Date Helper (Date Obj -> "7 Nov")
+        function formatShortDate(dateObj) {
+            if(!dateObj || isNaN(dateObj)) return '...';
+            return dateObj.toLocaleDateString('it-IT', { day: 'numeric', month: 'short' });
+        }
 
-            // Rimuovi classi esistenti
-            elem.classList.remove('completed', 'active', 'pending');
+        // Calcolo Date Dinamiche
+        let dateTexts = {
+            confirmed: '',
+            preparing: '',
+            shipped: '',
+            delivered: ''
+        };
 
-            // Aggiungi classe appropriata
-            if (index < currentIndex) {
-                elem.classList.add('completed');
-            } else if (index === currentIndex) {
-                elem.classList.add('active');
+        // 1. Data Confermato (sempre presente)
+        const dConf = new Date(data.confirmedDate);
+        dateTexts.confirmed = formatShortDate(dConf) + ", " + dConf.toLocaleTimeString('it-IT', {hour:'2-digit', minute:'2-digit'});
+
+        // 2. Calcoli basati sulla Consegna Prevista (dal foglio)
+        const deliveryObj = parseItDate(data.deliveryDateStr);
+
+        if (currentStatus === 'preparing' || currentStatus === 'confirmed') {
+            // Logica: "In Preparazione"
+            dateTexts.preparing = "In corso";
+            
+            if (deliveryObj) {
+                // Spedito stimato = Consegna - 1 o 2 giorni
+                const shipEst = new Date(deliveryObj);
+                shipEst.setDate(shipEst.getDate() - 1); 
+                dateTexts.shipped = "Previsto: " + formatShortDate(shipEst);
+                
+                // Consegna prevista
+                dateTexts.delivered = "Previsto: " + formatShortDate(deliveryObj);
             } else {
-                elem.classList.add('pending');
+                dateTexts.shipped = "Da definire";
+                dateTexts.delivered = "Da definire";
+            }
+        } 
+        else if (currentStatus === 'shipped') {
+            // Logica: "In Transito"
+            dateTexts.preparing = "Completato";
+            
+            // Data spedizione reale (usiamo last update o oggi)
+            // Se c'è last_update nel formato "dd/MM/yyyy", usalo
+            let shipDateText = "Appena spedito";
+            if (data.lastUpdateStr) {
+               const parts = data.lastUpdateStr.split(',')[0].split('/'); // prendi solo data
+               if(parts.length === 3) {
+                   const d = new Date(parts[2], parts[1]-1, parts[0]);
+                   shipDateText = formatShortDate(d);
+               }
+            }
+            dateTexts.shipped = shipDateText;
+
+            if (deliveryObj) {
+                dateTexts.delivered = "Previsto: " + formatShortDate(deliveryObj);
+            } else {
+                dateTexts.delivered = "In transito";
+            }
+        }
+        else if (currentStatus === 'delivered') {
+            // Logica: "Consegnato"
+            dateTexts.preparing = "Completato";
+            
+            // Se consegnato, la data di spedizione è nel passato (stimiamo per UI o lasciamo generica)
+            dateTexts.shipped = "Completato";
+            
+            // Data consegna effettiva (la data prevista è diventata reale)
+            dateTexts.delivered = deliveryObj ? formatShortDate(deliveryObj) : "Oggi";
+        }
+
+        // --- Rendering nel DOM ---
+        steps.forEach((stepId, index) => {
+            const elStep = document.getElementById(`step-${stepId}`);
+            const elDate = document.getElementById(`date-${stepId}`);
+            const elDot = elStep ? elStep.querySelector('.timeline-dot') : null;
+
+            if (!elStep) return;
+
+            // Reset classi
+            elStep.classList.remove('completed', 'active', 'pending');
+
+            // 1. Gestione Classi CSS
+            if (index < currentIndex) {
+                elStep.classList.add('completed');
+            } else if (index === currentIndex) {
+                elStep.classList.add('active');
+            } else {
+                elStep.classList.add('pending');
             }
 
-            // Aggiorna icona del dot
-            const dot = elem.querySelector('.timeline-dot');
-            if (dot) {
-                if (index < currentIndex) {
-                    dot.innerHTML = '✓'; // Spunta per completati
+            // 2. Gestione Icone (CHECKMARK logic)
+            if (elDot) {
+                // Se lo step è completato (indice < corrente) -> SPUNTA
+                // Oppure se è l'ultimo step ("delivered") ed è attivo -> SPUNTA (ordine finito)
+                if (index < currentIndex || (currentStatus === 'delivered' && stepId === 'delivered')) {
+                    elDot.innerHTML = '✓'; // Checkmark
+                    // Opzionale: aggiungi classe per stile specifico checkmark se vuoi
                 } else {
-                    dot.innerHTML = icons[step]; // Icona specifica per active/pending
+                    // Altrimenti icona originale
+                    elDot.innerHTML = iconsMap[stepId];
                 }
             }
 
-            // Aggiorna data
-            const dateElem = dateElems[step];
-            if (dateElem) {
-                const actualDate = data.status_dates[step];
-                if (actualDate) {
-                    const date = new Date(actualDate);
-                    dateElem.textContent = date.toLocaleDateString('it-IT', { day: 'numeric', month: 'short' }) + ', ' + date.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
+            // 3. Gestione Testi Date
+            if (elDate) {
+                elDate.textContent = dateTexts[stepId];
+                
+                // Stile "Previsto" (opzionale: rendilo corsivo o grigio)
+                if (dateTexts[stepId].includes('Previsto')) {
+                    elDate.style.fontStyle = 'italic';
+                    elDate.style.opacity = '0.8';
                 } else {
-                    dateElem.textContent = data.estimated_dates[step] || 'Da definire';
+                    elDate.style.fontStyle = 'normal';
+                    elDate.style.opacity = '1';
                 }
             }
         });
 
-        // Aggiorna barra di progresso dinamicamente
-        const timelineElem = document.querySelector('.timeline');
-        if (timelineElem) {
-            const progress = (currentIndex / (stepOrder.length - 1)) * 100;
-            timelineElem.style.setProperty('--progress-percent', `${progress}%`);
+        // Aggiorna barra progresso CSS
+        const progressPercent = (currentIndex / (steps.length - 1)) * 100;
+        const timelineContainer = document.querySelector('.timeline');
+        if (timelineContainer) {
+            timelineContainer.style.setProperty('--progress-percent', `${progressPercent}%`);
         }
     }
 
-    /**
-     * FUNZIONE: Carica articoli dal LocalStorage
-     */
+    function saveOrderLocally(orderId, response, confirmedTime) {
+        if (!orderId) return;
+        const cart = JSON.parse(localStorage.getItem('lh360_cart') || '[]');
+        
+        const orderData = {
+            id: orderId,
+            stato: response.real_status_text || 'Confermato',
+            consegna_prevista: response.delivery_date || 'Da definire',
+            totale: 'Check Email', // Semplificazione
+            timestamp: confirmedTime,
+            products: cart // Salva per visualizzazione history
+        };
+        
+        localStorage.setItem('lh360_pending_order', JSON.stringify(orderData));
+        localStorage.setItem(`lh360_order_time_${orderId}`, confirmedTime);
+    }
+
     function loadPurchasedItems() {
         const cartRaw = localStorage.getItem('lh360_cart');
         const cart = cartRaw ? JSON.parse(cartRaw) : [];
-        
         const itemsContainer = document.querySelector('.summary-items');
         const subtotalElem = document.querySelector('.summary-totals .summary-row:nth-child(1) span:last-child');
         const shippingElem = document.querySelector('.summary-totals .summary-row:nth-child(2) span:last-child');
         const totalElem = document.querySelector('.summary-total span:last-child');
 
         if (!itemsContainer) return;
-
-        // Svuota container (per sicurezza)
         itemsContainer.innerHTML = '';
 
         if (cart.length === 0) {
-            itemsContainer.innerHTML = '<div style="padding:1rem; color:#a1a1aa; text-align:center;">Dettagli articoli non disponibili (Sessione scaduta)</div>';
+            itemsContainer.innerHTML = '<div style="padding:1rem;text-align:center;opacity:0.6">Dettagli non disponibili</div>';
             return;
         }
 
         let subtotal = 0;
-
-        // Mappa colori per visualizzazione più carina
-        const colorNames = {
-            '#000000': 'Nero', '#FFFFFF': 'Bianco', '#008000': 'Verde', 
-            '#FF0000': 'Rosso', '#0000FF': 'Blu'
-        };
-
         cart.forEach(item => {
-            // Calcolo subtotale
-            const itemPrice = parseFloat(item.price) || 0;
-            const itemQty = parseInt(item.qty) || 1;
-            subtotal += itemPrice * itemQty;
-
-            // Formattazione variante
-            let displayColor = item.color || '';
-            if (displayColor.startsWith('#') && colorNames[displayColor]) {
-                displayColor = colorNames[displayColor];
-            }
+            const price = parseFloat(item.price) || 0;
+            const qty = item.qty || 1;
+            subtotal += price * qty;
             
-            let variantText = '';
-            if(displayColor) variantText += displayColor;
-            if(displayColor && item.size) variantText += ' · ';
-            if(item.size) variantText += `Taglia ${item.size}`;
-            if(!variantText) variantText = 'Taglia Unica';
-
-            // Creazione HTML Item
             const div = document.createElement('div');
             div.className = 'summary-item';
             div.innerHTML = `
-                <div class="summary-item-image">
-                    <img src="${item.image || 'https://via.placeholder.com/150'}" alt="${item.title}">
-                </div>
+                <div class="summary-item-image"><img src="${item.image || ''}" style="width:100%;height:100%;object-fit:cover"></div>
                 <div class="summary-item-details">
-                    <div class="summary-item-name">${item.title} <span style="font-size:0.8em; color:#71717a;">(x${itemQty})</span></div>
-                    <div class="summary-item-variant">${variantText}</div>
+                    <div class="summary-item-name">${item.title} x${qty}</div>
+                    <div class="summary-item-variant">${item.color||''} ${item.size||''}</div>
                 </div>
-                <div class="summary-item-price">€ ${(itemPrice * itemQty).toLocaleString('it-IT', {minimumFractionDigits: 2})}</div>
+                <div class="summary-item-price">€ ${(price*qty).toFixed(2)}</div>
             `;
             itemsContainer.appendChild(div);
         });
 
-        // Calcolo Totali
-        const shippingCost = subtotal >= 150 ? 0 : 15;
-        const total = subtotal + shippingCost;
-
-        // Aggiornamento UI Totali
-        if (subtotalElem) subtotalElem.textContent = `€ ${subtotal.toLocaleString('it-IT', {minimumFractionDigits: 2})}`;
-        
-        if (shippingElem) {
-            if (shippingCost === 0) {
-                shippingElem.textContent = 'Gratuita';
-                shippingElem.style.color = '#34d399';
-            } else {
-                shippingElem.textContent = `€ ${shippingCost.toLocaleString('it-IT', {minimumFractionDigits: 2})}`;
-                shippingElem.style.color = '#fafafa';
-            }
-        }
-
-        if (totalElem) totalElem.textContent = `€ ${total.toLocaleString('it-IT', {minimumFractionDigits: 2})}`;
+        const shipCost = subtotal >= 150 ? 0 : 15;
+        if(subtotalElem) subtotalElem.textContent = `€ ${subtotal.toFixed(2)}`;
+        if(shippingElem) shippingElem.textContent = shipCost === 0 ? 'Gratuita' : `€ ${shipCost.toFixed(2)}`;
+        if(totalElem) totalElem.textContent = `€ ${(subtotal + shipCost).toFixed(2)}`;
     }
-</script>    
+</script>   
 </body>
 </html>
+
 
 
