@@ -581,8 +581,7 @@
             <div class="info-card">
                 <span class="info-icon">📅</span>
                 <div class="info-label">Consegna Prevista</div>
-                <!-- replaced static value with dynamic element -->
-                <div class="info-value" id="plannedDelivery">Caricamento...</div>
+                <div class="info-value">8-9 Novembre 2024</div>
             </div>
             <div class="info-card">
                 <span class="info-icon">💳</span>
@@ -888,8 +887,8 @@
         const paymentElem = document.getElementById('paymentValue');
         const orderNumElem = document.getElementById('orderNumber');
 
-        // Determine order id early so we can fetch tracking info afterwards
         let currentOrderId = null;
+
         if (response && !response.error) {
             if (response.email && emailElem) {
                 emailElem.textContent = response.email;
@@ -960,7 +959,6 @@
             console.log('✅ Ordine salvato in localStorage per tracking immediato:', orderDetails);
         }
 
-        // Default timeline data (will be enriched by fetching Order Tracking sheet data)
         const timelineData = {
             current_status: response?.current_status || 'preparing',
             status_dates: {
@@ -994,221 +992,26 @@
         };
         document.body.appendChild(triggerScript);
 
-        // Fetch Order Tracking record for this order to replace static / estimated values with real ones
-        const orderIdToQuery = currentOrderId || localStorage.getItem('lh360_last_order_id') || null;
-        if (orderIdToQuery) {
-            fetchOrderTrackingInfo(orderIdToQuery, (orderInfo) => {
-                if (orderInfo) {
-                    // Update "Consegna Prevista" info card
-                    const plannedElem = document.getElementById('plannedDelivery');
-                    if (plannedElem) {
-                        plannedElem.textContent = orderInfo.consegna_prevista || 'Da definire';
-                    }
-
-                    // Build timeline object from orderInfo
-                    const mappedStatus = mapItalianStatusToKey(orderInfo.stato || '');
-
-                    const enriched = {
-                        current_status: mappedStatus || timelineData.current_status,
-                        status_dates: {
-                            confirmed: orderInfo.data || timelineData.status_dates.confirmed,
-                            preparing: mappedStatus === 'preparing' ? (orderInfo.ultimo_aggiornamento || timelineData.status_dates.preparing) : timelineData.status_dates.preparing,
-                            shipped: null,
-                            delivered: null
-                        },
-                        estimated_dates: {
-                            preparing: 'In corso',
-                            shipped: null,
-                            delivered: orderInfo.consegna_prevista || 'Da definire'
-                        }
-                    };
-
-                    // If order is In Preparazione -> show dynamic shipping estimate derived from consegna_prevista
-                    if ((orderInfo.stato || '').toLowerCase().indexOf('prepar') !== -1) {
-                        const shipEstimate = computeShippingEstimateFromDelivery(orderInfo.consegna_prevista);
-                        enriched.estimated_dates.shipped = shipEstimate || 'Da definire';
-                        // For displayed "Spedito" we will show `Previsto: ...` using estimated_dates.shipped
-                    }
-
-                    // If order is In Transito -> show shipped date (use ultimo_aggiornamento as best-effort)
-                    if ((orderInfo.stato || '').toLowerCase().indexOf('trans') !== -1) {
-                        enriched.status_dates.shipped = orderInfo.ultimo_aggiornamento || null;
-                        enriched.estimated_dates.delivered = orderInfo.consegna_prevista || enriched.estimated_dates.delivered;
-                    }
-
-                    // If order is Consegnato -> show delivered date (use ultimo_aggiornamento as best-effort)
-                    if ((orderInfo.stato || '').toLowerCase().indexOf('consegn') !== -1) {
-                        enriched.status_dates.delivered = orderInfo.ultimo_aggiornamento || null;
-                    }
-
-                    // Update timeline UI with enriched data
-                    updateTimeline(enriched);
-                }
-            });
-        }
-
         delayFinalize(startTime);
     };
 
-    /**
-     * Helper: Calcola data di consegna prevista
-     */
-    function calculateDeliveryDate(daysFromNow) {
-        const date = new Date();
-        date.setDate(date.getDate() + daysFromNow);
-        return date.toLocaleDateString('it-IT', { day: 'numeric', month: 'long', year: 'numeric' });
-    }
+/**
+ * Helper: Calcola data di consegna prevista
+ */
+function calculateDeliveryDate(daysFromNow) {
+    const date = new Date();
+    date.setDate(date.getDate() + daysFromNow);
+    return date.toLocaleDateString('it-IT', { day: 'numeric', month: 'long', year: 'numeric' });
+}
 
-    /**
-     * Helper: Calcola data di consegna prevista
-     */
-    function calculateDeliveryDate(daysFromNow) {
-        const date = new Date();
-        date.setDate(date.getDate() + daysFromNow);
-        return date.toLocaleDateString('it-IT', { day: 'numeric', month: 'long', year: 'numeric' });
-    }
-
-    /**
-     * Helper: Map Italian status to timeline key
-     */
-    function mapItalianStatusToKey(itStatus) {
-        if (!itStatus) return null;
-        const s = itStatus.toString().toLowerCase();
-        if (s.indexOf('conferm') !== -1 || s === 'confermato') return 'confirmed';
-        if (s.indexOf('prepar') !== -1 || s === 'in preparazione') return 'preparing';
-        if (s.indexOf('trans') !== -1 || s === 'in transito') return 'shipped';
-        if (s.indexOf('consegn') !== -1 || s === 'consegnato') return 'delivered';
-        return null;
-    }
-
-    /**
-     * Compute shipping estimate string from a delivery string returned by sheet.
-     * Examples:
-     *  - "8-9 Novembre 2024"  -> "Previsto: 7-8 Nov"
-     *  - "8 Novembre 2024"    -> "Previsto: 7 Nov"
-     *  - "08/11/2024"         -> "Previsto: 07 Nov"
-     */
-    function computeShippingEstimateFromDelivery(deliveryStr) {
-        if (!deliveryStr) return null;
-        deliveryStr = deliveryStr.toString().trim();
-        if (deliveryStr === 'Da definire') return null;
-
-        // try parse ranges like "8-9 Novembre 2024" or "8 – 9 Novembre 2024"
-        const monthMap = {
-            'gennaio': 0, 'febbraio': 1, 'marzo': 2, 'aprile': 3,
-            'maggio': 4, 'giugno': 5, 'luglio': 6, 'agosto': 7,
-            'settembre': 8, 'ottobre': 9, 'novembre': 10, 'dicembre': 11,
-            'Gen': 0, 'Feb': 1, 'Mar': 2, 'Apr': 3, 'Mag':4, 'Giu':5, 'Lug':6, 'Ago':7, 'Set':8, 'Ott':9, 'Nov':10, 'Dic':11
-        };
-
-        // Normalize long dashes
-        const norm = deliveryStr.replace(/\u2013|\u2014/g, '-');
-        // Case 1: range with month name
-        let mRange = norm.match(/(\d{1,2})\s*-\s*(\d{1,2})\s+([A-Za-zÀ-ú]+)\s*(\d{4})?/i);
-        if (mRange) {
-            const d1 = parseInt(mRange[1], 10);
-            const d2 = parseInt(mRange[2], 10);
-            const monthName = mRange[3].toLowerCase();
-            const year = mRange[4] ? parseInt(mRange[4], 10) : (new Date()).getFullYear();
-            let month = monthMap[monthName];
-            if (month === undefined) {
-                // try first 3 letters
-                month = monthMap[monthName.substr(0,3).replace(/\./g,'')];
-            }
-            if (month === undefined) return null;
-            const date1 = new Date(year, month, d1);
-            const date2 = new Date(year, month, d2);
-            const ship1 = new Date(date1); ship1.setDate(ship1.getDate() - 1);
-            const ship2 = new Date(date2); ship2.setDate(ship2.getDate() - 1);
-            // use short month
-            const monthShort = ship1.toLocaleDateString('it-IT', { month: 'short' });
-            // If ship1 and ship2 have same month, show "Previsto: 7-8 Nov"
-            if (ship1.getMonth() === ship2.getMonth()) {
-                return `Previsto: ${ship1.getDate()}-${ship2.getDate()} ${monthShort}`;
-            } else {
-                const m2Short = ship2.toLocaleDateString('it-IT', { month: 'short' });
-                return `Previsto: ${ship1.getDate()} ${ship1.toLocaleDateString('it-IT', { month: 'short' })} - ${ship2.getDate()} ${m2Short}`;
-            }
-        }
-
-        // Case 2: single date with month name "8 Novembre 2024"
-        let mSingle = norm.match(/(\d{1,2})\s+([A-Za-zÀ-ú]+)\s*(\d{4})?/i);
-        if (mSingle) {
-            const d = parseInt(mSingle[1], 10);
-            const monthName = mSingle[2].toLowerCase();
-            const year = mSingle[3] ? parseInt(mSingle[3], 10) : (new Date()).getFullYear();
-            let month = monthMap[monthName];
-            if (month === undefined) {
-                month = monthMap[monthName.substr(0,3).replace(/\./g,'')];
-            }
-            if (month === undefined) return null;
-            const date = new Date(year, month, d);
-            const ship = new Date(date); ship.setDate(ship.getDate() - 1);
-            const shortMonth = ship.toLocaleDateString('it-IT', { month: 'short' });
-            return `Previsto: ${ship.getDate()} ${shortMonth}`;
-        }
-
-        // Case 3: dd/mm/yyyy
-        let mSlash = norm.match(/(\d{1,2})\/(\d{1,2})\/(\d{4})/);
-        if (mSlash) {
-            const d = parseInt(mSlash[1], 10);
-            const m = parseInt(mSlash[2], 10) - 1;
-            const y = parseInt(mSlash[3], 10);
-            const date = new Date(y, m, d);
-            const ship = new Date(date); ship.setDate(ship.getDate() - 1);
-            const shortMonth = ship.toLocaleDateString('it-IT', { month: 'short' });
-            return `Previsto: ${ship.getDate()} ${shortMonth}`;
-        }
-
-        return null;
-    }
-
-    /**
-     * Fetch Order Tracking list and find order by id (JSONP)
-     * callback receives the order object or null
-     */
-    function fetchOrderTrackingInfo(orderId, cb) {
-        if (!orderId) { cb(null); return; }
-        const callbackName = 'handleOrdersList_' + Date.now() + '_' + Math.floor(Math.random()*10000);
-        const script = document.createElement('script');
-        script.async = true;
-        script.src = `${webAppUrl}?action=get_orders&callback=${callbackName}&t=${Date.now()}`;
-
-        const timeout = setTimeout(() => {
-            cleanup();
-            cb(null);
-        }, 8000);
-
-        window[callbackName] = function(resp) {
-            clearTimeout(timeout);
-            cleanup();
-            try {
-                if (resp && Array.isArray(resp.orders)) {
-                    const found = resp.orders.find(o => String(o.id) === String(orderId));
-                    if (found) {
-                        cb(found);
-                        return;
-                    }
-                }
-            } catch (e) {
-                console.warn('parse orders error', e);
-            }
-            cb(null);
-        };
-
-        script.onerror = function() {
-            clearTimeout(timeout);
-            cleanup();
-            cb(null);
-        };
-
-        function cleanup() {
-            try { if (script.parentNode) script.parentNode.removeChild(script); } catch (e) {}
-            try { delete window[callbackName]; } catch (e) {}
-        }
-
-        document.body.appendChild(script);
-    }
+/**
+ * Helper: Calcola data di consegna prevista
+ */
+function calculateDeliveryDate(daysFromNow) {
+    const date = new Date();
+    date.setDate(date.getDate() + daysFromNow);
+    return date.toLocaleDateString('it-IT', { day: 'numeric', month: 'long', year: 'numeric' });
+}
 
     /**
      * FUNZIONE: Aggiorna la timeline dinamicamente
@@ -1236,7 +1039,7 @@
         };
 
         const stepOrder = ['confirmed', 'preparing', 'shipped', 'delivered'];
-        const currentIndex = Math.max(0, stepOrder.indexOf(data.current_status));
+        const currentIndex = stepOrder.indexOf(data.current_status);
 
         // Aggiorna classi, icone e date
         stepOrder.forEach((step, index) => {
@@ -1268,22 +1071,12 @@
             // Aggiorna data
             const dateElem = dateElems[step];
             if (dateElem) {
-                const actualDate = data.status_dates && data.status_dates[step];
+                const actualDate = data.status_dates[step];
                 if (actualDate) {
-                    // If it's an ISO or JS-date-parsable string, format; else print as-is
-                    const parsed = new Date(actualDate);
-                    if (!isNaN(parsed.getTime()) && typeof actualDate === 'string' && actualDate.indexOf('GMT') === -1) {
-                        // If original string includes time (e.g. dd/MM/yyyy, HH:mm) parse will produce a valid Date in many cases,
-                        // but to be safe, format only as day + short month if time is not required.
-                        dateElem.textContent = parsed.toLocaleDateString('it-IT', { day: 'numeric', month: 'short' }) + (parsed.getHours() ? ', ' + parsed.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' }) : '');
-                    } else {
-                        // fallback: use trimmed textual representation
-                        dateElem.textContent = actualDate.toString();
-                    }
+                    const date = new Date(actualDate);
+                    dateElem.textContent = date.toLocaleDateString('it-IT', { day: 'numeric', month: 'short' }) + ', ' + date.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
                 } else {
-                    // Use estimated dates if provided
-                    const est = data.estimated_dates && data.estimated_dates[step];
-                    dateElem.textContent = est || 'Da definire';
+                    dateElem.textContent = data.estimated_dates[step] || 'Da definire';
                 }
             }
         });
