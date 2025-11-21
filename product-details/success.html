@@ -680,8 +680,8 @@
     </div>
     
     <script>
-       // CONFIGURAZIONE
-const webAppUrl = 'https://script.google.com/macros/s/AKfycbyl-SrRgn4ZGCL-wPYy8fLBKLaUtxY7V08KGujaihbz1tPX47BM36yw6Mj60UUT8ftv/exec';
+    // CONFIGURAZIONE
+const webAppUrl = 'https://script.google.com/macros/s/AKfycbx6rKb2124pyOHLwjfPYKui2IGPkqid9uTitvX9QnMOsUncrxeK_Yc4B573EG3XnyTo/exec';
 
 let loadTimeout;
 let startTime;
@@ -1005,21 +1005,25 @@ function updateTimelineFromOrderData(order, confirmedTime, deliveryElem) {
         deliveryElem.textContent = consegnaPrevista;
     }
 
-    // Calcola data spedizione prevista (1 giorno prima della consegna)
+    // Calcola data spedizione prevista realistica
     const shippingDate = calculateShippingDate(consegnaPrevista);
+    
+    // Formatta data consegna in formato breve con prefisso
+    const deliveryDate = parseItalianDate(consegnaPrevista);
+    const deliveryFormatted = deliveryDate ? formatShortDate(deliveryDate, true) : 'Previsto: Da definire';
 
     const timelineData = {
         current_status: mapStatusToStep(stato),
         status_dates: {
             confirmed: confirmedTime,
-            preparing: stato !== 'Confermato' ? new Date().toISOString() : null,
+            preparing: null, // Sempre null per mostrare "In corso"
             shipped: stato === 'In Transito' || stato === 'Consegnato' ? new Date().toISOString() : null,
             delivered: stato === 'Consegnato' ? new Date().toISOString() : null
         },
         estimated_dates: {
-            preparing: 'In corso',
+            preparing: 'In corso', // Fisso per In Preparazione
             shipped: shippingDate,
-            delivered: consegnaPrevista
+            delivered: deliveryFormatted
         }
     };
 
@@ -1032,6 +1036,10 @@ function updateTimelineFromOrderData(order, confirmedTime, deliveryElem) {
 function updateTimelineWithDefaults(confirmedTime, deliveryElem) {
     const deliveryDate = calculateDeliveryDate(3);
     const shippingDate = calculateShippingDate(deliveryDate);
+    
+    // Formatta consegna in formato breve
+    const parsedDelivery = parseItalianDate(deliveryDate);
+    const deliveryFormatted = parsedDelivery ? formatShortDate(parsedDelivery, true) : 'Previsto: Da definire';
 
     if (deliveryElem) {
         deliveryElem.textContent = deliveryDate;
@@ -1041,14 +1049,14 @@ function updateTimelineWithDefaults(confirmedTime, deliveryElem) {
         current_status: 'preparing',
         status_dates: {
             confirmed: confirmedTime,
-            preparing: new Date().toISOString(),
+            preparing: null, // Sempre null per "In corso"
             shipped: null,
             delivered: null
         },
         estimated_dates: {
-            preparing: 'In corso',
+            preparing: 'In corso', // Fisso
             shipped: shippingDate,
-            delivered: deliveryDate
+            delivered: deliveryFormatted
         }
     };
 
@@ -1219,10 +1227,33 @@ function updateTimeline(data) {
         const dateElem = dateElems[step];
         if (dateElem) {
             const actualDate = data.status_dates[step];
+            
+            // Caso speciale: "In Preparazione"
+            if (step === 'preparing') {
+                // Se lo step è completato (ordine è andato oltre), mostra "Preparazione completata"
+                if (index < currentIndex) {
+                    dateElem.textContent = 'Preparazione completata';
+                } else if (index === currentIndex) {
+                    // Se è lo step attivo, mostra "In corso"
+                    dateElem.textContent = 'In corso';
+                } else {
+                    // Stato futuro
+                    dateElem.textContent = data.estimated_dates[step] || 'Da definire';
+                }
+                return;
+            }
+            
             if (actualDate) {
+                // Data reale per stati completati
                 const date = new Date(actualDate);
-                dateElem.textContent = date.toLocaleDateString('it-IT', { day: 'numeric', month: 'short' }) + ', ' + date.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
+                const day = date.getDate();
+                const monthNames = ['Gen', 'Feb', 'Mar', 'Apr', 'Mag', 'Giu', 
+                                    'Lug', 'Ago', 'Set', 'Ott', 'Nov', 'Dic'];
+                const month = monthNames[date.getMonth()];
+                const time = date.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
+                dateElem.textContent = `${day} ${month}, ${time}`;
             } else {
+                // Data stimata per stati futuri
                 dateElem.textContent = data.estimated_dates[step] || 'Da definire';
             }
         }
