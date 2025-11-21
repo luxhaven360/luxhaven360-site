@@ -690,11 +690,13 @@
         startTime = Date.now();
         setupButtons();
         loadPurchasedItems();
-        loadOrderDetails();
+        // Avvia il caricamento robusto (con ritentativi)
+        loadOrderDetails(3); 
+        
         loadTimeout = setTimeout(() => {
             console.warn('Timeout caricamento dati: forzatura visualizzazione.');
             delayFinalize(startTime);
-        }, 10000);
+        }, 12000); // Timeout leggermente aumentato per dare tempo ai retry
     });
 
     function finalizePageLoad() {
@@ -706,15 +708,17 @@
             setTimeout(() => { loader.style.display = 'none'; }, 500);
         }
         if (content) content.style.opacity = '1';
+        
+        // Pulizia finale dopo breve delay
         setTimeout(() => {
             localStorage.removeItem('lh360_cart');
             localStorage.removeItem('lh360_selected_variant_id');
-        }, 1000);
+        }, 2000);
     }
 
     function delayFinalize(startTime) {
         const elapsed = Date.now() - startTime;
-        const remaining = 8000 - elapsed; // Minimo 8 secondi di loader per estetica
+        const remaining = 6000 - elapsed; // Minimo 6 secondi di loader
         if (remaining > 0) {
             setTimeout(finalizePageLoad, remaining);
         } else {
@@ -729,8 +733,8 @@
         if (shopBtn) shopBtn.href = 'index.html#shop';
     }
 
-    // ---------- JSONP loader ----------
-    function loadOrderDetails() {
+    // ---------- CARICAMENTO ROBUSTO (RIPRISTINATO) ----------
+    function loadOrderDetails(maxRetries = 3) {
         const urlParams = new URLSearchParams(window.location.search);
         const sessionId = urlParams.get('session_id');
         const orderIdParam = urlParams.get('id_ordine');
@@ -745,74 +749,124 @@
             return;
         }
 
-        const callbackName = 'handleDetailsResponse_' + Date.now();
-        const script = document.createElement('script');
-        script.src = `${webAppUrl}?get_details=1&session_id=${encodeURIComponent(sessionId)}&callback=${callbackName}&t=${Date.now()}`;
-        
-        window[callbackName] = function(response) {
-            handleDetailsResponse(response);
-            try { delete window[callbackName]; document.body.removeChild(script); } catch(e){}
-        };
-        
-        script.onerror = () => {
-             console.warn('Errore JSONP, finalizzo comunque.');
-             delayFinalize(startTime);
-        };
+        let attempts = 0;
+        let finished = false;
 
-        document.body.appendChild(script);
+        function tryRequest() {
+            if (finished) return;
+            attempts++;
+            const callbackName = 'handleDetailsResponse_' + Date.now() + '_' + Math.floor(Math.random() * 10000);
+            
+            // Creazione script JSONP
+            const script = document.createElement('script');
+            script.src = `${webAppUrl}?get_details=1&session_id=${encodeURIComponent(sessionId)}&callback=${callbackName}&t=${Date.now()}`;
+            script.async = true;
+
+            // Cleanup helper
+            const cleanup = () => {
+                try { if (script.parentNode) script.parentNode.removeChild(script); } catch (e) {}
+                try { delete window[callbackName]; } catch (e) {}
+            };
+
+            window[callbackName] = function(response) {
+                if (finished) { cleanup(); return; }
+                finished = true;
+                cleanup();
+                handleDetailsResponse(response);
+            };
+
+            script.onerror = function() {
+                cleanup();
+                if (attempts <= maxRetries) {
+                    console.warn('JSONP errore, ritento...', attempts);
+                    setTimeout(tryRequest, 1500 + (attempts * 500));
+                } else {
+                    console.warn('Tutti i tentativi falliti, finalizzo.');
+                    // Fallback fetch opzionale rimosso per semplicità, passiamo alla chiusura
+                    delayFinalize(startTime);
+                }
+            };
+
+            document.body.appendChild(script);
+        }
+
+        // Avvia il primo tentativo
+        tryRequest();
+        
+        // Trigger Polling in background (RIPRISTINATO)
+        // Serve a svegliare lo script lato server per processare Stripe immediatamente
+        const pollScript = document.createElement('script');
+        const pollCb = 'poll_' + Date.now();
+        pollScript.src = `${webAppUrl}?action=trigger_poll&callback=${pollCb}`;
+        window[pollCb] = () => { try{delete window[pollCb];}catch(e){} };
+        document.body.appendChild(pollScript);
     }
 
-    // ---------- Global Handler ----------
+    // ---------- GESTORE RISPOSTA (CON LOGICA NUOVA DATE) ----------
     window.handleDetailsResponse = function(response) {
         const emailElem = document.getElementById('emailValue');
         const paymentElem = document.getElementById('paymentValue');
         const orderNumElem = document.getElementById('orderNumber');
-        
-        // Elemento info card Consegna
         const deliveryCardValue = document.querySelector('.info-card:nth-child(2) .info-value');
+
+        let currentOrderId = null;
 
         if (response && !response.error) {
             if (response.email && emailElem) emailElem.textContent = response.email;
             if (paymentElem) paymentElem.textContent = response.last4 ? `•••• ${response.last4}` : 'Pagamento Online';
-            if (response.order_id && orderNumElem) orderNumElem.textContent = `Ordine #${response.order_id}`;
+            if (response.order_id && orderNumElem) {
+                orderNumElem.textContent = `Ordine #${response.order_id}`;
+                currentOrderId = response.order_id;
+            }
 
-            // Aggiornamento Info Card "Consegna Prevista" (Punto 2 della richiesta)
+            // --- PUNTO 2: Aggiornamento Info Card "Consegna Prevista" ---
             if (deliveryCardValue) {
                 if (response.consegna_reale && response.consegna_reale !== 'Da definire') {
                     deliveryCardValue.textContent = response.consegna_reale;
                 } else {
-                    // Fallback se non ancora definita (es. +3 giorni)
-                    deliveryCardValue.textContent = calculateDeliveryDate(3);
+                    deliveryCardValue.textContent = calculateDeliveryDate(3); // Fallback
                 }
             }
 
-            // Preparazione dati per Timeline
-            const timelineData = {
-                status: response.stato_reale || 'Confermato', // Stato dal foglio
-                deliveryDate: response.consegna_reale,
-                lastUpdate: response.data_aggiornamento, // Data dell'ultimo cambio stato
-                confirmedDate: new Date().toISOString() // Fallback per data conferma
-            };
+            // --- SALVATAGGIO LOCALE PER TRACKING (RIPRISTINATO) ---
+            // Fondamentale per vedere l'ordine nella pagina Tracking
+            if (currentOrderId) {
+                const cart = JSON.parse(localStorage.getItem('lh360_cart') || '[]');
+                const orderDetails = {
+                    id: currentOrderId,
+                    data: new Date().toLocaleDateString('it-IT'),
+                    stato: response.stato_reale || 'In Preparazione',
+                    totale: calculateTotal(cart),
+                    consegna_prevista: response.consegna_reale || calculateDeliveryDate(3),
+                    email: response.email || '',
+                    products: cart,
+                    timestamp: new Date().toISOString()
+                };
+                localStorage.setItem('lh360_pending_order', JSON.stringify(orderDetails));
+                // Salva anche timestamp specifico per evitare sparizioni
+                localStorage.setItem(`lh360_order_time_${currentOrderId}`, new Date().toISOString());
+            }
 
+            // --- NUOVA LOGICA TIMELINE ---
+            const timelineData = {
+                status: response.stato_reale || 'Confermato',
+                deliveryDate: response.consegna_reale,
+                lastUpdate: response.data_aggiornamento, 
+            };
             updateTimeline(timelineData);
         }
 
         delayFinalize(startTime);
     };
 
-    /**
-     * FUNZIONE PRINCIPALE TIMELINE
-     * Gestisce logica date dinamiche, calcolo spedizione e icone di spunta.
-     */
+    // ---------- LOGICA TIMELINE DINAMICA (RICHIESTA UTENTE) ----------
     function updateTimeline(data) {
-        const steps = ['Confermato', 'In Preparazione', 'Spedito', 'Consegnato']; 
-        // Nota: Nel foglio lo stato è "In Transito", ma nella UI è mappato su "Spedito"
-        
-        // Normalizzazione stato per match
+        // Mappatura stati: 'In Transito' dal foglio diventa 'Spedito' visivamente
         let currentStatus = data.status;
         if (currentStatus === 'In Transito') currentStatus = 'Spedito';
         if (currentStatus === 'paid') currentStatus = 'Confermato';
 
+        const steps = ['Confermato', 'In Preparazione', 'Spedito', 'Consegnato'];
         const currentIndex = steps.indexOf(currentStatus) > -1 ? steps.indexOf(currentStatus) : 0;
 
         const stepElems = {
@@ -836,71 +890,62 @@
             'Consegnato': '🏠'
         };
 
-        // Parsing date utili
-        const deliveryDateStr = data.deliveryDate; // Es: "15 Novembre 2024"
-        const updateDateStr = data.lastUpdate; // Es: "12/11/2024, 10:00"
-
-        // LOGICA DATE DINAMICHE
+        // Logica Date Dinamiche
         let displayDateShipped = "In attesa";
         let displayDateDelivered = "In attesa";
 
-        // 1. Calcolo data Spedizione
-        if (currentIndex >= 1) { // Se siamo almeno "In Preparazione"
+        // Calcolo data spedizione (Punto 1)
+        if (currentIndex >= 1) { // Almeno 'In Preparazione'
              if (currentStatus === 'In Preparazione' || currentStatus === 'Confermato') {
-                 // Calcolo stimato: Data consegna - 1 o 2 giorni
-                 const estimatedShipDate = calculateEstimatedShipping(deliveryDateStr);
-                 displayDateShipped = estimatedShipDate ? `Previsto: ${estimatedShipDate}` : "Da definire";
+                 // Calcola stima basata su consegna prevista
+                 const est = calculateEstimatedShipping(data.deliveryDate);
+                 displayDateShipped = est ? `Previsto: ${est}` : "Da definire";
              } else {
-                 // Se è già "Spedito" o "Consegnato", usa la data reale dell'aggiornamento
-                 displayDateShipped = formatShortDateFromTimestamp(updateDateStr) || "Spedito";
+                 // Se già spedito/consegnato, usa data reale aggiornamento
+                 displayDateShipped = formatShortDateFromTimestamp(data.lastUpdate) || "Spedito";
              }
         }
 
-        // 2. Calcolo data Consegna (Timeline)
-        if (deliveryDateStr && deliveryDateStr !== 'Da definire') {
-            // Se consegnato, mostra data semplice (es: 7 Nov)
+        // Calcolo data consegna (Punto 2)
+        if (data.deliveryDate && data.deliveryDate !== 'Da definire') {
             if (currentStatus === 'Consegnato') {
-                // Qui idealmente useremmo la data effettiva di consegna se tracciata separatamente, 
-                // ma usiamo la prevista o l'update per coerenza richiesta
-                displayDateDelivered = formatShortDateText(deliveryDateStr); 
+                displayDateDelivered = formatShortDateText(data.deliveryDate);
             } else {
-                // Se non ancora consegnato, mostra la data prevista completa o ridotta
-                displayDateDelivered = `Previsto: ${formatShortDateText(deliveryDateStr)}`;
+                displayDateDelivered = `Previsto: ${formatShortDateText(data.deliveryDate)}`;
             }
         } else {
             displayDateDelivered = "Da definire";
         }
 
-        // APPLICAZIONE ALLA UI
+        // Aggiornamento DOM
         steps.forEach((stepLabel, index) => {
             const elem = stepElems[stepLabel];
             const dateElem = dateElems[stepLabel];
             if (!elem) return;
 
-            // Reset classi
             elem.classList.remove('completed', 'active', 'pending');
-
-            // Gestione Dot e Icona
             const dot = elem.querySelector('.timeline-dot');
-            
+
             if (index < currentIndex) {
-                // Fasi passate -> COMPLETED -> Icona SPUNTA
+                // Fasi passate -> Spunta
                 elem.classList.add('completed');
                 if (dot) dot.innerHTML = '✓'; 
             } else if (index === currentIndex) {
-                // Fase corrente -> ACTIVE -> Icona SPECIFICA
+                // Fase attuale -> Icona Attiva
                 elem.classList.add('active');
                 if (dot) dot.innerHTML = icons[stepLabel];
             } else {
-                // Fasi future -> PENDING -> Icona SPECIFICA (grigia)
+                // Fase futura -> Icona Grigia
                 elem.classList.add('pending');
                 if (dot) dot.innerHTML = icons[stepLabel];
             }
 
-            // Inserimento Testi Date
             if (dateElem) {
                 if (stepLabel === 'Confermato') {
-                    dateElem.textContent = formatShortDateFromTimestamp(data.lastUpdate) || formatShortDate(new Date());
+                    // Se disponibile usa lastUpdate altrimenti oggi
+                    dateElem.textContent = (currentStatus === 'Confermato' && data.lastUpdate) 
+                        ? formatShortDateFromTimestamp(data.lastUpdate) 
+                        : formatShortDate(new Date());
                 } 
                 else if (stepLabel === 'In Preparazione') {
                     dateElem.textContent = (index <= currentIndex) ? "In corso" : "In attesa";
@@ -914,7 +959,7 @@
             }
         });
 
-        // Aggiorna barra di progresso
+        // Barra progresso
         const timelineElem = document.querySelector('.timeline');
         if (timelineElem) {
             const progress = (currentIndex / (steps.length - 1)) * 100;
@@ -922,72 +967,55 @@
         }
     }
 
-    // --- HELPERS PER DATE ---
+    // ---------- HELPERS CALCOLO DATE ----------
 
-    // Input: "15 Novembre 2024" -> Output stimato: "13-14 Nov"
+    // Stima spedizione (Consegna - 2 giorni)
     function calculateEstimatedShipping(deliveryStr) {
         if (!deliveryStr || deliveryStr === 'Da definire') return null;
-        
-        // Mappa mesi veloce
         const months = {
             'gennaio':0,'febbraio':1,'marzo':2,'aprile':3,'maggio':4,'giugno':5,
             'luglio':6,'agosto':7,'settembre':8,'ottobre':9,'novembre':10,'dicembre':11
         };
-
         try {
-            const parts = deliveryStr.match(/(\d+)\s+(\w+)\s+(\d+)/);
+            const parts = deliveryStr.match(/(\d+)\s+(\w+)\s+(\d+)/); // es: 15 Novembre 2024
             if (parts) {
                 const day = parseInt(parts[1]);
                 const month = months[parts[2].toLowerCase()];
                 const year = parseInt(parts[3]);
-                
                 const d = new Date(year, month, day);
-                d.setDate(d.getDate() - 2); // Stima 2 giorni prima
-                
-                const d2 = new Date(year, month, day);
-                d2.setDate(d2.getDate() - 1); // Stima 1 giorno prima
-
-                const mStr = d.toLocaleString('it-IT', { month: 'short' }); // es. "nov"
-                // Ritorna range es. "13-14 nov"
-                return `${d.getDate()}-${d2.getDate()} ${mStr}`; 
+                d.setDate(d.getDate() - 2); 
+                return `${d.getDate()} ${d.toLocaleString('it-IT', { month: 'short' })}`;
             }
         } catch(e) { return null; }
         return null;
     }
 
-    // Input: "15 Novembre 2024" -> Output: "15 Nov"
+    // Formatta data breve da stringa estesa
     function formatShortDateText(dateStr) {
         if (!dateStr) return '';
         try {
              const parts = dateStr.match(/(\d+)\s+(\w+)/);
-             if(parts) {
-                 return `${parts[1]} ${parts[2].substring(0,3)}`;
-             }
+             if(parts) return `${parts[1]} ${parts[2].substring(0,3)}`;
         } catch(e){}
         return dateStr;
     }
 
-    // Input: "12/11/2024, 10:00" o Date object -> Output: "12 Nov"
+    // Formatta da timestamp o stringa data/ora
     function formatShortDateFromTimestamp(ts) {
         if (!ts) return null;
         let d;
-        if (typeof ts === 'string' && ts.includes('/')) {
-            const parts = ts.split(',')[0].split('/');
+        if (typeof ts === 'string' && ts.includes(',')) {
+            const parts = ts.split(',')[0].split('/'); // dd/MM/yyyy
             d = new Date(parts[2], parts[1]-1, parts[0]);
         } else {
             d = new Date(ts);
         }
-        
         if (isNaN(d.getTime())) return null;
-        
-        const day = d.getDate();
-        const month = d.toLocaleString('it-IT', { month: 'short' });
-        return `${day} ${month}`; // Es: "12 nov"
+        return `${d.getDate()} ${d.toLocaleString('it-IT', { month: 'short' })}`;
     }
 
-    // Helper vecchio stile
     function formatShortDate(date) {
-        return date.getDate() + ' ' + date.toLocaleString('it-IT', { month: 'short' });
+        return `${date.getDate()} ${date.toLocaleString('it-IT', { month: 'short' })}`;
     }
 
     function calculateDeliveryDate(days) {
@@ -996,18 +1024,25 @@
         return d.getDate() + ' ' + d.toLocaleString('it-IT', { month: 'long' }) + ' ' + d.getFullYear();
     }
 
+    function calculateTotal(cart) {
+        let sub = cart.reduce((sum, i) => sum + (parseFloat(i.price)*parseInt(i.qty||1)), 0);
+        let ship = sub >= 150 ? 0 : 15;
+        return (sub + ship).toFixed(2);
+    }
+
     function loadPurchasedItems() {
         const cartRaw = localStorage.getItem('lh360_cart');
         const cart = cartRaw ? JSON.parse(cartRaw) : [];
         const itemsContainer = document.querySelector('.summary-items');
         const subtotalElem = document.querySelector('.summary-totals .summary-row:nth-child(1) span:last-child');
+        const shippingElem = document.querySelector('.summary-totals .summary-row:nth-child(2) span:last-child');
         const totalElem = document.querySelector('.summary-total span:last-child');
 
         if (!itemsContainer) return;
         itemsContainer.innerHTML = '';
 
         if (cart.length === 0) {
-            itemsContainer.innerHTML = '<div style="padding:1rem; color:#a1a1aa; text-align:center;">Caricamento dettagli...</div>';
+            itemsContainer.innerHTML = '<div style="padding:1rem; color:#a1a1aa; text-align:center;">Dettagli ordine in elaborazione...</div>';
             return;
         }
 
@@ -1016,6 +1051,12 @@
             const p = parseFloat(item.price) || 0;
             const q = parseInt(item.qty) || 1;
             subtotal += p * q;
+            
+            // Colore/Taglia per display
+            let variantText = '';
+            if(item.color && item.color.startsWith('#')) variantText += 'Colore ';
+            else if(item.color) variantText += item.color;
+            if(item.size) variantText += (variantText ? ' / ' : '') + item.size;
 
             const div = document.createElement('div');
             div.className = 'summary-item';
@@ -1023,16 +1064,29 @@
                 <div class="summary-item-image"><img src="${item.image || 'assets/logo-azienda.png'}" alt="img"></div>
                 <div class="summary-item-details">
                     <div class="summary-item-name">${item.title}</div>
-                    <div class="summary-item-variant">Qt: ${q}</div>
+                    <div class="summary-item-variant">${variantText} (x${q})</div>
                 </div>
                 <div class="summary-item-price">€ ${(p*q).toFixed(2)}</div>
             `;
             itemsContainer.appendChild(div);
         });
 
+        const shippingCost = subtotal >= 150 ? 0 : 15;
+        const total = subtotal + shippingCost;
+
         if (subtotalElem) subtotalElem.textContent = `€ ${subtotal.toFixed(2)}`;
-        if (totalElem) totalElem.textContent = `€ ${subtotal.toFixed(2)}`; // Spedizione esclusa per semplicità
+        if (shippingElem) {
+             if(shippingCost===0) {
+                 shippingElem.textContent = 'Gratuita';
+                 shippingElem.style.color = '#34d399';
+             } else {
+                 shippingElem.textContent = `€ ${shippingCost.toFixed(2)}`;
+                 shippingElem.style.color = '#fafafa';
+             }
+        }
+        if (totalElem) totalElem.textContent = `€ ${total.toFixed(2)}`;
     }
 </script>
 </body>
 </html>
+
