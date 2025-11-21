@@ -581,7 +581,7 @@
             <div class="info-card">
                 <span class="info-icon">📅</span>
                 <div class="info-label">Consegna Prevista</div>
-                <!-- Modified: dynamic delivery value -->
+                <!-- ADDED id deliveryValue to display dynamic delivery -->
                 <div class="info-value" id="deliveryValue">Caricamento...</div>
             </div>
             <div class="info-card">
@@ -755,6 +755,7 @@
         const orderNumElem = document.getElementById('orderNumber');
         const emailElem = document.getElementById('emailValue');
         const paymentElem = document.getElementById('paymentValue');
+        const deliveryElem = document.getElementById('deliveryValue');
 
         if (orderIdParam && orderNumElem) {
             orderNumElem.textContent = `Ordine #${orderIdParam}`;
@@ -763,6 +764,7 @@
         if (!sessionId) {
             if (emailElem) emailElem.textContent = 'Non disponibile';
             if (paymentElem) paymentElem.textContent = 'Non disponibile';
+            if (deliveryElem) deliveryElem.textContent = 'Da definire';
             delayFinalize(startTime);
             return;
         }
@@ -811,12 +813,14 @@
                             console.warn('Fallback fetch failed. Mostriamo contenuto parziale.');
                             if (emailElem) emailElem.textContent = 'Non disponibile';
                             if (paymentElem) paymentElem.textContent = 'Non disponibile';
+                            if (deliveryElem) deliveryElem.textContent = 'Da definire';
                             finalizePageLoad();
                         }
                     }).catch(err => {
                         console.warn('Fallback fetch exception', err);
                         if (emailElem) emailElem.textContent = 'Non disponibile';
                         if (paymentElem) paymentElem.textContent = 'Non disponibile';
+                        if (deliveryElem) deliveryElem.textContent = 'Da definire';
                         finalizePageLoad();
                     });
                 }
@@ -843,11 +847,13 @@
                             } else {
                                 if (emailElem) emailElem.textContent = 'Non disponibile';
                                 if (paymentElem) paymentElem.textContent = 'Non disponibile';
+                                if (deliveryElem) deliveryElem.textContent = 'Da definire';
                                 finalizePageLoad();
                             }
                         }).catch(err => {
                             if (emailElem) emailElem.textContent = 'Non disponibile';
                             if (paymentElem) paymentElem.textContent = 'Non disponibile';
+                            if (deliveryElem) deliveryElem.textContent = 'Da definire';
                             finalizePageLoad();
                         });
                     }
@@ -882,11 +888,12 @@
         tryRequest();
     }
 
-    // ---------- Existing global handler (unchanged) ----------
+    // ---------- Existing global handler (modified) ----------
     window.handleDetailsResponse = function(response) {
         const emailElem = document.getElementById('emailValue');
         const paymentElem = document.getElementById('paymentValue');
         const orderNumElem = document.getElementById('orderNumber');
+        const deliveryElem = document.getElementById('deliveryValue');
 
         let currentOrderId = null;
 
@@ -960,8 +967,9 @@
             console.log('✅ Ordine salvato in localStorage per tracking immediato:', orderDetails);
         }
 
+        // Build a base timelineData and then enrich it with Order Tracking sheet data (via API)
         const timelineData = {
-            current_status: response?.current_status || 'preparing',
+            current_status: (response?.current_status && mapStatusToKey(response.current_status)) || 'preparing',
             status_dates: {
                 confirmed: confirmedTime,
                 preparing: response?.status_dates?.preparing || null,
@@ -970,83 +978,99 @@
             },
             estimated_dates: response?.estimated_dates || {
                 preparing: 'In corso',
-                shipped: '7-8 Nov',
-                delivered: '8-9 Nov'
+                shipped: 'Da definire',
+                delivered: 'Da definire'
             }
         };
 
+        // If no server response or an error, keep confirmed as base
         if (!response || response.error) {
             timelineData.current_status = 'confirmed';
             timelineData.status_dates = { confirmed: confirmedTime };
         }
 
-        updateTimeline(timelineData);
+        // If we have an order id (or a URL param id_ordine) try to fetch Order Tracking record
+        const urlParams = new URLSearchParams(window.location.search);
+        const urlOrderId = urlParams.get('id_ordine');
+        const orderIdToFetch = currentOrderId || urlOrderId || localStorage.getItem('lh360_last_order_id');
 
-        // Trigger polling light (best-effort)
-        const triggerCallback = 'handlePollResponse_' + Date.now();
-        const triggerScript = document.createElement('script');
-        triggerScript.src = `${webAppUrl}?action=trigger_poll&callback=${triggerCallback}`;
-        window[triggerCallback] = function(resp) {
-            try { if (triggerScript.parentNode) triggerScript.parentNode.removeChild(triggerScript); } catch(e){}
-            try { delete window[triggerCallback]; } catch(e){}
-            console.log('Polling triggerato:', resp);
-        };
-        document.body.appendChild(triggerScript);
+        if (orderIdToFetch) {
+            fetchOrderTracking(orderIdToFetch, (orderRecord) => {
+                if (orderRecord) {
+                    // Fill delivery UI
+                    if (deliveryElem) deliveryElem.textContent = orderRecord.consegna_prevista || 'Da definire';
 
-        // NEW: try to fetch Order Tracking info (consegna_prevista, stato, ultimo aggiornamento)
-        // Prefer the explicit order id returned by the details endpoint; otherwise try last saved id in localStorage.
-        const orderIdToLookup = (response && response.order_id) ? response.order_id : (localStorage.getItem('lh360_last_order_id') || null);
-        if (orderIdToLookup) {
-            fetchOrderTrackingById(orderIdToLookup).then(order => {
-                if (order) {
-                    // update delivery info card with the value directly from Order Tracking (colonna Consegna Prevista)
-                    const deliveryElem = document.getElementById('deliveryValue');
-                    if (deliveryElem) {
-                        deliveryElem.textContent = order.consegna_prevista || 'Da definire';
-                    }
+                    // Map sheet state to timeline key
+                    const mappedKey = mapStatusToKey(orderRecord.stato || '');
 
-                    // Build enriched timeline data using tracking values:
-                    const enriched = {
-                        current_status: normalizeStatus(order.stato || timelineData.current_status),
-                        status_dates: {
-                            confirmed: timelineData.status_dates.confirmed || null,
-                            preparing: (order.stato === 'In Preparazione') ? (order.ultimo_aggiornamento || null) : (timelineData.status_dates.preparing || null),
-                            shipped: null,
-                            delivered: null
-                        },
-                        estimated_dates: {
-                            preparing: 'In corso',
-                            shipped: deriveShipEstimateFromDelivery(order.consegna_prevista),
-                            delivered: order.consegna_prevista || 'Da definire'
+                    // If order is "In Preparazione" -> show dynamic predicted shipped & delivered
+                    if ((orderRecord.stato || '') === 'In Preparazione') {
+                        // compute shipping estimate from consegna_prevista
+                        const shippingEstimate = computeShippingFromDelivery(orderRecord.consegna_prevista);
+                        timelineData.estimated_dates.shipped = shippingEstimate ? `Previsto: ${shippingEstimate}` : 'Da definire';
+                        timelineData.estimated_dates.delivered = orderRecord.consegna_prevista || 'Da definire';
+                        timelineData.current_status = 'preparing';
+                    } else if ((orderRecord.stato || '') === 'In Transito') {
+                        // shipped is actual: use ultimo_aggiornamento if available
+                        const shippedActual = parsePossibleDate(orderRecord.ultimo_aggiornamento) || null;
+                        if (shippedActual) timelineData.status_dates.shipped = shippedActual.toISOString();
+                        timelineData.estimated_dates.delivered = orderRecord.consegna_prevista || 'Da definire';
+                        timelineData.current_status = 'shipped';
+                    } else if ((orderRecord.stato || '') === 'Consegnato') {
+                        // delivered: try to parse consegna_prevista, or ultimo_aggiornamento
+                        const deliveredActual = parseDeliveryOrUltimo(orderRecord.consegna_prevista, orderRecord.ultimo_aggiornamento);
+                        if (deliveredActual) timelineData.status_dates.delivered = deliveredActual.toISOString();
+                        // Ideally shipped date can be derived from ultimo_aggiornamento if present and older than delivered
+                        const shippedFromUltimo = parsePossibleDate(orderRecord.ultimo_aggiornamento) || null;
+                        if (shippedFromUltimo) timelineData.status_dates.shipped = shippedFromUltimo.toISOString();
+                        timelineData.current_status = 'delivered';
+                        if (deliveryElem) deliveryElem.textContent = orderRecord.consegna_prevista || (deliveredActual ? formatShortDate(deliveredActual) : 'Da definire');
+                    } else {
+                        // other states (Confermato etc)
+                        timelineData.current_status = mappedKey || timelineData.current_status;
+                        timelineData.estimated_dates.delivered = orderRecord.consegna_prevista || timelineData.estimated_dates.delivered;
+                        if (deliveryElem && (!deliveryElem.textContent || deliveryElem.textContent === 'Caricamento...')) {
+                            deliveryElem.textContent = orderRecord.consegna_prevista || 'Da definire';
                         }
-                    };
-
-                    // If the order row state indicates it's already In Transito or Consegnato, use the 'ultimo_aggiornamento'
-                    // as the actual shipped/delivered timestamp (the sheet updates OT_ULTIMO_COL when status changes).
-                    if (order.stato === 'In Transito') {
-                        enriched.status_dates.shipped = order.ultimo_aggiornamento || enriched.estimated_dates.shipped;
                     }
-                    if (order.stato === 'Consegnato') {
-                        enriched.status_dates.delivered = order.ultimo_aggiornamento || order.consegna_prevista;
-                    }
-
-                    // If the response had actual status dates, prefer them
-                    if (timelineData.status_dates.shipped) enriched.status_dates.shipped = timelineData.status_dates.shipped;
-                    if (timelineData.status_dates.delivered) enriched.status_dates.delivered = timelineData.status_dates.delivered;
-
-                    // Update UI timeline with enriched info
-                    updateTimeline(enriched);
                 } else {
-                    // not found: ensure delivery card gets a fallback value (already set earlier)
-                    const deliveryElem = document.getElementById('deliveryValue');
-                    if (deliveryElem && deliveryElem.textContent.trim() === '') deliveryElem.textContent = 'Da definire';
+                    // no orderRecord found
+                    if (deliveryElem && (!deliveryElem.textContent || deliveryElem.textContent === 'Caricamento...')) {
+                        deliveryElem.textContent = 'Da definire';
+                    }
                 }
-            }).catch(err => {
-                console.warn('Errore fetchOrderTrackingById:', err);
-            }).finally(() => {
+
+                // finally update timeline in UI
+                updateTimeline(timelineData);
+
+                // Trigger polling light (best-effort)
+                const triggerCallback = 'handlePollResponse_' + Date.now();
+                const triggerScript = document.createElement('script');
+                triggerScript.src = `${webAppUrl}?action=trigger_poll&callback=${triggerCallback}`;
+                window[triggerCallback] = function(resp) {
+                    try { if (triggerScript.parentNode) triggerScript.parentNode.removeChild(triggerScript); } catch(e){}
+                    try { delete window[triggerCallback]; } catch(e){}
+                    console.log('Polling triggerato:', resp);
+                };
+                document.body.appendChild(triggerScript);
+
                 delayFinalize(startTime);
             });
         } else {
+            // No order id -> just update timeline with what we have
+            updateTimeline(timelineData);
+
+            // Trigger polling light (best-effort)
+            const triggerCallback = 'handlePollResponse_' + Date.now();
+            const triggerScript = document.createElement('script');
+            triggerScript.src = `${webAppUrl}?action=trigger_poll&callback=${triggerCallback}`;
+            window[triggerCallback] = function(resp) {
+                try { if (triggerScript.parentNode) triggerScript.parentNode.removeChild(triggerScript); } catch(e){}
+                try { delete window[triggerCallback]; } catch(e){}
+                console.log('Polling triggerato:', resp);
+            };
+            document.body.appendChild(triggerScript);
+
             delayFinalize(startTime);
         }
     };
@@ -1070,135 +1094,190 @@ function calculateDeliveryDate(daysFromNow) {
 }
 
 /**
- * Normalize status strings to the internal keys used by timeline
+ * Map Google Sheets state label to timeline key
  */
-function normalizeStatus(statusStr) {
-    if (!statusStr) return 'preparing';
-    const s = statusStr.toString().toLowerCase();
+function mapStatusToKey(stateLabel) {
+    if (!stateLabel) return null;
+    const s = stateLabel.toString().toLowerCase();
     if (s.includes('conferm')) return 'confirmed';
     if (s.includes('prepar')) return 'preparing';
-    if (s.includes('transit') || s.includes('transito') || s.includes('sped')) return 'shipped';
+    if (s.includes('trans')) return 'shipped';
     if (s.includes('consegn')) return 'delivered';
-    return 'preparing';
+    return null;
 }
 
 /**
- * Derive a "spedito" estimate (string) based on the delivery string coming from Order Tracking.
- * Examples:
- * - If deliveryStr is "8-9 Nov" -> returns "Previsto: 7-8 Nov"
- * - If deliveryStr is "8 Novembre 2024" -> returns "Previsto: 7 Nov"
- * - If deliveryStr is a single date "8 Nov" -> returns "Previsto: 7 Nov"
+ * Fetch Order Tracking record for a given orderId (JSONP)
+ * Calls callback(orderRecord | null)
  */
-function deriveShipEstimateFromDelivery(deliveryStr) {
-    if (!deliveryStr) return 'Previsto: Da definire';
+function fetchOrderTracking(orderId, callback) {
+    if (!orderId) { callback(null); return; }
+    const cb = 'fetchOrderTrackCB_' + Date.now() + '_' + Math.floor(Math.random() * 10000);
+    const script = document.createElement('script');
+    script.src = `${webAppUrl}?action=get_orders&callback=${cb}&t=${Date.now()}`;
+    let finished = false;
+    const cleanup = () => {
+        try { if (script.parentNode) script.parentNode.removeChild(script); } catch(e){}
+        try { delete window[cb]; } catch(e){}
+    };
+    window[cb] = function(resp) {
+        if (finished) { cleanup(); return; }
+        finished = true;
+        cleanup();
+        if (resp && Array.isArray(resp.orders)) {
+            const found = resp.orders.find(o => String(o.id) === String(orderId));
+            callback(found || null);
+        } else {
+            callback(null);
+        }
+    };
+    script.onerror = function() {
+        cleanup();
+        callback(null);
+    };
+    // timeout fallback
+    const to = setTimeout(() => {
+        if (!finished) {
+            cleanup();
+            callback(null);
+        }
+        clearTimeout(to);
+    }, 8000);
+    document.body.appendChild(script);
+}
 
-    const s = deliveryStr.toString().trim();
+/**
+ * Try to parse date string like "dd/MM/yyyy, HH:mm" or ISO string
+ */
+function parsePossibleDate(str) {
+    if (!str) return null;
+    try {
+        // If it's already ISO
+        const iso = new Date(str);
+        if (!isNaN(iso.getTime())) return iso;
+    } catch(e){}
+    try {
+        // Try pattern dd/MM/yyyy
+        const m = str.toString().split(',')[0].trim();
+        const parts = m.split('/');
+        if (parts.length === 3) {
+            const d = parseInt(parts[0],10);
+            const mo = parseInt(parts[1],10)-1;
+            const y = parseInt(parts[2],10);
+            const date = new Date(y, mo, d);
+            if (!isNaN(date.getTime())) return date;
+        }
+    } catch(e){}
+    return null;
+}
 
-    // If it's already containing "Previsto:" leave it (avoid doubling)
-    if (s.toLowerCase().startsWith('previsto')) return s;
-
-    // Try to match a range like "8-9 Nov" or "8 - 9 Nov"
-    const rangeMatch = s.match(/(\d{1,2})\s*[-–]\s*(\d{1,2})\s*(\w+)/i);
-    if (rangeMatch) {
-        let start = parseInt(rangeMatch[1], 10);
-        let end = parseInt(rangeMatch[2], 10);
-        const month = rangeMatch[3];
-        // subtract one day from both ends (basic arithmetic, month wrap ignored for simplicity)
-        start = Math.max(1, start - 1);
-        end = Math.max(1, end - 1);
-        return `Previsto: ${start}-${end} ${month}`;
-    }
-
-    // Try to match "dd MMMM yyyy" (e.g. "08 Novembre 2024") or "dd MMM yyyy" or "dd/MM/yyyy"
-    let parsedDate = null;
-    // dd/MM/yyyy
-    const dmy = s.match(/(\d{1,2})\/(\d{1,2})\/(\d{4})/);
-    if (dmy) {
-        parsedDate = new Date(parseInt(dmy[3], 10), parseInt(dmy[2], 10) - 1, parseInt(dmy[1], 10));
-    } else {
-        // dd MMMM yyyy or dd MMM yyyy
-        const m = s.match(/(\d{1,2})\s+([A-Za-zòàèéìù]+)\s*(\d{4})?/i);
-        if (m) {
-            const day = parseInt(m[1], 10);
-            const monthName = m[2].toLowerCase();
-            const monthMap = {
+/**
+ * Parse consegna_prevista which can be "dd MMMM yyyy" (ITA) or "dd/MM/yyyy" or range "7-8 Nov"
+ * Returns Date if single date parsed, otherwise null.
+ */
+function parseDeliveryStringToDate(str) {
+    if (!str) return null;
+    try {
+        // Try dd MMMM yyyy (it)
+        const match = str.toString().match(/(\d{1,2})\s+([A-Za-zàèìòù]+)\s+(\d{4})/i);
+        if (match) {
+            const day = parseInt(match[1],10);
+            const monthName = match[2].toLowerCase();
+            const year = parseInt(match[3],10);
+            const months = {
                 'gennaio':0,'febbraio':1,'marzo':2,'aprile':3,'maggio':4,'giugno':5,
-                'luglio':6,'agosto':7,'settembre':8,'ottobre':9,'novembre':10,'dicembre':11,
-                'gen':0,'feb':1,'mar':2,'apr':3,'mag':4,'giu':5,'lug':6,'ago':7,'set':8,'ott':9,'nov':10,'dic':11
+                'luglio':6,'agosto':7,'settembre':8,'ottobre':9,'novembre':10,'dicembre':11
             };
-            const monthIndex = monthMap[monthName] !== undefined ? monthMap[monthName] : null;
-            const year = m[3] ? parseInt(m[3],10) : (new Date()).getFullYear();
-            if (monthIndex !== null) {
-                parsedDate = new Date(year, monthIndex, day);
+            if (months[monthName] !== undefined) {
+                return new Date(year, months[monthName], day);
             }
         }
-    }
-
-    if (parsedDate && !isNaN(parsedDate.getTime())) {
-        // subtract one day
-        const shipDate = new Date(parsedDate.getTime());
-        shipDate.setDate(shipDate.getDate() - 1);
-        // format as "7 Nov" short month
-        const formatted = shipDate.toLocaleDateString('it-IT', { day: 'numeric', month: 'short' });
-        return `Previsto: ${formatted}`;
-    }
-
-    // As a last resort return original string with label
-    return `Previsto: ${s}`;
+        // Try dd/MM/yyyy
+        const parts = str.toString().split('/');
+        if (parts.length === 3) {
+            const d = parseInt(parts[0],10);
+            const mo = parseInt(parts[1],10)-1;
+            const y = parseInt(parts[2],10);
+            const date = new Date(y, mo, d);
+            if (!isNaN(date.getTime())) return date;
+        }
+        // Try format like "7 Nov" (no year) -> assume current year
+        const match2 = str.toString().match(/(\d{1,2})\s+([A-Za-z]+)/i);
+        if (match2) {
+            const day = parseInt(match2[1],10);
+            const monthShort = match2[2].toLowerCase();
+            const monthNamesShort = {
+                'gen':0,'feb':1,'mar':2,'apr':3,'mag':4,'giu':5,'lug':6,'ago':7,'set':8,'ott':9,'nov':10,'dic':11,
+                'jan':0,'feb':1,'mar':2,'apr':3,'may':4,'jun':5,'jul':6,'aug':7,'sep':8,'oct':9,'nov':10,'dec':11
+            };
+            // Try first 3 letters
+            const key = monthShort.substr(0,3);
+            if (monthNamesShort[key] !== undefined) {
+                const year = (new Date()).getFullYear();
+                return new Date(year, monthNamesShort[key], day);
+            }
+        }
+    } catch(e){}
+    return null;
 }
 
 /**
- * Fetch from the WebApp the list of orders (JSONP) and return the single order matching orderId
- * Resolves to the order object or null.
+ * If consegna_prevista is a range like "7-8 Nov" compute shipping estimate by subtracting 1 day from each part.
+ * If single date, subtract 1 day.
+ * Returns a short form like "7-8 Nov" or "7 Nov"
  */
-function fetchOrderTrackingById(orderId) {
-    return new Promise((resolve, reject) => {
-        if (!orderId) return resolve(null);
-        const callbackName = 'getOrdersCb_' + Date.now() + '_' + Math.floor(Math.random() * 10000);
-        const script = document.createElement('script');
-        script.src = `${webAppUrl}?action=get_orders&callback=${callbackName}&t=${Date.now()}`;
-        let timeout = setTimeout(() => {
-            cleanup();
-            resolve(null);
-        }, 8000);
-
-        window[callbackName] = function(response) {
-            clearTimeout(timeout);
-            try {
-                if (response && Array.isArray(response.orders)) {
-                    const found = response.orders.find(o => {
-                        // sometimes ids may be numbers or strings: normalize to string
-                        return String(o.id || '').trim() === String(orderId || '').trim();
-                    });
-                    cleanup();
-                    resolve(found || null);
+function computeShippingFromDelivery(deliveryStr) {
+    if (!deliveryStr) return null;
+    // If contains '-' (range)
+    if (deliveryStr.indexOf('-') !== -1) {
+        const parts = deliveryStr.split('-').map(p => p.trim());
+        if (parts.length >= 2) {
+            // Make a attempt: second part likely includes the month
+            const second = parts[1];
+            const first = parts[0];
+            // build full second date, try parse
+            const d2 = parseDeliveryStringToDate(second) || parseDeliveryStringToDate(`${second} ${(new Date()).getFullYear()}`);
+            const d1 = parseDeliveryStringToDate(first) || (d2 ? new Date(d2.getFullYear(), d2.getMonth(), parseInt(first,10)) : null);
+            if (d1 && d2) {
+                // subtract 1 day each
+                const s1 = new Date(d1); s1.setDate(s1.getDate() - 1);
+                const s2 = new Date(d2); s2.setDate(s2.getDate() - 1);
+                // If same month -> "7-8 Nov", else include month for both
+                if (s1.getMonth() === s2.getMonth()) {
+                    return `${s1.getDate()}-${s2.getDate()} ${s1.toLocaleString('it-IT', { month: 'short' })}`;
                 } else {
-                    cleanup();
-                    resolve(null);
+                    return `${s1.getDate()} ${s1.toLocaleString('it-IT', { month: 'short' })} - ${s2.getDate()} ${s2.toLocaleString('it-IT', { month: 'short' })}`;
                 }
-            } catch (e) {
-                cleanup();
-                reject(e);
             }
-        };
-
-        script.onerror = function() {
-            clearTimeout(timeout);
-            cleanup();
-            resolve(null);
-        };
-
-        function cleanup() {
-            try { if (script.parentNode) script.parentNode.removeChild(script); } catch (e) {}
-            try { delete window[callbackName]; } catch (e) {}
         }
-
-        document.body.appendChild(script);
-    });
+    } else {
+        const d = parseDeliveryStringToDate(deliveryStr);
+        if (d) {
+            d.setDate(d.getDate() - 1);
+            return formatShortDate(d);
+        }
+    }
+    return null;
 }
 
 /**
- * FUNZIONE: Aggiorna la timeline dinamicamente
+ * If deliveryStr is parseable return Date, otherwise try parse ultimoStr
+ */
+function parseDeliveryOrUltimo(deliveryStr, ultimoStr) {
+    const d = parseDeliveryStringToDate(deliveryStr);
+    if (d) return d;
+    const u = parsePossibleDate(ultimoStr);
+    if (u) return u;
+    return null;
+}
+
+function formatShortDate(date) {
+    if (!date) return '';
+    return date.toLocaleDateString('it-IT', { day: 'numeric', month: 'short' });
+}
+
+/**
+ * Helper: Aggiorna la timeline dinamicamente
  */
 function updateTimeline(data) {
     const steps = {
@@ -1255,30 +1334,20 @@ function updateTimeline(data) {
         // Aggiorna data
         const dateElem = dateElems[step];
         if (dateElem) {
-            const actualDate = data.status_dates && data.status_dates[step];
-            const estimated = data.estimated_dates && data.estimated_dates[step];
-
-            if (actualDate) {
-                // Try parse actualDate; if parseable show formatted date/time or short date depending on step
-                const parsed = tryParseDateString(actualDate);
-                if (parsed) {
-                    if (step === 'shipped' || step === 'delivered') {
-                        // simple format: "7 Nov"
-                        dateElem.textContent = parsed.toLocaleDateString('it-IT', { day: 'numeric', month: 'short' });
-                    } else {
-                        dateElem.textContent = parsed.toLocaleDateString('it-IT', { day: 'numeric', month: 'short' }) + ', ' + parsed.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
-                    }
+            const actualDateVal = data.status_dates && data.status_dates[step];
+            if (actualDateVal) {
+                // actualDateVal should be ISO or Date-compatible
+                const date = new Date(actualDateVal);
+                if (!isNaN(date.getTime())) {
+                    dateElem.textContent = formatShortDate(date);
                 } else {
-                    // Not parseable -> assume it's already a display string (e.g. "Previsto: 7-8 Nov" or "7-8 Nov")
-                    dateElem.textContent = actualDate;
+                    // fallback: show raw
+                    dateElem.textContent = actualDateVal;
                 }
             } else {
-                // No actual date: show estimated or 'Da definire'
-                if (estimated) {
-                    dateElem.textContent = estimated;
-                } else {
-                    dateElem.textContent = 'Da definire';
-                }
+                // show estimated date if present
+                const est = (data.estimated_dates && data.estimated_dates[step]) || 'Da definire';
+                dateElem.textContent = est;
             }
         }
     });
@@ -1286,51 +1355,9 @@ function updateTimeline(data) {
     // Aggiorna barra di progresso dinamicamente
     const timelineElem = document.querySelector('.timeline');
     if (timelineElem) {
-        const progress = (currentIndex / (stepOrder.length - 1)) * 100;
+        const progress = (Math.max(0, currentIndex) / (stepOrder.length - 1)) * 100;
         timelineElem.style.setProperty('--progress-percent', `${progress}%`);
     }
-}
-
-/**
- * Try parsing many possible date string formats into a Date object.
- * Returns Date or null.
- */
-function tryParseDateString(s) {
-    if (!s) return null;
-    // If it's already a Date ISO string
-    let d = new Date(s);
-    if (!isNaN(d.getTime())) return d;
-
-    // Try dd/MM/yyyy, optionally with time "dd/MM/yyyy, HH:mm"
-    const dmy = s.match(/(\d{1,2})\/(\d{1,2})\/(\d{4})(?:[, ]+\s*(\d{1,2}):(\d{2}))?/);
-    if (dmy) {
-        const day = parseInt(dmy[1],10), month = parseInt(dmy[2],10)-1, year = parseInt(dmy[3],10);
-        d = new Date(year, month, day);
-        if (dmy[4]) {
-            d.setHours(parseInt(dmy[4],10));
-            d.setMinutes(parseInt(dmy[5],10));
-        }
-        return d;
-    }
-
-    // Try "dd MMMM yyyy" Italian (e.g. "08 Novembre 2024")
-    const m = s.match(/(\d{1,2})\s+([A-Za-zòàèéìù]+)\s*(\d{4})?/);
-    if (m) {
-        const day = parseInt(m[1],10);
-        const monthName = m[2].toLowerCase();
-        const monthMap = {
-            'gennaio':0,'febbraio':1,'marzo':2,'aprile':3,'maggio':4,'giugno':5,
-            'luglio':6,'agosto':7,'settembre':8,'ottobre':9,'novembre':10,'dicembre':11,
-            'gen':0,'feb':1,'mar':2,'apr':3,'mag':4,'giu':5,'lug':6,'ago':7,'set':8,'ott':9,'nov':10,'dic':11
-        };
-        if (monthMap[monthName] !== undefined) {
-            const year = m[3] ? parseInt(m[3],10) : (new Date()).getFullYear();
-            d = new Date(year, monthMap[monthName], day);
-            return d;
-        }
-    }
-
-    return null;
 }
 
 /**
