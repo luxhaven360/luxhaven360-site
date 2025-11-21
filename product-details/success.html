@@ -581,7 +581,8 @@
             <div class="info-card">
                 <span class="info-icon">📅</span>
                 <div class="info-label">Consegna Prevista</div>
-                <div class="info-value">8-9 Novembre 2024</div>
+                <!-- Modified: dynamic delivery value -->
+                <div class="info-value" id="deliveryValue">Caricamento...</div>
             </div>
             <div class="info-card">
                 <span class="info-icon">💳</span>
@@ -992,7 +993,62 @@
         };
         document.body.appendChild(triggerScript);
 
-        delayFinalize(startTime);
+        // NEW: try to fetch Order Tracking info (consegna_prevista, stato, ultimo aggiornamento)
+        // Prefer the explicit order id returned by the details endpoint; otherwise try last saved id in localStorage.
+        const orderIdToLookup = (response && response.order_id) ? response.order_id : (localStorage.getItem('lh360_last_order_id') || null);
+        if (orderIdToLookup) {
+            fetchOrderTrackingById(orderIdToLookup).then(order => {
+                if (order) {
+                    // update delivery info card with the value directly from Order Tracking (colonna Consegna Prevista)
+                    const deliveryElem = document.getElementById('deliveryValue');
+                    if (deliveryElem) {
+                        deliveryElem.textContent = order.consegna_prevista || 'Da definire';
+                    }
+
+                    // Build enriched timeline data using tracking values:
+                    const enriched = {
+                        current_status: normalizeStatus(order.stato || timelineData.current_status),
+                        status_dates: {
+                            confirmed: timelineData.status_dates.confirmed || null,
+                            preparing: (order.stato === 'In Preparazione') ? (order.ultimo_aggiornamento || null) : (timelineData.status_dates.preparing || null),
+                            shipped: null,
+                            delivered: null
+                        },
+                        estimated_dates: {
+                            preparing: 'In corso',
+                            shipped: deriveShipEstimateFromDelivery(order.consegna_prevista),
+                            delivered: order.consegna_prevista || 'Da definire'
+                        }
+                    };
+
+                    // If the order row state indicates it's already In Transito or Consegnato, use the 'ultimo_aggiornamento'
+                    // as the actual shipped/delivered timestamp (the sheet updates OT_ULTIMO_COL when status changes).
+                    if (order.stato === 'In Transito') {
+                        enriched.status_dates.shipped = order.ultimo_aggiornamento || enriched.estimated_dates.shipped;
+                    }
+                    if (order.stato === 'Consegnato') {
+                        enriched.status_dates.delivered = order.ultimo_aggiornamento || order.consegna_prevista;
+                    }
+
+                    // If the response had actual status dates, prefer them
+                    if (timelineData.status_dates.shipped) enriched.status_dates.shipped = timelineData.status_dates.shipped;
+                    if (timelineData.status_dates.delivered) enriched.status_dates.delivered = timelineData.status_dates.delivered;
+
+                    // Update UI timeline with enriched info
+                    updateTimeline(enriched);
+                } else {
+                    // not found: ensure delivery card gets a fallback value (already set earlier)
+                    const deliveryElem = document.getElementById('deliveryValue');
+                    if (deliveryElem && deliveryElem.textContent.trim() === '') deliveryElem.textContent = 'Da definire';
+                }
+            }).catch(err => {
+                console.warn('Errore fetchOrderTrackingById:', err);
+            }).finally(() => {
+                delayFinalize(startTime);
+            });
+        } else {
+            delayFinalize(startTime);
+        }
     };
 
 /**
@@ -1013,165 +1069,353 @@ function calculateDeliveryDate(daysFromNow) {
     return date.toLocaleDateString('it-IT', { day: 'numeric', month: 'long', year: 'numeric' });
 }
 
-    /**
-     * FUNZIONE: Aggiorna la timeline dinamicamente
-     */
-    function updateTimeline(data) {
-        const steps = {
-            confirmed: document.getElementById('step-confirmed'),
-            preparing: document.getElementById('step-preparing'),
-            shipped: document.getElementById('step-shipped'),
-            delivered: document.getElementById('step-delivered')
+/**
+ * Normalize status strings to the internal keys used by timeline
+ */
+function normalizeStatus(statusStr) {
+    if (!statusStr) return 'preparing';
+    const s = statusStr.toString().toLowerCase();
+    if (s.includes('conferm')) return 'confirmed';
+    if (s.includes('prepar')) return 'preparing';
+    if (s.includes('transit') || s.includes('transito') || s.includes('sped')) return 'shipped';
+    if (s.includes('consegn')) return 'delivered';
+    return 'preparing';
+}
+
+/**
+ * Derive a "spedito" estimate (string) based on the delivery string coming from Order Tracking.
+ * Examples:
+ * - If deliveryStr is "8-9 Nov" -> returns "Previsto: 7-8 Nov"
+ * - If deliveryStr is "8 Novembre 2024" -> returns "Previsto: 7 Nov"
+ * - If deliveryStr is a single date "8 Nov" -> returns "Previsto: 7 Nov"
+ */
+function deriveShipEstimateFromDelivery(deliveryStr) {
+    if (!deliveryStr) return 'Previsto: Da definire';
+
+    const s = deliveryStr.toString().trim();
+
+    // If it's already containing "Previsto:" leave it (avoid doubling)
+    if (s.toLowerCase().startsWith('previsto')) return s;
+
+    // Try to match a range like "8-9 Nov" or "8 - 9 Nov"
+    const rangeMatch = s.match(/(\d{1,2})\s*[-–]\s*(\d{1,2})\s*(\w+)/i);
+    if (rangeMatch) {
+        let start = parseInt(rangeMatch[1], 10);
+        let end = parseInt(rangeMatch[2], 10);
+        const month = rangeMatch[3];
+        // subtract one day from both ends (basic arithmetic, month wrap ignored for simplicity)
+        start = Math.max(1, start - 1);
+        end = Math.max(1, end - 1);
+        return `Previsto: ${start}-${end} ${month}`;
+    }
+
+    // Try to match "dd MMMM yyyy" (e.g. "08 Novembre 2024") or "dd MMM yyyy" or "dd/MM/yyyy"
+    let parsedDate = null;
+    // dd/MM/yyyy
+    const dmy = s.match(/(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+    if (dmy) {
+        parsedDate = new Date(parseInt(dmy[3], 10), parseInt(dmy[2], 10) - 1, parseInt(dmy[1], 10));
+    } else {
+        // dd MMMM yyyy or dd MMM yyyy
+        const m = s.match(/(\d{1,2})\s+([A-Za-zòàèéìù]+)\s*(\d{4})?/i);
+        if (m) {
+            const day = parseInt(m[1], 10);
+            const monthName = m[2].toLowerCase();
+            const monthMap = {
+                'gennaio':0,'febbraio':1,'marzo':2,'aprile':3,'maggio':4,'giugno':5,
+                'luglio':6,'agosto':7,'settembre':8,'ottobre':9,'novembre':10,'dicembre':11,
+                'gen':0,'feb':1,'mar':2,'apr':3,'mag':4,'giu':5,'lug':6,'ago':7,'set':8,'ott':9,'nov':10,'dic':11
+            };
+            const monthIndex = monthMap[monthName] !== undefined ? monthMap[monthName] : null;
+            const year = m[3] ? parseInt(m[3],10) : (new Date()).getFullYear();
+            if (monthIndex !== null) {
+                parsedDate = new Date(year, monthIndex, day);
+            }
+        }
+    }
+
+    if (parsedDate && !isNaN(parsedDate.getTime())) {
+        // subtract one day
+        const shipDate = new Date(parsedDate.getTime());
+        shipDate.setDate(shipDate.getDate() - 1);
+        // format as "7 Nov" short month
+        const formatted = shipDate.toLocaleDateString('it-IT', { day: 'numeric', month: 'short' });
+        return `Previsto: ${formatted}`;
+    }
+
+    // As a last resort return original string with label
+    return `Previsto: ${s}`;
+}
+
+/**
+ * Fetch from the WebApp the list of orders (JSONP) and return the single order matching orderId
+ * Resolves to the order object or null.
+ */
+function fetchOrderTrackingById(orderId) {
+    return new Promise((resolve, reject) => {
+        if (!orderId) return resolve(null);
+        const callbackName = 'getOrdersCb_' + Date.now() + '_' + Math.floor(Math.random() * 10000);
+        const script = document.createElement('script');
+        script.src = `${webAppUrl}?action=get_orders&callback=${callbackName}&t=${Date.now()}`;
+        let timeout = setTimeout(() => {
+            cleanup();
+            resolve(null);
+        }, 8000);
+
+        window[callbackName] = function(response) {
+            clearTimeout(timeout);
+            try {
+                if (response && Array.isArray(response.orders)) {
+                    const found = response.orders.find(o => {
+                        // sometimes ids may be numbers or strings: normalize to string
+                        return String(o.id || '').trim() === String(orderId || '').trim();
+                    });
+                    cleanup();
+                    resolve(found || null);
+                } else {
+                    cleanup();
+                    resolve(null);
+                }
+            } catch (e) {
+                cleanup();
+                reject(e);
+            }
         };
 
-        const dateElems = {
-            confirmed: document.getElementById('date-confirmed'),
-            preparing: document.getElementById('date-preparing'),
-            shipped: document.getElementById('date-shipped'),
-            delivered: document.getElementById('date-delivered')
+        script.onerror = function() {
+            clearTimeout(timeout);
+            cleanup();
+            resolve(null);
         };
 
-        const icons = {
-            confirmed: '✓',
-            preparing: '📦',
-            shipped: '🚚',
-            delivered: '🏠'
-        };
+        function cleanup() {
+            try { if (script.parentNode) script.parentNode.removeChild(script); } catch (e) {}
+            try { delete window[callbackName]; } catch (e) {}
+        }
 
-        const stepOrder = ['confirmed', 'preparing', 'shipped', 'delivered'];
-        const currentIndex = stepOrder.indexOf(data.current_status);
+        document.body.appendChild(script);
+    });
+}
 
-        // Aggiorna classi, icone e date
-        stepOrder.forEach((step, index) => {
-            const elem = steps[step];
-            if (!elem) return;
+/**
+ * FUNZIONE: Aggiorna la timeline dinamicamente
+ */
+function updateTimeline(data) {
+    const steps = {
+        confirmed: document.getElementById('step-confirmed'),
+        preparing: document.getElementById('step-preparing'),
+        shipped: document.getElementById('step-shipped'),
+        delivered: document.getElementById('step-delivered')
+    };
 
-            // Rimuovi classi esistenti
-            elem.classList.remove('completed', 'active', 'pending');
+    const dateElems = {
+        confirmed: document.getElementById('date-confirmed'),
+        preparing: document.getElementById('date-preparing'),
+        shipped: document.getElementById('date-shipped'),
+        delivered: document.getElementById('date-delivered')
+    };
 
-            // Aggiungi classe appropriata
+    const icons = {
+        confirmed: '✓',
+        preparing: '📦',
+        shipped: '🚚',
+        delivered: '🏠'
+    };
+
+    const stepOrder = ['confirmed', 'preparing', 'shipped', 'delivered'];
+    const currentIndex = stepOrder.indexOf(data.current_status);
+
+    // Aggiorna classi, icone e date
+    stepOrder.forEach((step, index) => {
+        const elem = steps[step];
+        if (!elem) return;
+
+        // Rimuovi classi esistenti
+        elem.classList.remove('completed', 'active', 'pending');
+
+        // Aggiungi classe appropriata
+        if (index < currentIndex) {
+            elem.classList.add('completed');
+        } else if (index === currentIndex) {
+            elem.classList.add('active');
+        } else {
+            elem.classList.add('pending');
+        }
+
+        // Aggiorna icona del dot
+        const dot = elem.querySelector('.timeline-dot');
+        if (dot) {
             if (index < currentIndex) {
-                elem.classList.add('completed');
-            } else if (index === currentIndex) {
-                elem.classList.add('active');
+                dot.innerHTML = '✓'; // Spunta per completati
             } else {
-                elem.classList.add('pending');
+                dot.innerHTML = icons[step]; // Icona specifica per active/pending
             }
-
-            // Aggiorna icona del dot
-            const dot = elem.querySelector('.timeline-dot');
-            if (dot) {
-                if (index < currentIndex) {
-                    dot.innerHTML = '✓'; // Spunta per completati
-                } else {
-                    dot.innerHTML = icons[step]; // Icona specifica per active/pending
-                }
-            }
-
-            // Aggiorna data
-            const dateElem = dateElems[step];
-            if (dateElem) {
-                const actualDate = data.status_dates[step];
-                if (actualDate) {
-                    const date = new Date(actualDate);
-                    dateElem.textContent = date.toLocaleDateString('it-IT', { day: 'numeric', month: 'short' }) + ', ' + date.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
-                } else {
-                    dateElem.textContent = data.estimated_dates[step] || 'Da definire';
-                }
-            }
-        });
-
-        // Aggiorna barra di progresso dinamicamente
-        const timelineElem = document.querySelector('.timeline');
-        if (timelineElem) {
-            const progress = (currentIndex / (stepOrder.length - 1)) * 100;
-            timelineElem.style.setProperty('--progress-percent', `${progress}%`);
         }
+
+        // Aggiorna data
+        const dateElem = dateElems[step];
+        if (dateElem) {
+            const actualDate = data.status_dates && data.status_dates[step];
+            const estimated = data.estimated_dates && data.estimated_dates[step];
+
+            if (actualDate) {
+                // Try parse actualDate; if parseable show formatted date/time or short date depending on step
+                const parsed = tryParseDateString(actualDate);
+                if (parsed) {
+                    if (step === 'shipped' || step === 'delivered') {
+                        // simple format: "7 Nov"
+                        dateElem.textContent = parsed.toLocaleDateString('it-IT', { day: 'numeric', month: 'short' });
+                    } else {
+                        dateElem.textContent = parsed.toLocaleDateString('it-IT', { day: 'numeric', month: 'short' }) + ', ' + parsed.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
+                    }
+                } else {
+                    // Not parseable -> assume it's already a display string (e.g. "Previsto: 7-8 Nov" or "7-8 Nov")
+                    dateElem.textContent = actualDate;
+                }
+            } else {
+                // No actual date: show estimated or 'Da definire'
+                if (estimated) {
+                    dateElem.textContent = estimated;
+                } else {
+                    dateElem.textContent = 'Da definire';
+                }
+            }
+        }
+    });
+
+    // Aggiorna barra di progresso dinamicamente
+    const timelineElem = document.querySelector('.timeline');
+    if (timelineElem) {
+        const progress = (currentIndex / (stepOrder.length - 1)) * 100;
+        timelineElem.style.setProperty('--progress-percent', `${progress}%`);
+    }
+}
+
+/**
+ * Try parsing many possible date string formats into a Date object.
+ * Returns Date or null.
+ */
+function tryParseDateString(s) {
+    if (!s) return null;
+    // If it's already a Date ISO string
+    let d = new Date(s);
+    if (!isNaN(d.getTime())) return d;
+
+    // Try dd/MM/yyyy, optionally with time "dd/MM/yyyy, HH:mm"
+    const dmy = s.match(/(\d{1,2})\/(\d{1,2})\/(\d{4})(?:[, ]+\s*(\d{1,2}):(\d{2}))?/);
+    if (dmy) {
+        const day = parseInt(dmy[1],10), month = parseInt(dmy[2],10)-1, year = parseInt(dmy[3],10);
+        d = new Date(year, month, day);
+        if (dmy[4]) {
+            d.setHours(parseInt(dmy[4],10));
+            d.setMinutes(parseInt(dmy[5],10));
+        }
+        return d;
     }
 
-    /**
-     * FUNZIONE: Carica articoli dal LocalStorage
-     */
-    function loadPurchasedItems() {
-        const cartRaw = localStorage.getItem('lh360_cart');
-        const cart = cartRaw ? JSON.parse(cartRaw) : [];
-        
-        const itemsContainer = document.querySelector('.summary-items');
-        const subtotalElem = document.querySelector('.summary-totals .summary-row:nth-child(1) span:last-child');
-        const shippingElem = document.querySelector('.summary-totals .summary-row:nth-child(2) span:last-child');
-        const totalElem = document.querySelector('.summary-total span:last-child');
-
-        if (!itemsContainer) return;
-
-        // Svuota container (per sicurezza)
-        itemsContainer.innerHTML = '';
-
-        if (cart.length === 0) {
-            itemsContainer.innerHTML = '<div style="padding:1rem; color:#a1a1aa; text-align:center;">Dettagli articoli non disponibili (Sessione scaduta)</div>';
-            return;
-        }
-
-        let subtotal = 0;
-
-        // Mappa colori per visualizzazione più carina
-        const colorNames = {
-            '#000000': 'Nero', '#FFFFFF': 'Bianco', '#008000': 'Verde', 
-            '#FF0000': 'Rosso', '#0000FF': 'Blu'
+    // Try "dd MMMM yyyy" Italian (e.g. "08 Novembre 2024")
+    const m = s.match(/(\d{1,2})\s+([A-Za-zòàèéìù]+)\s*(\d{4})?/);
+    if (m) {
+        const day = parseInt(m[1],10);
+        const monthName = m[2].toLowerCase();
+        const monthMap = {
+            'gennaio':0,'febbraio':1,'marzo':2,'aprile':3,'maggio':4,'giugno':5,
+            'luglio':6,'agosto':7,'settembre':8,'ottobre':9,'novembre':10,'dicembre':11,
+            'gen':0,'feb':1,'mar':2,'apr':3,'mag':4,'giu':5,'lug':6,'ago':7,'set':8,'ott':9,'nov':10,'dic':11
         };
-
-        cart.forEach(item => {
-            // Calcolo subtotale
-            const itemPrice = parseFloat(item.price) || 0;
-            const itemQty = parseInt(item.qty) || 1;
-            subtotal += itemPrice * itemQty;
-
-            // Formattazione variante
-            let displayColor = item.color || '';
-            if (displayColor.startsWith('#') && colorNames[displayColor]) {
-                displayColor = colorNames[displayColor];
-            }
-            
-            let variantText = '';
-            if(displayColor) variantText += displayColor;
-            if(displayColor && item.size) variantText += ' · ';
-            if(item.size) variantText += `Taglia ${item.size}`;
-            if(!variantText) variantText = 'Taglia Unica';
-
-            // Creazione HTML Item
-            const div = document.createElement('div');
-            div.className = 'summary-item';
-            div.innerHTML = `
-                <div class="summary-item-image">
-                    <img src="${item.image || 'https://via.placeholder.com/150'}" alt="${item.title}">
-                </div>
-                <div class="summary-item-details">
-                    <div class="summary-item-name">${item.title} <span style="font-size:0.8em; color:#71717a;">(x${itemQty})</span></div>
-                    <div class="summary-item-variant">${variantText}</div>
-                </div>
-                <div class="summary-item-price">€ ${(itemPrice * itemQty).toLocaleString('it-IT', {minimumFractionDigits: 2})}</div>
-            `;
-            itemsContainer.appendChild(div);
-        });
-
-        // Calcolo Totali
-        const shippingCost = subtotal >= 150 ? 0 : 15;
-        const total = subtotal + shippingCost;
-
-        // Aggiornamento UI Totali
-        if (subtotalElem) subtotalElem.textContent = `€ ${subtotal.toLocaleString('it-IT', {minimumFractionDigits: 2})}`;
-        
-        if (shippingElem) {
-            if (shippingCost === 0) {
-                shippingElem.textContent = 'Gratuita';
-                shippingElem.style.color = '#34d399';
-            } else {
-                shippingElem.textContent = `€ ${shippingCost.toLocaleString('it-IT', {minimumFractionDigits: 2})}`;
-                shippingElem.style.color = '#fafafa';
-            }
+        if (monthMap[monthName] !== undefined) {
+            const year = m[3] ? parseInt(m[3],10) : (new Date()).getFullYear();
+            d = new Date(year, monthMap[monthName], day);
+            return d;
         }
-
-        if (totalElem) totalElem.textContent = `€ ${total.toLocaleString('it-IT', {minimumFractionDigits: 2})}`;
     }
+
+    return null;
+}
+
+/**
+ * FUNZIONE: Carica articoli dal LocalStorage
+ */
+function loadPurchasedItems() {
+    const cartRaw = localStorage.getItem('lh360_cart');
+    const cart = cartRaw ? JSON.parse(cartRaw) : [];
+    
+    const itemsContainer = document.querySelector('.summary-items');
+    const subtotalElem = document.querySelector('.summary-totals .summary-row:nth-child(1) span:last-child');
+    const shippingElem = document.querySelector('.summary-totals .summary-row:nth-child(2) span:last-child');
+    const totalElem = document.querySelector('.summary-total span:last-child');
+
+    if (!itemsContainer) return;
+
+    // Svuota container (per sicurezza)
+    itemsContainer.innerHTML = '';
+
+    if (cart.length === 0) {
+        itemsContainer.innerHTML = '<div style="padding:1rem; color:#a1a1aa; text-align:center;">Dettagli articoli non disponibili (Sessione scaduta)</div>';
+        return;
+    }
+
+    let subtotal = 0;
+
+    // Mappa colori per visualizzazione più carina
+    const colorNames = {
+        '#000000': 'Nero', '#FFFFFF': 'Bianco', '#008000': 'Verde', 
+        '#FF0000': 'Rosso', '#0000FF': 'Blu'
+    };
+
+    cart.forEach(item => {
+        // Calcolo subtotale
+        const itemPrice = parseFloat(item.price) || 0;
+        const itemQty = parseInt(item.qty) || 1;
+        subtotal += itemPrice * itemQty;
+
+        // Formattazione variante
+        let displayColor = item.color || '';
+        if (displayColor.startsWith('#') && colorNames[displayColor]) {
+            displayColor = colorNames[displayColor];
+        }
+        
+        let variantText = '';
+        if(displayColor) variantText += displayColor;
+        if(displayColor && item.size) variantText += ' · ';
+        if(item.size) variantText += `Taglia ${item.size}`;
+        if(!variantText) variantText = 'Taglia Unica';
+
+        // Creazione HTML Item
+        const div = document.createElement('div');
+        div.className = 'summary-item';
+        div.innerHTML = `
+            <div class="summary-item-image">
+                <img src="${item.image || 'https://via.placeholder.com/150'}" alt="${item.title}">
+            </div>
+            <div class="summary-item-details">
+                <div class="summary-item-name">${item.title} <span style="font-size:0.8em; color:#71717a;">(x${itemQty})</span></div>
+                <div class="summary-item-variant">${variantText}</div>
+            </div>
+            <div class="summary-item-price">€ ${(itemPrice * itemQty).toLocaleString('it-IT', {minimumFractionDigits: 2})}</div>
+        `;
+        itemsContainer.appendChild(div);
+    });
+
+    // Calcolo Totali
+    const shippingCost = subtotal >= 150 ? 0 : 15;
+    const total = subtotal + shippingCost;
+
+    // Aggiornamento UI Totali
+    if (subtotalElem) subtotalElem.textContent = `€ ${subtotal.toLocaleString('it-IT', {minimumFractionDigits: 2})}`;
+    
+    if (shippingElem) {
+        if (shippingCost === 0) {
+            shippingElem.textContent = 'Gratuita';
+            shippingElem.style.color = '#34d399';
+        } else {
+            shippingElem.textContent = `€ ${shippingCost.toLocaleString('it-IT', {minimumFractionDigits: 2})}`;
+            shippingElem.style.color = '#fafafa';
+        }
+    }
+
+    if (totalElem) totalElem.textContent = `€ ${total.toLocaleString('it-IT', {minimumFractionDigits: 2})}`;
+}
 </script>    
 </body>
 </html>
