@@ -680,8 +680,8 @@
     </div>
     
     <script>
-    // CONFIGURAZIONE
-const webAppUrl = 'https://script.google.com/macros/s/AKfycbx6rKb2124pyOHLwjfPYKui2IGPkqid9uTitvX9QnMOsUncrxeK_Yc4B573EG3XnyTo/exec';
+       // CONFIGURAZIONE
+const webAppUrl = 'https://script.google.com/macros/s/AKfycbyl-SrRgn4ZGCL-wPYy8fLBKLaUtxY7V08KGujaihbz1tPX47BM36yw6Mj60UUT8ftv/exec';
 
 let loadTimeout;
 let startTime;
@@ -1078,40 +1078,91 @@ function calculateDeliveryDate(daysFromNow) {
 }
 
 /**
- * Helper: Calcola data spedizione (1 giorno prima della consegna)
+ * Helper: Calcola data spedizione realistica (1-2 giorni prima della consegna)
  */
 function calculateShippingDate(deliveryDateStr) {
     if (!deliveryDateStr || deliveryDateStr === 'Da definire') {
-        return 'Previsto: 7-8 Nov';
+        // Fallback realistico: spedizione tra 1-2 giorni da ora
+        const shippingDate = new Date();
+        shippingDate.setDate(shippingDate.getDate() + 1);
+        return formatShortDate(shippingDate, true);
     }
 
     try {
-        // Parse formato "dd MMMM yyyy"
-        const months = {
-            'gennaio': 0, 'febbraio': 1, 'marzo': 2, 'aprile': 3,
-            'maggio': 4, 'giugno': 5, 'luglio': 6, 'agosto': 7,
-            'settembre': 8, 'ottobre': 9, 'novembre': 10, 'dicembre': 11
-        };
-        
-        const match = deliveryDateStr.match(/(\d{1,2})\s+(\w+)\s+(\d{4})/);
+        const deliveryDate = parseItalianDate(deliveryDateStr);
+        if (deliveryDate) {
+            // Calcola spedizione 1-2 giorni prima della consegna
+            const shippingDate = new Date(deliveryDate);
+            shippingDate.setDate(shippingDate.getDate() - 1);
+            
+            // Se la spedizione cadrebbe in passato, usa domani
+            const now = new Date();
+            if (shippingDate < now) {
+                shippingDate.setTime(now.getTime());
+                shippingDate.setDate(shippingDate.getDate() + 1);
+            }
+            
+            return formatShortDate(shippingDate, true);
+        }
+    } catch (e) {
+        console.warn('Errore calcolo data spedizione:', e);
+    }
+
+    // Fallback
+    const shippingDate = new Date();
+    shippingDate.setDate(shippingDate.getDate() + 1);
+    return formatShortDate(shippingDate, true);
+}
+
+/**
+ * Helper: Parse data italiana (formato "dd MMMM yyyy" o "dd/MM/yyyy")
+ */
+function parseItalianDate(dateStr) {
+    if (!dateStr) return null;
+    
+    const months = {
+        'gennaio': 0, 'febbraio': 1, 'marzo': 2, 'aprile': 3,
+        'maggio': 4, 'giugno': 5, 'luglio': 6, 'agosto': 7,
+        'settembre': 8, 'ottobre': 9, 'novembre': 10, 'dicembre': 11
+    };
+    
+    try {
+        // Formato: "dd MMMM yyyy"
+        const match = dateStr.match(/(\d{1,2})\s+(\w+)\s+(\d{4})/);
         if (match) {
             const day = parseInt(match[1]);
             const monthName = match[2].toLowerCase();
             const year = parseInt(match[3]);
             
             if (months[monthName] !== undefined) {
-                const deliveryDate = new Date(year, months[monthName], day);
-                const shippingDate = new Date(deliveryDate);
-                shippingDate.setDate(shippingDate.getDate() - 1);
-                
-                return `Previsto: ${shippingDate.getDate()} ${Object.keys(months).find(k => months[k] === shippingDate.getMonth())}`;
+                return new Date(year, months[monthName], day);
             }
         }
+        
+        // Formato: "dd/MM/yyyy"
+        const parts = dateStr.split('/');
+        if (parts.length === 3) {
+            return new Date(parts[2], parts[1] - 1, parts[0]);
+        }
     } catch (e) {
-        console.warn('Errore calcolo data spedizione:', e);
+        console.warn('Errore parse data italiana:', e);
     }
+    
+    return null;
+}
 
-    return 'Previsto: 7-8 Nov';
+/**
+ * Helper: Formatta data in formato breve "dd Mmm" con prefisso opzionale
+ */
+function formatShortDate(date, withPrefix = false) {
+    const monthNames = ['Gen', 'Feb', 'Mar', 'Apr', 'Mag', 'Giu', 
+                        'Lug', 'Ago', 'Set', 'Ott', 'Nov', 'Dic'];
+    
+    const day = date.getDate();
+    const month = monthNames[date.getMonth()];
+    
+    const formatted = `${day} ${month}`;
+    return withPrefix ? `Previsto: ${formatted}` : formatted;
 }
 
 /**
