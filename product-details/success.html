@@ -679,499 +679,745 @@
         </div>
     </div>
     
-        <script>
-    // CONFIGURAZIONE
-    const webAppUrl = 'https://script.google.com/macros/s/AKfycbyl-SrRgn4ZGCL-wPYy8fLBKLaUtxY7V08KGujaihbz1tPX47BM36yw6Mj60UUT8ftv/exec';
+    <script>
+    // ============================================
+// LUXHAVEN360 - SUCCESS PAGE TRACKING LOGIC
+// Enhanced con date dinamiche e aggiornamento progressivo
+// 
+// MODIFICHE IMPLEMENTATE:
+// 1. Date dinamiche per "Spedito" e "Consegnato" quando stato = "In Preparazione"
+// 2. Calcolo automatico data spedizione (2 giorni prima consegna)
+// 3. Date effettive quando stato passa a "In Transito" o "Consegnato"
+// 4. Barra progressione dinamica basata su stato reale
+// 5. Icone cambiano in spunta ✓ per fasi completate
+// 6. Consegna prevista dinamica nella card info
+// ============================================
 
-    let loadTimeout;
-    let startTime;
+const WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbyl-SrRgn4ZGCL-wPYy8fLBKLaUtxY7V08KGujaihbz1tPX47BM36yw6Mj60UUT8ftv/exec';
 
-    window.addEventListener('load', () => {
-        startTime = Date.now();
-        setupButtons();
-        loadPurchasedItems();
-        loadOrderDetails();
-        loadTimeout = setTimeout(() => {
-            console.warn('Timeout caricamento dati: forzatura visualizzazione.');
-            delayFinalize(startTime);
-        }, 10000);
-    });
+let loadTimeout;
+let startTime;
 
-    function finalizePageLoad() {
-        clearTimeout(loadTimeout);
-        const loader = document.getElementById('luxhaven-loader');
-        const content = document.querySelector('.container');
-        if (loader) {
-            loader.style.opacity = '0';
-            setTimeout(() => { loader.style.display = 'none'; }, 500);
-        }
-        if (content) content.style.opacity = '1';
-        setTimeout(() => {
-            localStorage.removeItem('lh360_cart');
-            localStorage.removeItem('lh360_selected_variant_id');
-        }, 1000);
-        setTimeout(() => {
-            const now = Date.now();
-            for (let i = 0; i < localStorage.length; i++) {
-                const key = localStorage.key(i);
-                if (key.startsWith('lh360_order_time_')) {
-                    const timestamp = localStorage.getItem(key);
-                    if (timestamp && (now - new Date(timestamp).getTime()) > 90 * 24 * 60 * 60 * 1000) {
-                        localStorage.removeItem(key);
-                    }
-                }
+// ============================================
+// INIT & LOADER MANAGEMENT
+// ============================================
+
+window.addEventListener('load', () => {
+    startTime = Date.now();
+    setupButtons();
+    loadPurchasedItems();
+    loadOrderDetails();
+    
+    loadTimeout = setTimeout(() => {
+        console.warn('Timeout caricamento dati: forzatura visualizzazione.');
+        delayFinalize(startTime);
+    }, 10000);
+});
+
+function finalizePageLoad() {
+    clearTimeout(loadTimeout);
+    const loader = document.getElementById('luxhaven-loader');
+    const content = document.querySelector('.container');
+    
+    if (loader) {
+        loader.style.opacity = '0';
+        setTimeout(() => { loader.style.display = 'none'; }, 500);
+    }
+    if (content) content.style.opacity = '1';
+    
+    // Cleanup cart dopo visualizzazione
+    setTimeout(() => {
+        localStorage.removeItem('lh360_cart');
+        localStorage.removeItem('lh360_selected_variant_id');
+    }, 1000);
+    
+    // Cleanup vecchi ordini (90+ giorni)
+    setTimeout(cleanupOldOrderTimestamps, 5000);
+}
+
+function delayFinalize(startTime) {
+    const elapsed = Date.now() - startTime;
+    const remaining = 8000 - elapsed;
+    
+    if (remaining > 0) {
+        setTimeout(finalizePageLoad, remaining);
+    } else {
+        finalizePageLoad();
+    }
+}
+
+function cleanupOldOrderTimestamps() {
+    const now = Date.now();
+    const ninetyDays = 90 * 24 * 60 * 60 * 1000;
+    
+    for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key && key.startsWith('lh360_order_time_')) {
+            const timestamp = localStorage.getItem(key);
+            if (timestamp && (now - new Date(timestamp).getTime()) > ninetyDays) {
+                localStorage.removeItem(key);
             }
-        }, 5000);
-    }
-
-    function delayFinalize(startTime) {
-        const elapsed = Date.now() - startTime;
-        const remaining = 8000 - elapsed;
-        if (remaining > 0) {
-            setTimeout(finalizePageLoad, remaining);
-        } else {
-            finalizePageLoad();
         }
     }
+}
 
-    function setupButtons() {
-        const trackBtn = document.querySelector('.btn-primary');
-        if (trackBtn) {
-            trackBtn.href = 'https://luxhaven360.github.io/luxhaven360-site/product-details/tracking-order.html';
-        }
-        const shopBtn = document.querySelector('.btn-secondary');
-        if (shopBtn) {
-            shopBtn.href = 'https://luxhaven360.github.io/luxhaven360-site/index.html#shop';
-        }
+function setupButtons() {
+    const trackBtn = document.querySelector('.btn-primary');
+    if (trackBtn) {
+        trackBtn.href = 'https://luxhaven360.github.io/luxhaven360-site/product-details/tracking-order.html';
+    }
+    
+    const shopBtn = document.querySelector('.btn-secondary');
+    if (shopBtn) {
+        shopBtn.href = 'https://luxhaven360.github.io/luxhaven360-site/index.html#shop';
+    }
+}
+
+// ============================================
+// LOAD ORDER DETAILS (JSONP con retry)
+// ============================================
+
+function loadOrderDetails(maxRetries = 3) {
+    const urlParams = new URLSearchParams(window.location.search);
+    const sessionId = urlParams.get('session_id');
+    const orderIdParam = urlParams.get('id_ordine');
+
+    const orderNumElem = document.getElementById('orderNumber');
+    const emailElem = document.getElementById('emailValue');
+    const paymentElem = document.getElementById('paymentValue');
+
+    if (orderIdParam && orderNumElem) {
+        orderNumElem.textContent = `Ordine #${orderIdParam}`;
     }
 
-    // ---------- Robust JSONP loader with retries and fetch fallback ----------
-    function loadOrderDetails(maxRetries = 3) {
-        const urlParams = new URLSearchParams(window.location.search);
-        const sessionId = urlParams.get('session_id');
-        const orderIdParam = urlParams.get('id_ordine');
+    if (!sessionId) {
+        if (emailElem) emailElem.textContent = 'Non disponibile';
+        if (paymentElem) paymentElem.textContent = 'Non disponibile';
+        delayFinalize(startTime);
+        return;
+    }
 
-        const orderNumElem = document.getElementById('orderNumber');
-        const emailElem = document.getElementById('emailValue');
-        const paymentElem = document.getElementById('paymentValue');
+    let attempts = 0;
+    let finished = false;
 
-        if (orderIdParam && orderNumElem) {
-            orderNumElem.textContent = `Ordine #${orderIdParam}`;
-        }
+    function tryRequest() {
+        if (finished) return;
+        attempts++;
+        
+        const callbackName = 'handleDetailsResponse_' + Date.now() + '_' + Math.floor(Math.random() * 10000);
+        const script = document.createElement('script');
+        const src = `${WEB_APP_URL}?get_details=1&session_id=${encodeURIComponent(sessionId)}&callback=${callbackName}&t=${Date.now()}`;
+        script.src = src;
+        script.async = true;
 
-        if (!sessionId) {
-            if (emailElem) emailElem.textContent = 'Non disponibile';
-            if (paymentElem) paymentElem.textContent = 'Non disponibile';
-            delayFinalize(startTime);
-            return;
-        }
+        const cleanup = () => {
+            try { if (script.parentNode) script.parentNode.removeChild(script); } catch (e) {}
+            try { delete window[callbackName]; } catch (e) {}
+        };
 
-        // Try JSONP with retries. If JSONP appears to fail, try a fetch fallback (if CORS allows).
-        let attempts = 0;
-        let finished = false;
+        window[callbackName] = function(response) {
+            if (finished) { cleanup(); return; }
+            finished = true;
+            cleanup();
+            handleDetailsResponse(response);
+        };
 
-        function tryRequest() {
-            if (finished) return;
-            attempts++;
-            const callbackName = 'handleDetailsResponse_' + Date.now() + '_' + Math.floor(Math.random() * 10000);
-            const script = document.createElement('script');
-            const src = `${webAppUrl}?get_details=1&session_id=${encodeURIComponent(sessionId)}&callback=${callbackName}&t=${Date.now()}`;
-            script.src = src;
-            script.async = true;
+        script.onerror = function() {
+            cleanup();
+            if (attempts <= maxRetries) {
+                console.warn('JSONP error, retry...', attempts);
+                setTimeout(tryRequest, 1200 + attempts * 300);
+            } else {
+                tryFetchFallback().then(resp => {
+                    if (resp) {
+                        finished = true;
+                        handleDetailsResponse(resp);
+                    } else {
+                        if (emailElem) emailElem.textContent = 'Non disponibile';
+                        if (paymentElem) paymentElem.textContent = 'Non disponibile';
+                        finalizePageLoad();
+                    }
+                }).catch(() => {
+                    if (emailElem) emailElem.textContent = 'Non disponibile';
+                    if (paymentElem) paymentElem.textContent = 'Non disponibile';
+                    finalizePageLoad();
+                });
+            }
+        };
 
-            const cleanup = () => {
-                try { if (script.parentNode) script.parentNode.removeChild(script); } catch (e) {}
-                try { delete window[callbackName]; } catch (e) {}
-            };
+        document.body.appendChild(script);
 
-            // Define the temporary global callback
-            window[callbackName] = function(response) {
-                if (finished) { cleanup(); return; }
-                finished = true;
-                cleanup();
-                // Delegate to the regular handler for processing (keeps existing logic)
-                handleDetailsResponse(response);
-            };
-
-            // Error handling + retry
-            script.onerror = function() {
+        setTimeout(() => {
+            if (!finished) {
                 cleanup();
                 if (attempts <= maxRetries) {
-                    console.warn('JSONP load error, retrying...', attempts);
-                    setTimeout(tryRequest, 1200 + attempts * 300);
+                    console.warn('JSONP timeout, retry...', attempts);
+                    setTimeout(tryRequest, 800 + attempts * 200);
                 } else {
-                    // Try fetch fallback (may fail due to CORS - it's best-effort)
                     tryFetchFallback().then(resp => {
                         if (resp) {
                             finished = true;
                             handleDetailsResponse(resp);
                         } else {
-                            // final fallback: show minimal info and finalize
-                            console.warn('Fallback fetch failed. Mostriamo contenuto parziale.');
                             if (emailElem) emailElem.textContent = 'Non disponibile';
                             if (paymentElem) paymentElem.textContent = 'Non disponibile';
                             finalizePageLoad();
                         }
-                    }).catch(err => {
-                        console.warn('Fallback fetch exception', err);
-                        if (emailElem) emailElem.textContent = 'Non disponibile';
-                        if (paymentElem) paymentElem.textContent = 'Non disponibile';
-                        finalizePageLoad();
                     });
                 }
-            };
-
-            // Append script to trigger JSONP
-            document.body.appendChild(script);
-
-            // Also guard: if callback hasn't run within 5s, treat as failure -> try retry/fallback
-            setTimeout(() => {
-                if (!finished) {
-                    // remove this callback and retry or fallback
-                    try {
-                        cleanup();
-                    } catch (e) {}
-                    if (attempts <= maxRetries) {
-                        console.warn('JSONP timeout, retrying...', attempts);
-                        setTimeout(tryRequest, 800 + attempts * 200);
-                    } else {
-                        tryFetchFallback().then(resp => {
-                            if (resp) {
-                                finished = true;
-                                handleDetailsResponse(resp);
-                            } else {
-                                if (emailElem) emailElem.textContent = 'Non disponibile';
-                                if (paymentElem) paymentElem.textContent = 'Non disponibile';
-                                finalizePageLoad();
-                            }
-                        }).catch(err => {
-                            if (emailElem) emailElem.textContent = 'Non disponibile';
-                            if (paymentElem) paymentElem.textContent = 'Non disponibile';
-                            finalizePageLoad();
-                        });
-                    }
-                }
-            }, 5000);
-        }
-
-        // Best-effort fetch fallback which attempts to GET the JSONP URL and extract JSON payload.
-        async function tryFetchFallback() {
-            try {
-                const fetchUrl = `${webAppUrl}?get_details=1&session_id=${encodeURIComponent(sessionId)}&callback=__FALLBACK_CB&no_cache=${Date.now()}`;
-                const res = await fetch(fetchUrl, { method: 'GET', cache: 'no-store' });
-                if (!res.ok) {
-                    console.warn('Fetch fallback response not ok', res.status);
-                    return null;
-                }
-                const text = await res.text();
-                // text is like: __FALLBACK_CB({...})
-                const start = text.indexOf('(');
-                const end = text.lastIndexOf(')');
-                if (start === -1 || end === -1) return null;
-                const jsonStr = text.substring(start + 1, end);
-                const parsed = JSON.parse(jsonStr);
-                return parsed;
-            } catch (e) {
-                // Likely CORS or network error; swallow and return null
-                console.warn('Fetch fallback failed (CORS/network?)', e);
-                return null;
             }
-        }
-
-        tryRequest();
+        }, 5000);
     }
 
-    // ---------- Existing global handler (unchanged) ----------
-    window.handleDetailsResponse = function(response) {
-        const emailElem = document.getElementById('emailValue');
-        const paymentElem = document.getElementById('paymentValue');
-        const orderNumElem = document.getElementById('orderNumber');
+    async function tryFetchFallback() {
+        try {
+            const fetchUrl = `${WEB_APP_URL}?get_details=1&session_id=${encodeURIComponent(sessionId)}&callback=__FALLBACK_CB&no_cache=${Date.now()}`;
+            const res = await fetch(fetchUrl, { method: 'GET', cache: 'no-store' });
+            if (!res.ok) return null;
+            
+            const text = await res.text();
+            const start = text.indexOf('(');
+            const end = text.lastIndexOf(')');
+            if (start === -1 || end === -1) return null;
+            
+            const jsonStr = text.substring(start + 1, end);
+            return JSON.parse(jsonStr);
+        } catch (e) {
+            console.warn('Fetch fallback failed', e);
+            return null;
+        }
+    }
 
-        let currentOrderId = null;
+    tryRequest();
+}
 
-        if (response && !response.error) {
-            if (response.email && emailElem) {
-                emailElem.textContent = response.email;
-            }
-            if (paymentElem) {
-                if (response.last4) {
-                    paymentElem.textContent = `•••• ${response.last4}`;
-                } else {
-                    paymentElem.textContent = 'Pagamento Online';
-                }
-            }
-            if (response.order_id && orderNumElem) {
-                orderNumElem.textContent = `Ordine #${response.order_id}`;
-                currentOrderId = response.order_id;
+// ============================================
+// HANDLE DETAILS RESPONSE & FETCH TRACKING
+// ============================================
+
+window.handleDetailsResponse = function(response) {
+    const emailElem = document.getElementById('emailValue');
+    const paymentElem = document.getElementById('paymentValue');
+    const orderNumElem = document.getElementById('orderNumber');
+    const consegnaPrevistaElem = document.getElementById('deliveryDateValue');
+
+    let currentOrderId = null;
+
+    // Popola dati base
+    if (response && !response.error) {
+        if (response.email && emailElem) {
+            emailElem.textContent = response.email;
+        }
+        if (paymentElem) {
+            if (response.last4) {
+                paymentElem.textContent = `•••• ${response.last4}`;
+            } else {
+                paymentElem.textContent = 'Pagamento Online';
             }
         }
+        if (response.order_id && orderNumElem) {
+            orderNumElem.textContent = `Ordine #${response.order_id}`;
+            currentOrderId = response.order_id;
+        }
+    }
 
-        let confirmedTime;
-        if (currentOrderId) {
-            const storedTime = localStorage.getItem(`lh360_order_time_${currentOrderId}`);
-            if (storedTime) {
-                confirmedTime = storedTime;
-            } else {
-                confirmedTime = new Date().toISOString();
-                localStorage.setItem(`lh360_order_time_${currentOrderId}`, confirmedTime);
-            }
-            localStorage.setItem('lh360_last_order_id', currentOrderId);
+    // Timestamp ordine
+    let confirmedTime;
+    if (currentOrderId) {
+        const storedTime = localStorage.getItem(`lh360_order_time_${currentOrderId}`);
+        if (storedTime) {
+            confirmedTime = storedTime;
         } else {
-            const urlParams = new URLSearchParams(window.location.search);
-            const sessionId = urlParams.get('session_id');
-            const fallbackKey = sessionId ? `lh360_order_time_session_${sessionId}` : 'lh360_order_time_fallback';
-            const storedTime = localStorage.getItem(fallbackKey);
-            if (storedTime) {
-                confirmedTime = storedTime;
-            } else {
-                confirmedTime = new Date().toISOString();
-                localStorage.setItem(fallbackKey, confirmedTime);
-            }
+            confirmedTime = new Date().toISOString();
+            localStorage.setItem(`lh360_order_time_${currentOrderId}`, confirmedTime);
         }
-
-        if (currentOrderId) {
-            const cart = JSON.parse(localStorage.getItem('lh360_cart') || '[]');
-            const subtotal = cart.reduce((sum, item) => sum + (item.price * (item.qty || 1)), 0);
-            const shipping = subtotal >= 150 ? 0 : 15;
-            const total = subtotal + shipping;
-            const today = new Date();
-            const formattedDate = today.toLocaleDateString('it-IT', {
-                day: 'numeric',
-                month: 'long',
-                year: 'numeric'
-            });
-            const orderDetails = {
-                id: currentOrderId,
-                data: formattedDate,
-                stato: 'In Preparazione',
-                totale: total.toFixed(2),
-                consegna_prevista: calculateDeliveryDate(3),
-                products: cart.map(item => ({
-                    name: item.title || 'Prodotto',
-                    quantity: item.qty || 1,
-                    price: item.price || 0,
-                    image: item.image || ''
-                })),
-                email: response?.email || '',
-                timestamp: confirmedTime
-            };
-            localStorage.setItem('lh360_pending_order', JSON.stringify(orderDetails));
-            console.log('✅ Ordine salvato in localStorage per tracking immediato:', orderDetails);
+        localStorage.setItem('lh360_last_order_id', currentOrderId);
+    } else {
+        const urlParams = new URLSearchParams(window.location.search);
+        const sessionId = urlParams.get('session_id');
+        const fallbackKey = sessionId ? `lh360_order_time_session_${sessionId}` : 'lh360_order_time_fallback';
+        const storedTime = localStorage.getItem(fallbackKey);
+        if (storedTime) {
+            confirmedTime = storedTime;
+        } else {
+            confirmedTime = new Date().toISOString();
+            localStorage.setItem(fallbackKey, confirmedTime);
         }
+    }
 
+    // Salva ordine pending per tracking
+    if (currentOrderId) {
+        const cart = JSON.parse(localStorage.getItem('lh360_cart') || '[]');
+        const subtotal = cart.reduce((sum, item) => sum + (item.price * (item.qty || 1)), 0);
+        const shipping = subtotal >= 150 ? 0 : 15;
+        const total = subtotal + shipping;
+        const today = new Date();
+        const formattedDate = today.toLocaleDateString('it-IT', {
+            day: 'numeric',
+            month: 'long',
+            year: 'numeric'
+        });
+        
+        const orderDetails = {
+            id: currentOrderId,
+            data: formattedDate,
+            stato: 'In Preparazione',
+            totale: total.toFixed(2),
+            consegna_prevista: calculateDeliveryDate(3),
+            products: cart.map(item => ({
+                name: item.title || 'Prodotto',
+                quantity: item.qty || 1,
+                price: item.price || 0,
+                image: item.image || ''
+            })),
+            email: response?.email || '',
+            timestamp: confirmedTime
+        };
+        
+        localStorage.setItem('lh360_pending_order', JSON.stringify(orderDetails));
+        console.log('✅ Ordine salvato in localStorage per tracking:', orderDetails);
+    }
+
+    // *** MODIFICA CHIAVE: Fetch dello stato REALE da Order Tracking ***
+    if (currentOrderId) {
+        fetchOrderTrackingData(currentOrderId, confirmedTime);
+    } else {
+        // Fallback: usa dati statici base
         const timelineData = {
-            current_status: response?.current_status || 'preparing',
-            status_dates: {
-                confirmed: confirmedTime,
-                preparing: response?.status_dates?.preparing || null,
-                shipped: response?.status_dates?.shipped || null,
-                delivered: response?.status_dates?.delivered || null
-            },
-            estimated_dates: response?.estimated_dates || {
+            current_status: 'confirmed',
+            status_dates: { confirmed: confirmedTime },
+            estimated_dates: {
                 preparing: 'In corso',
                 shipped: '7-8 Nov',
                 delivered: '8-9 Nov'
-            }
+            },
+            consegna_prevista: 'Da definire'
         };
-
-        if (!response || response.error) {
-            timelineData.current_status = 'confirmed';
-            timelineData.status_dates = { confirmed: confirmedTime };
-        }
-
         updateTimeline(timelineData);
+        delayFinalize(startTime);
+    }
 
-        // Trigger polling light (best-effort)
-        const triggerCallback = 'handlePollResponse_' + Date.now();
-        const triggerScript = document.createElement('script');
-        triggerScript.src = `${webAppUrl}?action=trigger_poll&callback=${triggerCallback}`;
-        window[triggerCallback] = function(resp) {
-            try { if (triggerScript.parentNode) triggerScript.parentNode.removeChild(triggerScript); } catch(e){}
-            try { delete window[triggerCallback]; } catch(e){}
-            console.log('Polling triggerato:', resp);
-        };
-        document.body.appendChild(triggerScript);
+    // Trigger polling background
+    const triggerCallback = 'handlePollResponse_' + Date.now();
+    const triggerScript = document.createElement('script');
+    triggerScript.src = `${WEB_APP_URL}?action=trigger_poll&callback=${triggerCallback}`;
+    window[triggerCallback] = function(resp) {
+        try { if (triggerScript.parentNode) triggerScript.parentNode.removeChild(triggerScript); } catch(e){}
+        try { delete window[triggerCallback]; } catch(e){}
+        console.log('Polling triggerato:', resp);
+    };
+    document.body.appendChild(triggerScript);
+};
 
+// ============================================
+// FETCH ORDER TRACKING DATA (nuovo endpoint)
+// ============================================
+
+function fetchOrderTrackingData(orderId, confirmedTime) {
+    const callbackName = 'handleOrderTracking_' + Date.now();
+    const script = document.createElement('script');
+    
+    script.src = `${WEB_APP_URL}?action=get_orders&callback=${callbackName}&t=${Date.now()}`;
+    script.async = true;
+
+    const cleanup = () => {
+        try { if (script.parentNode) document.body.removeChild(script); } catch (e) {}
+        try { delete window[callbackName]; } catch (e) {}
+    };
+
+    window[callbackName] = function(response) {
+        cleanup();
+        
+        if (response && response.orders && Array.isArray(response.orders)) {
+            // Trova l'ordine corrispondente
+            const orderData = response.orders.find(o => o.id === orderId);
+            
+            if (orderData) {
+                console.log('📦 Dati Order Tracking trovati:', orderData);
+                
+                // Costruisci dati timeline dinamici
+                const timelineData = buildTimelineData(orderData, confirmedTime);
+                updateTimeline(timelineData);
+                
+                // Aggiorna consegna prevista nella card info
+                const consegnaPrevistaElem = document.querySelector('.info-card:nth-child(2) .info-value');
+                if (consegnaPrevistaElem && orderData.consegna_prevista) {
+                    consegnaPrevistaElem.textContent = formatDeliveryDate(orderData.consegna_prevista);
+                }
+            } else {
+                console.warn('⚠️ Ordine non trovato in Order Tracking, uso dati default');
+                useFallbackTimeline(confirmedTime);
+            }
+        } else {
+            console.warn('⚠️ Risposta Order Tracking non valida');
+            useFallbackTimeline(confirmedTime);
+        }
+        
         delayFinalize(startTime);
     };
 
-/**
- * Helper: Calcola data di consegna prevista
- */
-function calculateDeliveryDate(daysFromNow) {
-    const date = new Date();
-    date.setDate(date.getDate() + daysFromNow);
-    return date.toLocaleDateString('it-IT', { day: 'numeric', month: 'long', year: 'numeric' });
+    script.onerror = function() {
+        cleanup();
+        console.warn('⚠️ Errore fetch Order Tracking, uso fallback');
+        useFallbackTimeline(confirmedTime);
+        delayFinalize(startTime);
+    };
+
+    document.body.appendChild(script);
+
+    // Timeout sicurezza
+    setTimeout(() => {
+        if (window[callbackName]) {
+            cleanup();
+            useFallbackTimeline(confirmedTime);
+            delayFinalize(startTime);
+        }
+    }, 8000);
 }
 
-/**
- * Helper: Calcola data di consegna prevista
- */
-function calculateDeliveryDate(daysFromNow) {
-    const date = new Date();
-    date.setDate(date.getDate() + daysFromNow);
-    return date.toLocaleDateString('it-IT', { day: 'numeric', month: 'long', year: 'numeric' });
+function useFallbackTimeline(confirmedTime) {
+    const timelineData = {
+        current_status: 'confirmed',
+        status_dates: { confirmed: confirmedTime },
+        estimated_dates: {
+            preparing: 'In corso',
+            shipped: calculateShippingDate(3),
+            delivered: calculateDeliveryDate(3)
+        },
+        consegna_prevista: calculateDeliveryDate(3)
+    };
+    updateTimeline(timelineData);
 }
 
-    /**
-     * FUNZIONE: Aggiorna la timeline dinamicamente
-     */
-    function updateTimeline(data) {
-        const steps = {
-            confirmed: document.getElementById('step-confirmed'),
-            preparing: document.getElementById('step-preparing'),
-            shipped: document.getElementById('step-shipped'),
-            delivered: document.getElementById('step-delivered')
+// ============================================
+// BUILD TIMELINE DATA (logica centrale)
+// ============================================
+
+function buildTimelineData(orderData, confirmedTime) {
+    const stato = orderData.stato || 'Confermato';
+    const consegnaPrevista = orderData.consegna_prevista || 'Da definire';
+    const ultimoAggiornamento = orderData.ultimo_aggiornamento || '';
+    
+    // Parse date da "ultimo_aggiornamento" (formato: dd/MM/yyyy, HH:mm)
+    const parseTimestamp = (dateStr) => {
+        if (!dateStr) return null;
+        try {
+            const parts = dateStr.split(',')[0].trim().split('/');
+            if (parts.length === 3) {
+                return new Date(parts[2], parts[1] - 1, parts[0]).toISOString();
+            }
+        } catch (e) {}
+        return null;
+    };
+
+    let timelineData = {
+        current_status: mapStatus(stato),
+        status_dates: {
+            confirmed: confirmedTime || parseTimestamp(ultimoAggiornamento) || new Date().toISOString()
+        },
+        estimated_dates: {},
+        consegna_prevista: consegnaPrevista
+    };
+
+    // *** LOGICA DINAMICA BASATA SULLO STATO ***
+    
+    if (stato === 'Confermato') {
+        // Confermato: mostra solo conferma, resto previsto
+        timelineData.current_status = 'confirmed';
+        timelineData.estimated_dates = {
+            preparing: 'In corso',
+            shipped: calculateShippingDate(3),
+            delivered: formatDeliveryDateShort(consegnaPrevista)
         };
-
-        const dateElems = {
-            confirmed: document.getElementById('date-confirmed'),
-            preparing: document.getElementById('date-preparing'),
-            shipped: document.getElementById('date-shipped'),
-            delivered: document.getElementById('date-delivered')
+    }
+    else if (stato === 'In Preparazione') {
+        // *** CASO CHIAVE: In Preparazione ***
+        timelineData.current_status = 'preparing';
+        timelineData.status_dates.preparing = parseTimestamp(ultimoAggiornamento) || timelineData.status_dates.confirmed;
+        
+        // Calcola data spedizione prevista (2 giorni prima della consegna)
+        const deliveryDate = parseDeliveryDateToObj(consegnaPrevista);
+        const shippingDate = new Date(deliveryDate);
+        shippingDate.setDate(shippingDate.getDate() - 2);
+        
+        timelineData.estimated_dates = {
+            preparing: 'In corso',
+            shipped: `Previsto: ${formatDateShort(shippingDate)}`,
+            delivered: `Previsto: ${formatDeliveryDateShort(consegnaPrevista)}`
         };
-
-        const icons = {
-            confirmed: '✓',
-            preparing: '📦',
-            shipped: '🚚',
-            delivered: '🏠'
+    }
+    else if (stato === 'In Transito') {
+        // In Transito: mostra data spedizione effettiva
+        timelineData.current_status = 'shipped';
+        timelineData.status_dates.preparing = confirmedTime;
+        timelineData.status_dates.shipped = parseTimestamp(ultimoAggiornamento) || new Date().toISOString();
+        
+        timelineData.estimated_dates = {
+            preparing: formatTimestamp(timelineData.status_dates.preparing),
+            shipped: formatTimestamp(timelineData.status_dates.shipped),
+            delivered: `Previsto: ${formatDeliveryDateShort(consegnaPrevista)}`
         };
+    }
+    else if (stato === 'Consegnato') {
+        // Consegnato: mostra tutte le date effettive
+        timelineData.current_status = 'delivered';
+        timelineData.status_dates.preparing = confirmedTime;
+        timelineData.status_dates.shipped = confirmedTime; // Approssimazione
+        timelineData.status_dates.delivered = parseTimestamp(ultimoAggiornamento) || new Date().toISOString();
+        
+        timelineData.estimated_dates = {
+            preparing: formatTimestamp(timelineData.status_dates.preparing),
+            shipped: formatTimestamp(timelineData.status_dates.shipped),
+            delivered: formatTimestamp(timelineData.status_dates.delivered)
+        };
+    }
 
-        const stepOrder = ['confirmed', 'preparing', 'shipped', 'delivered'];
-        const currentIndex = stepOrder.indexOf(data.current_status);
+    return timelineData;
+}
 
-        // Aggiorna classi, icone e date
-        stepOrder.forEach((step, index) => {
-            const elem = steps[step];
-            if (!elem) return;
+function mapStatus(stato) {
+    const map = {
+        'Confermato': 'confirmed',
+        'In Preparazione': 'preparing',
+        'In Transito': 'shipped',
+        'Consegnato': 'delivered'
+    };
+    return map[stato] || 'confirmed';
+}
 
-            // Rimuovi classi esistenti
-            elem.classList.remove('completed', 'active', 'pending');
+// ============================================
+// UPDATE TIMELINE (rendering UI)
+// ============================================
 
-            // Aggiungi classe appropriata
+function updateTimeline(data) {
+    const steps = {
+        confirmed: document.getElementById('step-confirmed'),
+        preparing: document.getElementById('step-preparing'),
+        shipped: document.getElementById('step-shipped'),
+        delivered: document.getElementById('step-delivered')
+    };
+
+    const dateElems = {
+        confirmed: document.getElementById('date-confirmed'),
+        preparing: document.getElementById('date-preparing'),
+        shipped: document.getElementById('date-shipped'),
+        delivered: document.getElementById('date-delivered')
+    };
+
+    const icons = {
+        confirmed: '✓',
+        preparing: '📦',
+        shipped: '🚚',
+        delivered: '🏠'
+    };
+
+    const stepOrder = ['confirmed', 'preparing', 'shipped', 'delivered'];
+    const currentIndex = stepOrder.indexOf(data.current_status);
+
+    stepOrder.forEach((step, index) => {
+        const elem = steps[step];
+        if (!elem) return;
+
+        elem.classList.remove('completed', 'active', 'pending');
+
+        if (index < currentIndex) {
+            elem.classList.add('completed');
+        } else if (index === currentIndex) {
+            elem.classList.add('active');
+        } else {
+            elem.classList.add('pending');
+        }
+
+        // *** AGGIORNA ICONE: spunta per completati ***
+        const dot = elem.querySelector('.timeline-dot');
+        if (dot) {
             if (index < currentIndex) {
-                elem.classList.add('completed');
-            } else if (index === currentIndex) {
-                elem.classList.add('active');
+                dot.innerHTML = '✓'; // Completato
             } else {
-                elem.classList.add('pending');
+                dot.innerHTML = icons[step]; // Originale
             }
+        }
 
-            // Aggiorna icona del dot
-            const dot = elem.querySelector('.timeline-dot');
-            if (dot) {
-                if (index < currentIndex) {
-                    dot.innerHTML = '✓'; // Spunta per completati
-                } else {
-                    dot.innerHTML = icons[step]; // Icona specifica per active/pending
-                }
+        // *** AGGIORNA DATE ***
+        const dateElem = dateElems[step];
+        if (dateElem) {
+            const actualDate = data.status_dates[step];
+            if (actualDate) {
+                // Data effettiva
+                const date = new Date(actualDate);
+                dateElem.textContent = formatDateShort(date);
+            } else {
+                // Data prevista
+                dateElem.textContent = data.estimated_dates[step] || 'Da definire';
             }
+        }
+    });
 
-            // Aggiorna data
-            const dateElem = dateElems[step];
-            if (dateElem) {
-                const actualDate = data.status_dates[step];
-                if (actualDate) {
-                    const date = new Date(actualDate);
-                    dateElem.textContent = date.toLocaleDateString('it-IT', { day: 'numeric', month: 'short' }) + ', ' + date.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
-                } else {
-                    dateElem.textContent = data.estimated_dates[step] || 'Da definire';
-                }
-            }
-        });
+    // *** AGGIORNA BARRA PROGRESSIONE ***
+    const timelineElem = document.querySelector('.timeline');
+    if (timelineElem) {
+        const progress = (currentIndex / (stepOrder.length - 1)) * 100;
+        timelineElem.style.setProperty('--progress-percent', `${progress}%`);
+    }
+}
 
-        // Aggiorna barra di progresso dinamicamente
-        const timelineElem = document.querySelector('.timeline');
-        if (timelineElem) {
-            const progress = (currentIndex / (stepOrder.length - 1)) * 100;
-            timelineElem.style.setProperty('--progress-percent', `${progress}%`);
+// ============================================
+// DATE FORMATTING UTILITIES
+// ============================================
+
+function calculateDeliveryDate(daysFromNow) {
+    const date = new Date();
+    date.setDate(date.getDate() + daysFromNow);
+    return date.toLocaleDateString('it-IT', { day: 'numeric', month: 'long', year: 'numeric' });
+}
+
+function calculateShippingDate(daysFromNow) {
+    const date = new Date();
+    date.setDate(date.getDate() + daysFromNow - 1);
+    return formatDateShort(date);
+}
+
+function formatDeliveryDate(dateStr) {
+    // Input: "28 novembre 2025" o "28-29 novembre 2025"
+    // Output: "28 Novembre 2025" (capitalizzato)
+    if (!dateStr || dateStr === 'Da definire') return 'Da definire';
+    
+    const parts = dateStr.split(' ');
+    if (parts.length >= 3) {
+        const month = parts[1].charAt(0).toUpperCase() + parts[1].slice(1).toLowerCase();
+        return `${parts[0]} ${month} ${parts[2]}`;
+    }
+    return dateStr;
+}
+
+function formatDeliveryDateShort(dateStr) {
+    // Input: "28 novembre 2025"
+    // Output: "28 Nov"
+    if (!dateStr || dateStr === 'Da definire') return 'Da definire';
+    
+    const parsed = parseDeliveryDateToObj(dateStr);
+    return formatDateShort(parsed);
+}
+
+function parseDeliveryDateToObj(dateStr) {
+    // Parse formato "dd MMMM yyyy" italiano
+    if (!dateStr || dateStr === 'Da definire') return new Date();
+    
+    const monthMap = {
+        'gennaio': 0, 'febbraio': 1, 'marzo': 2, 'aprile': 3,
+        'maggio': 4, 'giugno': 5, 'luglio': 6, 'agosto': 7,
+        'settembre': 8, 'ottobre': 9, 'novembre': 10, 'dicembre': 11
+    };
+    
+    const match = dateStr.match(/(\d{1,2})\s+(\w+)\s+(\d{4})/);
+    if (match) {
+        const day = parseInt(match[1]);
+        const monthName = match[2].toLowerCase();
+        const year = parseInt(match[3]);
+        
+        if (monthMap[monthName] !== undefined) {
+            return new Date(year, monthMap[monthName], day);
+        }
+    }
+    
+    return new Date();
+}
+
+function formatDateShort(date) {
+    // Output: "7 Nov" o "28 Dic"
+    const monthNames = ['Gen', 'Feb', 'Mar', 'Apr', 'Mag', 'Giu', 'Lug', 'Ago', 'Set', 'Ott', 'Nov', 'Dic'];
+    const day = date.getDate();
+    const month = monthNames[date.getMonth()];
+    return `${day} ${month}`;
+}
+
+function formatTimestamp(isoString) {
+    // Output: "7 Nov, 14:30"
+    if (!isoString) return 'Da definire';
+    const date = new Date(isoString);
+    const dateShort = formatDateShort(date);
+    const time = date.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
+    return `${dateShort}, ${time}`;
+}
+
+// ============================================
+// LOAD PURCHASED ITEMS (carrello)
+// ============================================
+
+function loadPurchasedItems() {
+    const cartRaw = localStorage.getItem('lh360_cart');
+    const cart = cartRaw ? JSON.parse(cartRaw) : [];
+    
+    const itemsContainer = document.querySelector('.summary-items');
+    const subtotalElem = document.querySelector('.summary-totals .summary-row:nth-child(1) span:last-child');
+    const shippingElem = document.querySelector('.summary-totals .summary-row:nth-child(2) span:last-child');
+    const totalElem = document.querySelector('.summary-total span:last-child');
+
+    if (!itemsContainer) return;
+
+    itemsContainer.innerHTML = '';
+
+    if (cart.length === 0) {
+        itemsContainer.innerHTML = '<div style="padding:1rem; color:#a1a1aa; text-align:center;">Dettagli articoli non disponibili (Sessione scaduta)</div>';
+        return;
+    }
+
+    let subtotal = 0;
+
+    const colorNames = {
+        '#000000': 'Nero', '#FFFFFF': 'Bianco', '#008000': 'Verde', 
+        '#FF0000': 'Rosso', '#0000FF': 'Blu'
+    };
+
+    cart.forEach(item => {
+        const itemPrice = parseFloat(item.price) || 0;
+        const itemQty = parseInt(item.qty) || 1;
+        subtotal += itemPrice * itemQty;
+
+        let displayColor = item.color || '';
+        if (displayColor.startsWith('#') && colorNames[displayColor]) {
+            displayColor = colorNames[displayColor];
+        }
+        
+        let variantText = '';
+        if(displayColor) variantText += displayColor;
+        if(displayColor && item.size) variantText += ' · ';
+        if(item.size) variantText += `Taglia ${item.size}`;
+        if(!variantText) variantText = 'Taglia Unica';
+
+        const div = document.createElement('div');
+        div.className = 'summary-item';
+        div.innerHTML = `
+            <div class="summary-item-image">
+                <img src="${item.image || 'https://via.placeholder.com/150'}" alt="${item.title}">
+            </div>
+            <div class="summary-item-details">
+                <div class="summary-item-name">${item.title} <span style="font-size:0.8em; color:#71717a;">(x${itemQty})</span></div>
+                <div class="summary-item-variant">${variantText}</div>
+            </div>
+            <div class="summary-item-price">€ ${(itemPrice * itemQty).toLocaleString('it-IT', {minimumFractionDigits: 2})}</div>
+        `;
+        itemsContainer.appendChild(div);
+    });
+
+    const shippingCost = subtotal >= 150 ? 0 : 15;
+    const total = subtotal + shippingCost;
+
+    if (subtotalElem) subtotalElem.textContent = `€ ${subtotal.toLocaleString('it-IT', {minimumFractionDigits: 2})}`;
+    
+    if (shippingElem) {
+        if (shippingCost === 0) {
+            shippingElem.textContent = 'Gratuita';
+            shippingElem.style.color = '#34d399';
+        } else {
+            shippingElem.textContent = `€ ${shippingCost.toLocaleString('it-IT', {minimumFractionDigits: 2})}`;
+            shippingElem.style.color = '#fafafa';
         }
     }
 
-    /**
-     * FUNZIONE: Carica articoli dal LocalStorage
-     */
-    function loadPurchasedItems() {
-        const cartRaw = localStorage.getItem('lh360_cart');
-        const cart = cartRaw ? JSON.parse(cartRaw) : [];
-        
-        const itemsContainer = document.querySelector('.summary-items');
-        const subtotalElem = document.querySelector('.summary-totals .summary-row:nth-child(1) span:last-child');
-        const shippingElem = document.querySelector('.summary-totals .summary-row:nth-child(2) span:last-child');
-        const totalElem = document.querySelector('.summary-total span:last-child');
-
-        if (!itemsContainer) return;
-
-        // Svuota container (per sicurezza)
-        itemsContainer.innerHTML = '';
-
-        if (cart.length === 0) {
-            itemsContainer.innerHTML = '<div style="padding:1rem; color:#a1a1aa; text-align:center;">Dettagli articoli non disponibili (Sessione scaduta)</div>';
-            return;
-        }
-
-        let subtotal = 0;
-
-        // Mappa colori per visualizzazione più carina
-        const colorNames = {
-            '#000000': 'Nero', '#FFFFFF': 'Bianco', '#008000': 'Verde', 
-            '#FF0000': 'Rosso', '#0000FF': 'Blu'
-        };
-
-        cart.forEach(item => {
-            // Calcolo subtotale
-            const itemPrice = parseFloat(item.price) || 0;
-            const itemQty = parseInt(item.qty) || 1;
-            subtotal += itemPrice * itemQty;
-
-            // Formattazione variante
-            let displayColor = item.color || '';
-            if (displayColor.startsWith('#') && colorNames[displayColor]) {
-                displayColor = colorNames[displayColor];
-            }
-            
-            let variantText = '';
-            if(displayColor) variantText += displayColor;
-            if(displayColor && item.size) variantText += ' · ';
-            if(item.size) variantText += `Taglia ${item.size}`;
-            if(!variantText) variantText = 'Taglia Unica';
-
-            // Creazione HTML Item
-            const div = document.createElement('div');
-            div.className = 'summary-item';
-            div.innerHTML = `
-                <div class="summary-item-image">
-                    <img src="${item.image || 'https://via.placeholder.com/150'}" alt="${item.title}">
-                </div>
-                <div class="summary-item-details">
-                    <div class="summary-item-name">${item.title} <span style="font-size:0.8em; color:#71717a;">(x${itemQty})</span></div>
-                    <div class="summary-item-variant">${variantText}</div>
-                </div>
-                <div class="summary-item-price">€ ${(itemPrice * itemQty).toLocaleString('it-IT', {minimumFractionDigits: 2})}</div>
-            `;
-            itemsContainer.appendChild(div);
-        });
-
-        // Calcolo Totali
-        const shippingCost = subtotal >= 150 ? 0 : 15;
-        const total = subtotal + shippingCost;
-
-        // Aggiornamento UI Totali
-        if (subtotalElem) subtotalElem.textContent = `€ ${subtotal.toLocaleString('it-IT', {minimumFractionDigits: 2})}`;
-        
-        if (shippingElem) {
-            if (shippingCost === 0) {
-                shippingElem.textContent = 'Gratuita';
-                shippingElem.style.color = '#34d399';
-            } else {
-                shippingElem.textContent = `€ ${shippingCost.toLocaleString('it-IT', {minimumFractionDigits: 2})}`;
-                shippingElem.style.color = '#fafafa';
-            }
-        }
-
-        if (totalElem) totalElem.textContent = `€ ${total.toLocaleString('it-IT', {minimumFractionDigits: 2})}`;
-    }
-</script>    
+    if (totalElem) totalElem.textContent = `€ ${total.toLocaleString('it-IT', {minimumFractionDigits: 2})}`;
+}
+    </script>    
 </body>
 </html>
+
