@@ -979,7 +979,7 @@ const statusMessages = [
     { icon: '✓', text: 'Pagamento confermato con successo', duration: 1500 },
     { icon: '📝', text: 'Registrazione del tuo ordine...', duration: 1800 },
     { icon: '✓', text: 'Ordine registrato correttamente', duration: 1200 },
-    { icon: '📧', text: 'Invio conferma via email...', duration: 1500 },
+    { icon: '📧', text: 'Invio conferma via email...', duration: 1500, action: 'sendEmail' }, // Trigger email
     { icon: '✓', text: 'Conferma inviata al tuo indirizzo', duration: 1200 },
     { icon: '🎉', text: 'Tutto pronto! Preparazione dettagli...', duration: 1000 }
 ];
@@ -1032,6 +1032,11 @@ function updateStatusMessage() {
         // Aggiorna contenuto
         statusIconElem.textContent = message.icon;
         statusTextElem.textContent = message.text;
+        
+        // Trigger azione speciale (es. invio email)
+        if (message.action === 'sendEmail') {
+            triggerInvoiceEmail();
+        }
         
         // Fade in
         statusMessageElem.style.opacity = '1';
@@ -1654,6 +1659,103 @@ function loadPurchasedItems() {
     }
 
     if (totalElem) totalElem.textContent = `€ ${total.toLocaleString('it-IT', {minimumFractionDigits: 2})}`;
+}
+
+// ========== INVIO EMAIL FATTURA ==========
+function triggerInvoiceEmail() {
+    const urlParams = new URLSearchParams(window.location.search);
+    const sessionId = urlParams.get('session_id');
+    const orderId = urlParams.get('id_ordine');
+    
+    if (!sessionId && !orderId) {
+        console.warn('⚠️ Nessun session_id o order_id disponibile per invio email');
+        return;
+    }
+    
+    // Recupera dati ordine da localStorage
+    const cart = JSON.parse(localStorage.getItem('lh360_cart') || '[]');
+    const pendingOrder = localStorage.getItem('lh360_pending_order');
+    
+    let orderData = null;
+    
+    if (pendingOrder) {
+        try {
+            orderData = JSON.parse(pendingOrder);
+        } catch (e) {
+            console.error('Errore parsing pending order:', e);
+        }
+    }
+    
+    // Se non c'è pending order, costruisci dai dati disponibili
+    if (!orderData && cart.length > 0) {
+        const subtotal = cart.reduce((sum, item) => sum + (item.price * (item.qty || 1)), 0);
+        const shipping = subtotal >= 150 ? 0 : 15;
+        const total = subtotal + shipping;
+        
+        orderData = {
+            id: orderId || 'TEMP-' + Date.now(),
+            data: new Date().toLocaleDateString('it-IT', { day: 'numeric', month: 'long', year: 'numeric' }),
+            totale: total.toFixed(2),
+            subtotale: subtotal.toFixed(2),
+            spedizione: shipping.toFixed(2),
+            products: cart.map(item => ({
+                name: item.title || 'Prodotto',
+                quantity: item.qty || 1,
+                price: item.price || 0,
+                image: item.image || ''
+            }))
+        };
+    }
+    
+    if (!orderData) {
+        console.warn('⚠️ Nessun dato ordine disponibile per email');
+        return;
+    }
+    
+    // Prepara payload per backend
+    const emailPayload = {
+        action: 'send_invoice',
+        session_id: sessionId,
+        order_id: orderData.id,
+        order_data: orderData
+    };
+    
+    // Invio JSONP asincrono (fire-and-forget)
+    const callbackName = 'handleEmailResponse_' + Date.now();
+    const script = document.createElement('script');
+    const params = new URLSearchParams({
+        ...emailPayload,
+        order_data: JSON.stringify(orderData),
+        callback: callbackName,
+        t: Date.now()
+    });
+    
+    script.src = `${webAppUrl}?${params.toString()}`;
+    
+    window[callbackName] = function(response) {
+        if (response && response.success) {
+            console.log('✅ Email fattura inviata con successo');
+        } else {
+            console.warn('⚠️ Errore invio email:', response?.error || 'Sconosciuto');
+        }
+        
+        // Cleanup
+        try {
+            if (script.parentNode) document.body.removeChild(script);
+            delete window[callbackName];
+        } catch (e) {}
+    };
+    
+    script.onerror = () => {
+        console.error('❌ Errore rete durante invio email');
+        try {
+            if (script.parentNode) document.body.removeChild(script);
+            delete window[callbackName];
+        } catch (e) {}
+    };
+    
+    document.body.appendChild(script);
+    console.log('📧 Richiesta invio email fattura avviata...');
 }
     </script>    
 </body>
