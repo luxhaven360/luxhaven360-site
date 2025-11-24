@@ -405,7 +405,209 @@
     </div>
 
     <script>
-        const WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbyN-wdZBN0g...(truncated 8228 characters)...v class="item-image">
+        const WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbyN-wdZBN0gm3x3maZAHnUq5K-QdFL-KKy2sROqMFY4GxUA-ERxBGyyLh4cno60DV2m/exec';
+
+        const STATE_STEPS = {
+            'Confermato': 0,
+            'In Preparazione': 1,
+            'In Transito': 2,
+            'Consegnato': 3
+        };
+
+        const STEP_ICONS_ACTIVE = ['📦', '📦', '🚚', '🏠'];
+        const STEP_LABELS = ['Confermato', 'Preparato', 'In Viaggio', 'Consegnato'];
+
+        // *** FIX: Flag per prevenire rendering duplicato ***
+        let ordersRendered = false;
+
+        function calculateTimeBasedProgress(orderDate, deliveryDate, currentState) {
+            const now = new Date();
+            const start = parseItalianDate(orderDate);
+            const end = parseItalianDate(deliveryDate);
+            const currentStep = STATE_STEPS[currentState] || 0;
+            
+            if (!start || !end) {
+                return (currentStep / 3) * 100;
+            }
+            
+            const totalDuration = end - start;
+            const elapsed = now - start;
+            
+            if (totalDuration <= 0) {
+                return (currentStep / 3) * 100;
+            }
+            
+            let rawProgress = (elapsed / totalDuration) * 100;
+            
+            const milestones = {
+                0: 0,
+                1: 10,
+                2: 30,
+                3: 100
+            };
+            
+            const currentMilestone = milestones[currentStep];
+            const nextMilestone = milestones[Math.min(currentStep + 1, 3)];
+            
+            if (rawProgress < currentMilestone) {
+                rawProgress = currentMilestone;
+            }
+            
+            if (rawProgress > nextMilestone && currentStep < 3) {
+                rawProgress = nextMilestone;
+            }
+            
+            const progressInPhase = (rawProgress - currentMilestone) / (nextMilestone - currentMilestone);
+            const smoothProgress = currentMilestone + (progressInPhase * (nextMilestone - currentMilestone));
+            
+            const finalProgress = Math.max(0, Math.min(100, smoothProgress));
+            
+            return Math.round(finalProgress * 10) / 10;
+        }
+
+        function parseItalianDate(dateStr) {
+            if (!dateStr) return null;
+            
+            const parts = dateStr.split('/');
+            if (parts.length === 3) {
+                return new Date(parts[2], parts[1] - 1, parts[0]);
+            }
+            
+            const months = {
+                'gennaio': 0, 'febbraio': 1, 'marzo': 2, 'aprile': 3,
+                'maggio': 4, 'giugno': 5, 'luglio': 6, 'agosto': 7,
+                'settembre': 8, 'ottobre': 9, 'novembre': 10, 'dicembre': 11
+            };
+            
+            const match = dateStr.match(/(\d{1,2})\s+(\w+)\s+(\d{4})/);
+            if (match) {
+                const day = parseInt(match[1]);
+                const monthName = match[2].toLowerCase();
+                const year = parseInt(match[3]);
+                if (months[monthName] !== undefined) {
+                    return new Date(year, months[monthName], day);
+                }
+            }
+            
+            return null;
+        }
+
+        function formatPrice(price) {
+            if (typeof price === 'string') {
+                if (price.includes('€')) return price;
+                const num = parseFloat(price.replace(',', '.'));
+                if (!isNaN(num)) {
+                    return new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR' }).format(num);
+                }
+                return price;
+            }
+            return new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR' }).format(price);
+        }
+
+        function createProgressBar(orderDate, deliveryDate, currentState) {
+            const progress = calculateTimeBasedProgress(orderDate, deliveryDate, currentState);
+            const currentStep = STATE_STEPS[currentState] || 0;
+            
+            let stepsHTML = '';
+            for (let i = 0; i < 4; i++) {
+                const isCompleted = i < currentStep;
+                const isActive = i === currentStep;
+                const stepClass = isCompleted ? 'completed' : (isActive ? 'active' : '');
+                
+                let iconToShow;
+                if (isCompleted) {
+                    iconToShow = '✓';
+                } else {
+                    iconToShow = STEP_ICONS_ACTIVE[i];
+                }
+                
+                stepsHTML += `
+                    <div class="step ${stepClass}">
+                        <div class="step-icon">${iconToShow}</div>
+                        <div class="step-label">${STEP_LABELS[i]}</div>
+                    </div>
+                `;
+            }
+            
+            return `
+                <div class="progress-section">
+                    <div class="progress-steps">
+                        <div class="progress-line" style="width: ${progress}%;"></div>
+                        ${stepsHTML}
+                    </div>
+                </div>
+            `;
+        }
+
+        function getActionButtons(state, orderId) {
+            const normalizedState = state.toLowerCase().replace(/\s+/g, '-');
+            
+            if (normalizedState === 'in-transito') {
+                return `
+                    <button class="btn btn-primary" onclick="alert('Funzionalità di tracciamento in arrivo!')">
+                        <span>Traccia Spedizione</span>
+                        <span>→</span>
+                    </button>
+                    <button class="btn btn-secondary" onclick="alert('Dettagli ordine ${orderId}')">Dettagli</button>
+                `;
+            } else if (normalizedState === 'consegnato') {
+                return `
+                    <button class="btn btn-primary" onclick="window.location.href='../index.html#shop'">
+                        <span>Acquista di Nuovo</span>
+                    </button>
+                    <button class="btn btn-secondary" onclick="alert('Funzionalità recensioni in arrivo!')">Lascia Recensione</button>
+                `;
+            } else {
+                return `
+                    <button class="btn btn-primary" onclick="alert('Dettagli ordine ${orderId}')">
+                        <span>Dettagli Ordine</span>
+                        <span>→</span>
+                    </button>
+                    <button class="btn btn-secondary" onclick="alert('Supporto: support@luxhaven360.com')">Contatta Supporto</button>
+                `;
+            }
+        }
+
+        function formatItalianDate(dateStr) {
+            if (!dateStr) return '';
+            
+            let date;
+            
+            const parts = dateStr.split('/');
+            if (parts.length === 3) {
+                date = new Date(parts[2], parts[1] - 1, parts[0]);
+            } else {
+                date = new Date(dateStr);
+            }
+            
+            if (isNaN(date.getTime())) return dateStr;
+            
+            return date.toLocaleDateString('it-IT', { 
+                day: 'numeric', 
+                month: 'long', 
+                year: 'numeric' 
+            });
+        }
+
+        function createOrderCard(order, index) {
+            const stateClass = order.stato.toLowerCase().replace(/\s+/g, '-');
+            const itemCount = order.products ? order.products.length : 1;
+            
+            const formattedDate = formatItalianDate(order.data);
+            
+            let imagesHTML = '';
+            if (order.products && order.products.length > 0) {
+                order.products.slice(0, 4).forEach(product => {
+                    const imgSrc = product.image || `https://images.unsplash.com/photo-1591047139829-d91aecb6caea?w=200&h=250&fit=crop`;
+                    imagesHTML += `
+                        <div class="item-image">
+                            <img src="${imgSrc}" alt="${product.name || 'Prodotto'}">
+                        </div>
+                    `;
+                });
+            } else {
+                imagesHTML = `
+                    <div class="item-image">
                         <img src="https://images.unsplash.com/photo-1591047139829-d91aecb6caea?w=200&h=250&fit=crop" alt="Prodotto">
                     </div>
                 `;
