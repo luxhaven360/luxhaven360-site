@@ -438,6 +438,28 @@
 /* Step attivi/completati */
 .step.completed .step-icon { background: #10b981; border-color: #10b981; color: white; }
 .step.active .step-icon { background: #1f2937; border-color: #34d399; animation: pulse 2s infinite; box-shadow: 0 0 0 0 rgba(52, 211, 153, 0.7); }
+
+        /* Highlight numero ordine con colore lussuoso */
+.order-info h3 { font-size: 1.25rem; font-weight: 400; }
+.order-info h3 .order-number { color: #d4af37; font-weight: 700; margin-left: 0.4rem; }
+
+/* Pill per quantità */
+.product-quantity {
+  color: #fafafa;
+  background: rgba(255,255,255,0.04);
+  padding: 0.25rem 0.6rem;
+  border-radius: 999px;
+  font-weight: 600;
+  min-width: 36px;
+  text-align: center;
+}
+
+/* Variante testo più leggibile */
+.product-variant { color: #c7c7c7; font-size: 0.85rem; }
+
+/* Icona step: mostra ✓ solo se completed (gestito in JS con class .completed) */
+.step-icon { font-size: 1rem; }
+
     </style>
 </head>
 <body>
@@ -644,55 +666,71 @@ function parseDeliveryDate(str) {
         }
 
         function createOrderCard(order, index) {
-    const articoli = order.articoli != null ? Number(order.articoli) : 
-                    (order.products ? order.products.reduce((sum, p) => sum + (p.quantity || 1), 0) : 0);
+    // Normalizza stato per confronti (trim / case-insensitive)
+    const statoNorm = (order.stato || '').toString().trim();
+    const steps = ['Confermato', 'In Preparazione', 'In Transito', 'Consegnato'];
+    const currentStepIndex = steps.findIndex(s => s.toLowerCase() === statoNorm.toLowerCase());
+    const stepIndex = currentStepIndex >= 0 ? currentStepIndex : 0;
+    const isDelivered = statoNorm.toLowerCase() === 'consegnato';
+
+    // Calcolo articoli (fallback dai prodotti)
+    const articoli = order.articoli != null ? Number(order.articoli) :
+                     (order.products ? order.products.reduce((sum, p) => sum + (Number(p.quantity) || 1), 0) : 0);
     const plural = articoli === 1 ? 'articolo' : 'articoli';
 
-    // === CALCOLO PROGRESSO REALISTICO ===
+    // Calcolo progress semplificato (puoi mantenere la tua logica)
     let progress = 0;
-    const now = new Date();
-    const orderDate = parseItalianDate(order.data);
-    const deliveryDate = parseDeliveryDate(order.consegna_prevista);
-
-    if (!orderDate) {
-        progress = 10;
-    } else if (order.stato === 'Consegnato' && deliveryDate && now >= deliveryDate) {
-        progress = 100;
-    } else if (order.stato === 'In Transito') {
-        progress = 80;
-    } else if (order.stato === 'In Preparazione') {
-        // Calcolo dinamico tra ordine e consegna prevista
-        if (deliveryDate && orderDate) {
-            const totalDays = (deliveryDate - orderDate) / (1000 * 60 * 60 * 24);
-            const elapsedDays = (now - orderDate) / (1000 * 60 * 60 * 24);
-            progress = Math.min(70, 30 + (elapsedDays / totalDays) * 40);
-        } else {
-            progress = 50;
-        }
-    } else if (order.stato === 'Confermato') {
-        progress = 25;
-    }
-
+    if (isDelivered) progress = 100;
+    else if (statoNorm.toLowerCase() === 'in transito') progress = 80;
+    else if (statoNorm.toLowerCase() === 'in preparazione') progress = 45;
+    else progress = 15;
     progress = Math.round(progress);
 
-    // === DETERMINA STEP ATTIVO E COMPLETATI ===
-    const steps = ['Confermato', 'In Preparazione', 'In Transito', 'Consegnato'];
-    const currentStepIndex = steps.indexOf(order.stato);
-    const isDelivered = order.stato === 'Consegnato';
+    // Title: "Ordine #ID" con numero evidenziato
+    const orderNumberHTML = `${order.id ? `<span class="order-number">#${order.id}</span>` : '<span class="order-number">N/D</span>'}`;
+
+    // Products HTML (mostra color/size se presenti)
+    const productsHTML = (order.products && order.products.length > 0) ? order.products.map(p => {
+        const colorPart = p.color ? `<span class="variant-color" style="background:${p.color};"></span> ${getColorName(p.color)}` : '';
+        const sizePart = p.size ? `Taglia ${p.size}` : '';
+        const variantText = [colorPart, sizePart].filter(Boolean).join(' · ') || 'Taglia unica';
+        return `
+            <div class="product-item">
+                <div class="product-info">
+                    <div class="product-name">${p.name || 'Prodotto'}</div>
+                    <div class="product-variant">${variantText}</div>
+                </div>
+                <div class="product-quantity">× ${p.quantity || 1}</div>
+                <div class="product-price">€ ${formatPrice(p.price)}</div>
+            </div>
+        `;
+    }).join('') : '';
+
+    // Steps HTML: mostra ✓ SOLO se completed
+    const stepsHTML = steps.map((step, i) => {
+        const isCompleted = i < stepIndex || (i === stepIndex && isDelivered);
+        const isActive = i === stepIndex && !isDelivered;
+        const icon = isCompleted ? '✓' : (i === 1 ? 'package' : (i === 2 ? 'truck' : '•'));
+        return `
+            <div class="step ${isCompleted ? 'completed' : ''} ${isActive ? 'active' : ''}">
+                <div class="step-icon">${icon}</div>
+                <div class="step-label">${step}</div>
+            </div>
+        `;
+    }).join('');
 
     return `
-    <div class="order-card" style="animation-delay: ${index * 0.15}s">
+    <div class="order-card" style="animation-delay: ${index * 0.12}s">
         <div class="order-header">
             <div class="order-info">
-                <h3>Ordine ${order.id || 'N/D'}</h3>
+                <h3>Ordine ${orderNumberHTML}</h3>
                 <div class="order-date">${order.data || 'Data non disponibile'}</div>
             </div>
-            <div class="status-badge ${order.stato.toLowerCase().replace(' ', '-')}">
-                ${order.stato}
+            <div class="status-badge ${order.stato ? order.stato.toLowerCase().replace(/\s+/g,'-') : ''}">
+                ${order.stato || 'Stato non disponibile'}
             </div>
         </div>
 
-        <!-- Riepilogo -->
         <div class="order-summary">
             <div class="summary-row">
                 <span class="summary-label">Totale ordine</span>
@@ -708,52 +746,26 @@ function parseDeliveryDate(str) {
             </div>
         </div>
 
-        <!-- Barra di avanzamento REALISTICA -->
         <div class="progress-section">
             <div class="progress-steps">
                 <div class="progress-line" style="width: ${progress}%"></div>
-                ${steps.map((step, i) => {
-                    const isCompleted = i < currentStepIndex || (i === 3 && isDelivered);
-                    const isActive = i === currentStepIndex && !isDelivered;
-                    const icon = i === 0 || i === 3 ? '✓' : (i === 1 ? 'package' : 'truck');
-                    return `
-                    <div class="step ${isCompleted ? 'completed' : ''} ${isActive ? 'active' : ''}">
-                        <div class="step-icon">${isCompleted ? '✓' : icon}</div>
-                        <div class="step-label">${step}</div>
-                    </div>`;
-                }).join('')}
+                ${stepsHTML}
             </div>
         </div>
 
-        <!-- Dettagli prodotto ESPANDIBILI e COMPLETI -->
-        ${order.products && order.products.length > 0 ? `
+        ${ productsHTML ? `
         <div class="order-products-section">
             <details class="product-details">
                 <summary>
                     Visualizza dettagli prodotti (${articoli} ${plural})
                 </summary>
                 <div class="products-list">
-                    ${order.products.map(p => {
-                        const variant = [];
-                        if (p.color) variant.push(`<span class="variant-color" style="background:${p.color}"></span> ${getColorName(p.color)}`);
-                        if (p.size) variant.push(`Taglia ${p.size}`);
-                        const variantText = variant.length > 0 ? variant.join(' · ') : 'Taglia unica';
-                        
-                        return `
-                        <div class="product-item">
-                            <div class="product-info">
-                                <div class="product-name">${p.name || 'Prodotto'}</div>
-                                <div class="product-variant">${variantText}</div>
-                            </div>
-                            <div class="product-quantity">× ${p.quantity || 1}</div>
-                            <div class="product-price">€ ${formatPrice(p.price)}</div>
-                        </div>`;
-                    }).join('')}
+                    ${productsHTML}
                 </div>
             </details>
-        </div>
-        ` : ''}
-    </div>`;
+        </div>` : '' }
+    </div>
+    `;
 }
 
         // *** MODIFICA: Aggiungi retryCount param, default 0 ***
@@ -993,5 +1005,6 @@ async function loadOrders(retryCount = 0) {
     </script>
 </body>
 </html>
+
 
 
