@@ -683,74 +683,81 @@ function parseDeliveryDate(str) {
     return `
     <div class="order-card" style="animation-delay: ${index * 0.15}s">
         <div class="order-header">
-            <div class="order-info">
-                <h3>Ordine ${order.id || 'N/D'}</h3>
-                <div class="order-date">${order.data || 'Data non disponibile'}</div>
-            </div>
-            <div class="status-badge ${order.stato.toLowerCase().replace(' ', '-')}">
-                ${order.stato}
-            </div>
-        </div>
+  <div class="order-info">
+    <h3 style="color: #D4AF37; font-size: 1.8rem; letter-spacing: -0.02em;">
+      Ordine <span style="background: linear-gradient(135deg, #D4AF37, #FBBF24); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">${order.id}</span>
+    </h3>
+    <div class="order-date">${formatItalianDate(order.data) || order.ultimo_aggiornamento || '25 novembre 2025'}</div>
+  </div>
+  <div class="status-badge ${getStatusClass(order.stato)}">
+    ${order.stato}
+  </div>
+</div>
 
         <!-- Riepilogo -->
         <div class="order-summary">
-            <div class="summary-row">
-                <span class="summary-label">Totale ordine</span>
-                <span class="summary-value">€ ${formatPrice(order.totale)}</span>
-            </div>
-            <div class="summary-row">
-                <span class="summary-label">Articoli</span>
-                <span class="summary-value">${articoli} ${plural}</span>
-            </div>
-            <div class="summary-row">
-                <span class="summary-label">Consegna prevista</span>
-                <span class="summary-value">${order.consegna_prevista || 'Da definire'}</span>
-            </div>
-        </div>
+  <div class="summary-row">
+    <span>Totale ordine</span>
+    <strong>€ ${order.totale}</strong>
+  </div>
+  <div class="summary-row">
+    <span>Articoli</span>
+    <strong>${order.articoli} articolo${order.articoli > 1 ? 'i' : ''}</strong>
+  </div>
+  <div class="summary-row">
+    <span>Consegna prevista</span>
+    <strong style="color: #D4AF37;">${order.consegna_prevista}</strong>
+  </div>
+</div>
 
         <!-- Barra di avanzamento REALISTICA -->
         <div class="progress-section">
-            <div class="progress-steps">
-                <div class="progress-line" style="width: ${progress}%"></div>
-                ${steps.map((step, i) => {
-                    const isCompleted = i < currentStepIndex || (i === 3 && isDelivered);
-                    const isActive = i === currentStepIndex && !isDelivered;
-                    const icon = i === 0 || i === 3 ? '✓' : (i === 1 ? 'package' : 'truck');
-                    return `
-                    <div class="step ${isCompleted ? 'completed' : ''} ${isActive ? 'active' : ''}">
-                        <div class="step-icon">${isCompleted ? '✓' : icon}</div>
-                        <div class="step-label">${step}</div>
-                    </div>`;
-                }).join('')}
-            </div>
+  <div class="progress-steps">
+    <div class="progress-line" style="width: ${getProgressWidth(order.stato)}%"></div>
+    ${['Confermato', 'In Preparazione', 'In Transito', 'Consegnato'].map((step, i) => {
+      const isCompleted = isStepCompleted(step, order.stato);
+      const isActive = order.stato === step;
+      const icons = ['✓', 'package', 'truck', '✓'];
+      const icon = icons[i];
+      return `
+      <div class="step ${isCompleted ? 'completed' : ''} ${isActive ? 'active' : ''}">
+        <div class="step-icon">
+          ${isCompleted || (isActive && (i === 0 || i === 3)) ? '✓' : icon}
         </div>
+        <div class="step-label">${step}</div>
+      </div>`;
+    }).join('')}
+  </div>
+</div>
 
         <!-- Dettagli prodotto ESPANDIBILI e COMPLETI -->
         ${order.products && order.products.length > 0 ? `
         <div class="order-products-section">
             <details class="product-details">
-                <summary>
-                    Visualizza dettagli prodotti (${articoli} ${plural})
-                </summary>
-                <div class="products-list">
-                    ${order.products.map(p => {
-                        const variant = [];
-                        if (p.color) variant.push(`<span class="variant-color" style="background:${p.color}"></span> ${getColorName(p.color)}`);
-                        if (p.size) variant.push(`Taglia ${p.size}`);
-                        const variantText = variant.length > 0 ? variant.join(' · ') : 'Taglia unica';
-                        
-                        return `
-                        <div class="product-item">
-                            <div class="product-info">
-                                <div class="product-name">${p.name || 'Prodotto'}</div>
-                                <div class="product-variant">${variantText}</div>
-                            </div>
-                            <div class="product-quantity">× ${p.quantity || 1}</div>
-                            <div class="product-price">€ ${formatPrice(p.price)}</div>
-                        </div>`;
-                    }).join('')}
-                </div>
-            </details>
+  <summary style="color: #D4AF37; font-weight: 600;">
+    Visualizza dettagli prodotti (${order.articoli} articolo${order.articoli > 1 ? 'i' : ''})
+  </summary>
+  <div class="products-list">
+    ${order.products.map(p => {
+      const variant = [];
+      if (p.color) variant.push(`<span style="display:inline-block;width:12px;height:12px;border-radius:50%;background:${p.color === 'Black' ? '#000' : p.color === 'White' ? '#fff' : '#D4AF37'};border:1px solid #444; margin-right:6px;"></span>${p.color}`);
+      if (p.size) variant.push(`Taglia ${p.size}`);
+      const variantText = variant.length > 0 ? variant.join(' · ') : 'Taglia unica';
+
+      return `
+      <div class="product-item" style="display:flex; justify-content:space-between; align-items:center; padding:1rem; background:rgba(9,9,11,0.6); border-radius:1rem; margin-bottom:0.75rem;">
+        <div>
+          <div style="font-weight:600; color:#fafafa;">${p.name}</div>
+          <div style="font-size:0.875rem; color:#a1a1aa; margin-top:4px;">${variantText}</div>
+        </div>
+        <div style="text-align:right;">
+          <div style="font-size:0.875rem; color:#71717a;">× ${p.quantity}</div>
+          <div style="font-weight:600; color:#D4AF37;">€ ${formatPrice(p.price)}</div>
+        </div>
+      </div>`;
+    }).join('')}
+  </div>
+</details>
         </div>
         ` : ''}
     </div>`;
@@ -989,7 +996,33 @@ async function loadOrders(retryCount = 0) {
             document.getElementById('emptyState').style.display = 'block';
         }
 
-        loadOrders();
+        function getStatusClass(stato) {
+  const map = {
+    'Confermato': 'in-preparazione',
+    'In Preparazione': 'in-preparazione',
+    'In Transito': 'in-transito',
+    'Consegnato': 'consegnato'
+  };
+  return map[stato] || 'in-preparazione';
+}
+
+function isStepCompleted(step, current) {
+  const order = ['Confermato', 'In Preparazione', 'In Transito', 'Consegnato'];
+  return order.indexOf(current) > order.indexOf(step);
+}
+
+function getProgressWidth(stato) {
+  const widths = {
+    'Confermato': 25,
+    'In Preparazione': 50,
+    'In Transito': 75,
+    'Consegnato': 100
+  };
+  return widths[stato] || 25;
+}
+        
+        loadOrders();        
     </script>
 </body>
 </html>
+
