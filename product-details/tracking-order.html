@@ -379,6 +379,48 @@
                 justify-content: center;
             }
         }
+        /* Aggiunta stile per il riepilogo articoli */
+        .order-summary {
+            display: flex;
+            flex-direction: column;
+            gap: 0.75rem;
+            margin: 2rem 0;
+            padding: 1.5rem;
+            background: rgba(9, 9, 11, 0.4);
+            border-radius: 1rem;
+            border: 1px solid rgba(39, 39, 42, 0.5);
+        }
+
+        .summary-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 0.975rem;
+        }
+
+        .summary-label {
+            color: #a1a1aa;
+        }
+
+        .summary-value {
+            font-weight: 500;
+            color: #fafafa;
+        }
+
+        .summary-value.free {
+            color: #34d399;
+            font-weight: 600;
+        }
+
+        /* Responsive per mobile */
+        @media (max-width: 640px) {
+            .order-summary {
+                padding: 1.25rem;
+            }
+            .summary-row {
+                font-size: 0.9375rem;
+            }
+        }
     </style>
 </head>
 <body>
@@ -590,68 +632,88 @@
         }
 
         function createOrderCard(order, index) {
-            const stateClass = order.stato.toLowerCase().replace(/\s+/g, '-');
-            const itemCount = order.products ? order.products.length : 1;
-            
-            const formattedDate = formatItalianDate(order.data);
-            
-            let imagesHTML = '';
-            if (order.products && order.products.length > 0) {
-                order.products.slice(0, 4).forEach(product => {
-                    const imgSrc = product.image || `https://images.unsplash.com/photo-1591047139829-d91aecb6caea?w=200&h=250&fit=crop`;
-                    imagesHTML += `
-                        <div class="item-image">
-                            <img src="${imgSrc}" alt="${product.name || 'Prodotto'}">
-                        </div>
-                    `;
-                });
-            } else {
-                imagesHTML = `
-                    <div class="item-image">
-                        <img src="https://images.unsplash.com/photo-1591047139829-d91aecb6caea?w=200&h=250&fit=crop" alt="Prodotto">
-                    </div>
-                `;
-            }
-            
+            const articoli = order.articoli != null ? Number(order.articoli) : (order.products ? order.products.reduce((sum, p) => sum + (p.quantity || 1), 0) : 0);
+            const plural = articoli === 1 ? 'articolo' : 'articoli';
+
+            // Calcolo progresso per la barra
+            const statusMap = {
+                'Confermato': 25,
+                'In Preparazione': 50,
+                'In Transito': 75,
+                'Consegnato': 100
+            };
+            const progress = statusMap[order.stato] || 25;
+
             return `
-                <div class="order-card" style="animation-delay: ${index * 0.1}s;">
-                    <div class="order-header">
-                        <div class="order-info">
-                            <h3>${order.id}</h3>
-                            <div class="order-date">${formattedDate}</div>
-                        </div>
-                        <div class="status-badge ${stateClass}">${order.stato}</div>
+            <div class="order-card" style="animation-delay: ${index * 0.1}s">
+                <div class="order-header">
+                    <div class="order-info">
+                        <h3>Ordine ${order.id || 'N/D'}</h3>
+                        <div class="order-date">${order.data || 'Data non disponibile'}</div>
                     </div>
-
-                    ${createProgressBar(order.data, order.consegna_prevista, order.stato)}
-
-                    <div class="order-details">
-                        <div class="detail-item">
-                            <div class="detail-label">${order.stato === 'Consegnato' ? 'Consegnato il' : 'Consegna Prevista'}</div>
-                            <div class="detail-value">${order.consegna_prevista || 'Da definire'}</div>
-                        </div>
-                        <div class="detail-item">
-                            <div class="detail-label">Articoli</div>
-                            <div class="detail-value">${itemCount} articol${itemCount === 1 ? 'o' : 'i'}</div>
-                        </div>
-                        <div class="detail-item">
-                            <div class="detail-label">Totale</div>
-                            <div class="detail-value">${formatPrice(order.totale)}</div>
-                        </div>
-                    </div>
-
-                    <div class="order-items">
-                        <div class="items-title">Articoli ordinati</div>
-                        <div class="items-list">
-                            ${imagesHTML}
-                        </div>
-                    </div>
-
-                    <div class="order-actions">
-                        ${getActionButtons(order.stato, order.id)}
+                    <div class="status-badge ${order.stato.toLowerCase().replace(' ', '-')}">
+                        ${order.stato || 'Sconosciuto'}
                     </div>
                 </div>
-            `;
+
+                <!-- Riepilogo rapido -->
+                <div class="order-summary">
+                    <div class="summary-row">
+                        <span class="summary-label">Totale ordine</span>
+                        <span class="summary-value">€ ${order.totale || '0,00'}</span>
+                    </div>
+                    <div class="summary-row">
+                        <span class="summary-label">Articoli</span>
+                        <span class="summary-value">${articoli} ${plural}</span>
+                    </div>
+                    <div class="summary-row">
+                        <span class="summary-label">Consegna prevista</span>
+                        <span class="summary-value">${order.consegna_prevista || 'Da definire'}</span>
+                    </div>
+                </div>
+
+                <!-- Barra di avanzamento -->
+                <div class="progress-section">
+                    <div class="progress-steps">
+                        <div class="progress-line" style="width: ${progress}%"></div>
+                        <div class="step ${progress >= 25 ? 'completed' : 'active'}">
+                            <div class="step-icon">✓</div>
+                            <div class="step-label">Confermato</div>
+                        </div>
+                        <div class="step ${progress >= 50 ? (progress >= 75 ? 'completed' : 'active') : ''}">
+                            <div class="step-icon">📦</div>
+                            <div class="step-label">In Preparazione</div>
+                        </div>
+                        <div class="step ${progress >= 75 ? (progress >= 100 ? 'completed' : 'active') : ''}">
+                            <div class="step-icon">🚚</div>
+                            <div class="step-label">In Transito</div>
+                        </div>
+                        <div class="step ${progress >= 100 ? 'completed' : ''}">
+                            <div class="step-icon">✓</div>
+                            <div class="step-label">Consegnato</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Dettagli prodotti (opzionale, se vuoi mostrarli) -->
+                ${order.products && order.products.length > 0 ? `
+                <div style="margin-top: 1.5rem; padding-top: 1.5rem; border-top: 1px solid rgba(39,39,42,0.4);">
+                    <details style="cursor: pointer;">
+                        <summary style="color: #a1a1aa; font-size: 0.9375rem; margin-bottom: 1rem;">
+                            Visualizza dettagli prodotti (${articoli} ${plural})
+                        </summary>
+                        <div style="display: grid; gap: 1rem; margin-top: 1rem;">
+                            ${order.products.map(p => `
+                                <div style="display: flex; justify-content: space-between; align-items: center; padding: 0.75rem; background: rgba(9,9,11,0.3); border-radius: 0.75rem;">
+                                    <span>${p.name} × ${p.quantity || 1}</span>
+                                    <span style="color: #a1a1aa;">€ ${p.price || '0,00'}</span>
+                                </div>
+                            `).join('')}
+                        </div>
+                    </details>
+                </div>
+                ` : ''}
+            </div>`;
         }
 
         // *** MODIFICA: Aggiungi retryCount param, default 0 ***
@@ -891,3 +953,4 @@ async function loadOrders(retryCount = 0) {
     </script>
 </body>
 </html>
+
