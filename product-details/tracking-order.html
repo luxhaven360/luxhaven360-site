@@ -438,28 +438,6 @@
 /* Step attivi/completati */
 .step.completed .step-icon { background: #10b981; border-color: #10b981; color: white; }
 .step.active .step-icon { background: #1f2937; border-color: #34d399; animation: pulse 2s infinite; box-shadow: 0 0 0 0 rgba(52, 211, 153, 0.7); }
-
-        /* Highlight numero ordine con colore lussuoso */
-.order-info h3 { font-size: 1.25rem; font-weight: 400; }
-.order-info h3 .order-number { color: #d4af37; font-weight: 700; margin-left: 0.4rem; }
-
-/* Pill per quantità */
-.product-quantity {
-  color: #fafafa;
-  background: rgba(255,255,255,0.04);
-  padding: 0.25rem 0.6rem;
-  border-radius: 999px;
-  font-weight: 600;
-  min-width: 36px;
-  text-align: center;
-}
-
-/* Variante testo più leggibile */
-.product-variant { color: #c7c7c7; font-size: 0.85rem; }
-
-/* Icona step: mostra ✓ solo se completed (gestito in JS con class .completed) */
-.step-icon { font-size: 1rem; }
-
     </style>
 </head>
 <body>
@@ -666,71 +644,55 @@ function parseDeliveryDate(str) {
         }
 
         function createOrderCard(order, index) {
-    // Normalizza stato per confronti (trim / case-insensitive)
-    const statoNorm = (order.stato || '').toString().trim();
-    const steps = ['Confermato', 'In Preparazione', 'In Transito', 'Consegnato'];
-    const currentStepIndex = steps.findIndex(s => s.toLowerCase() === statoNorm.toLowerCase());
-    const stepIndex = currentStepIndex >= 0 ? currentStepIndex : 0;
-    const isDelivered = statoNorm.toLowerCase() === 'consegnato';
-
-    // Calcolo articoli (fallback dai prodotti)
-    const articoli = order.articoli != null ? Number(order.articoli) :
-                     (order.products ? order.products.reduce((sum, p) => sum + (Number(p.quantity) || 1), 0) : 0);
+    const articoli = order.articoli != null ? Number(order.articoli) : 
+                    (order.products ? order.products.reduce((sum, p) => sum + (p.quantity || 1), 0) : 0);
     const plural = articoli === 1 ? 'articolo' : 'articoli';
 
-    // Calcolo progress semplificato (puoi mantenere la tua logica)
+    // === CALCOLO PROGRESSO REALISTICO ===
     let progress = 0;
-    if (isDelivered) progress = 100;
-    else if (statoNorm.toLowerCase() === 'in transito') progress = 80;
-    else if (statoNorm.toLowerCase() === 'in preparazione') progress = 45;
-    else progress = 15;
+    const now = new Date();
+    const orderDate = parseItalianDate(order.data);
+    const deliveryDate = parseDeliveryDate(order.consegna_prevista);
+
+    if (!orderDate) {
+        progress = 10;
+    } else if (order.stato === 'Consegnato' && deliveryDate && now >= deliveryDate) {
+        progress = 100;
+    } else if (order.stato === 'In Transito') {
+        progress = 80;
+    } else if (order.stato === 'In Preparazione') {
+        // Calcolo dinamico tra ordine e consegna prevista
+        if (deliveryDate && orderDate) {
+            const totalDays = (deliveryDate - orderDate) / (1000 * 60 * 60 * 24);
+            const elapsedDays = (now - orderDate) / (1000 * 60 * 60 * 24);
+            progress = Math.min(70, 30 + (elapsedDays / totalDays) * 40);
+        } else {
+            progress = 50;
+        }
+    } else if (order.stato === 'Confermato') {
+        progress = 25;
+    }
+
     progress = Math.round(progress);
 
-    // Title: "Ordine #ID" con numero evidenziato
-    const orderNumberHTML = `${order.id ? `<span class="order-number">#${order.id}</span>` : '<span class="order-number">N/D</span>'}`;
-
-    // Products HTML (mostra color/size se presenti)
-    const productsHTML = (order.products && order.products.length > 0) ? order.products.map(p => {
-        const colorPart = p.color ? `<span class="variant-color" style="background:${p.color};"></span> ${getColorName(p.color)}` : '';
-        const sizePart = p.size ? `Taglia ${p.size}` : '';
-        const variantText = [colorPart, sizePart].filter(Boolean).join(' · ') || 'Taglia unica';
-        return `
-            <div class="product-item">
-                <div class="product-info">
-                    <div class="product-name">${p.name || 'Prodotto'}</div>
-                    <div class="product-variant">${variantText}</div>
-                </div>
-                <div class="product-quantity">× ${p.quantity || 1}</div>
-                <div class="product-price">€ ${formatPrice(p.price)}</div>
-            </div>
-        `;
-    }).join('') : '';
-
-    // Steps HTML: mostra ✓ SOLO se completed
-    const stepsHTML = steps.map((step, i) => {
-        const isCompleted = i < stepIndex || (i === stepIndex && isDelivered);
-        const isActive = i === stepIndex && !isDelivered;
-        const icon = isCompleted ? '✓' : (i === 1 ? 'package' : (i === 2 ? 'truck' : '•'));
-        return `
-            <div class="step ${isCompleted ? 'completed' : ''} ${isActive ? 'active' : ''}">
-                <div class="step-icon">${icon}</div>
-                <div class="step-label">${step}</div>
-            </div>
-        `;
-    }).join('');
+    // === DETERMINA STEP ATTIVO E COMPLETATI ===
+    const steps = ['Confermato', 'In Preparazione', 'In Transito', 'Consegnato'];
+    const currentStepIndex = steps.indexOf(order.stato);
+    const isDelivered = order.stato === 'Consegnato';
 
     return `
-    <div class="order-card" style="animation-delay: ${index * 0.12}s">
+    <div class="order-card" style="animation-delay: ${index * 0.15}s">
         <div class="order-header">
             <div class="order-info">
-                <h3>Ordine ${orderNumberHTML}</h3>
+                <h3>Ordine ${order.id || 'N/D'}</h3>
                 <div class="order-date">${order.data || 'Data non disponibile'}</div>
             </div>
-            <div class="status-badge ${order.stato ? order.stato.toLowerCase().replace(/\s+/g,'-') : ''}">
-                ${order.stato || 'Stato non disponibile'}
+            <div class="status-badge ${order.stato.toLowerCase().replace(' ', '-')}">
+                ${order.stato}
             </div>
         </div>
 
+        <!-- Riepilogo -->
         <div class="order-summary">
             <div class="summary-row">
                 <span class="summary-label">Totale ordine</span>
@@ -746,26 +708,52 @@ function parseDeliveryDate(str) {
             </div>
         </div>
 
+        <!-- Barra di avanzamento REALISTICA -->
         <div class="progress-section">
             <div class="progress-steps">
                 <div class="progress-line" style="width: ${progress}%"></div>
-                ${stepsHTML}
+                ${steps.map((step, i) => {
+                    const isCompleted = i < currentStepIndex || (i === 3 && isDelivered);
+                    const isActive = i === currentStepIndex && !isDelivered;
+                    const icon = i === 0 || i === 3 ? '✓' : (i === 1 ? 'package' : 'truck');
+                    return `
+                    <div class="step ${isCompleted ? 'completed' : ''} ${isActive ? 'active' : ''}">
+                        <div class="step-icon">${isCompleted ? '✓' : icon}</div>
+                        <div class="step-label">${step}</div>
+                    </div>`;
+                }).join('')}
             </div>
         </div>
 
-        ${ productsHTML ? `
+        <!-- Dettagli prodotto ESPANDIBILI e COMPLETI -->
+        ${order.products && order.products.length > 0 ? `
         <div class="order-products-section">
             <details class="product-details">
                 <summary>
                     Visualizza dettagli prodotti (${articoli} ${plural})
                 </summary>
                 <div class="products-list">
-                    ${productsHTML}
+                    ${order.products.map(p => {
+                        const variant = [];
+                        if (p.color) variant.push(`<span class="variant-color" style="background:${p.color}"></span> ${getColorName(p.color)}`);
+                        if (p.size) variant.push(`Taglia ${p.size}`);
+                        const variantText = variant.length > 0 ? variant.join(' · ') : 'Taglia unica';
+                        
+                        return `
+                        <div class="product-item">
+                            <div class="product-info">
+                                <div class="product-name">${p.name || 'Prodotto'}</div>
+                                <div class="product-variant">${variantText}</div>
+                            </div>
+                            <div class="product-quantity">× ${p.quantity || 1}</div>
+                            <div class="product-price">€ ${formatPrice(p.price)}</div>
+                        </div>`;
+                    }).join('')}
                 </div>
             </details>
-        </div>` : '' }
-    </div>
-    `;
+        </div>
+        ` : ''}
+    </div>`;
 }
 
         // *** MODIFICA: Aggiungi retryCount param, default 0 ***
@@ -1003,8 +991,215 @@ async function loadOrders(retryCount = 0) {
 
         loadOrders();
     </script>
+
+<!-- PATCH: DOM tweaks to fix stepper icons, delivered logic, product variant display, and order title styling -->
+<style>
+.order-id-number { color: #d4af37 !important; font-weight:700; margin-left:6px; }
+.product-quantity { font-weight: 600; min-width: 64px; text-align: right; display:inline-block; }
+.color-swatch { border: 1px solid rgba(255,255,255,0.12); display:inline-block; width:12px; height:12px; border-radius:50%; vertical-align:middle; margin-right:6px; }
+.product-variant { color: #bdbdbd; font-size: 0.9rem; margin-top:4px; }
+.product-item { display:flex; justify-content:space-between; align-items:center; padding:12px 16px; border-radius:8px; background:transparent; margin-bottom:12px; }
+.step .step-icon { font-size:18px; }
+</style>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  try {
+    // 1) Header: replace title to "Ordine #ID" and color the ID
+    (function() {
+      // find elements that contain "Ordine" text and an id like LXH-000204
+      const candidates = Array.from(document.querySelectorAll('h1,h2,h3,h4,div,span'));
+      for (const el of candidates) {
+        if (!el.textContent) continue;
+        const m = el.textContent.match(/(Ordine\s*)?(#?)([A-Z0-9\-]{5,})/i);
+        if (m && /LX|LH|LHS|LXH|LH-/.test(m[3])) {
+          const orderId = m[3];
+          // set as "Ordine <span class='order-id-number'>#ID</span>"
+          el.innerHTML = 'Ordine <span class="order-id-number">#' + orderId + '</span>';
+          break;
+        }
+      }
+    })();
+
+    // 2) Stepper icons: replace textual tokens with emoji/icons and ensure "Consegnato" check only if status/done
+    (function() {
+      // Replace occurrences of words 'package', 'truck' and tick marks
+      const textNodes = Array.from(document.querySelectorAll('*')).filter(n => n.children.length === 0);
+      textNodes.forEach(node => {
+        if (!node.textContent) return;
+        let changed = false;
+        if (/\bpackage\b/i.test(node.textContent)) {
+          node.innerHTML = node.innerHTML.replace(/\bpackage\b/ig, '📦');
+          changed = true;
+        }
+        if (/\btruck\b/i.test(node.textContent)) {
+          node.innerHTML = node.innerHTML.replace(/\btruck\b/ig, '🚚');
+          changed = true;
+        }
+        // normalize standalone check marks (if displayed but not delivered)
+        if (/Consegnato/i.test(node.textContent)) {
+          // keep text but ensure icon only when status indicates delivered explicitly
+          // we'll search nearby for status indicator; if not 'Consegnato', remove checkboxes
+          // skip here; handled below in dedicated stepper processing
+        }
+        if (changed) {
+          // no-op
+        }
+      });
+
+      // Handle step elements if present by common class names
+      const steps = document.querySelectorAll('.step, .order-step, .tracking-step');
+      steps.forEach((step, i) => {
+        // set emoji icons based on index if no explicit icon
+        const iconEl = step.querySelector('.step-icon') || step.querySelector('.icon') || null;
+        if (iconEl) {
+          const txt = (iconEl.textContent||'').toLowerCase();
+          if (txt.indexOf('package') !== -1 || i===1) iconEl.textContent = '📦';
+          else if (txt.indexOf('truck') !== -1 || i===2) iconEl.textContent = '🚚';
+          else iconEl.textContent = iconEl.textContent.trim() === '✓' ? '✓' : iconEl.textContent;
+        } else {
+          // if no icon element, create one
+          const newIcon = document.createElement('div');
+          newIcon.className = 'step-icon';
+          newIcon.textContent = (i===0||i===3) ? '✓' : (i===1 ? '📦' : '🚚');
+          step.insertBefore(newIcon, step.firstChild);
+        }
+
+        // Determine completion: prefer explicit label 'Consegnato' or presence of 'completed'/'done' class
+        const label = (step.textContent||'').toLowerCase();
+        const isDelivered = /(consegnato|delivered)/i.test(label) || step.classList.contains('completed') || step.classList.contains('done') || step.dataset.progress === '100';
+        if (isDelivered) {
+          step.classList.add('completed');
+          const sIcon = step.querySelector('.step-icon');
+          if (sIcon) sIcon.textContent = '✓';
+        } else {
+          // ensure tick is not shown unless truly delivered
+          const sIcon = step.querySelector('.step-icon');
+          if (sIcon && sIcon.textContent.trim() === '✓') {
+            // only keep check if class indicates completion
+            if (!step.classList.contains('completed') && !/(confermato|consegnato|delivered)/i.test(label)) {
+              // replace with appropriate icon based on index
+              sIcon.textContent = (i===0 ? '✓' : (i===1 ? '📦' : '🚚'));
+            }
+          }
+        }
+      });
+    })();
+
+    // 3) Products: reformat each product block to show color, size and nicer quantity
+    (function() {
+      // heuristics: find product list containers
+      const productContainers = Array.from(document.querySelectorAll('.product-item, .order-product, .product-row, .cart-item'));
+      if (productContainers.length === 0) {
+        // try to find product boxes by price and name grouping
+        const possible = Array.from(document.querySelectorAll('div')).filter(d => {
+          return /€/.test(d.textContent) && /x\s*\d+/.test(d.textContent);
+        }).slice(0, 40);
+        possible.forEach(p => {
+          if (!p.classList.contains('product-item')) p.classList.add('product-item');
+        });
+      }
+
+      const items = document.querySelectorAll('.product-item');
+      items.forEach(item => {
+        // try to extract name, qty, price and variant text
+        let nameEl = item.querySelector('.product-name') || item.querySelector('h4') || item.querySelector('.title') || item.querySelector('strong');
+        if (!nameEl) {
+          // try first bold text
+          const bold = item.querySelector('b');
+          if (bold) nameEl = bold;
+        }
+        const name = nameEl ? nameEl.textContent.trim() : '';
+
+        // quantity heuristics
+        let qtyEl = item.querySelector('.product-quantity') || Array.from(item.querySelectorAll('span,div')).find(n => /\bx\s*\d+\b/.test(n.textContent));
+        let qty = 1;
+        if (qtyEl) {
+          const m = qtyEl.textContent.match(/x\s*([0-9]+)/i);
+          if (m) qty = Number(m[1]);
+        } else {
+          // search for 'Qty' text
+          const q2 = Array.from(item.querySelectorAll('div,span')).find(n => /\bqty[:]? \d+/i.test(n.textContent));
+          if (q2) {
+            const m = q2.textContent.match(/qty[:]? *([0-9]+)/i);
+            if (m) qty = Number(m[1]);
+          }
+        }
+
+        // price heuristics
+        let priceEl = item.querySelector('.product-price') || Array.from(item.querySelectorAll('div,span')).find(n => /€\s*[0-9]/.test(n.textContent));
+        const price = priceEl ? priceEl.textContent.trim() : '';
+
+        // color/size heuristics
+        let color = '';
+        let size = '';
+        const variantEl = item.querySelector('.product-variant') || Array.from(item.querySelectorAll('div,span')).find(n => /(colou?r|colore|taglia|size)/i.test(n.textContent));
+        if (variantEl) {
+          const txt = variantEl.textContent;
+          const cm = txt.match(/(#?[A-F0-9a-f]{3,6}|[a-zA-Z]+)\b/);
+          if (cm) color = cm[0];
+          const sm = txt.match(/\b(taglia|size)\s*[:]? *([^\s,;]+)/i);
+          if (sm) size = sm[2];
+        }
+
+        // build variant text
+        const variantParts = [];
+        if (color) {
+          variantParts.push('<span class="color-swatch" style="background:' + color + ';"></span>' + color);
+        }
+        if (size) variantParts.push('Taglia ' + size);
+        const variantText = variantParts.length ? variantParts.join(' · ') : (item.querySelector('.product-variant') ? item.querySelector('.product-variant').textContent.trim() : 'Taglia unica');
+
+        // rewrite product area
+        // ensure sub-elements exist
+        if (!nameEl) {
+          const nEl = document.createElement('div');
+          nEl.className = 'product-name';
+          nEl.textContent = name || 'Prodotto';
+          item.insertBefore(nEl, item.firstChild);
+          nameEl = nEl;
+        } else {
+          nameEl.classList.add('product-name');
+        }
+
+        // create variant display
+        let variantNode = item.querySelector('.product-variant');
+        if (!variantNode) {
+          variantNode = document.createElement('div');
+          variantNode.className = 'product-variant';
+          nameEl.insertAdjacentElement('afterend', variantNode);
+        }
+        variantNode.innerHTML = variantText;
+
+        // create / update qty node
+        let qNode = item.querySelector('.product-quantity');
+        if (!qNode) {
+          qNode = document.createElement('div');
+          qNode.className = 'product-quantity';
+          item.appendChild(qNode);
+        }
+        qNode.textContent = 'Qty: ' + (qty || 1);
+
+        // normalize price node
+        if (priceEl) {
+          priceEl.classList.add('product-price');
+        } else {
+          // create placeholder if absent
+          const pNode = item.querySelector('.product-price') || document.createElement('div');
+          pNode.className = 'product-price';
+          pNode.textContent = price || '';
+          item.appendChild(pNode);
+        }
+
+        item.classList.add('product-item');
+      });
+    })();
+
+  } catch (err) {
+    console.error('PATCH script error', err);
+  }
+});
+</script>
+
 </body>
 </html>
-
-
-
