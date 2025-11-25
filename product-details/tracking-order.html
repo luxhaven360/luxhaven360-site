@@ -590,89 +590,120 @@
         }
 
         function createOrderCard(order, index) {
-            const stateClass = order.stato.toLowerCase().replace(/\s+/g, '-');
-            const itemCount = order.products ? order.products.length : 1;
-            
-            const formattedDate = formatItalianDate(order.data);
-            
-            let imagesHTML = '';
-            if (order.products && order.products.length > 0) {
-                order.products.slice(0, 4).forEach(product => {
-                    const imgSrc = product.image || `https://images.unsplash.com/photo-1591047139829-d91aecb6caea?w=200&h=250&fit=crop`;
-                    imagesHTML += `
-                        <div class="item-image">
-                            <img src="${imgSrc}" alt="${product.name || 'Prodotto'}">
-                        </div>
-                    `;
-                });
-            } else {
-                imagesHTML = `
-                    <div class="item-image">
-                        <img src="https://images.unsplash.com/photo-1591047139829-d91aecb6caea?w=200&h=250&fit=crop" alt="Prodotto">
+    // Mappa stato → classe CSS per il badge
+    const statoClasse = {
+        'Confermato': 'confermato',
+        'In Preparazione': 'in-preparazione',
+        'In Transito': 'in-transito',
+        'Consegnato': 'consegnato'
+    }[order.stato] || 'confermato';
+
+    // Calcola la larghezza della linea di progresso in base allo stato
+    const progressMap = {
+        'Confermato': 25,
+        'In Preparazione': 50,
+        'In Transito': 75,
+        'Consegnato': 100
+    };
+    const progressWidth = progressMap[order.stato] || 0;
+
+    // Classe per ogni step (completed / active / pending)
+    function getStepClass(targetState) {
+        const orderStates = ['Confermato', 'In Preparazione', 'In Transito', 'Consegnato'];
+        const currentIndex = orderStates.indexOf(order.stato);
+        const targetIndex = orderStates.indexOf(targetState);
+        if (targetIndex < currentIndex) return 'completed';
+        if (targetIndex === currentIndex) return 'active';
+        return 'pending';
+    }
+
+    return `
+        <div class="order-card" data-id="${order.id}" style="animation-delay: ${index * 0.15}s;">
+            <div class="order-header">
+                <div class="order-info">
+                    <h3>Ordine #${order.id}</h3>
+                    <div class="order-date">
+                        ${order.data ? `del ${order.data}` : 'Data non disponibile'}
+                        ${order.ultimo_aggiornamento ? `<span class="last-update">· Aggiornato: ${order.ultimo_aggiornamento}</span>` : ''}
                     </div>
-                `;
-            }
-            
-            return `
-    <div class="order-card" data-id="${order.id}" style="animation-delay: ${index * 0.1}s;">
-      <div class="order-header">
-        <div class="order-info">
-          <h3>Ordine #${order.id}</h3>
-          <div class="order-date">${order.data || 'Data non disponibile'}</div>
-        </div>
-        <div class="status-badge status-badge-${order.stato.toLowerCase().replace(' ', '-')}">${order.stato}</div>
-      </div>
-
-      <div class="progress-section">
-        <div class="progress-steps">
-          <div class="progress-line" style="width: ${getProgressWidth(order.stato)}%;"></div>
-          <div class="step ${getStepClass('Confermato', order.stato)}">
-            <div class="step-icon">✓</div>
-            <div class="step-label">Confermato</div>
-          </div>
-          <div class="step ${getStepClass('In Preparazione', order.stato)}">
-            <div class="step-icon">📦</div>
-            <div class="step-label">Preparazione</div>
-          </div>
-          <div class="step ${getStepClass('In Transito', order.stato)}">
-            <div class="step-icon">🚚</div>
-            <div class="step-label">In Transito</div>
-          </div>
-          <div class="step ${getStepClass('Consegnato', order.stato)}">
-            <div class="step-icon">🏠</div>
-            <div class="step-label">Consegnato</div>
-          </div>
-        </div>
-      </div>
-
-      <div class="order-details">
-        <div class="detail-item">
-          <div class="detail-label">Totale</div>
-          <div class="detail-value">€ ${order.totale}</div>
-        </div>
-        <div class="detail-item">
-          <div class="detail-label">Articoli</div>
-          <div class="detail-value">${order.articoli || 0}</div>  <!-- MODIFICA: Usa order.articoli dal sheet invece di order.products.length -->
-        </div>
-        <div class="detail-item">
-          <div class="detail-label">Consegna Prevista</div>
-          <div class="detail-value">${order.consegna_prevista}</div>
-        </div>
-      </div>
-
-      <div class="order-items">
-        <div class="items-title">Articoli nell'Ordine</div>
-        <div class="items-list">
-          ${order.products ? order.products.map(prod => `
-            <div class="item-image">
-              <img src="${prod.image || 'https://via.placeholder.com/80'}" alt="${prod.name}">
-              <div class="item-qty">${prod.quantity || 1}</div>
+                </div>
+                <div class="status-badge status-badge-${statoClasse}">${order.stato}</div>
             </div>
-          `).join('') : '<div class="no-items">Dettagli non disponibili</div>'}
+
+            <!-- Barra di avanzamento -->
+            <div class="progress-section">
+                <div class="progress-steps">
+                    <div class="progress-line" style="width: ${progressWidth}%;"></div>
+                    <div class="step ${getStepClass('Confermato')}">
+                        <div class="step-icon">✓</div>
+                        <div class="step-label">Confermato</div>
+                    </div>
+                    <div class="step ${getStepClass('In Preparazione')}">
+                        <div class="step-icon">Packaging</div>
+                        <div class="step-label">Preparazione</div>
+                    </div>
+                    <div class="step ${getStepClass('In Transito')}">
+                        <div class="step-icon">Truck</div>
+                        <div class="step-label">In Transito</div>
+                    </div>
+                    <div class="step ${getStepClass('Consegnato')}">
+                        <div class="step-icon">House</div>
+                        <div class="step-label">Consegnato</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Dettagli rapidi -->
+            <div class="order-details">
+                <div class="detail-item">
+                    <div class="detail-label">Totale Ordine</div>
+                    <div class="detail-value">€ ${order.totale || '0,00'}</div>
+                </div>
+                <div class="detail-item">
+                    <div class="detail-label">Articoli</div>
+                    <div class="detail-value">
+                        <strong>${order.articoli || 0}</strong>
+                    </div>
+                </div>
+                <div class="detail-item">
+                    <div class="detail-label">Consegna Prevista</div>
+                    <div class="detail-value">
+                        ${order.consegna_prevista || 'Da definire'}
+                    </div>
+                </div>
+            </div>
+
+            <!-- Tracking info (se presente) -->
+            ${order.tracking && order.corriere ? `
+                <div class="tracking-info">
+                    <div class="tracking-label">Tracking</div>
+                    <div class="tracking-value">
+                        <strong>${order.tracking}</strong> · ${order.corriere}
+                    </div>
+                </div>
+            ` : ''}
+
+            <!-- Lista articoli -->
+            <div class="order-items">
+                <div class="items-title">Articoli nell'ordine (${order.articoli || 0})</div>
+                <div class="items-list">
+                    ${order.products && order.products.length > 0 ? order.products.map(prod => `
+                        <div class="item-preview">
+                            <div class="item-image">
+                                <img src="${prod.image || 'https://via.placeholder.com/80/1a1a1a/333333?text=Prodotto'}" 
+                                     alt="${prod.name}" loading="lazy">
+                                ${prod.quantity > 1 ? `<div class="item-qty-badge">${prod.quantity}</div>` : ''}
+                            </div>
+                            <div class="item-info">
+                                <div class="item-name">${prod.name || 'Prodotto'}</div>
+                                <div class="item-price">€ ${prod.price || '0,00'}</div>
+                            </div>
+                        </div>
+                    `).join('') : '<div class="no-items">Dettagli articoli non disponibili</div>'}
+                </div>
+            </div>
         </div>
-      </div>
-    </div>
-  `;
+    `;
 }
 
         // *** MODIFICA: Aggiungi retryCount param, default 0 ***
@@ -912,4 +943,5 @@ async function loadOrders(retryCount = 0) {
     </script>
 </body>
 </html>
+
 
