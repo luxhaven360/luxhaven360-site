@@ -680,22 +680,38 @@ function parseDeliveryDate(str) {
         </summary>
         <div class="products-list">
             ${order.products.map(p => {
-                const variants = [];
-                if (p.color) {
-                    const colorName = getColorName(p.color) || p.color.replace('#', '').toUpperCase();
-                    variants.push(`Colore: <strong>${colorName}</strong>`);
+                // Estrae varianti dal nome (es. "Premium T-Shirt - Color: Black, Size: M")
+                let displayName = p.name || 'Prodotto';
+                let color = null;
+                let size = null;
+
+                const variantMatch = p.name.match(/-\s*(.+)/);
+                if (variantMatch) {
+                    const variants = variantMatch[1].split(',').map(v => v.trim());
+                    variants.forEach(v => {
+                        if (v.toLowerCase().startsWith('color:')) {
+                            color = v.replace(/color:/i, '').trim();
+                        }
+                        if (v.toLowerCase().startsWith('size:')) {
+                            size = v.replace(/size:/i, '').trim();
+                        }
+                    });
+                    // Rimuove le varianti dal nome visualizzato
+                    displayName = p.name.split(' - ')[0].trim();
                 }
-                if (p.size) {
-                    variants.push(`Taglia: <strong>${p.size}</strong>`);
-                }
-                const variantHTML = variants.length > 0 
-                    ? variants.join(' · ')
-                    : '<em style="color: #71717a; font-size: 0.85rem;">Nessuna variante</em>';
+
+                const variantParts = [];
+                if (color) variantParts.push(`Colore: <strong>${color}</strong>`);
+                if (size) variantParts.push(`Taglia: <strong>${size}</strong>`);
+
+                const variantHTML = variantParts.length > 0
+                    ? variantParts.join(' · ')
+                    : '<em style="color: #71717a; font-size: 0.85rem;">Nessuna variante specificata</em>';
 
                 return `
                 <div class="product-item">
                     <div class="product-info">
-                        <div class="product-name">${p.name || 'Prodotto'}</div>
+                        <div class="product-name">${displayName}</div>
                         <div class="product-variant" style="margin-top: 6px; font-size: 0.9rem; color: #e4e4e7;">
                             ${variantHTML}
                         </div>
@@ -940,5 +956,6 @@ async function loadOrders(retryCount = 0) {
     </script>
 </body>
 </html>
+
 
 
