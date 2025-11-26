@@ -680,44 +680,54 @@ function parseDeliveryDate(str) {
         </summary>
         <div class="products-list">
             ${order.products.map(p => {
-                // Estrae varianti dal nome (es. "Premium T-Shirt - Color: Black, Size: M")
-                let displayName = p.name || 'Prodotto';
+                let cleanName = p.name || 'Prodotto';
+                let imageUrl = p.image || '';  // Usa l'immagine se c'è
                 let color = null;
                 let size = null;
 
-                const variantMatch = p.name.match(/-\s*(.+)/);
-                if (variantMatch) {
-                    const variants = variantMatch[1].split(',').map(v => v.trim());
-                    variants.forEach(v => {
-                        if (v.toLowerCase().startsWith('color:')) {
-                            color = v.replace(/color:/i, '').trim();
-                        }
-                        if (v.toLowerCase().startsWith('size:')) {
-                            size = v.replace(/size:/i, '').trim();
-                        }
-                    });
-                    // Rimuove le varianti dal nome visualizzato
-                    displayName = p.name.split(' - ')[0].trim();
+                // Estrae varianti dal nome (formato: "Nome Prodotto - Bianco - Taglia XS" oppure "Nome - Color: Black, Size: M")
+                const dashParts = p.name.split(' - ');
+                if (dashParts.length >= 3) {
+                    cleanName = dashParts[0].trim();
+                    const variantStr = dashParts.slice(1).join(' - ');
+                    // Prova prima il formato "Bianco - Taglia XS"
+                    const simpleMatch = variantStr.match(/(.+?)\s*-\s*Taglia\s+(.+)/i);
+                    if (simpleMatch) {
+                        color = simpleMatch[1].trim();
+                        size = simpleMatch[2].trim();
+                    } else {
+                        // Formato alternativo "Color: Black, Size: M"
+                        const parts = variantStr.split(',').map(s => s.trim());
+                        parts.forEach(part => {
+                            if (part.toLowerCase().startsWith('color:')) color = part.replace(/color:/i, '').trim();
+                            if (part.toLowerCase().startsWith('size:')) size = part.replace(/size:/i, '').trim();
+                            if (part.toLowerCase().includes('taglia')) size = part.replace(/taglia/i, '').trim();
+                        });
+                    }
                 }
 
                 const variantParts = [];
                 if (color) variantParts.push(`Colore: <strong>${color}</strong>`);
                 if (size) variantParts.push(`Taglia: <strong>${size}</strong>`);
-
-                const variantHTML = variantParts.length > 0
+                const variantHTML = variantParts.length > 0 
                     ? variantParts.join(' · ')
-                    : '<em style="color: #71717a; font-size: 0.85rem;">Nessuna variante specificata</em>';
+                    : '<em style="color:#71717a; font-size:0.85rem;">Variante non specificata</em>';
 
                 return `
-                <div class="product-item">
-                    <div class="product-info">
-                        <div class="product-name">${displayName}</div>
-                        <div class="product-variant" style="margin-top: 6px; font-size: 0.9rem; color: #e4e4e7;">
+                <div class="product-item" style="display:flex; align-items:center; gap:16px; padding:16px; background:rgba(9,9,11,0.4); border-radius:12px;">
+                    ${imageUrl ? `
+                    <div style="width:64px; height:80px; border-radius:8px; overflow:hidden; flex-shrink:0; background:#18181b;">
+                        <img src="${imageUrl}" alt="${cleanName}" style="width:100%; height:100%; object-fit:cover;">
+                    </div>
+                    ` : ''}
+                    <div style="flex:1;">
+                        <div class="product-name" style="font-weight:500; margin-bottom:4px;">${cleanName}</div>
+                        <div class="product-variant" style="font-size:0.9rem; color:#e4e4e7;">
                             ${variantHTML}
                         </div>
                     </div>
-                    <div class="product-quantity" style="font-weight: bold; color: #34d399;">× ${p.quantity || 1}</div>
-                    <div class="product-price">€ ${formatPrice(p.price)}</div>
+                    <div style="font-weight:bold; color:#34d399; margin:0 12px;">× ${p.quantity || 1}</div>
+                    <div style="font-weight:600; white-space:nowrap;">€ ${formatPrice(p.price)}</div>
                 </div>`;
             }).join('')}
         </div>
@@ -956,6 +966,7 @@ async function loadOrders(retryCount = 0) {
     </script>
 </body>
 </html>
+
 
 
 
