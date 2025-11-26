@@ -635,16 +635,34 @@ function parseDeliveryDate(str) {
     const articoli = order.articoli != null ? Number(order.articoli) :
                     (order.products ? order.products.reduce((sum, p) => sum + (p.quantity || 1), 0) : 0);
     const plural = articoli === 1 ? 'articolo' : 'articoli';
-
-    // Calcolo progresso (lasciato invariato)
-    let progress = 25;
-    if (order.stato === 'In Preparazione') progress = 50;
-    if (order.stato === 'In Transito') progress = 80;
-    if (order.stato === 'Consegnato') progress = 100;
-
+    // === CALCOLO PROGRESSO REALISTICO ===
+    let progress = 0;
+    const now = new Date();
+    const orderDate = parseItalianDate(order.data);
+    const deliveryDate = parseDeliveryDate(order.consegna_prevista);
+    if (!orderDate) {
+        progress = 10;
+    } else if (order.stato === 'Consegnato' && deliveryDate && now >= deliveryDate) {
+        progress = 100;
+    } else if (order.stato === 'In Transito') {
+        progress = 80;
+    } else if (order.stato === 'In Preparazione') {
+        // Calcolo dinamico tra ordine e consegna prevista
+        if (deliveryDate && orderDate) {
+            const totalDays = (deliveryDate - orderDate) / (1000 * 60 * 60 * 24);
+            const elapsedDays = (now - orderDate) / (1000 * 60 * 60 * 24);
+            progress = Math.min(70, 30 + (elapsedDays / totalDays) * 40);
+        } else {
+            progress = 50;
+        }
+    } else if (order.stato === 'Confermato') {
+        progress = 25;
+    }
+    progress = Math.round(progress);
+    // === DETERMINA STEP ATTIVO E COMPLETATI ===
     const steps = ['Confermato', 'In Preparazione', 'In Transito', 'Consegnato'];
     const currentStepIndex = steps.indexOf(order.stato);
-
+    const isDelivered = order.stato === 'Consegnato';
     return `
     <div class="order-card" style="animation-delay: ${index * 0.15}s">
         <div class="order-header">
@@ -654,91 +672,102 @@ function parseDeliveryDate(str) {
                    <span class="order-title-number">#${order.id}</span>
                 </div>
                 <div class="order-date">${order.data || 'Data non disponibile'}</div>
-            </div ..
-
-            <div class="status-badge ${order.stato.toLowerCase().replace(/\s+/g, '-')}">
+            </div>
+            <div class="status-badge ${order.stato.toLowerCase().replace(' ', '-')}">
                 ${order.stato}
             </div>
         </div>
-
+        <!-- Riepilogo -->
         <div class="order-summary">
-            <div class="summary-row"><span class="summary-label">Totale ordine</span><span class="summary-value">€ ${formatPrice(order.totale)}</span></div>
-            <div class="summary-row"><span class="summary-label">Articoli</span><span class="summary-value">${articoli} ${plural}</span></div>
-            <div class="summary-row"><span class="summary-label">Consegna prevista</span><span class="summary-value">${order.consegna_prevista || 'Da definire'}</span></div>
+            <div class="summary-row">
+                <span class="summary-label">Totale ordine</span>
+                <span class="summary-value">€ ${formatPrice(order.totale)}</span>
+            </div>
+            <div class="summary-row">
+                <span class="summary-label">Articoli</span>
+                <span class="summary-value">${articoli} ${plural}</span>
+            </div>
+            <div class="summary-row">
+                <span class="summary-label">Consegna prevista</span>
+                <span class="summary-value">${order.consegna_prevista || 'Da definire'}</span>
+            </div>
         </div>
-
+        <!-- Barra di avanzamento REALISTICA -->
         <div class="progress-section">
             <div class="progress-steps">
                 <div class="progress-line" style="width: ${progress}%"></div>
                 ${steps.map((step, i) => {
-                    const completed = i < currentStepIndex || (i === 3 && order.stato === 'Consegnato');
-                    const active = i === currentStepIndex && order.stato !== 'Consegnato';
-                    const icon = completed ? '✓' : ['✓','Box','Truck','Home'][i];
-                    return `<div class="step ${completed?'completed':''} ${active?'active':''}">
-                        <div class="step-icon">${completed ? '✓' : ['Package','Package','Truck','Home'][i]}</div>
+                    const isCompleted = i < currentStepIndex || (i === 3 && isDelivered);
+                    const isActive = i === currentStepIndex && !isDelivered;
+                    const icon = ['✓', '📦', '🚚', '🏠'][i];
+                    return `
+                    <div class="step ${isCompleted ? 'completed' : ''} ${isActive ? 'active' : ''}">
+                        <div class="step-icon">${isCompleted ? '✓' : icon}</div>
                         <div class="step-label">${step}</div>
                     </div>`;
                 }).join('')}
             </div>
         </div>
-
-        <!-- === DETTAGLI PRODOTTI CORRETTI === -->
+        <!-- Dettagli prodotto ESPANDIBILI e COMPLETI -->
         ${order.products && order.products.length > 0 ? `
-        <div class="order-products-section">
-            <details class="product-details" ${articoli <= 2 ? 'open' : ''}>
-                <summary>Visualizza prodotti (${articoli} ${plural})</summary>
-                <div class="products-list">
-                    ${order.products.map(p => {
-                        let displayName = "Prodotto";
-                        let color = "";
-                        let size = "";
-                        let image = p.image || "";
+<div class="order-products-section">
+    <details class="product-details">
+        <summary>
+            Visualizza dettagli prodotti (${articoli} ${plural})
+        </summary>
+        <div class="products-list">
+            ${order.products.map(p => {
+                let cleanName = p.name || 'Prodotto';
+                let imageUrl = p.image || '';
+                let color = null;
+                let size = null;
 
-                        // Parsing robusto del formato reale: "Premium T-Shirt - Nero - Taglia M"
-                        if (p.name) {
-                            const parts = p.name.split('-').map(s => s.trim());
-                            if (parts.length >= 3) {
-                                displayName = parts[0];
-                                // Secondo elemento = colore (sempre, nel tuo sistema)
-                                color = parts[1];
-                                // Tutto il resto = taglia
-                                size = parts.slice(2).join(' ').replace(/^Taglia\s+/i, '');
-                            } else if (parts.length === 2) {
-                                displayName = parts[0];
-                                color = parts[1];
-                            } else {
-                                displayName = p.name.trim();
-                            }
-                        }
+                // FORMATO REALE DEL TUO SISTEMA: "Premium T-Shirt - Bianco - Taglia XS"
+                const parts = p.name.split(' - ');
+                if (parts.length >= 3) {
+                    cleanName = parts[0].trim();           // "Premium T-Shirt"
+                    const possibleColor = parts[1].trim(); // "Bianco"
+                    const possibleSizePart = parts.slice(2).join(' - ').trim(); // "Taglia XS"
 
-                        const variantText = [];
-                        if (color) variantText.push(`Colore: <strong>${color}</strong>`);
-                        if (size) variantText.push(`Taglia: <strong>${size}</strong>`);
-                        const variantHTML = variantText.length > 0 
-                            ? variantText.join(' · ') 
-                            : '<em style="color:#71717a; font-size:0.85rem;">Variante non specificata</em>';
+                    // Se la parte finale contiene "Taglia" → è la taglia
+                    if (possibleSizePart.toLowerCase().includes('taglia')) {
+                        size = possibleSizePart.replace(/taglia/i, '').trim();
+                        color = possibleColor;
+                    } else {
+                        // Fallback: prova a interpretare la seconda parte come colore
+                        color = possibleColor;
+                        size = possibleSizePart;
+                    }
+                }
 
-                        const qty = p.quantity || 1;
-                        const linePrice = (parseFloat(p.price) || 0) * qty;
+                const variantParts = [];
+                if (color) variantParts.push(`Colore: <strong>${color}</strong>`);
+                if (size) variantParts.push(`Taglia: <strong>${size}</strong>`);
 
-                        return `
-                        <div class="product-item">
-                            ${image ? `
-                            <div style="width:64px;height:80px;border-radius:8px;overflow:hidden;flex-shrink:0;background:#18181b;">
-                                <img src="${image}" alt="${displayName}" style="width:100%;height:100%;object-fit:cover;">
-                            </div>` : ''}
-                            <div class="item-details">
-                                <div class="item-name">${displayName}</div>
-                                <div class="item-variant">${variantHTML}</div>
-                            </div>
-                            <div class="product-quantity">× ${qty}</div>
-                            <div class="item-price">€ ${linePrice.toLocaleString('it-IT', {minimumFractionDigits: 2})}</div>
-                        </div>`;
-                    }).join('')}
-                </div>
-            </details>
-        </div>` : ''}
+                const variantHTML = variantParts.length > 0
+                    ? variantParts.join(' · ')
+                    : '<em style="color:#71717a; font-size:0.85rem;">Variante non specificata</em>';
 
+                return `
+                <div class="product-item" style="display:flex; align-items:center; gap:16px; padding:16px; background:rgba(9,9,11,0.4); border-radius:12px; margin-bottom:8px;">
+                    ${imageUrl ? `
+                    <div style="width:64px; height:80px; border-radius:8px; overflow:hidden; flex-shrink:0; background:#18181b;">
+                        <img src="${imageUrl}" alt="${cleanName}" style="width:100%; height:100%; object-fit:cover;">
+                    </div>` : ''}
+                    <div style="flex:1;">
+                        <div class="product-name" style="font-weight:500;">${cleanName}</div>
+                        <div class="product-variant" style="margin-top:4px; font-size:0.9rem; color:#e4e4e7;">
+                            ${variantHTML}
+                        </div>
+                    </div>
+                    <div style="font-weight:bold; color:#34d399; margin:0 12px;">× ${p.quantity || 1}</div>
+                    <div style="font-weight:600;">€ ${formatPrice(p.price)}</div>
+                </div>`;
+            }).join('')}
+        </div>
+    </details>
+</div>
+` : ''}
     </div>`;
 }
         // *** MODIFICA: Aggiungi retryCount param, default 0 ***
@@ -971,5 +1000,3 @@ async function loadOrders(retryCount = 0) {
     </script>
 </body>
 </html>
-
-
