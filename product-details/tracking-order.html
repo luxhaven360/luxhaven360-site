@@ -717,30 +717,53 @@ function parseDeliveryDate(str) {
         </summary>
         <div class="products-list">
             ${order.products.map(p => {
-    const variantParts = [];
-    if (p.color) variantParts.push(`Colore: <strong>${p.color}</strong>`);
-    if (p.size) variantParts.push(`Taglia: <strong>${p.size}</strong>`);
-    
-    const variantHTML = variantParts.length > 0
-        ? variantParts.join(' · ')
-        : '<em style="color:#71717a; font-size:0.85rem;">Variante standard</em>';
+                let cleanName = p.name || 'Prodotto';
+                let imageUrl = p.image || '';
+                let color = null;
+                let size = null;
 
-    return `
-    <div class="product-item" style="display:flex; align-items:center; gap:16px; padding:16px; background:rgba(9,9,11,0.4); border-radius:12px; margin-bottom:8px;">
-        ${p.image ? `
-        <div style="width:64px; height:80px; border-radius:8px; overflow:hidden; flex-shrink:0; background:#18181b;">
-            <img src="${p.image}" alt="${p.name}" style="width:100%; height:100%; object-fit:cover;">
-        </div>` : ''}
-        <div style="flex:1;">
-            <div class="product-name" style="font-weight:500;">${p.name}</div>
-            <div class="product-variant" style="margin-top:4px; font-size:0.9rem; color:#e4e4e7;">
-                ${variantHTML}
-            </div>
-        </div>
-        <div style="font-weight:bold; color:#34d399; margin:0 12px;">× ${p.quantity}</div>
-        <div style="font-weight:600;">€ ${p.price.replace('.', ',')}</div>
-    </div>`;
-}).join('')}
+                // FORMATO REALE DEL TUO SISTEMA: "Premium T-Shirt - Bianco - Taglia XS"
+                const parts = p.name.split(' - ');
+                if (parts.length >= 3) {
+                    cleanName = parts[0].trim();           // "Premium T-Shirt"
+                    const possibleColor = parts[1].trim(); // "Bianco"
+                    const possibleSizePart = parts.slice(2).join(' - ').trim(); // "Taglia XS"
+
+                    // Se la parte finale contiene "Taglia" → è la taglia
+                    if (possibleSizePart.toLowerCase().includes('taglia')) {
+                        size = possibleSizePart.replace(/taglia/i, '').trim();
+                        color = possibleColor;
+                    } else {
+                        // Fallback: prova a interpretare la seconda parte come colore
+                        color = possibleColor;
+                        size = possibleSizePart;
+                    }
+                }
+
+                const variantParts = [];
+                if (color) variantParts.push(`Colore: <strong>${color}</strong>`);
+                if (size) variantParts.push(`Taglia: <strong>${size}</strong>`);
+
+                const variantHTML = variantParts.length > 0
+                    ? variantParts.join(' · ')
+                    : '<em style="color:#71717a; font-size:0.85rem;">Variante non specificata</em>';
+
+                return `
+                <div class="product-item" style="display:flex; align-items:center; gap:16px; padding:16px; background:rgba(9,9,11,0.4); border-radius:12px; margin-bottom:8px;">
+                    ${imageUrl ? `
+                    <div style="width:64px; height:80px; border-radius:8px; overflow:hidden; flex-shrink:0; background:#18181b;">
+                        <img src="${imageUrl}" alt="${cleanName}" style="width:100%; height:100%; object-fit:cover;">
+                    </div>` : ''}
+                    <div style="flex:1;">
+                        <div class="product-name" style="font-weight:500;">${cleanName}</div>
+                        <div class="product-variant" style="margin-top:4px; font-size:0.9rem; color:#e4e4e7;">
+                            ${variantHTML}
+                        </div>
+                    </div>
+                    <div style="font-weight:bold; color:#34d399; margin:0 12px;">× ${p.quantity || 1}</div>
+                    <div style="font-weight:600;">€ ${formatPrice(p.price)}</div>
+                </div>`;
+            }).join('')}
         </div>
     </details>
 </div>
@@ -977,4 +1000,3 @@ async function loadOrders(retryCount = 0) {
     </script>
 </body>
 </html>
-
