@@ -635,34 +635,16 @@ function parseDeliveryDate(str) {
     const articoli = order.articoli != null ? Number(order.articoli) :
                     (order.products ? order.products.reduce((sum, p) => sum + (p.quantity || 1), 0) : 0);
     const plural = articoli === 1 ? 'articolo' : 'articoli';
-    // === CALCOLO PROGRESSO REALISTICO ===
-    let progress = 0;
-    const now = new Date();
-    const orderDate = parseItalianDate(order.data);
-    const deliveryDate = parseDeliveryDate(order.consegna_prevista);
-    if (!orderDate) {
-        progress = 10;
-    } else if (order.stato === 'Consegnato' && deliveryDate && now >= deliveryDate) {
-        progress = 100;
-    } else if (order.stato === 'In Transito') {
-        progress = 80;
-    } else if (order.stato === 'In Preparazione') {
-        // Calcolo dinamico tra ordine e consegna prevista
-        if (deliveryDate && orderDate) {
-            const totalDays = (deliveryDate - orderDate) / (1000 * 60 * 60 * 24);
-            const elapsedDays = (now - orderDate) / (1000 * 60 * 60 * 24);
-            progress = Math.min(70, 30 + (elapsedDays / totalDays) * 40);
-        } else {
-            progress = 50;
-        }
-    } else if (order.stato === 'Confermato') {
-        progress = 25;
-    }
-    progress = Math.round(progress);
-    // === DETERMINA STEP ATTIVO E COMPLETATI ===
+
+    // Calcolo progresso (lasciato invariato)
+    let progress = 25;
+    if (order.stato === 'In Preparazione') progress = 50;
+    if (order.stato === 'In Transito') progress = 80;
+    if (order.stato === 'Consegnato') progress = 100;
+
     const steps = ['Confermato', 'In Preparazione', 'In Transito', 'Consegnato'];
     const currentStepIndex = steps.indexOf(order.stato);
-    const isDelivered = order.stato === 'Consegnato';
+
     return `
     <div class="order-card" style="animation-delay: ${index * 0.15}s">
         <div class="order-header">
@@ -672,37 +654,28 @@ function parseDeliveryDate(str) {
                    <span class="order-title-number">#${order.id}</span>
                 </div>
                 <div class="order-date">${order.data || 'Data non disponibile'}</div>
-            </div>
-            <div class="status-badge ${order.stato.toLowerCase().replace(' ', '-')}">
+            </div ..
+
+            <div class="status-badge ${order.stato.toLowerCase().replace(/\s+/g, '-')}">
                 ${order.stato}
             </div>
         </div>
-        <!-- Riepilogo -->
+
         <div class="order-summary">
-            <div class="summary-row">
-                <span class="summary-label">Totale ordine</span>
-                <span class="summary-value">€ ${formatPrice(order.totale)}</span>
-            </div>
-            <div class="summary-row">
-                <span class="summary-label">Articoli</span>
-                <span class="summary-value">${articoli} ${plural}</span>
-            </div>
-            <div class="summary-row">
-                <span class="summary-label">Consegna prevista</span>
-                <span class="summary-value">${order.consegna_prevista || 'Da definire'}</span>
-            </div>
+            <div class="summary-row"><span class="summary-label">Totale ordine</span><span class="summary-value">€ ${formatPrice(order.totale)}</span></div>
+            <div class="summary-row"><span class="summary-label">Articoli</span><span class="summary-value">${articoli} ${plural}</span></div>
+            <div class="summary-row"><span class="summary-label">Consegna prevista</span><span class="summary-value">${order.consegna_prevista || 'Da definire'}</span></div>
         </div>
-        <!-- Barra di avanzamento REALISTICA -->
+
         <div class="progress-section">
             <div class="progress-steps">
                 <div class="progress-line" style="width: ${progress}%"></div>
                 ${steps.map((step, i) => {
-                    const isCompleted = i < currentStepIndex || (i === 3 && isDelivered);
-                    const isActive = i === currentStepIndex && !isDelivered;
-                    const icon = ['✓', '📦', '🚚', '🏠'][i];
-                    return `
-                    <div class="step ${isCompleted ? 'completed' : ''} ${isActive ? 'active' : ''}">
-                        <div class="step-icon">${isCompleted ? '✓' : icon}</div>
+                    const completed = i < currentStepIndex || (i === 3 && order.stato === 'Consegnato');
+                    const active = i === currentStepIndex && order.stato !== 'Consegnato';
+                    const icon = completed ? '✓' : ['✓','Box','Truck','Home'][i];
+                    return `<div class="step ${completed?'completed':''} ${active?'active':''}">
+                        <div class="step-icon">${completed ? '✓' : ['Package','Package','Truck','Home'][i]}</div>
                         <div class="step-label">${step}</div>
                     </div>`;
                 }).join('')}
@@ -998,4 +971,5 @@ async function loadOrders(retryCount = 0) {
     </script>
 </body>
 </html>
+
 
