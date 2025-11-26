@@ -717,33 +717,42 @@ function parseDeliveryDate(str) {
         </summary>
         <div class="products-list">
             ${order.products.map(p => {
-                // DEBUG: vediamo cosa arriva
-                console.log('🔍 Prodotto ricevuto:', JSON.stringify(p, null, 2));
-                
                 let cleanName = p.name || 'Prodotto';
                 let imageUrl = p.image || '';
-                let color = p.color || null;
-                let size = p.size || null;
+                let color = p.color || '';
+                let size = p.size || '';
 
                 // FALLBACK: Se color/size sono vuoti, prova a parsare dal nome
                 if ((!color || !size) && cleanName.includes(' - ')) {
-                    const parts = cleanName.split(' - ').map(x => x.trim());
-                    
-                    if (parts.length >= 3) {
-                        cleanName = parts[0]; // "Premium T-Shirt"
-                        
-                        // Ultimo elemento: se contiene "Taglia" è la taglia
-                        const lastPart = parts[parts.length - 1];
-                        if (lastPart.toLowerCase().includes('taglia')) {
-                            size = lastPart.replace(/taglia/gi, '').trim();
-                            color = parts[parts.length - 2]; // Penultimo = colore
-                        } else {
-                            // Altrimenti tutto dopo il nome è variante
-                            color = parts.slice(1).join(' - ');
+                    // Formato: "Premium T-Shirt - Nero / M"
+                    if (cleanName.includes(' / ')) {
+                        const parti = cleanName.split(' - ');
+                        if (parti.length >= 2) {
+                            cleanName = parti[0].trim();
+                            const variantePart = parti.slice(1).join(' - ');
+                            
+                            if (variantePart.includes(' / ')) {
+                                const [col, siz] = variantePart.split(' / ').map(x => x.trim());
+                                color = col || color;
+                                size = siz || size;
+                            } else {
+                                color = variantePart.trim() || color;
+                            }
                         }
-                    } else if (parts.length === 2) {
-                        cleanName = parts[0];
-                        color = parts[1];
+                    } else {
+                        // Formato: "Premium T-Shirt - Nero - Taglia M"
+                        const parti = cleanName.split(' - ').map(x => x.trim());
+                        if (parti.length >= 3) {
+                            cleanName = parti[0];
+                            const lastPart = parti[parti.length - 1];
+                            if (lastPart.toLowerCase().includes('taglia')) {
+                                size = lastPart.replace(/taglia/gi, '').trim();
+                                color = parti[parti.length - 2];
+                            }
+                        } else if (parti.length === 2) {
+                            cleanName = parti[0];
+                            color = parti[1];
+                        }
                     }
                 }
 
@@ -1026,5 +1035,6 @@ async function loadOrders(retryCount = 0) {
     </script>
 </body>
 </html>
+
 
 
