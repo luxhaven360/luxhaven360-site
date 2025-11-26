@@ -717,11 +717,35 @@ function parseDeliveryDate(str) {
         </summary>
         <div class="products-list">
             ${order.products.map(p => {
-                // Usa direttamente i campi color e size dall'oggetto prodotto
+                // DEBUG: vediamo cosa arriva
+                console.log('🔍 Prodotto ricevuto:', JSON.stringify(p, null, 2));
+                
                 let cleanName = p.name || 'Prodotto';
                 let imageUrl = p.image || '';
                 let color = p.color || null;
                 let size = p.size || null;
+
+                // FALLBACK: Se color/size sono vuoti, prova a parsare dal nome
+                if ((!color || !size) && cleanName.includes(' - ')) {
+                    const parts = cleanName.split(' - ').map(x => x.trim());
+                    
+                    if (parts.length >= 3) {
+                        cleanName = parts[0]; // "Premium T-Shirt"
+                        
+                        // Ultimo elemento: se contiene "Taglia" è la taglia
+                        const lastPart = parts[parts.length - 1];
+                        if (lastPart.toLowerCase().includes('taglia')) {
+                            size = lastPart.replace(/taglia/gi, '').trim();
+                            color = parts[parts.length - 2]; // Penultimo = colore
+                        } else {
+                            // Altrimenti tutto dopo il nome è variante
+                            color = parts.slice(1).join(' - ');
+                        }
+                    } else if (parts.length === 2) {
+                        cleanName = parts[0];
+                        color = parts[1];
+                    }
+                }
 
                 // Converti codici colore hex in nomi leggibili
                 const colorMap = {
@@ -743,8 +767,8 @@ function parseDeliveryDate(str) {
 
                 // Costruisci la stringa delle varianti
                 const variantParts = [];
-                if (color) variantParts.push(`<strong>${color}</strong>`);
-                if (size) variantParts.push(`Taglia <strong>${size}</strong>`);
+                if (color && color.trim() !== '') variantParts.push(`<strong>${color}</strong>`);
+                if (size && size.trim() !== '') variantParts.push(`Taglia <strong>${size}</strong>`);
 
                 const variantHTML = variantParts.length > 0
                     ? variantParts.join(' · ')
@@ -1002,4 +1026,5 @@ async function loadOrders(retryCount = 0) {
     </script>
 </body>
 </html>
+
 
