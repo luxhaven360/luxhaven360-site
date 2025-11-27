@@ -465,6 +465,26 @@
     </div>
     <script>
         const WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbyN-wdZBN0gm3x3maZAHnUq5K-QdFL-KKy2sROqMFY4GxUA-ERxBGyyLh4cno60DV2m/exec';
+        const CATEGORY_MAP = {
+            'M': 'Abbigliamento',
+            'B': 'Immobili',
+            'S': 'Supercar',
+            'E': 'Esperienze'
+        };
+
+        // Funzione helper per estrarre la categoria dall'ID ordine
+function getCategoryFromOrderId(orderId) {
+    if (!orderId) return 'Prodotto';
+    
+    // Estrae la lettera della categoria da ID come "LH-M00001", "LXH-000001", "LHS-000001"
+    const match = orderId.match(/^LH-([MBSE])/);
+    if (match && match[1]) {
+        return CATEGORY_MAP[match[1]] || 'Prodotto';
+    }
+    
+    // Per ordini cart (LXH o LHS), prova a recuperare dal localStorage o usa default
+    return 'Prodotto';
+}   
         const STATE_STEPS = {
             'Confermato': 0,
             'In Preparazione': 1,
@@ -635,11 +655,16 @@ function parseDeliveryDate(str) {
     const articoli = order.articoli != null ? Number(order.articoli) :
                     (order.products ? order.products.reduce((sum, p) => sum + (p.quantity || 1), 0) : 0);
     const plural = articoli === 1 ? 'articolo' : 'articoli';
+    
+    // Determina la categoria dell'ordine
+    const orderCategory = getCategoryFromOrderId(order.id);
+    
     // === CALCOLO PROGRESSO REALISTICO ===
     let progress = 0;
     const now = new Date();
     const orderDate = parseItalianDate(order.data);
     const deliveryDate = parseDeliveryDate(order.consegna_prevista);
+    
     if (!orderDate) {
         progress = 10;
     } else if (order.stato === 'Consegnato' && deliveryDate && now >= deliveryDate) {
@@ -647,7 +672,6 @@ function parseDeliveryDate(str) {
     } else if (order.stato === 'In Transito') {
         progress = 80;
     } else if (order.stato === 'In Preparazione') {
-        // Calcolo dinamico tra ordine e consegna prevista
         if (deliveryDate && orderDate) {
             const totalDays = (deliveryDate - orderDate) / (1000 * 60 * 60 * 24);
             const elapsedDays = (now - orderDate) / (1000 * 60 * 60 * 24);
@@ -659,10 +683,11 @@ function parseDeliveryDate(str) {
         progress = 25;
     }
     progress = Math.round(progress);
-    // === DETERMINA STEP ATTIVO E COMPLETATI ===
+    
     const steps = ['Confermato', 'In Preparazione', 'In Transito', 'Consegnato'];
     const currentStepIndex = steps.indexOf(order.stato);
     const isDelivered = order.stato === 'Consegnato';
+    
     return `
     <div class="order-card" style="animation-delay: ${index * 0.15}s">
         <div class="order-header">
@@ -677,8 +702,13 @@ function parseDeliveryDate(str) {
                 ${order.stato}
             </div>
         </div>
+        
         <!-- Riepilogo -->
         <div class="order-summary">
+            <div class="summary-row">
+                <span class="summary-label">Categoria</span>
+                <span class="summary-value">${orderCategory}</span>
+            </div>
             <div class="summary-row">
                 <span class="summary-label">Totale ordine</span>
                 <span class="summary-value">€ ${formatPrice(order.totale)}</span>
@@ -692,7 +722,8 @@ function parseDeliveryDate(str) {
                 <span class="summary-value">${order.consegna_prevista || 'Da definire'}</span>
             </div>
         </div>
-        <!-- Barra di avanzamento REALISTICA -->
+        
+        <!-- Barra di avanzamento -->
         <div class="progress-section">
             <div class="progress-steps">
                 <div class="progress-line" style="width: ${progress}%"></div>
@@ -708,7 +739,8 @@ function parseDeliveryDate(str) {
                 }).join('')}
             </div>
         </div>
-        <!-- Dettagli prodotto ESPANDIBILI e COMPLETI -->
+        
+        <!-- Dettagli prodotto - VERSIONE SENZA VARIANTI -->
         ${order.products && order.products.length > 0 ? `
 <div class="order-products-section">
     <details class="product-details">
@@ -719,69 +751,12 @@ function parseDeliveryDate(str) {
             ${order.products.map(p => {
                 let cleanName = p.name || 'Prodotto';
                 let imageUrl = p.image || '';
-                let color = p.color || '';
-                let size = p.size || '';
 
-                // FALLBACK: Se color/size sono vuoti, prova a parsare dal nome
-                if ((!color || !size) && cleanName.includes(' - ')) {
-                    // Formato: "Premium T-Shirt - Nero / M"
-                    if (cleanName.includes(' / ')) {
-                        const parti = cleanName.split(' - ');
-                        if (parti.length >= 2) {
-                            cleanName = parti[0].trim();
-                            const variantePart = parti.slice(1).join(' - ');
-                            
-                            if (variantePart.includes(' / ')) {
-                                const [col, siz] = variantePart.split(' / ').map(x => x.trim());
-                                color = col || color;
-                                size = siz || size;
-                            } else {
-                                color = variantePart.trim() || color;
-                            }
-                        }
-                    } else {
-                        // Formato: "Premium T-Shirt - Nero - Taglia M"
-                        const parti = cleanName.split(' - ').map(x => x.trim());
-                        if (parti.length >= 3) {
-                            cleanName = parti[0];
-                            const lastPart = parti[parti.length - 1];
-                            if (lastPart.toLowerCase().includes('taglia')) {
-                                size = lastPart.replace(/taglia/gi, '').trim();
-                                color = parti[parti.length - 2];
-                            }
-                        } else if (parti.length === 2) {
-                            cleanName = parti[0];
-                            color = parti[1];
-                        }
-                    }
+                // Rimuovi eventuali varianti dal nome del prodotto
+                if (cleanName.includes(' - ')) {
+                    // Prende solo la prima parte prima del primo " - "
+                    cleanName = cleanName.split(' - ')[0].trim();
                 }
-
-                // Converti codici colore hex in nomi leggibili
-                const colorMap = {
-                    '#000000': 'Nero',
-                    '#FFFFFF': 'Bianco',
-                    '#FF0000': 'Rosso',
-                    '#0000FF': 'Blu',
-                    '#008000': 'Verde',
-                    '#808080': 'Grigio',
-                    '#FFFF00': 'Giallo',
-                    '#FFC0CB': 'Rosa',
-                    '#800080': 'Viola',
-                    '#FFA500': 'Arancione'
-                };
-
-                if (color && color.startsWith('#')) {
-                    color = colorMap[color.toUpperCase()] || color;
-                }
-
-                // Costruisci la stringa delle varianti
-                const variantParts = [];
-                if (color && color.trim() !== '') variantParts.push(`<strong>${color}</strong>`);
-                if (size && size.trim() !== '') variantParts.push(`Taglia <strong>${size}</strong>`);
-
-                const variantHTML = variantParts.length > 0
-                    ? variantParts.join(' · ')
-                    : '<em style="color:#71717a; font-size:0.85rem;">Taglia Unica</em>';
 
                 return `
                 <div class="product-item" style="display:flex; align-items:center; gap:16px; padding:16px; background:rgba(9,9,11,0.4); border-radius:12px; margin-bottom:8px;">
@@ -790,9 +765,9 @@ function parseDeliveryDate(str) {
                         <img src="${imageUrl}" alt="${cleanName}" style="width:100%; height:100%; object-fit:cover;">
                     </div>` : ''}
                     <div style="flex:1;">
-                        <div class="product-name" style="font-weight:500;">${cleanName}</div>
-                        <div class="product-variant" style="margin-top:4px; font-size:0.9rem; color:#e4e4e7;">
-                            ${variantHTML}
+                        <div class="product-name" style="font-weight:500; margin-bottom:6px;">${cleanName}</div>
+                        <div class="product-category" style="font-size:0.9rem; color:#10b981; font-weight:500;">
+                            📂 ${orderCategory}
                         </div>
                     </div>
                     <div style="font-weight:bold; color:#34d399; margin:0 12px;">× ${p.quantity || 1}</div>
@@ -1035,6 +1010,7 @@ async function loadOrders(retryCount = 0) {
     </script>
 </body>
 </html>
+
 
 
 
