@@ -596,6 +596,11 @@ function calcolaProgressoRealistico(dataOrdine, dataConsegna, statoCorrente) {
     const dataFine = parseAnyDateFormat(dataConsegna);
     const stepCorrente = STATE_STEPS[statoCorrente] || 0;
     
+    // FIX 1: Se "Consegnato", forza sempre 100% (linea completa visibile)
+    if (statoCorrente === 'Consegnato') {
+        return 100;
+    }
+    
     // Fallback se date invalide
     if (!dataInizio || !dataFine) {
         return (stepCorrente / 3) * 100;
@@ -612,21 +617,16 @@ function calcolaProgressoRealistico(dataOrdine, dataConsegna, statoCorrente) {
     // Progresso temporale grezzo (0-100%)
     let progressoGrezzo = (trascorsoMs / durataMs) * 100;
     
-    // Milestone basate sugli stati
+    // Milestone basate sugli stati (più graduali)
     const milestone = {
         0: 0,    // Confermato: 0%
-        1: 25,   // In Preparazione: 25%
-        2: 65,   // In Transito: 65%
+        1: 20,   // In Preparazione: 20%
+        2: 60,   // In Transito: 60%
         3: 100   // Consegnato: 100%
     };
     
     const milestoneMin = milestone[stepCorrente];
     const milestoneMax = milestone[Math.min(stepCorrente + 1, 3)];
-    
-    // Se "Consegnato" e data superata -> forza 100%
-    if (statoCorrente === 'Consegnato' && ora >= dataFine) {
-        return 100;
-    }
     
     // Vincola progresso tra milestone corrente e successiva
     if (progressoGrezzo < milestoneMin) {
@@ -987,3 +987,4 @@ loadOrders();
     </script>
 </body>
 </html>
+
