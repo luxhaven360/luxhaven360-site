@@ -152,62 +152,63 @@
         }
 
        // --- FIX TRACKING ICON: VISIBILE SIA SU DESKTOP CHE MOBILE ---
-    function updateTrackingIcon() {
-        const trackingIcon = document.getElementById('trackingIcon');
-        if (!trackingIcon) return;
+       function updateTrackingIcon() {
+    const trackingIcon = document.getElementById('trackingIcon');
+    if (!trackingIcon) return;
 
-        cleanupOldOrders();
-        const hasLocal = checkLocalStorageForActiveOrders();
+    cleanupOldOrders();
+    const hasLocal = checkLocalStorageForActiveOrders();
 
-        // Check locale immediato
-        if (hasLocal) {
-            // RIMOSSO IL BLOCCO "isDesktop": Ora mostra l'icona sempre
-            trackingIcon.style.display = 'inline-flex'; 
-        }
-
-        // Chiamata server per conferma
-        fetchActiveOrdersFromAPI(trackingIcon);
+    // SEMPRE mostra l'icona se c'è almeno un ordine attivo (locale o da API)
+    if (hasLocal) {
+        trackingIcon.style.display = 'flex';  // flex invece di inline-flex → funziona meglio nel menu mobile
+        trackingIcon.style.visibility = 'visible';
+        trackingIcon.style.opacity = '1';
+        console.log('Icona tracking attivata (locale)');
+        return; // Non serve aspettare l'API se già sappiamo che c'è un ordine
     }
 
-    function fetchActiveOrdersFromAPI(icon) {
-        const callbackName = 'handleActiveOrdersCount_' + Date.now();
-        const script = document.createElement('script');
-        // Aggiunta parametro cache-buster 't' per evitare cache browser
-        script.src = `${WEB_APP_URL}?get_active_count=1&callback=${callbackName}&t=${Date.now()}`;
-        
-        const timeout = setTimeout(() => { cleanupScript(); }, 8000);
+    // Chiamata API come fallback/sincronizzazione
+    fetchActiveOrdersFromAPI(trackingIcon);
+}
 
-        window[callbackName] = function(response) {
-            clearTimeout(timeout);
-            
-            if (response && typeof response.count === 'number') {
-                if (response.count > 0) {
-                    // RIMOSSO IL BLOCCO "isDesktop": Se count > 0, mostra sempre
-                    icon.style.display = 'inline-flex';
-                    console.log('📦 Tracking Icon: Attivata da API (Ordini: ' + response.count + ')');
-                } else {
-                    // Se l'API dice 0, nascondi e pulisci
-                    icon.style.display = 'none';
-                    clearAllLocalOrderData();
-                }
-            }
+function fetchActiveOrdersFromAPI(icon) {
+    const callbackName = 'handleActiveOrdersCount_' + Date.now();
+    const script = document.createElement('script');
+    script.src = `${WEB_APP_URL}?get_active_count=1&callback=${callbackName}&t=${Date.now()}`;
 
-            cleanupScript();
-        };
+    const timeout = setTimeout(() => { cleanupScript(); }, 8000);
 
-        script.onerror = () => {
-            clearTimeout(timeout);
-            cleanupScript();
-            // In caso di errore rete, ci fidiamo dello stato locale (se era visibile, resta visibile)
-        };
+    window[callbackName] = function(response) {
+        clearTimeout(timeout);
 
-        function cleanupScript() {
-            try { if (script.parentNode) document.body.removeChild(script); } catch (e) {}
-            try { delete window[callbackName]; } catch (e) {}
+        if (response && response.count > 0) {
+            icon.style.display = 'flex';
+            icon.style.visibility = 'visible';
+            icon.style.opacity = '1';
+            console.log('Icona tracking attivata da API (' + response.count + ' ordini)');
+        } else {
+            icon.style.display = 'none';
+            clearAllLocalOrderData();
         }
 
-        document.body.appendChild(script);
+        cleanupScript();
+    };
+
+    script.onerror = () => {
+        clearTimeout(timeout);
+        cleanupScript();
+    };
+
+    function cleanupScript() {
+        try { if (script.parentNode) document.body.removeChild(script); }
+        catch (e) {}
+        try { delete window[callbackName]; }
+        catch (e) {}
     }
+
+    document.body.appendChild(script);
+}
 
         function clearAllLocalOrderData() {
             localStorage.removeItem('lh360_pending_order');
@@ -395,6 +396,7 @@
     </script>
 </body>
 </html>
+
 
 
 
