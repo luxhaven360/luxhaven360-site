@@ -465,225 +465,209 @@
     </div>
     <script>
         const WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbyN-wdZBN0gm3x3maZAHnUq5K-QdFL-KKy2sROqMFY4GxUA-ERxBGyyLh4cno60DV2m/exec';
-        const CATEGORY_MAP = {
-            'M': 'Abbigliamento',
-            'B': 'Immobili',
-            'S': 'Supercar',
-            'E': 'Esperienze'
-        };
+const CATEGORY_MAP = {
+    'M': 'Abbigliamento',
+    'B': 'Immobili',
+    'S': 'Supercar',
+    'E': 'Esperienze'
+};
 
-        // Funzione helper per estrarre la categoria dall'ID ordine
-function getCategoryFromOrderId(orderId) {
-    if (!orderId) return 'Prodotto';
+// Mappa mesi in italiano (per parsing e formattazione)
+const MESI_IT = {
+    'gennaio': 0, 'febbraio': 1, 'marzo': 2, 'aprile': 3,
+    'maggio': 4, 'giugno': 5, 'luglio': 6, 'agosto': 7,
+    'settembre': 8, 'ottobre': 9, 'novembre': 10, 'dicembre': 11
+};
+
+const MESI_NOMI = [
+    'gennaio', 'febbraio', 'marzo', 'aprile', 'maggio', 'giugno',
+    'luglio', 'agosto', 'settembre', 'ottobre', 'novembre', 'dicembre'
+];
+
+// Mappa mesi inglesi -> italiani (per conversione da API)
+const MESI_EN_TO_IT = {
+    'january': 'gennaio', 'february': 'febbraio', 'march': 'marzo',
+    'april': 'aprile', 'may': 'maggio', 'june': 'giugno',
+    'july': 'luglio', 'august': 'agosto', 'september': 'settembre',
+    'october': 'ottobre', 'november': 'novembre', 'december': 'dicembre'
+};
+
+const STATE_STEPS = {
+    'Confermato': 0,
+    'In Preparazione': 1,
+    'In Transito': 2,
+    'Consegnato': 3
+};
+
+const STEP_LABELS = ['Confermato', 'In Preparazione', 'In Transito', 'Consegnato'];
+const STEP_ICONS = ['✓', '📦', '🚚', '🏠'];
+
+let ordersRendered = false;
+
+// ==================================================================
+// FUNZIONI DI FORMATTAZIONE DATE
+// ==================================================================
+
+/**
+ * Converte una data in formato "dd MMMM yyyy" italiano
+ * @param {Date|string} input - Data da formattare
+ * @returns {string} Data formattata (es. "27 novembre 2025")
+ */
+function formatDataItaliana(input) {
+    let date;
     
-    // Estrae la lettera della categoria da ID come "LH-M00001", "LXH-000001", "LHS-000001"
-    const match = orderId.match(/^LH-([MBSE])/);
-    if (match && match[1]) {
-        return CATEGORY_MAP[match[1]] || 'Prodotto';
+    if (input instanceof Date) {
+        date = input;
+    } else if (typeof input === 'string') {
+        date = parseAnyDateFormat(input);
+    } else {
+        return 'Data non disponibile';
     }
     
-    // Per ordini cart (LXH o LHS), prova a recuperare dal localStorage o usa default
-    return 'Prodotto';
-}   
-        const STATE_STEPS = {
-            'Confermato': 0,
-            'In Preparazione': 1,
-            'In Transito': 2,
-            'Consegnato': 3
-        };
-        const STEP_ICONS_ACTIVE = ['📦', '📦', '🚚', '🏠'];
-        const STEP_LABELS = ['Confermato', 'Preparato', 'In Viaggio', 'Consegnato'];
-        // *** FIX: Flag per prevenire rendering duplicato ***
-        let ordersRendered = false;
-        function calculateTimeBasedProgress(orderDate, deliveryDate, currentState) {
-            const now = new Date();
-            const start = parseItalianDate(orderDate);
-            const end = parseItalianDate(deliveryDate);
-            const currentStep = STATE_STEPS[currentState] || 0;
-           
-            if (!start || !end) {
-                return (currentStep / 3) * 100;
-            }
-           
-            const totalDuration = end - start;
-            const elapsed = now - start;
-           
-            if (totalDuration <= 0) {
-                return (currentStep / 3) * 100;
-            }
-           
-            let rawProgress = (elapsed / totalDuration) * 100;
-           
-            const milestones = {
-                0: 0,
-                1: 10,
-                2: 30,
-                3: 100
-            };
-           
-            const currentMilestone = milestones[currentStep];
-            const nextMilestone = milestones[Math.min(currentStep + 1, 3)];
-           
-            if (rawProgress < currentMilestone) {
-                rawProgress = currentMilestone;
-            }
-           
-            if (rawProgress > nextMilestone && currentStep < 3) {
-                rawProgress = nextMilestone;
-            }
-           
-            const progressInPhase = (rawProgress - currentMilestone) / (nextMilestone - currentMilestone);
-            const smoothProgress = currentMilestone + (progressInPhase * (nextMilestone - currentMilestone));
-           
-            const finalProgress = Math.max(0, Math.min(100, smoothProgress));
-           
-            return Math.round(finalProgress * 10) / 10;
+    if (!date || isNaN(date.getTime())) {
+        return 'Data non disponibile';
+    }
+    
+    const giorno = date.getDate();
+    const mese = MESI_NOMI[date.getMonth()];
+    const anno = date.getFullYear();
+    
+    return `${giorno} ${mese} ${anno}`;
+}
+
+/**
+ * Parse intelligente di qualsiasi formato data
+ */
+function parseAnyDateFormat(dateStr) {
+    if (!dateStr || dateStr === 'Da definire') return null;
+    
+    const s = dateStr.toString().trim().toLowerCase();
+    
+    // Formato 1: "dd/MM/yyyy"
+    const slashMatch = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+    if (slashMatch) {
+        return new Date(
+            parseInt(slashMatch[3]),
+            parseInt(slashMatch[2]) - 1,
+            parseInt(slashMatch[1])
+        );
+    }
+    
+    // Formato 2: "dd MMMM yyyy" (italiano o inglese)
+    const textMatch = s.match(/(\d{1,2})\s+([a-zà-ù]+)\s+(\d{4})/);
+    if (textMatch) {
+        const giorno = parseInt(textMatch[1]);
+        const meseStr = textMatch[2].toLowerCase();
+        const anno = parseInt(textMatch[3]);
+        
+        // Prova italiano
+        let meseIdx = MESI_IT[meseStr];
+        
+        // Prova inglese -> italiano
+        if (meseIdx === undefined && MESI_EN_TO_IT[meseStr]) {
+            meseIdx = MESI_IT[MESI_EN_TO_IT[meseStr]];
         }
-        function formatPrice(value) {
-    if (!value) return '0,00';
-    const num = parseFloat(String(value).replace(',', '.'));
-    if (isNaN(num)) return '0,00';
-    return num.toLocaleString('it-IT', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-}
-function getColorName(hex) {
-    const map = {
-        '#000000': 'Nero', '#FFFFFF': 'Bianco', '#FF0000': 'Rosso',
-        '#0000FF': 'Blu', '#008000': 'Verde', '#808080': 'Grigio'
-    };
-    return map[hex] || hex;
-}
-function parseItalianDate(str) {
-    if (!str) return null;
-    const months = { gennaio:0, febbraio:1, marzo:2, aprile:3, maggio:4, giugno:5,
-                     luglio:6, agosto:7, settembre:8, ottobre:9, novembre:10, dicembre:11 };
-    const match = str.match(/(\d{1,2}) (\w+) (\d{4})/);
-    if (match) {
-        const day = parseInt(match[1]);
-        const month = months[match[2].toLowerCase()];
-        const year = parseInt(match[3]);
-        if (month !== undefined) return new Date(year, month, day);
+        
+        if (meseIdx !== undefined) {
+            return new Date(anno, meseIdx, giorno);
+        }
     }
+    
+    // Formato 3: ISO o altri formati standard
+    const isoDate = new Date(dateStr);
+    if (!isNaN(isoDate.getTime())) {
+        return isoDate;
+    }
+    
     return null;
 }
-function parseDeliveryDate(str) {
-    return parseItalianDate(str) || parseItalianDate(str.replace(/^\d{2}\/\d{2}\/\d{4}$/,
-        d => d.split('/').reverse().join(' ')));
+
+// ==================================================================
+// CALCOLO PROGRESSO REALISTICO BARRA DI STATO
+// ==================================================================
+
+/**
+ * Calcola il progresso % della barra basato su tempo reale + stato
+ * @returns {number} Percentuale di completamento (0-100)
+ */
+function calcolaProgressoRealistico(dataOrdine, dataConsegna, statoCorrente) {
+    const ora = new Date();
+    const dataInizio = parseAnyDateFormat(dataOrdine);
+    const dataFine = parseAnyDateFormat(dataConsegna);
+    const stepCorrente = STATE_STEPS[statoCorrente] || 0;
+    
+    // Fallback se date invalide
+    if (!dataInizio || !dataFine) {
+        return (stepCorrente / 3) * 100;
+    }
+    
+    // Calcolo durata totale in millisecondi
+    const durataMs = dataFine - dataInizio;
+    const trascorsoMs = ora - dataInizio;
+    
+    if (durataMs <= 0) {
+        return (stepCorrente / 3) * 100;
+    }
+    
+    // Progresso temporale grezzo (0-100%)
+    let progressoGrezzo = (trascorsoMs / durataMs) * 100;
+    
+    // Milestone basate sugli stati
+    const milestone = {
+        0: 0,    // Confermato: 0%
+        1: 25,   // In Preparazione: 25%
+        2: 65,   // In Transito: 65%
+        3: 100   // Consegnato: 100%
+    };
+    
+    const milestoneMin = milestone[stepCorrente];
+    const milestoneMax = milestone[Math.min(stepCorrente + 1, 3)];
+    
+    // Se "Consegnato" e data superata -> forza 100%
+    if (statoCorrente === 'Consegnato' && ora >= dataFine) {
+        return 100;
+    }
+    
+    // Vincola progresso tra milestone corrente e successiva
+    if (progressoGrezzo < milestoneMin) {
+        progressoGrezzo = milestoneMin;
+    }
+    
+    if (progressoGrezzo > milestoneMax && stepCorrente < 3) {
+        progressoGrezzo = milestoneMax;
+    }
+    
+    // Smooth interpolation tra milestone
+    const progressoInFase = (progressoGrezzo - milestoneMin) / (milestoneMax - milestoneMin);
+    const progressoSmooth = milestoneMin + (progressoInFase * (milestoneMax - milestoneMin));
+    
+    return Math.max(0, Math.min(100, Math.round(progressoSmooth)));
 }
-        function createProgressBar(orderDate, deliveryDate, currentState) {
-            const progress = calculateTimeBasedProgress(orderDate, deliveryDate, currentState);
-            const currentStep = STATE_STEPS[currentState] || 0;
-           
-            let stepsHTML = '';
-            for (let i = 0; i < 4; i++) {
-                const isCompleted = i < currentStep;
-                const isActive = i === currentStep;
-                const stepClass = isCompleted ? 'completed' : (isActive ? 'active' : '');
-               
-                let iconToShow;
-                if (isCompleted) {
-                    iconToShow = '✓';
-                } else {
-                    iconToShow = STEP_ICONS_ACTIVE[i];
-                }
-               
-                stepsHTML += `
-                    <div class="step ${stepClass}">
-                        <div class="step-icon">${iconToShow}</div>
-                        <div class="step-label">${STEP_LABELS[i]}</div>
-                    </div>
-                `;
-            }
-           
-            return `
-                <div class="progress-section">
-                    <div class="progress-steps">
-                        <div class="progress-line" style="width: ${progress}%;"></div>
-                        ${stepsHTML}
-                    </div>
-                </div>
-            `;
-        }
-        function getActionButtons(state, orderId) {
-            const normalizedState = state.toLowerCase().replace(/\s+/g, '-');
-           
-            if (normalizedState === 'in-transito') {
-                return `
-                    <button class="btn btn-primary" onclick="alert('Funzionalità di tracciamento in arrivo!')">
-                        <span>Traccia Spedizione</span>
-                        <span>→</span>
-                    </button>
-                    <button class="btn btn-secondary" onclick="alert('Dettagli ordine ${orderId}')">Dettagli</button>
-                `;
-            } else if (normalizedState === 'consegnato') {
-                return `
-                    <button class="btn btn-primary" onclick="window.location.href='../index.html#shop'">
-                        <span>Acquista di Nuovo</span>
-                    </button>
-                    <button class="btn btn-secondary" onclick="alert('Funzionalità recensioni in arrivo!')">Lascia Recensione</button>
-                `;
-            } else {
-                return `
-                    <button class="btn btn-primary" onclick="alert('Dettagli ordine ${orderId}')">
-                        <span>Dettagli Ordine</span>
-                        <span>→</span>
-                    </button>
-                    <button class="btn btn-secondary" onclick="alert('Supporto: support@luxhaven360.com')">Contatta Supporto</button>
-                `;
-            }
-        }
-        function formatItalianDate(dateStr) {
-            if (!dateStr) return '';
-           
-            let date;
-           
-            const parts = dateStr.split('/');
-            if (parts.length === 3) {
-                date = new Date(parts[2], parts[1] - 1, parts[0]);
-            } else {
-                date = new Date(dateStr);
-            }
-           
-            if (isNaN(date.getTime())) return dateStr;
-           
-            return date.toLocaleDateString('it-IT', {
-                day: 'numeric',
-                month: 'long',
-                year: 'numeric'
-            });
-        }
-        function createOrderCard(order, index) {
+
+// ==================================================================
+// CREAZIONE CARD ORDINE (VERSIONE UNIFICATA)
+// ==================================================================
+
+function createOrderCard(order, index) {
     const articoli = order.articoli != null ? Number(order.articoli) :
                     (order.products ? order.products.reduce((sum, p) => sum + (p.quantity || 1), 0) : 0);
     const plural = articoli === 1 ? 'articolo' : 'articoli';
     
-    // Determina la categoria dell'ordine
+    // Determina categoria
     const orderCategory = getCategoryFromOrderId(order.id);
     
+    // === FORMATTAZIONE DATE UNIFORMI ===
+    const dataOrdineFormatted = formatDataItaliana(order.data);
+    const dataConsegnaFormatted = formatDataItaliana(order.consegna_prevista);
+    
     // === CALCOLO PROGRESSO REALISTICO ===
-    let progress = 0;
-    const now = new Date();
-    const orderDate = parseItalianDate(order.data);
-    const deliveryDate = parseDeliveryDate(order.consegna_prevista);
+    const progress = calcolaProgressoRealistico(
+        order.data,
+        order.consegna_prevista,
+        order.stato
+    );
     
-    if (!orderDate) {
-        progress = 10;
-    } else if (order.stato === 'Consegnato' && deliveryDate && now >= deliveryDate) {
-        progress = 100;
-    } else if (order.stato === 'In Transito') {
-        progress = 80;
-    } else if (order.stato === 'In Preparazione') {
-        if (deliveryDate && orderDate) {
-            const totalDays = (deliveryDate - orderDate) / (1000 * 60 * 60 * 24);
-            const elapsedDays = (now - orderDate) / (1000 * 60 * 60 * 24);
-            progress = Math.min(70, 30 + (elapsedDays / totalDays) * 40);
-        } else {
-            progress = 50;
-        }
-    } else if (order.stato === 'Confermato') {
-        progress = 25;
-    }
-    progress = Math.round(progress);
-    
+    // === DETERMINA STATO STEP ===
     const steps = ['Confermato', 'In Preparazione', 'In Transito', 'Consegnato'];
     const currentStepIndex = steps.indexOf(order.stato);
     const isDelivered = order.stato === 'Consegnato';
@@ -696,9 +680,9 @@ function parseDeliveryDate(str) {
                    <span class="order-title-text">Ordine</span>
                    <span class="order-title-number">#${order.id}</span>
                 </div>
-                <div class="order-date">${order.data || 'Data non disponibile'}</div>
+                <div class="order-date">${dataOrdineFormatted}</div>
             </div>
-            <div class="status-badge ${order.stato.toLowerCase().replace(' ', '-')}">
+            <div class="status-badge ${order.stato.toLowerCase().replace(/\s+/g, '-')}">
                 ${order.stato}
             </div>
         </div>
@@ -719,18 +703,18 @@ function parseDeliveryDate(str) {
             </div>
             <div class="summary-row">
                 <span class="summary-label">Consegna prevista</span>
-                <span class="summary-value">${order.consegna_prevista || 'Da definire'}</span>
+                <span class="summary-value">${dataConsegnaFormatted}</span>
             </div>
         </div>
         
-        <!-- Barra di avanzamento -->
+        <!-- Barra di avanzamento DINAMICA -->
         <div class="progress-section">
             <div class="progress-steps">
-                <div class="progress-line" style="width: ${progress}%"></div>
+                <div class="progress-line" style="width: ${progress}%; transition: width 1s ease;"></div>
                 ${steps.map((step, i) => {
                     const isCompleted = i < currentStepIndex || (i === 3 && isDelivered);
                     const isActive = i === currentStepIndex && !isDelivered;
-                    const icon = ['✓', '📦', '🚚', '🏠'][i];
+                    const icon = STEP_ICONS[i];
                     return `
                     <div class="step ${isCompleted ? 'completed' : ''} ${isActive ? 'active' : ''}">
                         <div class="step-icon">${isCompleted ? '✓' : icon}</div>
@@ -740,7 +724,7 @@ function parseDeliveryDate(str) {
             </div>
         </div>
         
-        <!-- Dettagli prodotto - VERSIONE SENZA VARIANTI -->
+        <!-- Dettagli prodotto -->
         ${order.products && order.products.length > 0 ? `
 <div class="order-products-section">
     <details class="product-details">
@@ -752,9 +736,8 @@ function parseDeliveryDate(str) {
                 let cleanName = p.name || 'Prodotto';
                 let imageUrl = p.image || '';
 
-                // Rimuovi eventuali varianti dal nome del prodotto
+                // Rimuovi varianti dal nome
                 if (cleanName.includes(' - ')) {
-                    // Prende solo la prima parte prima del primo " - "
                     cleanName = cleanName.split(' - ')[0].trim();
                 }
 
@@ -780,237 +763,227 @@ function parseDeliveryDate(str) {
 ` : ''}
     </div>`;
 }
-        // *** MODIFICA: Aggiungi retryCount param, default 0 ***
-async function loadOrders(retryCount = 0) {
-  // *** Prevenzione doppio rendering ***
-  if (ordersRendered) {
-    console.log('⚠️ Ordini già renderizzati, skip caricamento');
-    return;
-  }
-  try {
-    // Step 1: Mostra ordini pending da localStorage (immediato)
-    const pendingOrders = getPendingOrdersFromLocalStorage();
-    if (pendingOrders.length > 0) {
-      document.getElementById('loadingState').style.display = 'none';
-      renderOrders(pendingOrders);
-      ordersRendered = true; // *** Imposta flag ***
-      console.log('✅ Ordini pending mostrati (localStorage)');
-    }
-   
-    // Step 2: Carica ordini da API in background
-    const callbackName = 'handleOrdersData_' + Date.now();
-    const script = document.createElement('script');
-    script.src = `${WEB_APP_URL}?action=get_orders&callback=${callbackName}&t=${Date.now()}`;
-   
-    const timeout = setTimeout(() => {
-      console.warn('⚠️ Timeout API ordini');
-      if (!ordersRendered && pendingOrders.length === 0) {
-        loadFromLocalStorage();
-      }
-      cleanup();
-    }, 8000);
-   
-    window[callbackName] = function(data) {
-      clearTimeout(timeout);
-      document.getElementById('loadingState').style.display = 'none';
-     
-      if (data.error) {
-        console.error('Error loading orders:', data.error);
-        if (!ordersRendered) {
-          showEmptyState();
-        }
-        cleanup();
-        return;
-      }
-     
-      let allOrders = [];
-     
-      // Merge: pending + API (evita duplicati)
-      if (pendingOrders.length > 0) {
-        allOrders = [...pendingOrders];
-       
-        if (data.orders && data.orders.length > 0) {
-          data.orders.forEach(apiOrder => {
-            if (!allOrders.find(o => o.id === apiOrder.id)) {
-              allOrders.push(apiOrder);
-            }
-          });
-        }
-       
-        // Cleanup: rimuovi pending se confermato in API
-        if (data.orders && data.orders.length > 0) {
-          const confirmedIds = data.orders.map(o => o.id);
-          pendingOrders.forEach(pending => {
-            if (confirmedIds.includes(pending.id)) {
-              localStorage.removeItem('lh360_pending_order');
-              console.log('✅ Ordine pending confermato:', pending.id);
-            }
-          });
-        }
-      } else {
-        allOrders = data.orders || [];
-      }
-     
-      // *** NUOVO: Controlla se tutti i pending sono in API. Se no, retry ***
-      if (pendingOrders.length > 0 && retryCount < 3) {
-        const pendingIds = pendingOrders.map(o => o.id);
-        const apiIds = data.orders ? data.orders.map(o => o.id) : [];
-        const missing = pendingIds.filter(id => !apiIds.includes(id));
-       
-        if (missing.length > 0) {
-          console.warn(`⚠️ Pending mancanti in API (${missing.join(', ')}), retry ${retryCount + 1}/3...`);
-          setTimeout(() => loadOrders(retryCount + 1), 1500); // Delay 1.5s
-          cleanup();
-          return;
-        }
-      }
-     
-      // *** Rendering UNICO ***
-      if (!ordersRendered) {
-        if (allOrders.length === 0) {
-          showEmptyState();
-        } else {
-          renderOrders(allOrders);
-          ordersRendered = true; // *** Imposta flag ***
-          console.log(`✅ Ordini caricati: ${allOrders.length} totali`);
-        }
-      }
-     
-      cleanup();
-    };
-   
-    script.onerror = () => {
-      clearTimeout(timeout);
-      console.error('Errore API ordini');
-      if (!ordersRendered && pendingOrders.length === 0) {
-        loadFromLocalStorage();
-      }
-      cleanup();
-    };
-   
-    function cleanup() {
-      try {
-        if (script.parentNode) document.body.removeChild(script);
-        delete window[callbackName];
-      } catch (e) {}
-    }
-   
-    document.body.appendChild(script);
-   
-  } catch (error) {
-    console.error('Error:', error);
-    if (!ordersRendered) {
-      loadFromLocalStorage();
-    }
-  }
+
+// ==================================================================
+// UTILITY FUNCTIONS
+// ==================================================================
+
+function formatPrice(value) {
+    if (!value) return '0,00';
+    const num = parseFloat(String(value).replace(',', '.'));
+    if (isNaN(num)) return '0,00';
+    return num.toLocaleString('it-IT', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
-        function getPendingOrdersFromLocalStorage() {
-            const orders = [];
-            const thirtyDaysAgo = new Date(Date.now() - (30 * 24 * 60 * 60 * 1000));
-           
-            const pendingOrder = localStorage.getItem('lh360_pending_order');
-            if (pendingOrder) {
-                try {
-                    const order = JSON.parse(pendingOrder);
-                    const orderDate = new Date(order.timestamp || order.data);
-                   
-                    if (orderDate > thirtyDaysAgo) {
-                        orders.push(order);
-                    } else {
-                        localStorage.removeItem('lh360_pending_order');
-                    }
-                } catch (e) {
-                    console.error('Errore parsing pending order:', e);
-                }
-            }
-           
-            return orders;
-        }
-        function loadFromLocalStorage() {
-            if (ordersRendered) return; // *** Prevenzione duplicati ***
-           
+
+function getCategoryFromOrderId(orderId) {
+    if (!orderId) return 'Prodotto';
+    const match = orderId.match(/^LH-([MBSE])/);
+    if (match && match[1]) {
+        return CATEGORY_MAP[match[1]] || 'Prodotto';
+    }
+    return 'Prodotto';
+}
+
+// ==================================================================
+// CARICAMENTO ORDINI (CON RETRY LOGIC)
+// ==================================================================
+
+async function loadOrders(retryCount = 0) {
+    if (ordersRendered) {
+        console.log('⚠️ Ordini già renderizzati, skip caricamento');
+        return;
+    }
+    
+    try {
+        // Step 1: Mostra ordini pending da localStorage
+        const pendingOrders = getPendingOrdersFromLocalStorage();
+        if (pendingOrders.length > 0) {
             document.getElementById('loadingState').style.display = 'none';
-           
-            const orders = [];
-           
-            const pendingOrder = localStorage.getItem('lh360_pending_order');
-            if (pendingOrder) {
-                try {
-                    const order = JSON.parse(pendingOrder);
-                    const orderTimestamp = new Date(order.timestamp || order.data);
-                    const thirtyDaysAgo = new Date(Date.now() - (30 * 24 * 60 * 60 * 1000));
-                   
-                    if (orderTimestamp > thirtyDaysAgo) {
-                        if (order.data && order.data.includes('/')) {
-                            order.data = formatItalianDate(order.data);
-                        }
-                        orders.push(order);
-                    } else {
-                        localStorage.removeItem('lh360_pending_order');
-                    }
-                } catch (e) {
-                    console.error('Errore parsing ordine pending:', e);
+            renderOrders(pendingOrders);
+            ordersRendered = true;
+            console.log('✅ Ordini pending mostrati (localStorage)');
+        }
+        
+        // Step 2: Carica ordini da API
+        const callbackName = 'handleOrdersData_' + Date.now();
+        const script = document.createElement('script');
+        script.src = `${WEB_APP_URL}?action=get_orders&callback=${callbackName}&t=${Date.now()}`;
+        
+        const timeout = setTimeout(() => {
+            console.warn('⚠️ Timeout API ordini');
+            if (!ordersRendered && pendingOrders.length === 0) {
+                loadFromLocalStorage();
+            }
+            cleanup();
+        }, 8000);
+        
+        window[callbackName] = function(data) {
+            clearTimeout(timeout);
+            document.getElementById('loadingState').style.display = 'none';
+            
+            if (data.error) {
+                console.error('Error loading orders:', data.error);
+                if (!ordersRendered) {
+                    showEmptyState();
                 }
-            }
-           
-            const recentOrderId = localStorage.getItem('lh360_last_order_id');
-            if (recentOrderId && !orders.find(o => o.id === recentOrderId)) {
-                const cart = JSON.parse(localStorage.getItem('lh360_cart') || '[]');
-                const subtotal = cart.reduce((sum, item) => sum + (item.price * (item.qty || 1)), 0);
-               
-                const today = new Date();
-                const formattedDate = today.toLocaleDateString('it-IT', {
-                    day: 'numeric',
-                    month: 'long',
-                    year: 'numeric'
-                });
-               
-                orders.push({
-                    id: recentOrderId,
-                    data: formattedDate,
-                    stato: 'In Preparazione',
-                    consegna_prevista: calculateDeliveryDate(3),
-                    totale: subtotal > 0 ? subtotal.toFixed(2) : '0,00',
-                    products: cart.map(item => ({
-                        name: item.title || 'Prodotto',
-                        quantity: item.qty || 1,
-                        price: item.price || 0,
-                        image: item.image || ''
-                    }))
-                });
-            }
-           
-            if (orders.length === 0) {
-                showEmptyState();
+                cleanup();
                 return;
             }
-           
-            renderOrders(orders);
-            ordersRendered = true; // *** Imposta flag ***
+            
+            let allOrders = [];
+            
+            // Merge pending + API
+            if (pendingOrders.length > 0) {
+                allOrders = [...pendingOrders];
+                
+                if (data.orders && data.orders.length > 0) {
+                    data.orders.forEach(apiOrder => {
+                        if (!allOrders.find(o => o.id === apiOrder.id)) {
+                            allOrders.push(apiOrder);
+                        }
+                    });
+                }
+                
+                // Cleanup pending confermati
+                if (data.orders && data.orders.length > 0) {
+                    const confirmedIds = data.orders.map(o => o.id);
+                    pendingOrders.forEach(pending => {
+                        if (confirmedIds.includes(pending.id)) {
+                            localStorage.removeItem('lh360_pending_order');
+                            console.log('✅ Ordine pending confermato:', pending.id);
+                        }
+                    });
+                }
+            } else {
+                allOrders = data.orders || [];
+            }
+            
+            // Retry se pending mancanti in API
+            if (pendingOrders.length > 0 && retryCount < 3) {
+                const pendingIds = pendingOrders.map(o => o.id);
+                const apiIds = data.orders ? data.orders.map(o => o.id) : [];
+                const missing = pendingIds.filter(id => !apiIds.includes(id));
+                
+                if (missing.length > 0) {
+                    console.warn(`⚠️ Pending mancanti (${missing.join(', ')}), retry ${retryCount + 1}/3...`);
+                    setTimeout(() => loadOrders(retryCount + 1), 1500);
+                    cleanup();
+                    return;
+                }
+            }
+            
+            // Rendering UNICO
+            if (!ordersRendered) {
+                if (allOrders.length === 0) {
+                    showEmptyState();
+                } else {
+                    renderOrders(allOrders);
+                    ordersRendered = true;
+                    console.log(`✅ Ordini caricati: ${allOrders.length} totali`);
+                }
+            }
+            
+            cleanup();
+        };
+        
+        script.onerror = () => {
+            clearTimeout(timeout);
+            console.error('Errore API ordini');
+            if (!ordersRendered && pendingOrders.length === 0) {
+                loadFromLocalStorage();
+            }
+            cleanup();
+        };
+        
+        function cleanup() {
+            try {
+                if (script.parentNode) document.body.removeChild(script);
+                delete window[callbackName];
+            } catch (e) {}
         }
-        function calculateDeliveryDate(daysFromNow) {
-            const date = new Date();
-            date.setDate(date.getDate() + daysFromNow);
-            return date.toLocaleDateString('it-IT', { day: 'numeric', month: 'long', year: 'numeric' });
+        
+        document.body.appendChild(script);
+        
+    } catch (error) {
+        console.error('Error:', error);
+        if (!ordersRendered) {
+            loadFromLocalStorage();
         }
-        function renderOrders(orders) {
-            const ordersList = document.getElementById('ordersList');
-            ordersList.innerHTML = '';
-           
-            orders.forEach((order, index) => {
-                ordersList.innerHTML += createOrderCard(order, index);
-            });
-           
-            ordersList.style.display = 'flex';
+    }
+}
+
+function getPendingOrdersFromLocalStorage() {
+    const orders = [];
+    const thirtyDaysAgo = new Date(Date.now() - (30 * 24 * 60 * 60 * 1000));
+    
+    const pendingOrder = localStorage.getItem('lh360_pending_order');
+    if (pendingOrder) {
+        try {
+            const order = JSON.parse(pendingOrder);
+            const orderDate = new Date(order.timestamp || order.data);
+            
+            if (orderDate > thirtyDaysAgo) {
+                orders.push(order);
+            } else {
+                localStorage.removeItem('lh360_pending_order');
+            }
+        } catch (e) {
+            console.error('Errore parsing pending order:', e);
         }
-        function showEmptyState() {
-            document.getElementById('emptyState').style.display = 'block';
+    }
+    
+    return orders;
+}
+
+function loadFromLocalStorage() {
+    if (ordersRendered) return;
+    document.getElementById('loadingState').style.display = 'none';
+    
+    const orders = [];
+    const pendingOrder = localStorage.getItem('lh360_pending_order');
+    
+    if (pendingOrder) {
+        try {
+            const order = JSON.parse(pendingOrder);
+            const orderTimestamp = new Date(order.timestamp || order.data);
+            const thirtyDaysAgo = new Date(Date.now() - (30 * 24 * 60 * 60 * 1000));
+            
+            if (orderTimestamp > thirtyDaysAgo) {
+                orders.push(order);
+            } else {
+                localStorage.removeItem('lh360_pending_order');
+            }
+        } catch (e) {
+            console.error('Errore parsing ordine pending:', e);
         }
-        loadOrders();
+    }
+    
+    if (orders.length === 0) {
+        showEmptyState();
+        return;
+    }
+    
+    renderOrders(orders);
+    ordersRendered = true;
+}
+
+function renderOrders(orders) {
+    const ordersList = document.getElementById('ordersList');
+    ordersList.innerHTML = '';
+    
+    orders.forEach((order, index) => {
+        ordersList.innerHTML += createOrderCard(order, index);
+    });
+    
+    ordersList.style.display = 'flex';
+}
+
+function showEmptyState() {
+    document.getElementById('emptyState').style.display = 'block';
+}
+
+// Avvio
+loadOrders();
     </script>
 </body>
 </html>
-
-
-
-
