@@ -445,6 +445,16 @@
         <div class="loading-state" id="loadingState">
             <div class="loading-spinner"></div>
             <p>Caricamento ordini in corso...</p>
+            <p style="font-size: 0.75rem; margin-top: 1rem; opacity: 0.5;">Apertura console per debug dettagliato</p>
+        </div>
+        
+        <!-- Debug Panel (nascosto di default) -->
+        <div id="debugPanel" style="display: none; position: fixed; bottom: 20px; right: 20px; background: rgba(0,0,0,0.9); color: #0f0; padding: 15px; border-radius: 8px; font-family: monospace; font-size: 11px; max-width: 300px; max-height: 200px; overflow-y: auto; z-index: 9999; border: 1px solid #0f0;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                <strong>🔧 DEBUG PANEL</strong>
+                <button onclick="document.getElementById('debugPanel').style.display='none'" style="background: none; border: 1px solid #0f0; color: #0f0; padding: 2px 8px; cursor: pointer; border-radius: 4px;">✕</button>
+            </div>
+            <div id="debugContent"></div>
         </div>
         <div class="orders-list" id="ordersList" style="display: none;"></div>
         <div class="empty-state" id="emptyState" style="display: none;">
@@ -452,6 +462,17 @@
             <h2 class="empty-title">Nessun ordine recente</h2>
             <p class="empty-text">Non hai ordini negli ultimi 30 giorni</p>
             <a href="../index.html#shop" class="btn btn-primary">Inizia a Fare Shopping</a>
+            
+            <!-- Debug Tools -->
+            <div style="margin-top: 3rem; padding-top: 2rem; border-top: 1px solid rgba(255,255,255,0.1);">
+                <p style="font-size: 0.75rem; color: #71717a; margin-bottom: 1rem;">🔧 Strumenti Debug</p>
+                <button onclick="clearLocalStorageAndReload()" class="btn btn-secondary" style="margin-right: 1rem; padding: 0.75rem 1.5rem; font-size: 0.8125rem;">
+                    🗑️ Pulisci Cache e Ricarica
+                </button>
+                <button onclick="testAPIConnection()" class="btn btn-secondary" style="padding: 0.75rem 1.5rem; font-size: 0.8125rem;">
+                    🔌 Testa Connessione API
+                </button>
+            </div>
         </div>
     </div>
     <script>
@@ -725,70 +746,167 @@
             return 'Prodotto';
         }
 
-        // *** FIX DEFINITIVO: ASPETTA SEMPRE L'API, localStorage solo per fallback ***
+        // *** DEBUG AVANZATO: Verifica completa connessione API ***
         async function loadOrders(retryCount = 0) {
             try {
+                console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+                console.log('🚀 INIZIO CARICAMENTO ORDINI');
+                console.log('📅 Data/Ora:', new Date().toLocaleString('it-IT'));
+                console.log('🔄 Tentativo:', retryCount + 1);
+                console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+                
                 // Mostra loader
                 document.getElementById('loadingState').style.display = 'block';
                 document.getElementById('ordersList').style.display = 'none';
                 document.getElementById('emptyState').style.display = 'none';
                 
+                // Check localStorage PRIMA della chiamata API
+                const localPending = localStorage.getItem('lh360_pending_order');
+                if (localPending) {
+                    try {
+                        const order = JSON.parse(localPending);
+                        console.log('💾 ORDINE IN LOCALSTORAGE TROVATO:');
+                        console.log('   └─ ID:', order.id);
+                        console.log('   └─ Stato:', order.stato);
+                        console.log('   └─ Data:', order.data || order.timestamp);
+                        console.log('   └─ Cliente:', order.cliente);
+                        console.warn('⚠️ Questo ordine NON sarà mostrato (API ha priorità)');
+                    } catch (e) {
+                        console.error('❌ Errore parsing localStorage:', e);
+                    }
+                } else {
+                    console.log('💾 Nessun ordine in localStorage');
+                }
+                
+                console.log('');
+                console.log('🌐 CHIAMATA API IN CORSO...');
+                console.log('   └─ URL:', WEB_APP_URL);
+                console.log('   └─ Action: get_orders');
+                console.log('   └─ Timestamp:', Date.now());
+                
                 const callbackName = 'handleOrdersData_' + Date.now();
                 const script = document.createElement('script');
-                script.src = `${WEB_APP_URL}?action=get_orders&callback=${callbackName}&t=${Date.now()}`;
+                const apiUrl = `${WEB_APP_URL}?action=get_orders&callback=${callbackName}&t=${Date.now()}`;
+                console.log('   └─ URL completo:', apiUrl);
+                script.src = apiUrl;
+                
+                const startTime = Date.now();
                 
                 const timeout = setTimeout(() => {
-                    console.warn('⚠️ Timeout API ordini - uso fallback localStorage');
+                    const elapsed = Date.now() - startTime;
+                    console.error('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+                    console.error('❌ TIMEOUT API (10 secondi)');
+                    console.error('   └─ Tempo trascorso:', elapsed + 'ms');
+                    console.error('   └─ URL:', apiUrl);
+                    console.error('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+                    console.warn('🔄 Fallback a localStorage...');
                     loadFromLocalStorage();
                     cleanup();
                 }, 10000);
                 
                 window[callbackName] = function(data) {
+                    const elapsed = Date.now() - startTime;
                     clearTimeout(timeout);
                     
+                    console.log('');
+                    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+                    console.log('✅ RISPOSTA API RICEVUTA');
+                    console.log('   └─ Tempo risposta:', elapsed + 'ms');
+                    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+                    
+                    // Log completo risposta
+                    console.log('📦 CONTENUTO RISPOSTA:');
+                    console.log(JSON.stringify(data, null, 2));
+                    
                     if (data.error) {
-                        console.error('❌ Errore API:', data.error);
+                        console.error('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+                        console.error('❌ ERRORE API:');
+                        console.error('   └─', data.error);
+                        console.error('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
                         loadFromLocalStorage();
                         cleanup();
                         return;
                     }
                     
-                    // *** PRIORITÀ API: Usa SEMPRE i dati dal server come fonte primaria ***
                     const apiOrders = data.orders || [];
                     
-                    console.log(`📊 Ricevuti ${apiOrders.length} ordini dall'API`);
+                    console.log('');
+                    console.log('📊 ANALISI ORDINI RICEVUTI:');
+                    console.log('   └─ Totale ordini:', apiOrders.length);
                     
-                    // Pulizia localStorage: se l'ordine pending è già nell'API, rimuovilo
-                    const pendingOrder = localStorage.getItem('lh360_pending_order');
-                    if (pendingOrder) {
+                    if (apiOrders.length === 0) {
+                        console.warn('⚠️ API ha restituito 0 ordini!');
+                        console.warn('   └─ Possibili cause:');
+                        console.warn('       • Foglio "Order Tracking" vuoto');
+                        console.warn('       • Nessun ordine attivo negli ultimi 30 giorni');
+                        console.warn('       • Problema funzione getOrdersForTracking()');
+                    } else {
+                        apiOrders.forEach((order, index) => {
+                            console.log('');
+                            console.log(`   📦 Ordine ${index + 1}:`);
+                            console.log(`      ├─ ID: ${order.id}`);
+                            console.log(`      ├─ Stato: ${order.stato}`);
+                            console.log(`      ├─ Data: ${order.data}`);
+                            console.log(`      ├─ Cliente: ${order.cliente}`);
+                            console.log(`      ├─ Totale: € ${order.totale}`);
+                            console.log(`      └─ Articoli: ${order.articoli}`);
+                        });
+                    }
+                    
+                    // Pulizia localStorage se ordine pending è confermato
+                    if (localPending) {
                         try {
-                            const pending = JSON.parse(pendingOrder);
+                            const pending = JSON.parse(localPending);
                             const isConfirmed = apiOrders.some(o => o.id === pending.id);
                             if (isConfirmed) {
                                 localStorage.removeItem('lh360_pending_order');
-                                console.log('🗑️ Rimosso ordine pending (ora confermato):', pending.id);
+                                console.log('');
+                                console.log('🗑️ PULIZIA LOCALSTORAGE:');
+                                console.log('   └─ Ordine pending rimosso (ora confermato):', pending.id);
+                            } else {
+                                console.log('');
+                                console.warn('⚠️ ORDINE PENDING NON CONFERMATO:');
+                                console.warn('   └─ ID:', pending.id);
+                                console.warn('   └─ NON presente nell\'API');
+                                console.warn('   └─ Possibile ordine "fantasma"');
                             }
-                        } catch (e) {
-                            console.error('Errore parsing pending order:', e);
-                        }
+                        } catch (e) {}
                     }
                     
-                    // Rendering: mostra SOLO ordini API (fonte di verità)
+                    // Rendering
                     document.getElementById('loadingState').style.display = 'none';
                     
+                    console.log('');
+                    console.log('🎨 RENDERING PAGINA:');
+                    
                     if (apiOrders.length === 0) {
+                        console.log('   └─ Mostro empty state (nessun ordine)');
                         showEmptyState();
                     } else {
+                        console.log('   └─ Mostro lista ordini:', apiOrders.length);
                         renderOrders(apiOrders);
-                        console.log(`✅ Visualizzati ${apiOrders.length} ordini attivi dal server`);
                     }
+                    
+                    console.log('');
+                    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+                    console.log('✅ CARICAMENTO COMPLETATO');
+                    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
                     
                     cleanup();
                 };
                 
                 script.onerror = () => {
+                    const elapsed = Date.now() - startTime;
                     clearTimeout(timeout);
-                    console.error('❌ Errore chiamata API - fallback a localStorage');
+                    console.error('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+                    console.error('❌ ERRORE CHIAMATA API');
+                    console.error('   └─ Tempo trascorso:', elapsed + 'ms');
+                    console.error('   └─ Possibili cause:');
+                    console.error('       • URL Web App errato');
+                    console.error('       • Web App non deployata');
+                    console.error('       • CORS bloccato');
+                    console.error('       • Script timeout');
+                    console.error('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
                     loadFromLocalStorage();
                     cleanup();
                 };
@@ -803,7 +921,10 @@
                 document.body.appendChild(script);
                 
             } catch (error) {
-                console.error('❌ Errore generale:', error);
+                console.error('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+                console.error('❌ ERRORE GENERALE:');
+                console.error(error);
+                console.error('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
                 loadFromLocalStorage();
             }
         }
@@ -832,7 +953,11 @@
         }
 
         function loadFromLocalStorage() {
-            console.warn('⚠️ Fallback: caricamento da localStorage (solo se API non disponibile)');
+            console.warn('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+            console.warn('⚠️ FALLBACK: Caricamento da localStorage');
+            console.warn('   └─ API non disponibile o timeout');
+            console.warn('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+            
             document.getElementById('loadingState').style.display = 'none';
             
             const orders = [];
@@ -844,26 +969,46 @@
                     const orderTimestamp = new Date(order.timestamp || order.data);
                     const thirtyDaysAgo = new Date(Date.now() - (30 * 24 * 60 * 60 * 1000));
                     
+                    console.log('💾 ORDINE PENDING LOCALE:');
+                    console.log('   ├─ ID:', order.id);
+                    console.log('   ├─ Data:', orderTimestamp.toLocaleDateString('it-IT'));
+                    console.log('   ├─ Stato:', order.stato);
+                    
                     if (orderTimestamp > thirtyDaysAgo) {
                         orders.push(order);
-                        console.log('📦 Ordine pending trovato in localStorage:', order.id);
+                        console.log('   └─ ✅ Ordine valido (< 30 giorni)');
                     } else {
                         localStorage.removeItem('lh360_pending_order');
-                        console.log('🗑️ Rimosso ordine pending scaduto');
+                        console.log('   └─ 🗑️ Ordine scaduto (> 30 giorni) - RIMOSSO');
                     }
                 } catch (e) {
                     console.error('❌ Errore parsing ordine pending:', e);
                 }
+            } else {
+                console.log('💾 Nessun ordine in localStorage');
             }
             
+            console.log('');
             if (orders.length === 0) {
-                console.log('ℹ️ Nessun ordine in localStorage, mostro empty state');
+                console.log('ℹ️ RISULTATO: Nessun ordine disponibile');
+                console.log('   └─ Mostro empty state');
                 showEmptyState();
                 return;
             }
             
-            console.warn('⚠️ ATTENZIONE: Visualizzazione solo ordini localStorage (API non disponibile)');
+            console.warn('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+            console.warn('⚠️ ATTENZIONE: MODALITÀ FALLBACK ATTIVA');
+            console.warn('   └─ Visualizzati solo ordini localStorage');
+            console.warn('   └─ Potrebbero mancare ordini dal server');
+            console.warn('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+            
             renderOrders(orders);
+            
+            // Mostra avviso in pagina
+            const warningBanner = document.createElement('div');
+            warningBanner.style.cssText = 'background: rgba(251, 191, 36, 0.1); border: 1px solid #fbbf24; color: #fbbf24; padding: 1rem; margin-bottom: 2rem; border-radius: 0.5rem; text-align: center; font-size: 0.875rem;';
+            warningBanner.innerHTML = '⚠️ Modalità offline: potrebbero mancare ordini recenti. Ricarica la pagina per riprovare.';
+            document.getElementById('ordersList').insertBefore(warningBanner, document.getElementById('ordersList').firstChild);
         }
 
         // *** FIX CRITICO: Funzione renderOrders che pulisce e ripopola sempre ***
@@ -896,23 +1041,122 @@
             document.getElementById('emptyState').style.display = 'block';
         }
 
-        // *** DEBUG: Console dettagliato all'avvio ***
-        console.log('🚀 Pagina tracking-order.html caricata');
-        console.log('📱 User Agent:', navigator.userAgent);
-        console.log('🌐 URL API:', WEB_APP_URL);
+        // *** FUNZIONI DEBUG HELPER ***
         
-        // Check localStorage prima della chiamata API
+        function clearLocalStorageAndReload() {
+            console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+            console.log('🗑️ PULIZIA LOCALSTORAGE FORZATA');
+            
+            // Lista tutte le chiavi prima della pulizia
+            const keys = [];
+            for (let i = 0; i < localStorage.length; i++) {
+                keys.push(localStorage.key(i));
+            }
+            console.log('📋 Chiavi presenti prima della pulizia:');
+            keys.forEach(key => console.log('   └─', key));
+            
+            // Pulisci
+            localStorage.clear();
+            console.log('✅ localStorage completamente pulito');
+            console.log('🔄 Ricaricamento pagina...');
+            console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+            
+            setTimeout(() => {
+                location.reload();
+            }, 500);
+        }
+        
+        async function testAPIConnection() {
+            console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+            console.log('🔌 TEST CONNESSIONE API');
+            console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+            
+            const testUrl = `${WEB_APP_URL}?action=get_orders&t=${Date.now()}`;
+            console.log('📡 URL Test:', testUrl);
+            console.log('⏱️ Invio richiesta...');
+            
+            try {
+                const response = await fetch(testUrl);
+                console.log('✅ Risposta ricevuta');
+                console.log('   └─ Status:', response.status);
+                console.log('   └─ Content-Type:', response.headers.get('content-type'));
+                
+                const text = await response.text();
+                console.log('');
+                console.log('📄 CONTENUTO RISPOSTA RAW:');
+                console.log(text);
+                
+                // Prova a estrarre JSON dalla risposta JSONP
+                try {
+                    const jsonMatch = text.match(/\{.*\}/s);
+                    if (jsonMatch) {
+                        const data = JSON.parse(jsonMatch[0]);
+                        console.log('');
+                        console.log('📦 DATI PARSATI:');
+                        console.log(JSON.stringify(data, null, 2));
+                        
+                        if (data.orders) {
+                            console.log('');
+                            console.log('✅ API FUNZIONANTE');
+                            console.log('   └─ Ordini ricevuti:', data.orders.length);
+                            alert(`✅ API funzionante!\n\nOrdini ricevuti: ${data.orders.length}\n\nDettagli in console.`);
+                        } else {
+                            console.warn('⚠️ Risposta valida ma nessun array "orders"');
+                            alert('⚠️ API risponde ma formato dati inatteso.\n\nControlla console per dettagli.');
+                        }
+                    }
+                } catch (e) {
+                    console.error('❌ Errore parsing JSON:', e);
+                }
+                
+            } catch (error) {
+                console.error('❌ ERRORE CHIAMATA API:');
+                console.error(error);
+                console.log('');
+                console.log('🔍 POSSIBILI CAUSE:');
+                console.log('   • URL Web App errato in WEB_APP_URL');
+                console.log('   • Web App non deployata o sospesa');
+                console.log('   • CORS policy bloccante');
+                console.log('   • Permessi insufficienti');
+                
+                alert(`❌ Errore connessione API!\n\n${error.message}\n\nControlla console per dettagli.`);
+            }
+            
+            console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+        }
+        
+        // *** DEBUG: Console dettagliato all'avvio ***
+        console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+        console.log('🚀 PAGINA TRACKING CARICATA');
+        console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+        console.log('📅 Data/Ora:', new Date().toLocaleString('it-IT'));
+        console.log('📱 User Agent:', navigator.userAgent.substring(0, 100) + '...');
+        console.log('🌐 URL Pagina:', window.location.href);
+        console.log('🔗 API Endpoint:', WEB_APP_URL);
+        console.log('');
+        
+        // Check localStorage
         const localPending = localStorage.getItem('lh360_pending_order');
         if (localPending) {
             try {
                 const order = JSON.parse(localPending);
-                console.log('💾 Ordine pending in localStorage:', order.id, order.stato);
+                console.log('💾 LOCALSTORAGE: Ordine pending trovato');
+                console.log('   ├─ ID:', order.id);
+                console.log('   ├─ Stato:', order.stato);
+                console.log('   ├─ Data:', order.data || order.timestamp);
+                console.log('   └─ Cliente:', order.cliente);
             } catch (e) {
-                console.error('❌ Errore parsing localStorage:', e);
+                console.error('❌ LOCALSTORAGE: Errore parsing');
             }
         } else {
-            console.log('💾 Nessun ordine pending in localStorage');
+            console.log('💾 LOCALSTORAGE: Vuoto');
         }
+        
+        console.log('');
+        console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+        console.log('⚙️ AVVIO CARICAMENTO ORDINI...');
+        console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+        console.log('');
         
         // Avvio caricamento ordini
         loadOrders();
