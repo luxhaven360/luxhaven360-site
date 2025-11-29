@@ -445,7 +445,6 @@
         <div class="loading-state" id="loadingState">
             <div class="loading-spinner"></div>
             <p>Caricamento ordini in corso...</p>
-            <p style="font-size: 0.75rem; margin-top: 1rem; opacity: 0.5;">Apertura console per debug dettagliato</p>
         </div>
         
         <!-- Debug Panel (nascosto di default) -->
@@ -954,61 +953,34 @@
 
         function loadFromLocalStorage() {
             console.warn('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-            console.warn('⚠️ FALLBACK: Caricamento da localStorage');
-            console.warn('   └─ API non disponibile o timeout');
+            console.error('❌ FALLBACK DISABILITATO');
+            console.error('   └─ API non disponibile');
+            console.error('   └─ localStorage NON verrà usato per rendering');
             console.warn('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
             
             document.getElementById('loadingState').style.display = 'none';
             
-            const orders = [];
+            // Log localStorage solo per debug, MAI renderizzare
             const pendingOrder = localStorage.getItem('lh360_pending_order');
-            
             if (pendingOrder) {
                 try {
                     const order = JSON.parse(pendingOrder);
-                    const orderTimestamp = new Date(order.timestamp || order.data);
-                    const thirtyDaysAgo = new Date(Date.now() - (30 * 24 * 60 * 60 * 1000));
-                    
-                    console.log('💾 ORDINE PENDING LOCALE:');
+                    console.log('💾 ORDINE IN LOCALSTORAGE (NON MOSTRATO):');
                     console.log('   ├─ ID:', order.id);
-                    console.log('   ├─ Data:', orderTimestamp.toLocaleDateString('it-IT'));
-                    console.log('   ├─ Stato:', order.stato);
-                    
-                    if (orderTimestamp > thirtyDaysAgo) {
-                        orders.push(order);
-                        console.log('   └─ ✅ Ordine valido (< 30 giorni)');
-                    } else {
-                        localStorage.removeItem('lh360_pending_order');
-                        console.log('   └─ 🗑️ Ordine scaduto (> 30 giorni) - RIMOSSO');
-                    }
-                } catch (e) {
-                    console.error('❌ Errore parsing ordine pending:', e);
-                }
-            } else {
-                console.log('💾 Nessun ordine in localStorage');
+                    console.log('   ├─ Data:', order.data || order.timestamp);
+                    console.log('   └─ Questo ordine è IGNORATO (solo API è valida)');
+                } catch (e) {}
             }
             
-            console.log('');
-            if (orders.length === 0) {
-                console.log('ℹ️ RISULTATO: Nessun ordine disponibile');
-                console.log('   └─ Mostro empty state');
-                showEmptyState();
-                return;
-            }
+            // SEMPRE mostra empty state se API fallisce
+            console.error('');
+            console.error('🚫 IMPOSSIBILE CARICARE ORDINI');
+            console.error('   └─ Verifica:');
+            console.error('       • Connessione internet');
+            console.error('       • URL Web App corretto');
+            console.error('       • Deployment attivo');
             
-            console.warn('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-            console.warn('⚠️ ATTENZIONE: MODALITÀ FALLBACK ATTIVA');
-            console.warn('   └─ Visualizzati solo ordini localStorage');
-            console.warn('   └─ Potrebbero mancare ordini dal server');
-            console.warn('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-            
-            renderOrders(orders);
-            
-            // Mostra avviso in pagina
-            const warningBanner = document.createElement('div');
-            warningBanner.style.cssText = 'background: rgba(251, 191, 36, 0.1); border: 1px solid #fbbf24; color: #fbbf24; padding: 1rem; margin-bottom: 2rem; border-radius: 0.5rem; text-align: center; font-size: 0.875rem;';
-            warningBanner.innerHTML = '⚠️ Modalità offline: potrebbero mancare ordini recenti. Ricarica la pagina per riprovare.';
-            document.getElementById('ordersList').insertBefore(warningBanner, document.getElementById('ordersList').firstChild);
+            showEmptyState();
         }
 
         // *** FIX CRITICO: Funzione renderOrders che pulisce e ripopola sempre ***
@@ -1038,7 +1010,41 @@
         function showEmptyState() {
             document.getElementById('loadingState').style.display = 'none';
             document.getElementById('ordersList').style.display = 'none';
-            document.getElementById('emptyState').style.display = 'block';
+            const emptyState = document.getElementById('emptyState');
+            emptyState.style.display = 'block';
+            
+            // Verifica se ci sono ordini in localStorage (debug)
+            const pendingOrder = localStorage.getItem('lh360_pending_order');
+            if (pendingOrder) {
+                try {
+                    const order = JSON.parse(pendingOrder);
+                    console.warn('');
+                    console.warn('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+                    console.warn('⚠️ DISCREPANZA RILEVATA');
+                    console.warn('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+                    console.warn('localStorage contiene ordine:', order.id);
+                    console.warn('API ha restituito: 0 ordini');
+                    console.warn('');
+                    console.warn('🔍 POSSIBILI CAUSE:');
+                    console.warn('   1. Ordine non sincronizzato con Google Sheets');
+                    console.warn('   2. Ordine più vecchio di 30 giorni');
+                    console.warn('   3. Stato ordine non attivo');
+                    console.warn('   4. Problema funzione getOrdersForTracking()');
+                    console.warn('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+                    
+                    // Aggiungi banner informativo
+                    const infoDiv = emptyState.querySelector('.empty-text');
+                    if (infoDiv) {
+                        infoDiv.innerHTML = `
+                            Non hai ordini attivi negli ultimi 30 giorni<br><br>
+                            <small style="color: #71717a; font-size: 0.875rem;">
+                                Se hai appena effettuato un ordine, potrebbe richiedere
+                                alcuni minuti per essere elaborato dal sistema.
+                            </small>
+                        `;
+                    }
+                } catch (e) {}
+            }
         }
 
         // *** FUNZIONI DEBUG HELPER ***
