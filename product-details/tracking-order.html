@@ -622,6 +622,8 @@
         }
 
         function createOrderCard(order, index) {
+            console.log(`   🎨 Creazione card ordine ${index + 1}: ${order.id}`);
+            
             const articoli = order.articoli != null ? Number(order.articoli) :
                             (order.products ? order.products.reduce((sum, p) => sum + (p.quantity || 1), 0) : 0);
             const plural = articoli === 1 ? 'articolo' : 'articoli';
@@ -641,7 +643,7 @@
             const currentStepIndex = steps.indexOf(order.stato);
             const isDelivered = order.stato === 'Consegnato';
             
-            return `
+            const cardHtml = `
             <div class="order-card" style="animation-delay: ${index * 0.15}s">
                 <div class="order-header">
                     <div class="order-info">
@@ -727,6 +729,10 @@
                 </div>
                 ` : ''}
             </div>`;
+            
+            console.log(`      ✅ Card HTML generato (${cardHtml.length} caratteri)`);
+            
+            return cardHtml;
         }
 
         function formatPrice(value) {
@@ -822,12 +828,33 @@
                         console.error('❌ ERRORE API:');
                         console.error('   └─', data.error);
                         console.error('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-                        loadFromLocalStorage();
+                        showEmptyState();
                         cleanup();
                         return;
                     }
                     
-                    const apiOrders = data.orders || [];
+                    // *** FIX CRITICO: Verifica esistenza array orders ***
+                    if (!data.orders) {
+                        console.error('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+                        console.error('❌ ERRORE: Campo "orders" mancante nella risposta');
+                        console.error('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+                        showEmptyState();
+                        cleanup();
+                        return;
+                    }
+                    
+                    // *** FIX CRITICO: Verifica che orders sia un array ***
+                    if (!Array.isArray(data.orders)) {
+                        console.error('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+                        console.error('❌ ERRORE: Campo "orders" non è un array');
+                        console.error('   └─ Tipo ricevuto:', typeof data.orders);
+                        console.error('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+                        showEmptyState();
+                        cleanup();
+                        return;
+                    }
+                    
+                    const apiOrders = data.orders;
                     
                     console.log('');
                     console.log('📊 ANALISI ORDINI RICEVUTI:');
@@ -839,18 +866,22 @@
                         console.warn('       • Foglio "Order Tracking" vuoto');
                         console.warn('       • Nessun ordine attivo negli ultimi 30 giorni');
                         console.warn('       • Problema funzione getOrdersForTracking()');
-                    } else {
-                        apiOrders.forEach((order, index) => {
-                            console.log('');
-                            console.log(`   📦 Ordine ${index + 1}:`);
-                            console.log(`      ├─ ID: ${order.id}`);
-                            console.log(`      ├─ Stato: ${order.stato}`);
-                            console.log(`      ├─ Data: ${order.data}`);
-                            console.log(`      ├─ Cliente: ${order.cliente}`);
-                            console.log(`      ├─ Totale: € ${order.totale}`);
-                            console.log(`      └─ Articoli: ${order.articoli}`);
-                        });
+                        showEmptyState();
+                        cleanup();
+                        return;
                     }
+                    
+                    // Log dettagliato ordini
+                    apiOrders.forEach((order, index) => {
+                        console.log('');
+                        console.log(`   📦 Ordine ${index + 1}:`);
+                        console.log(`      ├─ ID: ${order.id}`);
+                        console.log(`      ├─ Stato: ${order.stato}`);
+                        console.log(`      ├─ Data: ${order.data}`);
+                        console.log(`      ├─ Cliente: ${order.cliente}`);
+                        console.log(`      ├─ Totale: € ${order.totale}`);
+                        console.log(`      └─ Articoli: ${order.articoli}`);
+                    });
                     
                     // Pulizia localStorage se ordine pending è confermato
                     if (localPending) {
@@ -872,23 +903,38 @@
                         } catch (e) {}
                     }
                     
-                    // Rendering
-                    document.getElementById('loadingState').style.display = 'none';
-                    
+                    // *** FIX CRITICO: RENDERING FORZATO ***
                     console.log('');
                     console.log('🎨 RENDERING PAGINA:');
+                    console.log('   └─ Inizio rendering di', apiOrders.length, 'ordini...');
                     
-                    if (apiOrders.length === 0) {
-                        console.log('   └─ Mostro empty state (nessun ordine)');
-                        showEmptyState();
-                    } else {
-                        console.log('   └─ Mostro lista ordini:', apiOrders.length);
-                        renderOrders(apiOrders);
-                    }
+                    // Nascondi loader
+                    document.getElementById('loadingState').style.display = 'none';
+                    
+                    // Nascondi empty state
+                    document.getElementById('emptyState').style.display = 'none';
+                    
+                    // *** RENDERING DIRETTO (senza chiamare funzione) ***
+                    const ordersList = document.getElementById('ordersList');
+                    
+                    // Pulisci contenuto esistente
+                    ordersList.innerHTML = '';
+                    
+                    // Popola con card ordini
+                    apiOrders.forEach((order, index) => {
+                        ordersList.innerHTML += createOrderCard(order, index);
+                    });
+                    
+                    // Mostra lista
+                    ordersList.style.display = 'flex';
+                    
+                    console.log('   ✅ Rendering completato!');
+                    console.log('   └─ ordersList.style.display =', ordersList.style.display);
+                    console.log('   └─ ordersList.children.length =', ordersList.children.length);
                     
                     console.log('');
                     console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-                    console.log('✅ CARICAMENTO COMPLETATO');
+                    console.log('✅ CARICAMENTO COMPLETATO CON SUCCESSO');
                     console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
                     
                     cleanup();
@@ -983,28 +1029,24 @@
             showEmptyState();
         }
 
-        // *** FIX CRITICO: Funzione renderOrders che pulisce e ripopola sempre ***
-        function renderOrders(orders) {
+        // *** FUNZIONE RENDERING SEMPLIFICATA (backup, non più usata) ***
+        function renderOrders_OLD(orders) {
             const ordersList = document.getElementById('ordersList');
             const loadingState = document.getElementById('loadingState');
             const emptyState = document.getElementById('emptyState');
             
-            // Nascondi stati alternativi
             loadingState.style.display = 'none';
             emptyState.style.display = 'none';
             
-            // Pulisci lista esistente
             ordersList.innerHTML = '';
             
-            // Popola con nuovi ordini
             orders.forEach((order, index) => {
                 ordersList.innerHTML += createOrderCard(order, index);
             });
             
-            // Mostra lista
             ordersList.style.display = 'flex';
             
-            console.log(`✅ Renderizzati ${orders.length} ordini`);
+            console.log(`✅ renderOrders: ${orders.length} ordini visualizzati`);
         }
 
         function showEmptyState() {
