@@ -752,244 +752,83 @@
         }
 
         // *** DEBUG AVANZATO: Verifica completa connessione API ***
-async function loadOrders(retryCount = 0) {
-    try {
-        console.log('┌────────────────────────────────────────────┐');
-        console.log('🚀 INIZIO CARICAMENTO ORDINI');
-        console.log('📅 Data/Ora:', new Date().toLocaleString('it-IT'));
-        console.log('🔄 Tentativo:', retryCount + 1);
-        console.log('└────────────────────────────────────────────┘');
-        
-        // Mostra loader
-        document.getElementById('loadingState').style.display = 'block';
-        document.getElementById('ordersList').style.display = 'none';
-        document.getElementById('emptyState').style.display = 'none';
-        
-        // Check localStorage PRIMA della chiamata API
-        const localPending = localStorage.getItem('lh360_pending_order');
-        if (localPending) {
-            try {
-                const order = JSON.parse(localPending);
-                console.log('💾 ORDINE IN LOCALSTORAGE TROVATO:');
-                console.log('   └─ ID:', order.id);
-                console.log('   └─ Stato:', order.stato);
-                console.log('   └─ Data:', order.data || order.timestamp);
-                console.log('   └─ Cliente:', order.cliente);
-                console.warn('⚠️ Questo ordine NON sarà mostrato (API ha priorità)');
-            } catch (e) {
-                console.error('❌ Errore parsing localStorage:', e);
+        async function loadOrders(retryCount = 0) {
+        try {
+            console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+            console.log('🚀 INIZIO CARICAMENTO ORDINI (METODO FETCH)');
+            
+            // Mostra loader e nascondi resto
+            document.getElementById('loadingState').style.display = 'block';
+            document.getElementById('ordersList').style.display = 'none';
+            document.getElementById('emptyState').style.display = 'none';
+            
+            // Costruisci URL (aggiungiamo timestamp per evitare cache)
+            const apiUrl = `${WEB_APP_URL}?action=get_orders&t=${Date.now()}`;
+            console.log('🌐 URL:', apiUrl);
+
+            // Esegui la chiamata (come nel test)
+            const response = await fetch(apiUrl);
+            
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
             }
-        } else {
-            console.log('💾 Nessun ordine in localStorage');
-        }
-        
-        console.log('');
-        console.log('🌐 CHIAMATA API IN CORSO...');
-        console.log('   └─ URL:', WEB_APP_URL);
-        console.log('   └─ Action: get_orders');
-        console.log('   └─ Timestamp:', Date.now());
-        
-        const callbackName = 'handleOrdersData_' + Date.now();
-        const script = document.createElement('script');
-        const apiUrl = `${WEB_APP_URL}?action=get_orders&callback=${callbackName}&t=${Date.now()}`;
-        console.log('   └─ URL completo:', apiUrl);
-        script.src = apiUrl;
-        
-        const startTime = Date.now();
-        
-        const timeout = setTimeout(() => {
-            const elapsed = Date.now() - startTime;
-            console.error('┌────────────────────────────────────────────┐');
-            console.error('❌ TIMEOUT API (10 secondi)');
-            console.error('   └─ Tempo trascorso:', elapsed + 'ms');
-            console.error('   └─ URL:', apiUrl);
-            console.error('└────────────────────────────────────────────┘');
-            console.warn('🔄 Fallback a localStorage...');
-            loadFromLocalStorage();
-            cleanup();
-        }, 10000);
-        
-        window[callbackName] = function(data) {
-            const elapsed = Date.now() - startTime;
-            clearTimeout(timeout);
+
+            // Ottieni il testo grezzo (Google Script restituisce: callback({...}))
+            const text = await response.text();
             
-            console.log('');
-            console.log('┌────────────────────────────────────────────┐');
-            console.log('✅ RISPOSTA API RICEVUTA');
-            console.log('   └─ Tempo risposta:', elapsed + 'ms');
-            console.log('└────────────────────────────────────────────┘');
+            // Estraiamo il JSON puro rimuovendo il wrapper "callback(...)"
+            // Cerchiamo la prima graffa aperta e l'ultima chiusa
+            const jsonMatch = text.match(/\{[\s\S]*\}/);
             
-            // Log completo risposta
-            console.log('📦 CONTENUTO RISPOSTA:');
-            console.log(JSON.stringify(data, null, 2));
+            if (!jsonMatch) {
+                throw new Error("Formato risposta non valido (JSON non trovato)");
+            }
+
+            const data = JSON.parse(jsonMatch[0]);
             
+            // -- LOGICA DI CONTROLLO (Invariata) --
             if (data.error) {
-                console.error('┌────────────────────────────────────────────┐');
-                console.error('❌ ERRORE API:');
-                console.error('   └─', data.error);
-                console.error('└────────────────────────────────────────────┘');
+                console.error('❌ ERRORE API:', data.error);
                 showEmptyState();
-                cleanup();
                 return;
             }
-            
-            // *** FIX CRITICO: Verifica esistenza array orders ***
-            if (!data.orders) {
-                console.error('┌────────────────────────────────────────────┐');
-                console.error('❌ ERRORE: Campo "orders" mancante nella risposta');
-                console.error('└────────────────────────────────────────────┘');
+
+            if (!data.orders || !Array.isArray(data.orders)) {
+                console.error('❌ ERRORE: Campo orders mancante o non valido');
                 showEmptyState();
-                cleanup();
                 return;
             }
-            
-            // *** FIX CRITICO: Verifica che orders sia un array ***
-            if (!Array.isArray(data.orders)) {
-                console.error('┌────────────────────────────────────────────┐');
-                console.error('❌ ERRORE: Campo "orders" non è un array');
-                console.error('   └─ Tipo ricevuto:', typeof data.orders);
-                console.error('└────────────────────────────────────────────┘');
-                showEmptyState();
-                cleanup();
-                return;
-            }
-            
+
             const apiOrders = data.orders;
-            
-            console.log('');
-            console.log('📊 ANALISI ORDINI RICEVUTI:');
-            console.log('   └─ Totale ordini:', apiOrders.length);
-            
+            console.log(`📦 Ordini ricevuti: ${apiOrders.length}`);
+
             if (apiOrders.length === 0) {
-                console.warn('⚠️ API ha restituito 0 ordini!');
-                console.warn('   └─ Possibili cause:');
-                console.warn('       • Foglio "Order Tracking" vuoto');
-                console.warn('       • Nessun ordine attivo negli ultimi 30 giorni');
-                console.warn('       • Problema funzione getOrdersForTracking()');
                 showEmptyState();
-                cleanup();
                 return;
             }
+
+            // -- RENDERING --
+            // Nascondi loader
+            document.getElementById('loadingState').style.display = 'none';
+            document.getElementById('emptyState').style.display = 'none';
             
-            // Log dettagliato ordini
+            const ordersList = document.getElementById('ordersList');
+            ordersList.innerHTML = '';
+            
+            // Genera le card
             apiOrders.forEach((order, index) => {
-                console.log('');
-                console.log(`   📦 Ordine ${index + 1}:`);
-                console.log(`      ├─ ID: ${order.id}`);
-                console.log(`      ├─ Stato: ${order.stato}`);
-                console.log(`      ├─ Data: ${order.data}`);
-                console.log(`      ├─ Cliente: ${order.cliente}`);
-                console.log(`      ├─ Totale: € ${order.totale}`);
-                console.log(`      └─ Articoli: ${order.articoli}`);
+                ordersList.innerHTML += createOrderCard(order, index);
             });
             
-            // Pulizia localStorage se ordine pending è confermato
-            if (localPending) {
-                try {
-                    const pending = JSON.parse(localPending);
-                    const isConfirmed = apiOrders.some(o => o.id === pending.id);
-                    if (isConfirmed) {
-                        localStorage.removeItem('lh360_pending_order');
-                        console.log('');
-                        console.log('🗑️ PULIZIA LOCALSTORAGE:');
-                        console.log('   └─ Ordine pending rimosso (ora confermato):', pending.id);
-                    } else {
-                        console.log('');
-                        console.warn('⚠️ ORDINE PENDING NON CONFERMATO:');
-                        console.warn('   └─ ID:', pending.id);
-                        console.warn('   └─ NON presente nell\'API');
-                        console.warn('   └─ Possibile ordine "fantasma"');
-                    }
-                } catch (e) {}
-            }
-            
-            // *** FIX CRITICO: RENDERING FORZATO CON TIMEOUT ***
-                    console.log('');
-                    console.log('🎨 RENDERING PAGINA:');
-                    console.log('   └─ Inizio rendering di', apiOrders.length, 'ordini...');
-                    
-                    // Nascondi loader
-                    const loadingEl = document.getElementById('loadingState');
-                    const emptyEl = document.getElementById('emptyState');
-                    const ordersListEl = document.getElementById('ordersList');
-                    
-                    loadingEl.style.display = 'none';
-                    emptyEl.style.display = 'none';
-                    
-                    // *** RENDERING CON SETTIMEOUT PER MOBILE ***
-                    setTimeout(() => {
-                        try {
-                            console.log('   🔄 Esecuzione rendering ritardato...');
-                            
-                            // Pulisci contenuto esistente
-                            ordersListEl.innerHTML = '';
-                            
-                            // Popola con card ordini
-                            let allCardsHtml = '';
-                            apiOrders.forEach((order, index) => {
-                                allCardsHtml += createOrderCard(order, index);
-                            });
-                            
-                            // Inserisci TUTTO il HTML in una volta sola
-                            ordersListEl.innerHTML = allCardsHtml;
-                            
-                            // FORZA display flex
-                            ordersListEl.style.display = 'flex';
-                            ordersListEl.style.flexDirection = 'column';
-                            ordersListEl.style.gap = '2rem';
-                            
-                            console.log('   ✅ Rendering completato!');
-                            console.log('   └─ ordersList.style.display =', ordersListEl.style.display);
-                            console.log('   └─ ordersList.children.length =', ordersListEl.children.length);
-                            console.log('   └─ ordersList.innerHTML.length =', ordersListEl.innerHTML.length);
-                            
-                        } catch (renderError) {
-                            console.error('❌ ERRORE RENDERING:', renderError);
-                            showEmptyState();
-                        }
-                    }, 100); // 100ms delay per browser mobile
-            
-            console.log('');
-            console.log('┌────────────────────────────────────────────┐');
-            console.log('✅ CARICAMENTO COMPLETATO CON SUCCESSO');
-            console.log('└────────────────────────────────────────────┘');
-            
-            cleanup();
-        };
-        
-        script.onerror = () => {
-            const elapsed = Date.now() - startTime;
-            clearTimeout(timeout);
-            console.error('┌────────────────────────────────────────────┐');
-            console.error('❌ ERRORE CHIAMATA API');
-            console.error('   └─ Tempo trascorso:', elapsed + 'ms');
-            console.error('   └─ Possibili cause:');
-            console.error('       • URL Web App errato');
-            console.error('       • Web App non deployata');
-            console.error('       • CORS bloccato');
-            console.error('       • Script timeout');
-            console.error('└────────────────────────────────────────────┘');
-            loadFromLocalStorage();
-            cleanup();
-        };
-        
-        function cleanup() {
-            try {
-                if (script.parentNode) document.body.removeChild(script);
-                delete window[callbackName];
-            } catch (e) {}
+            ordersList.style.display = 'flex';
+            console.log('✅ Rendering completato con successo');
+
+        } catch (error) {
+            console.error('❌ ERRORE CARICAMENTO:', error);
+            // In caso di errore, prova fallback o mostra stato vuoto
+            showEmptyState();
         }
-        
-        document.body.appendChild(script);
-        
-    } catch (error) {
-        console.error('┌────────────────────────────────────────────┐');
-        console.error('❌ ERRORE GENERALE:');
-        console.error(error);
-        console.error('└────────────────────────────────────────────┘');
-        loadFromLocalStorage();
     }
-}
 
         function getPendingOrdersFromLocalStorage() {
             const orders = [];
@@ -1225,26 +1064,6 @@ async function loadOrders(retryCount = 0) {
         
         // Avvio caricamento ordini
         loadOrders();
-
-        // 🔥 NUCLEARMENTE FORZA VISUALIZZAZIONE (DEBUG)
-setTimeout(() => {
-    const el = document.getElementById('ordersList');
-    console.log('🔥 FORCE DISPLAY:');
-    console.log('   display:', el.style.display);
-    console.log('   children:', el.children.length);
-    
-    if (el.children.length > 0) {
-        el.style.setProperty('display', 'flex', 'important');
-        el.style.setProperty('visibility', 'visible', 'important');
-        el.style.setProperty('opacity', '1', 'important');
-        el.classList.remove('hidden');
-        
-        console.log('   ✅ Forzato display!');
-    }
-}, 2000);
     </script>
 </body>
 </html>
-
-
-
