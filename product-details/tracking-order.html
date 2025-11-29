@@ -349,6 +349,32 @@
             color: #34d399;
             font-weight: 600;
         }
+        @media (max-width: 640px) {
+            .order-summary {
+                padding: 1.25rem;
+            }
+            .summary-row {
+                font-size: 0.9375rem;
+            }
+        }
+        .order-products-section { margin-top: 2rem; padding-top: 1.5rem; border-top: 1px solid rgba(39,39,42,0.4); }
+        .product-details summary { cursor: pointer; color: #a1a1aa; font-size: 0.9375rem; padding: 0.75rem 0; list-style: none; position: relative; }
+        .product-details summary::after { content: '↓'; float: right; transition: transform 0.3s; }
+        .product-details[open] summary::after { content: '↑'; transform: rotate(180deg); }
+        .products-list { display: flex; flex-direction: column; gap: 1rem; margin-top: 1rem; }
+        .product-item { display: flex; justify-content: space-between; align-items: center; padding: 1rem; background: rgba(9,9,11,0.4); border-radius: 1rem; }
+        .product-info { flex: 1; }
+        .product-name { font-weight: 500; margin-bottom: 0.25rem; }
+        .product-variant { color: #a1a1aa; font-size: 0.875rem; display: flex; align-items: center; gap: 0.5rem; }
+        .variant-color { width: 12px; height: 12px; border-radius: 50%; display: inline-block; border: 1px solid rgba(255,255,255,0.2); }
+        .product-quantity { color: #a1a1aa; margin: 0 1rem; }
+        .product-price { font-weight: 600; white-space: nowrap; }
+        .step.completed .step-icon { background: #10b981; border-color: #10b981; color: white; }
+        .step.active .step-icon { background: #1f2937; border-color: #34d399; animation: pulse 2s infinite; box-shadow: 0 0 0 0 rgba(52, 211, 153, 0.7); }
+        .order-highlight {
+          color: #fbbf24;
+          font-weight: 600;
+        }
         .order-title-wrapper {
           display: flex;
           align-items: baseline;
@@ -372,6 +398,41 @@
           text-shadow: 0 2px 12px rgba(251, 191, 36, 0.4);
           letter-spacing: -0.5px;
         }
+        .order-item {
+            display: flex;
+            gap: 1rem;
+            padding: 1rem 0;
+            border-bottom: 1px solid rgba(39,39,42,0.3);
+            align-items: center;
+        }
+        .order-item:last-child {
+            border-bottom: none;
+        }
+        .item-details {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+        }
+        .item-name {
+            font-size: 1rem;
+            color: #fafafa;
+            margin-bottom: 0.25rem;
+        }
+        .item-variant {
+            font-size: 0.875rem;
+            color: #a1a1aa;
+        }
+        .item-price {
+            font-size: 1rem;
+            color: #fafafa;
+            text-align: right;
+            flex-shrink: 0;
+        }
+        .items-list {
+            display: flex;
+            flex-direction: column;
+            gap: 0;
+        }
     </style>
 </head>
 <body>
@@ -386,34 +447,58 @@
             <p>Caricamento ordini in corso...</p>
         </div>
         
+        <!-- Debug Panel (nascosto di default) -->
+        <div id="debugPanel" style="display: none; position: fixed; bottom: 20px; right: 20px; background: rgba(0,0,0,0.9); color: #0f0; padding: 15px; border-radius: 8px; font-family: monospace; font-size: 11px; max-width: 300px; max-height: 200px; overflow-y: auto; z-index: 9999; border: 1px solid #0f0;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                <strong>🔧 DEBUG PANEL</strong>
+                <button onclick="document.getElementById('debugPanel').style.display='none'" style="background: none; border: 1px solid #0f0; color: #0f0; padding: 2px 8px; cursor: pointer; border-radius: 4px;">✕</button>
+            </div>
+            <div id="debugContent"></div>
+        </div>
         <div class="orders-list" id="ordersList" style="display: none;"></div>
-        
         <div class="empty-state" id="emptyState" style="display: none;">
             <div class="empty-icon">📦</div>
             <h2 class="empty-title">Nessun ordine recente</h2>
             <p class="empty-text">Non hai ordini negli ultimi 30 giorni</p>
             <a href="../index.html#shop" class="btn btn-primary">Inizia a Fare Shopping</a>
             
+            <!-- Debug Tools -->
             <div style="margin-top: 3rem; padding-top: 2rem; border-top: 1px solid rgba(255,255,255,0.1);">
                 <p style="font-size: 0.75rem; color: #71717a; margin-bottom: 1rem;">🔧 Strumenti Debug</p>
                 <button onclick="clearLocalStorageAndReload()" class="btn btn-secondary" style="margin-right: 1rem; padding: 0.75rem 1.5rem; font-size: 0.8125rem;">
-                    🗑️ Pulisci Cache
+                    🗑️ Pulisci Cache e Ricarica
                 </button>
                 <button onclick="testAPIConnection()" class="btn btn-secondary" style="padding: 0.75rem 1.5rem; font-size: 0.8125rem;">
-                    🔌 Testa API
+                    🔌 Testa Connessione API
                 </button>
             </div>
         </div>
     </div>
-    
     <script>
         const WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbyN-wdZBN0gm3x3maZAHnUq5K-QdFL-KKy2sROqMFY4GxUA-ERxBGyyLh4cno60DV2m/exec';
-        
         const CATEGORY_MAP = {
             'M': 'Abbigliamento',
             'B': 'Immobili',
             'S': 'Supercar',
             'E': 'Esperienze'
+        };
+
+        const MESI_IT = {
+            'gennaio': 0, 'febbraio': 1, 'marzo': 2, 'aprile': 3,
+            'maggio': 4, 'giugno': 5, 'luglio': 6, 'agosto': 7,
+            'settembre': 8, 'ottobre': 9, 'novembre': 10, 'dicembre': 11
+        };
+
+        const MESI_NOMI = [
+            'gennaio', 'febbraio', 'marzo', 'aprile', 'maggio', 'giugno',
+            'luglio', 'agosto', 'settembre', 'ottobre', 'novembre', 'dicembre'
+        ];
+
+        const MESI_EN_TO_IT = {
+            'january': 'gennaio', 'february': 'febbraio', 'march': 'marzo',
+            'april': 'aprile', 'may': 'maggio', 'june': 'giugno',
+            'july': 'luglio', 'august': 'agosto', 'september': 'settembre',
+            'october': 'ottobre', 'november': 'novembre', 'december': 'dicembre'
         };
 
         const STATE_STEPS = {
@@ -426,90 +511,127 @@
         const STEP_LABELS = ['Confermato', 'In Preparazione', 'In Transito', 'Consegnato'];
         const STEP_ICONS = ['✓', '📦', '🚚', '🏠'];
 
-        // *** FIX CRITICO: Callback globale statico (non dinamico) ***
-        window.handleOrdersDataGlobal = function(data) {
-            console.log('✅ handleOrdersDataGlobal CHIAMATO');
-            console.log('📦 Data ricevuta:', data);
-            
-            clearTimeout(window.apiTimeout);
-            
-            document.getElementById('loadingState').style.display = 'none';
-            
-            if (data.error || !data.orders || !Array.isArray(data.orders)) {
-                console.error('❌ Errore o formato dati invalido:', data.error || 'orders mancante');
-                showEmptyState();
-                return;
-            }
-            
-            const orders = data.orders;
-            console.log(`📊 Ordini ricevuti: ${orders.length}`);
-            
-            if (orders.length === 0) {
-                showEmptyState();
-                return;
-            }
-            
-            // Rendering diretto
-            const ordersList = document.getElementById('ordersList');
-            ordersList.innerHTML = '';
-            
-            orders.forEach((order, index) => {
-                ordersList.innerHTML += createOrderCard(order, index);
-            });
-            
-            ordersList.style.display = 'flex';
-            document.getElementById('emptyState').style.display = 'none';
-            
-            console.log('✅ Rendering completato:', orders.length, 'ordini visualizzati');
-        };
+        // *** FIX CRITICO: Rimossa variabile globale ordersRendered che bloccava il rendering su mobile ***
 
-        function loadOrders() {
-            console.log('🚀 loadOrders() - INIZIO');
-            console.log('🌐 URL API:', WEB_APP_URL);
+        function formatDataItaliana(input) {
+            let date;
             
-            document.getElementById('loadingState').style.display = 'block';
-            document.getElementById('ordersList').style.display = 'none';
-            document.getElementById('emptyState').style.display = 'none';
+            if (input instanceof Date) {
+                date = input;
+            } else if (typeof input === 'string') {
+                date = parseAnyDateFormat(input);
+            } else {
+                return 'Data non disponibile';
+            }
             
-            const script = document.createElement('script');
+            if (!date || isNaN(date.getTime())) {
+                return 'Data non disponibile';
+            }
             
-            // *** FIX: Usa callback globale statico ***
-            const apiUrl = `${WEB_APP_URL}?action=get_orders&callback=handleOrdersDataGlobal&t=${Date.now()}`;
-            console.log('📡 URL completo:', apiUrl);
+            const giorno = date.getDate();
+            const mese = MESI_NOMI[date.getMonth()];
+            const anno = date.getFullYear();
             
-            script.src = apiUrl;
+            return `${giorno} ${mese} ${anno}`;
+        }
+
+        function parseAnyDateFormat(dateStr) {
+            if (!dateStr || dateStr === 'Da definire') return null;
             
-            // Timeout più lungo per mobile (15 secondi)
-            window.apiTimeout = setTimeout(() => {
-                console.error('⏱️ TIMEOUT API (15 secondi)');
-                if (script.parentNode) {
-                    document.body.removeChild(script);
+            const s = dateStr.toString().trim().toLowerCase();
+            
+            const slashMatch = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+            if (slashMatch) {
+                return new Date(
+                    parseInt(slashMatch[3]),
+                    parseInt(slashMatch[2]) - 1,
+                    parseInt(slashMatch[1])
+                );
+            }
+            
+            const textMatch = s.match(/(\d{1,2})\s+([a-zà-ù]+)\s+(\d{4})/);
+            if (textMatch) {
+                const giorno = parseInt(textMatch[1]);
+                const meseStr = textMatch[2].toLowerCase();
+                const anno = parseInt(textMatch[3]);
+                
+                let meseIdx = MESI_IT[meseStr];
+                
+                if (meseIdx === undefined && MESI_EN_TO_IT[meseStr]) {
+                    meseIdx = MESI_IT[MESI_EN_TO_IT[meseStr]];
                 }
-                showEmptyState();
-            }, 15000);
-            
-            script.onerror = () => {
-                console.error('❌ Errore caricamento script JSONP');
-                clearTimeout(window.apiTimeout);
-                if (script.parentNode) {
-                    document.body.removeChild(script);
+                
+                if (meseIdx !== undefined) {
+                    return new Date(anno, meseIdx, giorno);
                 }
-                showEmptyState();
+            }
+            
+            const isoDate = new Date(dateStr);
+            if (!isNaN(isoDate.getTime())) {
+                return isoDate;
+            }
+            
+            return null;
+        }
+
+        function calcolaProgressoRealistico(dataOrdine, dataConsegna, statoCorrente) {
+            const ora = new Date();
+            const dataInizio = parseAnyDateFormat(dataOrdine);
+            const dataFine = parseAnyDateFormat(dataConsegna);
+            const stepCorrente = STATE_STEPS[statoCorrente] || 0;
+            
+            if (statoCorrente === 'Consegnato') {
+                return 100;
+            }
+            
+            if (!dataInizio || !dataFine) {
+                return (stepCorrente / 3) * 100;
+            }
+            
+            const durataMs = dataFine - dataInizio;
+            const trascorsoMs = ora - dataInizio;
+            
+            if (durataMs <= 0) {
+                return (stepCorrente / 3) * 100;
+            }
+            
+            let progressoGrezzo = (trascorsoMs / durataMs) * 100;
+            
+            const milestone = {
+                0: 0,
+                1: 20,
+                2: 60,
+                3: 100
             };
             
-            document.body.appendChild(script);
-            console.log('✅ Script JSONP aggiunto al DOM');
+            const milestoneMin = milestone[stepCorrente];
+            const milestoneMax = milestone[Math.min(stepCorrente + 1, 3)];
+            
+            if (progressoGrezzo < milestoneMin) {
+                progressoGrezzo = milestoneMin;
+            }
+            
+            if (progressoGrezzo > milestoneMax && stepCorrente < 3) {
+                progressoGrezzo = milestoneMax;
+            }
+            
+            const progressoInFase = (progressoGrezzo - milestoneMin) / (milestoneMax - milestoneMin);
+            const progressoSmooth = milestoneMin + (progressoInFase * (milestoneMax - milestoneMin));
+            
+            return Math.max(0, Math.min(100, Math.round(progressoSmooth)));
         }
 
         function createOrderCard(order, index) {
+            console.log(`   🎨 Creazione card ordine ${index + 1}: ${order.id}`);
+            
             const articoli = order.articoli != null ? Number(order.articoli) :
                             (order.products ? order.products.reduce((sum, p) => sum + (p.quantity || 1), 0) : 0);
             const plural = articoli === 1 ? 'articolo' : 'articoli';
             
             const orderCategory = getCategoryFromOrderId(order.id);
             
-            const dataOrdineFormatted = order.data || 'N/A';
-            const dataConsegnaFormatted = order.consegna_prevista || 'Da definire';
+            const dataOrdineFormatted = formatDataItaliana(order.data);
+            const dataConsegnaFormatted = formatDataItaliana(order.consegna_prevista);
             
             const progress = calcolaProgressoRealistico(
                 order.data,
@@ -517,8 +639,8 @@
                 order.stato
             );
             
-            const steps = STEP_LABELS;
-            const currentStepIndex = STATE_STEPS[order.stato] || 0;
+            const steps = ['Confermato', 'In Preparazione', 'In Transito', 'Consegnato'];
+            const currentStepIndex = steps.indexOf(order.stato);
             const isDelivered = order.stato === 'Consegnato';
             
             const cardHtml = `
@@ -570,7 +692,45 @@
                         }).join('')}
                     </div>
                 </div>
+                
+                ${order.products && order.products.length > 0 ? `
+                <div class="order-products-section">
+                    <details class="product-details">
+                        <summary>
+                            Visualizza dettagli prodotti (${articoli} ${plural})
+                        </summary>
+                        <div class="products-list">
+                            ${order.products.map(p => {
+                                let cleanName = p.name || 'Prodotto';
+                                let imageUrl = p.image || '';
+
+                                if (cleanName.includes(' - ')) {
+                                    cleanName = cleanName.split(' - ')[0].trim();
+                                }
+
+                                return `
+                                <div class="product-item" style="display:flex; align-items:center; gap:16px; padding:16px; background:rgba(9,9,11,0.4); border-radius:12px; margin-bottom:8px;">
+                                    ${imageUrl ? `
+                                    <div style="width:64px; height:80px; border-radius:8px; overflow:hidden; flex-shrink:0; background:#18181b;">
+                                        <img src="${imageUrl}" alt="${cleanName}" style="width:100%; height:100%; object-fit:cover;">
+                                    </div>` : ''}
+                                    <div style="flex:1;">
+                                        <div class="product-name" style="font-weight:500; margin-bottom:6px;">${cleanName}</div>
+                                        <div class="product-category" style="font-size:0.9rem; color:#10b981; font-weight:500;">
+                                            📂 ${orderCategory}
+                                        </div>
+                                    </div>
+                                    <div style="font-weight:bold; color:#34d399; margin:0 12px;">× ${p.quantity || 1}</div>
+                                    <div style="font-weight:600;">€ ${formatPrice(p.price)}</div>
+                                </div>`;
+                            }).join('')}
+                        </div>
+                    </details>
+                </div>
+                ` : ''}
             </div>`;
+            
+            console.log(`      ✅ Card HTML generato (${cardHtml.length} caratteri)`);
             
             return cardHtml;
         }
@@ -591,64 +751,481 @@
             return 'Prodotto';
         }
 
-        function calcolaProgressoRealistico(dataOrdine, dataConsegna, statoCorrente) {
-            const stepCorrente = STATE_STEPS[statoCorrente] || 0;
+        // *** DEBUG AVANZATO: Verifica completa connessione API ***
+async function loadOrders(retryCount = 0) {
+    try {
+        console.log('┌────────────────────────────────────────────┐');
+        console.log('🚀 INIZIO CARICAMENTO ORDINI');
+        console.log('📅 Data/Ora:', new Date().toLocaleString('it-IT'));
+        console.log('🔄 Tentativo:', retryCount + 1);
+        console.log('└────────────────────────────────────────────┘');
+        
+        // Mostra loader
+        document.getElementById('loadingState').style.display = 'block';
+        document.getElementById('ordersList').style.display = 'none';
+        document.getElementById('emptyState').style.display = 'none';
+        
+        // Check localStorage PRIMA della chiamata API
+        const localPending = localStorage.getItem('lh360_pending_order');
+        if (localPending) {
+            try {
+                const order = JSON.parse(localPending);
+                console.log('💾 ORDINE IN LOCALSTORAGE TROVATO:');
+                console.log('   └─ ID:', order.id);
+                console.log('   └─ Stato:', order.stato);
+                console.log('   └─ Data:', order.data || order.timestamp);
+                console.log('   └─ Cliente:', order.cliente);
+                console.warn('⚠️ Questo ordine NON sarà mostrato (API ha priorità)');
+            } catch (e) {
+                console.error('❌ Errore parsing localStorage:', e);
+            }
+        } else {
+            console.log('💾 Nessun ordine in localStorage');
+        }
+        
+        console.log('');
+        console.log('🌐 CHIAMATA API IN CORSO...');
+        console.log('   └─ URL:', WEB_APP_URL);
+        console.log('   └─ Action: get_orders');
+        console.log('   └─ Timestamp:', Date.now());
+        
+        const callbackName = 'handleOrdersData_' + Date.now();
+        const script = document.createElement('script');
+        const apiUrl = `${WEB_APP_URL}?action=get_orders&callback=${callbackName}&t=${Date.now()}`;
+        console.log('   └─ URL completo:', apiUrl);
+        script.src = apiUrl;
+        
+        const startTime = Date.now();
+        
+        const timeout = setTimeout(() => {
+            const elapsed = Date.now() - startTime;
+            console.error('┌────────────────────────────────────────────┐');
+            console.error('❌ TIMEOUT API (10 secondi)');
+            console.error('   └─ Tempo trascorso:', elapsed + 'ms');
+            console.error('   └─ URL:', apiUrl);
+            console.error('└────────────────────────────────────────────┘');
+            console.warn('🔄 Fallback a localStorage...');
+            loadFromLocalStorage();
+            cleanup();
+        }, 10000);
+        
+        window[callbackName] = function(data) {
+            const elapsed = Date.now() - startTime;
+            clearTimeout(timeout);
             
-            if (statoCorrente === 'Consegnato') {
-                return 100;
+            console.log('');
+            console.log('┌────────────────────────────────────────────┐');
+            console.log('✅ RISPOSTA API RICEVUTA');
+            console.log('   └─ Tempo risposta:', elapsed + 'ms');
+            console.log('└────────────────────────────────────────────┘');
+            
+            // Log completo risposta
+            console.log('📦 CONTENUTO RISPOSTA:');
+            console.log(JSON.stringify(data, null, 2));
+            
+            if (data.error) {
+                console.error('┌────────────────────────────────────────────┐');
+                console.error('❌ ERRORE API:');
+                console.error('   └─', data.error);
+                console.error('└────────────────────────────────────────────┘');
+                showEmptyState();
+                cleanup();
+                return;
             }
             
-            const milestone = {
-                0: 0,
-                1: 20,
-                2: 60,
-                3: 100
-            };
+            // *** FIX CRITICO: Verifica esistenza array orders ***
+            if (!data.orders) {
+                console.error('┌────────────────────────────────────────────┐');
+                console.error('❌ ERRORE: Campo "orders" mancante nella risposta');
+                console.error('└────────────────────────────────────────────┘');
+                showEmptyState();
+                cleanup();
+                return;
+            }
             
-            const milestoneMin = milestone[stepCorrente];
-            const milestoneMax = milestone[Math.min(stepCorrente + 1, 3)];
+            // *** FIX CRITICO: Verifica che orders sia un array ***
+            if (!Array.isArray(data.orders)) {
+                console.error('┌────────────────────────────────────────────┐');
+                console.error('❌ ERRORE: Campo "orders" non è un array');
+                console.error('   └─ Tipo ricevuto:', typeof data.orders);
+                console.error('└────────────────────────────────────────────┘');
+                showEmptyState();
+                cleanup();
+                return;
+            }
             
-            return milestoneMin + ((milestoneMax - milestoneMin) * 0.5);
+            const apiOrders = data.orders;
+            
+            console.log('');
+            console.log('📊 ANALISI ORDINI RICEVUTI:');
+            console.log('   └─ Totale ordini:', apiOrders.length);
+            
+            if (apiOrders.length === 0) {
+                console.warn('⚠️ API ha restituito 0 ordini!');
+                console.warn('   └─ Possibili cause:');
+                console.warn('       • Foglio "Order Tracking" vuoto');
+                console.warn('       • Nessun ordine attivo negli ultimi 30 giorni');
+                console.warn('       • Problema funzione getOrdersForTracking()');
+                showEmptyState();
+                cleanup();
+                return;
+            }
+            
+            // Log dettagliato ordini
+            apiOrders.forEach((order, index) => {
+                console.log('');
+                console.log(`   📦 Ordine ${index + 1}:`);
+                console.log(`      ├─ ID: ${order.id}`);
+                console.log(`      ├─ Stato: ${order.stato}`);
+                console.log(`      ├─ Data: ${order.data}`);
+                console.log(`      ├─ Cliente: ${order.cliente}`);
+                console.log(`      ├─ Totale: € ${order.totale}`);
+                console.log(`      └─ Articoli: ${order.articoli}`);
+            });
+            
+            // Pulizia localStorage se ordine pending è confermato
+            if (localPending) {
+                try {
+                    const pending = JSON.parse(localPending);
+                    const isConfirmed = apiOrders.some(o => o.id === pending.id);
+                    if (isConfirmed) {
+                        localStorage.removeItem('lh360_pending_order');
+                        console.log('');
+                        console.log('🗑️ PULIZIA LOCALSTORAGE:');
+                        console.log('   └─ Ordine pending rimosso (ora confermato):', pending.id);
+                    } else {
+                        console.log('');
+                        console.warn('⚠️ ORDINE PENDING NON CONFERMATO:');
+                        console.warn('   └─ ID:', pending.id);
+                        console.warn('   └─ NON presente nell\'API');
+                        console.warn('   └─ Possibile ordine "fantasma"');
+                    }
+                } catch (e) {}
+            }
+            
+            // *** FIX CRITICO: RENDERING FORZATO CON TIMEOUT ***
+            console.log('');
+            console.log('🎨 RENDERING PAGINA:');
+            console.log('   └─ Inizio rendering di', apiOrders.length, 'ordini...');
+            
+            // Nascondi loader
+            const loadingEl = document.getElementById('loadingState');
+            const emptyEl = document.getElementById('emptyState');
+            const ordersListEl = document.getElementById('ordersList');
+            
+            loadingEl.style.display = 'none';
+            emptyEl.style.display = 'none';
+            
+            // *** RENDERING CON SETTIMEOUT PER MOBILE ***
+            setTimeout(() => {
+                try {
+                    console.log('   🔄 Esecuzione rendering ritardato...');
+                    
+                    // Pulisci contenuto esistente
+                    ordersListEl.innerHTML = '';
+                    
+                    // Popola con card ordini
+                    let allCardsHtml = '';
+                    apiOrders.forEach((order, index) => {
+                        allCardsHtml += createOrderCard(order, index);
+                    });
+                    
+                    // Inserisci TUTTO il HTML in una volta sola
+                    ordersListEl.innerHTML = allCardsHtml;
+                    
+                    // FORZA display flex
+                    ordersListEl.style.display = 'flex';
+                    ordersListEl.style.flexDirection = 'column';
+                    ordersListEl.style.gap = '2rem';
+                    
+                    console.log('   ✅ Rendering completato!');
+                    console.log('   └─ ordersList.style.display =', ordersListEl.style.display);
+                    console.log('   └─ ordersList.children.length =', ordersListEl.children.length);
+                    console.log('   └─ ordersList.innerHTML.length =', ordersListEl.innerHTML.length);
+                    
+                } catch (renderError) {
+                    console.error('❌ ERRORE RENDERING:', renderError);
+                    showEmptyState();
+                }
+            }, 100); // 100ms delay per browser mobile
+            
+            console.log('');
+            console.log('┌────────────────────────────────────────────┐');
+            console.log('✅ CARICAMENTO COMPLETATO CON SUCCESSO');
+            console.log('└────────────────────────────────────────────┘');
+            
+            cleanup();
+        };
+        
+        script.onerror = () => {
+            const elapsed = Date.now() - startTime;
+            clearTimeout(timeout);
+            console.error('┌────────────────────────────────────────────┐');
+            console.error('❌ ERRORE CHIAMATA API');
+            console.error('   └─ Tempo trascorso:', elapsed + 'ms');
+            console.error('   └─ Possibili cause:');
+            console.error('       • URL Web App errato');
+            console.error('       • Web App non deployata');
+            console.error('       • CORS bloccato');
+            console.error('       • Script timeout');
+            console.error('└────────────────────────────────────────────┘');
+            loadFromLocalStorage();
+            cleanup();
+        };
+        
+        function cleanup() {
+            try {
+                if (script.parentNode) document.body.removeChild(script);
+                delete window[callbackName];
+            } catch (e) {}
+        }
+        
+        document.body.appendChild(script);
+        
+    } catch (error) {
+        console.error('┌────────────────────────────────────────────┐');
+        console.error('❌ ERRORE GENERALE:');
+        console.error(error);
+        console.error('└────────────────────────────────────────────┘');
+        loadFromLocalStorage();
+    }
+}
+
+        function getPendingOrdersFromLocalStorage() {
+            const orders = [];
+            const thirtyDaysAgo = new Date(Date.now() - (30 * 24 * 60 * 60 * 1000));
+            
+            const pendingOrder = localStorage.getItem('lh360_pending_order');
+            if (pendingOrder) {
+                try {
+                    const order = JSON.parse(pendingOrder);
+                    const orderDate = new Date(order.timestamp || order.data);
+                    
+                    if (orderDate > thirtyDaysAgo) {
+                        orders.push(order);
+                    } else {
+                        localStorage.removeItem('lh360_pending_order');
+                    }
+                } catch (e) {
+                    console.error('Errore parsing pending order:', e);
+                }
+            }
+            
+            return orders;
+        }
+
+        function loadFromLocalStorage() {
+            console.warn('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+            console.error('❌ FALLBACK DISABILITATO');
+            console.error('   └─ API non disponibile');
+            console.error('   └─ localStorage NON verrà usato per rendering');
+            console.warn('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+            
+            document.getElementById('loadingState').style.display = 'none';
+            
+            // Log localStorage solo per debug, MAI renderizzare
+            const pendingOrder = localStorage.getItem('lh360_pending_order');
+            if (pendingOrder) {
+                try {
+                    const order = JSON.parse(pendingOrder);
+                    console.log('💾 ORDINE IN LOCALSTORAGE (NON MOSTRATO):');
+                    console.log('   ├─ ID:', order.id);
+                    console.log('   ├─ Data:', order.data || order.timestamp);
+                    console.log('   └─ Questo ordine è IGNORATO (solo API è valida)');
+                } catch (e) {}
+            }
+            
+            // SEMPRE mostra empty state se API fallisce
+            console.error('');
+            console.error('🚫 IMPOSSIBILE CARICARE ORDINI');
+            console.error('   └─ Verifica:');
+            console.error('       • Connessione internet');
+            console.error('       • URL Web App corretto');
+            console.error('       • Deployment attivo');
+            
+            showEmptyState();
+        }
+
+        // *** FUNZIONE RENDERING SEMPLIFICATA (backup, non più usata) ***
+        function renderOrders_OLD(orders) {
+            const ordersList = document.getElementById('ordersList');
+            const loadingState = document.getElementById('loadingState');
+            const emptyState = document.getElementById('emptyState');
+            
+            loadingState.style.display = 'none';
+            emptyState.style.display = 'none';
+            
+            ordersList.innerHTML = '';
+            
+            orders.forEach((order, index) => {
+                ordersList.innerHTML += createOrderCard(order, index);
+            });
+            
+            ordersList.style.display = 'flex';
+            
+            console.log(`✅ renderOrders: ${orders.length} ordini visualizzati`);
         }
 
         function showEmptyState() {
             document.getElementById('loadingState').style.display = 'none';
             document.getElementById('ordersList').style.display = 'none';
-            document.getElementById('emptyState').style.display = 'block';
-        }
-
-        function clearLocalStorageAndReload() {
-            console.log('🗑️ Pulizia localStorage...');
-            localStorage.clear();
-            setTimeout(() => location.reload(), 500);
-        }
-
-        async function testAPIConnection() {
-            console.log('🔌 Test connessione API...');
-            const testUrl = `${WEB_APP_URL}?action=get_orders&t=${Date.now()}`;
+            const emptyState = document.getElementById('emptyState');
+            emptyState.style.display = 'block';
             
-            try {
-                const response = await fetch(testUrl);
-                const text = await response.text();
-                console.log('✅ Risposta ricevuta:', text.substring(0, 200));
-                
-                const jsonMatch = text.match(/\{.*\}/s);
-                if (jsonMatch) {
-                    const data = JSON.parse(jsonMatch[0]);
-                    console.log('📦 Dati parsati:', data);
-                    alert(`✅ API funzionante!\n\nOrdini: ${data.orders?.length || 0}`);
-                } else {
-                    alert('⚠️ Risposta invalida dalla API');
-                }
-            } catch (error) {
-                console.error('❌ Errore:', error);
-                alert(`❌ Errore API!\n\n${error.message}`);
+            // Verifica se ci sono ordini in localStorage (debug)
+            const pendingOrder = localStorage.getItem('lh360_pending_order');
+            if (pendingOrder) {
+                try {
+                    const order = JSON.parse(pendingOrder);
+                    console.warn('');
+                    console.warn('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+                    console.warn('⚠️ DISCREPANZA RILEVATA');
+                    console.warn('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+                    console.warn('localStorage contiene ordine:', order.id);
+                    console.warn('API ha restituito: 0 ordini');
+                    console.warn('');
+                    console.warn('🔍 POSSIBILI CAUSE:');
+                    console.warn('   1. Ordine non sincronizzato con Google Sheets');
+                    console.warn('   2. Ordine più vecchio di 30 giorni');
+                    console.warn('   3. Stato ordine non attivo');
+                    console.warn('   4. Problema funzione getOrdersForTracking()');
+                    console.warn('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+                    
+                    // Aggiungi banner informativo
+                    const infoDiv = emptyState.querySelector('.empty-text');
+                    if (infoDiv) {
+                        infoDiv.innerHTML = `
+                            Non hai ordini attivi negli ultimi 30 giorni<br><br>
+                            <small style="color: #71717a; font-size: 0.875rem;">
+                                Se hai appena effettuato un ordine, potrebbe richiedere
+                                alcuni minuti per essere elaborato dal sistema.
+                            </small>
+                        `;
+                    }
+                } catch (e) {}
             }
         }
 
-        // Avvio caricamento
-        console.log('🚀 Pagina caricata, avvio loadOrders()');
+        // *** FUNZIONI DEBUG HELPER ***
+        
+        function clearLocalStorageAndReload() {
+            console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+            console.log('🗑️ PULIZIA LOCALSTORAGE FORZATA');
+            
+            // Lista tutte le chiavi prima della pulizia
+            const keys = [];
+            for (let i = 0; i < localStorage.length; i++) {
+                keys.push(localStorage.key(i));
+            }
+            console.log('📋 Chiavi presenti prima della pulizia:');
+            keys.forEach(key => console.log('   └─', key));
+            
+            // Pulisci
+            localStorage.clear();
+            console.log('✅ localStorage completamente pulito');
+            console.log('🔄 Ricaricamento pagina...');
+            console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+            
+            setTimeout(() => {
+                location.reload();
+            }, 500);
+        }
+        
+        async function testAPIConnection() {
+            console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+            console.log('🔌 TEST CONNESSIONE API');
+            console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+            
+            const testUrl = `${WEB_APP_URL}?action=get_orders&t=${Date.now()}`;
+            console.log('📡 URL Test:', testUrl);
+            console.log('⏱️ Invio richiesta...');
+            
+            try {
+                const response = await fetch(testUrl);
+                console.log('✅ Risposta ricevuta');
+                console.log('   └─ Status:', response.status);
+                console.log('   └─ Content-Type:', response.headers.get('content-type'));
+                
+                const text = await response.text();
+                console.log('');
+                console.log('📄 CONTENUTO RISPOSTA RAW:');
+                console.log(text);
+                
+                // Prova a estrarre JSON dalla risposta JSONP
+                try {
+                    const jsonMatch = text.match(/\{.*\}/s);
+                    if (jsonMatch) {
+                        const data = JSON.parse(jsonMatch[0]);
+                        console.log('');
+                        console.log('📦 DATI PARSATI:');
+                        console.log(JSON.stringify(data, null, 2));
+                        
+                        if (data.orders) {
+                            console.log('');
+                            console.log('✅ API FUNZIONANTE');
+                            console.log('   └─ Ordini ricevuti:', data.orders.length);
+                            alert(`✅ API funzionante!\n\nOrdini ricevuti: ${data.orders.length}\n\nDettagli in console.`);
+                        } else {
+                            console.warn('⚠️ Risposta valida ma nessun array "orders"');
+                            alert('⚠️ API risponde ma formato dati inatteso.\n\nControlla console per dettagli.');
+                        }
+                    }
+                } catch (e) {
+                    console.error('❌ Errore parsing JSON:', e);
+                }
+                
+            } catch (error) {
+                console.error('❌ ERRORE CHIAMATA API:');
+                console.error(error);
+                console.log('');
+                console.log('🔍 POSSIBILI CAUSE:');
+                console.log('   • URL Web App errato in WEB_APP_URL');
+                console.log('   • Web App non deployata o sospesa');
+                console.log('   • CORS policy bloccante');
+                console.log('   • Permessi insufficienti');
+                
+                alert(`❌ Errore connessione API!\n\n${error.message}\n\nControlla console per dettagli.`);
+            }
+            
+            console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+        }
+        
+        // *** DEBUG: Console dettagliato all'avvio ***
+        console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+        console.log('🚀 PAGINA TRACKING CARICATA');
+        console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+        console.log('📅 Data/Ora:', new Date().toLocaleString('it-IT'));
+        console.log('📱 User Agent:', navigator.userAgent.substring(0, 100) + '...');
+        console.log('🌐 URL Pagina:', window.location.href);
+        console.log('🔗 API Endpoint:', WEB_APP_URL);
+        console.log('');
+        
+        // Check localStorage
+        const localPending = localStorage.getItem('lh360_pending_order');
+        if (localPending) {
+            try {
+                const order = JSON.parse(localPending);
+                console.log('💾 LOCALSTORAGE: Ordine pending trovato');
+                console.log('   ├─ ID:', order.id);
+                console.log('   ├─ Stato:', order.stato);
+                console.log('   ├─ Data:', order.data || order.timestamp);
+                console.log('   └─ Cliente:', order.cliente);
+            } catch (e) {
+                console.error('❌ LOCALSTORAGE: Errore parsing');
+            }
+        } else {
+            console.log('💾 LOCALSTORAGE: Vuoto');
+        }
+        
+        console.log('');
+        console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+        console.log('⚙️ AVVIO CARICAMENTO ORDINI...');
+        console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+        console.log('');
+        
+        // Avvio caricamento ordini
         loadOrders();
     </script>
 </body>
 </html>
+
