@@ -784,9 +784,9 @@ function getCategoryFromOrderId(orderId) {
     return 'Prodotto';
 }
 
-// ======================================
-// LOAD ORDERS - versione più robusta
-// ======================================
+// ================================
+// LOAD ORDERS (fetch + JSONP parser)
+// ================================
 async function loadOrders() {
     if (ordersRendered) {
         console.log('⚠️ Ordini già renderizzati, skip caricamento');
@@ -796,6 +796,7 @@ async function loadOrders() {
     const urlParams = new URLSearchParams(window.location.search);
     const viewMode = urlParams.get('view');
 
+    // Modalità latest (unchanged)
     if (viewMode === 'latest') {
         console.log('Modalità VISTA: solo ultimo ordine (latest)');
         document.getElementById('loadingState').style.display = 'none';
@@ -813,107 +814,100 @@ async function loadOrders() {
 
     const pendingOrders = getPendingOrdersFromLocalStorage();
 
-    // JSONP fallback con retry e timeout esteso
-    const MAX_RETRIES = 2;
+    // timeout / abort controller
     const TIMEOUT_MS = 15000; // 15s
-    let attempt = 0;
-    let success = false;
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), TIMEOUT_MS);
 
-    const showFallbackError = (errorMsg, errorDetails = 'Verifica la tua connessione e riprova.') => {
-        console.error(errorMsg);
-        if (ordersRendered) return;
-        document.getElementById('loadingState').style.display = 'none';
-        showEmptyState('Impossibile caricare gli ordini', errorDetails);
-        ordersRendered = true;
-    };
+    // URL (senza callback) — server nel tuo caso risponde proprio con JSONP "callback(...)" anche senza callback param
+    const requestUrl = `${WEB_APP_URL}?action=get_orders&t=${Date.now()}`;
 
-    while (attempt < MAX_RETRIES && !success) {
-        attempt++;
-        const callbackName = 'handleOrdersData_' + Date.now() + '_' + Math.floor(Math.random() * 10000);
-        const script = document.createElement('script');
-        script.src = `${WEB_APP_URL}?action=get_orders&callback=${callbackName}&t=${Date.now()}`;
-        let timeoutId;
+    try {
+        console.log('Eseguo fetch verso', requestUrl);
+        const resp = await fetch(requestUrl, { method: 'GET', mode: 'cors', cache: 'no-store', signal: controller.signal });
 
-        const cleanup = () => {
-            try { if (script.parentNode) document.body.removeChild(script); } catch (e) {}
-            try { delete window[callbackName]; } catch (e) {}
-            if (timeoutId) clearTimeout(timeoutId);
-        };
+        clearTimeout(timeoutId);
 
-        window[callbackName] = function(data) {
-            if (ordersRendered) return;
-            clearTimeout(timeoutId);
-            document.getElementById('loadingState').style.display = 'none';
+        if (!resp.ok) {
+            console.warn('Fetch non OK:', resp.status, resp.statusText);
+            showEmptyState('Impossibile caricare gli ordini', `Errore server: ${resp.status} ${resp.statusText}`);
+            ordersRendered = true;
+            return;
+        }
 
-            if (data && data.error) {
-                cleanup();
-                showFallbackError(`Errore API: ${data.error}`);
-                success = false;
+        const txt = await resp.text();
+        console.log('Fetch body (prima 1000 char):', txt && txt.slice ? txt.slice(0, 1000) : txt);
+
+        // Proviamo a estrarre JSON da JSONP: match "fnName( ... );"
+        const jsonpMatch = txt.match(/^[\s\S]*?\(\s*([\s\S]*?)\s*\)\s*;?\s*$/);
+        let dataObj = null;
+
+        if (jsonpMatch && jsonpMatch[1]) {
+            try {
+                dataObj = JSON.parse(jsonpMatch[1]);
+                console.log('Risposta parsata come JSONP con successo.');
+            } catch (e) {
+                console.warn('JSONP parse fallito:', e);
+            }
+        }
+
+        // Se non è JSONP, proviamo a parse diretto come JSON
+        if (!dataObj) {
+            try {
+                dataObj = JSON.parse(txt);
+                console.log('Risposta parsata come JSON puro.');
+            } catch (e) {
+                console.error('Impossibile parsare la risposta come JSON/JSONP:', e);
+                showEmptyState('Impossibile caricare gli ordini', 'Risposta non valida dal server. Controlla il deploy del Web App.');
+                ordersRendered = true;
                 return;
             }
-
-            let allOrders = [];
-            const apiOrders = data.orders || [];
-            allOrders = [...apiOrders];
-
-            if (pendingOrders.length > 0) {
-                const apiIds = new Set(apiOrders.map(o => o.id));
-                pendingOrders.forEach(pending => {
-                    if (!apiIds.has(pending.id)) {
-                        allOrders.push(pending);
-                        console.log(`Aggiunto ordine pending ${pending.id} alla lista API.`);
-                    } else {
-                        localStorage.removeItem('lh360_pending_order');
-                        console.log(`✅ Ordine pending ${pending.id} confermato da API.`);
-                    }
-                });
-            }
-
-            if (allOrders.length === 0) {
-                showEmptyState();
-            } else {
-                renderOrders(allOrders);
-                console.log(`✅ Ordini caricati (API + Merge): ${allOrders.length} totali`);
-            }
-
-            ordersRendered = true;
-            success = true;
-            cleanup();
-        };
-
-        script.onerror = () => {
-            clearTimeout(timeoutId);
-            cleanup();
-            console.warn(`Tentativo ${attempt}: Errore caricamento script API (script.onerror)`);
-            // se ultimo tentativo, proveremo fallback diagnostico dopo il ciclo
-        };
-
-        timeoutId = setTimeout(() => {
-            cleanup();
-            console.warn(`Tentativo ${attempt}: Timeout caricamento script (${TIMEOUT_MS}ms)`);
-        }, TIMEOUT_MS);
-
-        document.body.appendChild(script);
-
-        // aspetta un poco (TIMEOUT) prima di passare al retry
-        await new Promise(r => setTimeout(r, TIMEOUT_MS + 200));
-    } // end while
-
-    if (!success) {
-        // Fallback diagnostico: prova a fetchare direttamente per leggere l'errore (utile per vedere HTML di login)
-        try {
-            console.log('Provo fetch diagnostico (ciò può fallire a causa di CORS, ma mostrerà l\'errore).');
-            const resp = await fetch(`${WEB_APP_URL}?action=get_orders&t=${Date.now()}`, { method: 'GET', mode: 'cors' });
-            let txt;
-            try { txt = await resp.text(); } catch (e) { txt = '<no body>'; }
-            console.log('Fetch diagnostico status:', resp.status, resp.statusText);
-            console.log('Fetch diagnostico body (prima 1000 char):', (txt && txt.slice ? txt.slice(0, 1000) : txt));
-            showFallbackError('Errore caricamento script API', `Errore fetch diagnostico: ${resp.status} ${resp.statusText}`);
-        } catch (fetchErr) {
-            console.error('Fetch diagnostico fallito:', fetchErr);
-            // Messaggio utente amichevole
-            showFallbackError('Errore caricamento script API', 'Possibile blocco da browser o permessi del Web App. Controlla le impostazioni di deploy (Anyone, execute as owner).');
         }
+
+        // A questo punto dataObj dovrebbe contenere { orders: [...] } oppure errore
+        if (dataObj.error) {
+            console.error('Errore API:', dataObj.error);
+            showEmptyState('Impossibile caricare gli ordini', `Errore API: ${dataObj.error}`);
+            ordersRendered = true;
+            return;
+        }
+
+        const apiOrders = dataObj.orders || [];
+        let allOrders = [...apiOrders];
+
+        // Merge con pending orders (come prima)
+        if (pendingOrders.length > 0) {
+            const apiIds = new Set(apiOrders.map(o => o.id));
+            pendingOrders.forEach(pending => {
+                if (!apiIds.has(pending.id)) {
+                    allOrders.push(pending);
+                    console.log(`Aggiunto ordine pending ${pending.id} alla lista API.`);
+                } else {
+                    localStorage.removeItem('lh360_pending_order');
+                    console.log(`✅ Ordine pending ${pending.id} confermato da API.`);
+                }
+            });
+        }
+
+        if (allOrders.length === 0) {
+            showEmptyState();
+        } else {
+            renderOrders(allOrders);
+            console.log(`✅ Ordini caricati (API + Merge): ${allOrders.length} totali`);
+        }
+
+        ordersRendered = true;
+
+    } catch (err) {
+        clearTimeout(timeoutId);
+        if (err.name === 'AbortError') {
+            console.error('Fetch abortito per timeout.');
+            showEmptyState('Timeout caricamento', 'La richiesta ha impiegato troppo tempo. Riprovare più tardi.');
+        } else {
+            console.error('Errore fetch diagnostico:', err);
+            showEmptyState('Impossibile caricare gli ordini', 'Controlla la connessione o le impostazioni del Web App (deploy).');
+        }
+        ordersRendered = true;
     }
 }
 
@@ -989,4 +983,5 @@ loadOrders();
     </script>
 </body>
 </html>
+
 
