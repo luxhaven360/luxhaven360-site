@@ -785,7 +785,7 @@ function getCategoryFromOrderId(orderId) {
 }
 
 // ================================
-// LOAD ORDERS (fetch + JSONP parser)
+// LOAD ORDERS (fetch + JSONP parser) - FIX spinner infinito
 // ================================
 async function loadOrders() {
     if (ordersRendered) {
@@ -793,17 +793,28 @@ async function loadOrders() {
         return;
     }
 
+    const loadingEl = document.getElementById('loadingState');
+    const ordersListEl = document.getElementById('ordersList');
+    const emptyEl = document.getElementById('emptyState');
+
+    // Assicuriamoci che lo stato iniziale sia visibile
+    if (loadingEl) loadingEl.style.display = 'block';
+    if (ordersListEl) ordersListEl.style.display = 'none';
+    if (emptyEl) emptyEl.style.display = 'none';
+
     const urlParams = new URLSearchParams(window.location.search);
     const viewMode = urlParams.get('view');
 
     // Modalità latest (unchanged)
     if (viewMode === 'latest') {
         console.log('Modalità VISTA: solo ultimo ordine (latest)');
-        document.getElementById('loadingState').style.display = 'none';
+        if (loadingEl) loadingEl.style.display = 'none';
         const pendingOrders = getPendingOrdersFromLocalStorage();
         if (pendingOrders.length === 0) {
+            if (ordersListEl) ordersListEl.style.display = 'none';
             showEmptyState('Nessun ordine trovato', 'Non è stato trovato un ordine recente in questo dispositivo.');
         } else {
+            if (emptyEl) emptyEl.style.display = 'none';
             renderOrders(pendingOrders);
             ordersRendered = true;
         }
@@ -819,7 +830,7 @@ async function loadOrders() {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), TIMEOUT_MS);
 
-    // URL (senza callback) — server nel tuo caso risponde proprio con JSONP "callback(...)" anche senza callback param
+    // URL (senza callback) — il server risponde con JSONP nel tuo caso
     const requestUrl = `${WEB_APP_URL}?action=get_orders&t=${Date.now()}`;
 
     try {
@@ -830,6 +841,7 @@ async function loadOrders() {
 
         if (!resp.ok) {
             console.warn('Fetch non OK:', resp.status, resp.statusText);
+            if (ordersListEl) ordersListEl.style.display = 'none';
             showEmptyState('Impossibile caricare gli ordini', `Errore server: ${resp.status} ${resp.statusText}`);
             ordersRendered = true;
             return;
@@ -838,7 +850,7 @@ async function loadOrders() {
         const txt = await resp.text();
         console.log('Fetch body (prima 1000 char):', txt && txt.slice ? txt.slice(0, 1000) : txt);
 
-        // Proviamo a estrarre JSON da JSONP: match "fnName( ... );"
+        // Estrai JSON da JSONP: match "fnName( ... );"
         const jsonpMatch = txt.match(/^[\s\S]*?\(\s*([\s\S]*?)\s*\)\s*;?\s*$/);
         let dataObj = null;
 
@@ -858,15 +870,17 @@ async function loadOrders() {
                 console.log('Risposta parsata come JSON puro.');
             } catch (e) {
                 console.error('Impossibile parsare la risposta come JSON/JSONP:', e);
+                if (ordersListEl) ordersListEl.style.display = 'none';
                 showEmptyState('Impossibile caricare gli ordini', 'Risposta non valida dal server. Controlla il deploy del Web App.');
                 ordersRendered = true;
                 return;
             }
         }
 
-        // A questo punto dataObj dovrebbe contenere { orders: [...] } oppure errore
+        // Gestione error API
         if (dataObj.error) {
             console.error('Errore API:', dataObj.error);
+            if (ordersListEl) ordersListEl.style.display = 'none';
             showEmptyState('Impossibile caricare gli ordini', `Errore API: ${dataObj.error}`);
             ordersRendered = true;
             return;
@@ -890,8 +904,11 @@ async function loadOrders() {
         }
 
         if (allOrders.length === 0) {
+            if (ordersListEl) ordersListEl.style.display = 'none';
             showEmptyState();
         } else {
+            // Nascondi stato vuoto (se visibile) e mostra lista
+            if (emptyEl) emptyEl.style.display = 'none';
             renderOrders(allOrders);
             console.log(`✅ Ordini caricati (API + Merge): ${allOrders.length} totali`);
         }
@@ -900,14 +917,17 @@ async function loadOrders() {
 
     } catch (err) {
         clearTimeout(timeoutId);
+        console.error('Errore fetch diagnostico:', err);
+        if (ordersListEl) ordersListEl.style.display = 'none';
         if (err.name === 'AbortError') {
-            console.error('Fetch abortito per timeout.');
             showEmptyState('Timeout caricamento', 'La richiesta ha impiegato troppo tempo. Riprovare più tardi.');
         } else {
-            console.error('Errore fetch diagnostico:', err);
             showEmptyState('Impossibile caricare gli ordini', 'Controlla la connessione o le impostazioni del Web App (deploy).');
         }
         ordersRendered = true;
+    } finally {
+        // IMPORTANTE: nascondi sempre lo stato di caricamento
+        try { if (loadingEl) loadingEl.style.display = 'none'; } catch (e) {}
     }
 }
 
@@ -983,5 +1003,6 @@ loadOrders();
     </script>
 </body>
 </html>
+
 
 
