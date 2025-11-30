@@ -790,18 +790,38 @@ function getCategoryFromOrderId(orderId) {
 
 /**
  * Mostra errore fallback con messaggio personalizzato
+ * Se ci sono ordini nel localStorage, li mostra comunque
  */
 function showFallbackError(errorMsg, errorDetails = 'Verifica la tua connessione e riprova.') {
-    console.error(errorMsg);
+    console.error('🔴 ' + errorMsg);
     if (ordersRendered) return; 
     
+    // TENTATIVO ULTIMO: Mostra ordini dal localStorage se disponibili
+    const pendingOrders = getPendingOrdersFromLocalStorage();
+    if (pendingOrders.length > 0) {
+        console.warn('⚠️ API fallita, ma trovati ordini in localStorage. Li mostro comunque.');
+        document.getElementById('loadingState').style.display = 'none';
+        renderOrders(pendingOrders);
+        ordersRendered = true;
+        
+        // Mostra banner di avvertimento
+        const ordersList = document.getElementById('ordersList');
+        const warningBanner = document.createElement('div');
+        warningBanner.style.cssText = 'background: rgba(251, 191, 36, 0.1); border: 1px solid rgba(251, 191, 36, 0.3); border-radius: 12px; padding: 16px; margin-bottom: 24px; text-align: center; color: #fbbf24; font-size: 14px;';
+        warningBanner.innerHTML = '⚠️ Impossibile sincronizzare con il server. Mostrando ordini salvati localmente.';
+        ordersList.insertBefore(warningBanner, ordersList.firstChild);
+        
+        return;
+    }
+    
+    // Se proprio non ci sono ordini, mostra errore
     document.getElementById('loadingState').style.display = 'none';
     showEmptyState('Impossibile caricare gli ordini', errorDetails);
     ordersRendered = true; 
 }
 
 // ==================================================================
-// CARICAMENTO ORDINI (Logica V4 - Fix Errori JSONP)
+// CARICAMENTO ORDINI (Logica V5 - Fallback Migliorato)
 // ==================================================================
 
 async function loadOrders() {
@@ -833,18 +853,28 @@ async function loadOrders() {
 
     // --- MODO B: Tutti gli ordini (da icona navbar) ---
     console.log('🔍 Modalità VISTA: tutti gli ordini (all/default)');
+    console.log('🌐 Tentativo connessione API: ' + WEB_APP_URL);
     
     try {
         const pendingOrders = getPendingOrdersFromLocalStorage();
+        console.log(`📦 Ordini locali trovati: ${pendingOrders.length}`);
 
         const callbackName = 'handleOrdersData_' + Date.now();
         const script = document.createElement('script');
-        script.src = `${WEB_APP_URL}?action=get_orders&callback=${callbackName}&t=${Date.now()}`;
+        const apiUrl = `${WEB_APP_URL}?action=get_orders&callback=${callbackName}&t=${Date.now()}`;
+        script.src = apiUrl;
         
+        console.log('🔗 URL richiesta:', apiUrl);
+        
+        // Timeout ridotto a 5 secondi su mobile
         const timeout = setTimeout(() => {
+            console.warn('⏱️ Timeout API dopo 5 secondi');
             cleanup();
-            showFallbackError('⚠️ Timeout API ordini (8 secondi)', 'Il server non risponde. Riprova tra qualche minuto.');
-        }, 8000);
+            showFallbackError(
+                '⚠️ Timeout API ordini', 
+                'Il server non risponde. Mostrando ordini salvati localmente.'
+            );
+        }, 5000);
 
         const cleanup = () => {
             try { if (script.parentNode) document.body.removeChild(script); } catch (e) {}
@@ -852,6 +882,8 @@ async function loadOrders() {
         };
         
         window[callbackName] = function(data) {
+            console.log('📥 Risposta API ricevuta:', data);
+            
             if (ordersRendered) {
                 cleanup();
                 return;
@@ -868,6 +900,7 @@ async function loadOrders() {
             
             let allOrders = [];
             const apiOrders = data.orders || [];
+            console.log(`📊 Ordini da API: ${apiOrders.length}`);
             allOrders = [...apiOrders];
             
             // Merge con ordini pending locali
@@ -888,26 +921,30 @@ async function loadOrders() {
                 showEmptyState();
             } else {
                 renderOrders(allOrders);
-                console.log(`✅ Ordini caricati: ${allOrders.length} (${apiOrders.length} API + ${allOrders.length - apiOrders.length} local)`);
+                console.log(`✅ Ordini renderizzati: ${allOrders.length} totali`);
             }
             
             ordersRendered = true;
             cleanup();
         };
         
-        script.onerror = () => {
+        script.onerror = (error) => {
+            console.error('❌ Errore script.onerror:', error);
             clearTimeout(timeout);
             cleanup();
-            showFallbackError('❌ Errore caricamento script API', 'Impossibile contattare il server. Controlla la connessione.');
+            showFallbackError(
+                '❌ Errore caricamento script API', 
+                'Impossibile contattare il server. Mostrando ordini salvati.'
+            );
         };
         
         document.body.appendChild(script);
+        console.log('✅ Script JSONP aggiunto al DOM');
         
     } catch (error) {
+        console.error('💥 Eccezione in loadOrders:', error);
         if (!ordersRendered) {
-            document.getElementById('loadingState').style.display = 'none';
-            showEmptyState('Errore imprevisto', error.message);
-            ordersRendered = true;
+            showFallbackError('Errore imprevisto', error.message);
         }
     }
 }
@@ -984,6 +1021,7 @@ loadOrders();
     </script>
 </body>
 </html>
+
 
 
 
