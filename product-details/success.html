@@ -800,41 +800,9 @@
                 font-size: 1.75rem;
             }
         }
-
-        /* Indicatore invio email */
-        .email-status {
-            position: fixed;
-            bottom: 2rem;
-            right: 2rem;
-            background: rgba(16, 185, 129, 0.1);
-            border: 1px solid rgba(16, 185, 129, 0.3);
-            padding: 1rem 1.5rem;
-            border-radius: 1rem;
-            display: none;
-            align-items: center;
-            gap: 0.75rem;
-            animation: fadeIn 0.5s ease;
-            z-index: 10000;
-        }
-        .email-status.show { display: flex; }
-        .email-status.success { background: rgba(16, 185, 129, 0.1); border-color: rgba(16, 185, 129, 0.3); }
-        .email-status.error { background: rgba(239, 68, 68, 0.1); border-color: rgba(239, 68, 68, 0.3); }
-        .email-status-icon { font-size: 1.25rem; }
-        .email-status-text { font-size: 0.9375rem; }
-        
-        @media (max-width: 640px) {
-            .email-status { bottom: 1rem; right: 1rem; left: 1rem; max-width: calc(100% - 2rem); }
-        }
     </style>
 </head>
 <body>
-   
-    <!-- Indicatore stato email -->
-    <div class="email-status" id="emailStatus">
-        <span class="email-status-icon">📧</span>
-        <span class="email-status-text" id="emailStatusText">Invio conferma in corso...</span>
-    </div>
-    
     <!-- Enhanced Loading Screen -->
     <div id="luxhaven-loader">
         <div class="loader-particles">
@@ -999,219 +967,187 @@
     </div>
     
     <script>
-     // CONFIGURAZIONE
-    const webAppUrl = 'https://script.google.com/macros/s/AKfycbyN-wdZBN0gm3x3maZAHnUq5K-QdFL-KKy2sROqMFY4GxUA-ERxBGyyLh4cno60DV2m/exec';
+    // CONFIGURAZIONE
+const webAppUrl = 'https://script.google.com/macros/s/AKfycbyN-wdZBN0gm3x3maZAHnUq5K-QdFL-KKy2sROqMFY4GxUA-ERxBGyyLh4cno60DV2m/exec';
+
+let loadTimeout;
+let startTime;
+let emailSent = false; // Flag per evitare invii duplicati
+
+// Status messages che appaiono in sequenza durante il caricamento
+const statusMessages = [
+    { icon: '🔒', text: 'Verifica del pagamento...', duration: 1500 },
+    { icon: '✓', text: 'Pagamento confermato con successo', duration: 1500 },
+    { icon: '📝', text: 'Registrazione del tuo ordine...', duration: 1800 },
+    { icon: '✓', text: 'Ordine registrato correttamente', duration: 1200 },
+    { icon: '📧', text: 'Invio conferma via email...', duration: 1500, triggerEmail: true }, // Aggiungiamo flag
+    { icon: '✓', text: 'Conferma inviata al tuo indirizzo', duration: 1200 },
+    { icon: '🎉', text: 'Tutto pronto! Preparazione dettagli...', duration: 1000 }
+];
+
+let currentStatusIndex = 0;
+let progressInterval;
+
+window.addEventListener('load', () => {
+    startTime = Date.now();
+    setupButtons();
+    startLoadingSequence();
+    loadPurchasedItems();
+    loadOrderDetails();
     
-    let loadTimeout;
-    let startTime;
-    let emailSent = false;
-    let emailAttempts = 0;
-    const MAX_EMAIL_ATTEMPTS = 3;
+    // Timeout di sicurezza esteso a 12 secondi
+    loadTimeout = setTimeout(() => {
+        console.warn('Timeout caricamento dati: forzatura visualizzazione.');
+        completeLoadingSequence();
+    }, 12000);
+});
 
-    // Status messages durante caricamento
-    const statusMessages = [
-        { icon: '🔒', text: 'Verifica del pagamento...', duration: 1500 },
-        { icon: '✓', text: 'Pagamento confermato con successo', duration: 1500 },
-        { icon: '📝', text: 'Registrazione del tuo ordine...', duration: 1800 },
-        { icon: '✓', text: 'Ordine registrato correttamente', duration: 1200 },
-        { icon: '📧', text: 'Invio conferma via email...', duration: 1500, triggerEmail: true },
-        { icon: '✓', text: 'Conferma inviata al tuo indirizzo', duration: 1200 },
-        { icon: '🎉', text: 'Tutto pronto! Preparazione dettagli...', duration: 1000 }
-    ];
+function startLoadingSequence() {
+    // Avvia la sequenza di messaggi di stato
+    updateStatusMessage();
+    
+    // Simula progresso della barra in modo fluido
+    let progress = 0;
+    progressInterval = setInterval(() => {
+        progress += 0.5;
+        if (progress <= 100) {
+            document.getElementById('progressPercent').textContent = Math.floor(progress) + '%';
+        }
+    }, 45);
+}
 
-    let currentStatusIndex = 0;
-    let progressInterval;
-
-    window.addEventListener('load', () => {
-        startTime = Date.now();
-        setupButtons();
-        startLoadingSequence();
-        loadPurchasedItems();
-        loadOrderDetails();
+function updateStatusMessage() {
+    if (currentStatusIndex >= statusMessages.length) {
+        return;
+    }
+    
+    const message = statusMessages[currentStatusIndex];
+    const statusTextElem = document.getElementById('statusText');
+    const statusIconElem = document.querySelector('.status-icon');
+    const statusMessageElem = document.querySelector('.status-message');
+    
+    // Fade out
+    statusMessageElem.style.opacity = '0';
+    
+    setTimeout(() => {
+        // Aggiorna contenuto
+        statusIconElem.textContent = message.icon;
+        statusTextElem.textContent = message.text;
         
-        loadTimeout = setTimeout(() => {
-            console.warn('Timeout caricamento dati: forzatura visualizzazione.');
-            completeLoadingSequence();
-        }, 12000);
+        // Fade in
+        statusMessageElem.style.opacity = '1';
+        
+        // 🆕 TRIGGER INVIO EMAIL quando appare il messaggio corretto
+        if (message.triggerEmail && !emailSent) {
+            sendInvoiceEmail();
+        }
+        
+        currentStatusIndex++;
+        
+        // Pianifica il prossimo messaggio
+        if (currentStatusIndex < statusMessages.length) {
+            setTimeout(updateStatusMessage, message.duration);
+        }
+    }, 300);
+}
+
+// 🆕 FUNZIONE PER INVIARE LA FATTURA VIA EMAIL
+function sendInvoiceEmail() {
+    if (emailSent) {
+        console.log('Email già inviata, skip');
+        return;
+    }
+    
+    emailSent = true;
+    console.log('📧 Invio email fattura in corso...');
+    
+    const urlParams = new URLSearchParams(window.location.search);
+    const sessionId = urlParams.get('session_id');
+    const orderIdParam = urlParams.get('id_ordine');
+    
+    if (!sessionId) {
+        console.warn('⚠️ Nessun session_id disponibile per invio email');
+        return;
+    }
+    
+    // Raccogli i dati dell'ordine da localStorage
+    const cart = JSON.parse(localStorage.getItem('lh360_cart') || '[]');
+    const subtotal = cart.reduce((sum, item) => sum + (item.price * (item.qty || 1)), 0);
+    const shipping = subtotal >= 150 ? 0 : 15;
+    const total = subtotal + shipping;
+    
+    // Prepara i dati da inviare
+    const invoiceData = {
+        action: 'send_invoice',
+        session_id: sessionId,
+        order_id: orderIdParam || 'N/A',
+        items: cart.map(item => ({
+            title: item.title || 'Prodotto',
+            quantity: item.qty || 1,
+            price: item.price || 0,
+            color: item.color || '',
+            size: item.size || '',
+            image: item.image || ''
+        })),
+        subtotal: subtotal.toFixed(2),
+        shipping: shipping.toFixed(2),
+        total: total.toFixed(2),
+        timestamp: new Date().toISOString()
+    };
+    
+    // Chiamata JSONP all'endpoint
+    const callbackName = 'handleEmailResponse_' + Date.now();
+    const script = document.createElement('script');
+    
+    // Costruisci URL con parametri
+    const params = new URLSearchParams({
+        action: 'send_invoice',
+        session_id: sessionId,
+        order_id: orderIdParam || 'N/A',
+        items: JSON.stringify(invoiceData.items),
+        subtotal: invoiceData.subtotal,
+        shipping: invoiceData.shipping,
+        total: invoiceData.total,
+        callback: callbackName,
+        t: Date.now()
     });
-
-    function startLoadingSequence() {
-        updateStatusMessage();
-        let progress = 0;
-        progressInterval = setInterval(() => {
-            progress += 0.5;
-            if (progress <= 100) {
-                document.getElementById('progressPercent').textContent = Math.floor(progress) + '%';
-            }
-        }, 45);
-    }
-
-    function updateStatusMessage() {
-        if (currentStatusIndex >= statusMessages.length) return;
+    
+    script.src = `${webAppUrl}?${params.toString()}`;
+    
+    window[callbackName] = function(response) {
+        console.log('✅ Risposta invio email:', response);
         
-        const message = statusMessages[currentStatusIndex];
-        const statusTextElem = document.getElementById('statusText');
-        const statusIconElem = document.querySelector('.status-icon');
-        const statusMessageElem = document.querySelector('.status-message');
-        
-        statusMessageElem.style.opacity = '0';
-        
-        setTimeout(() => {
-            statusIconElem.textContent = message.icon;
-            statusTextElem.textContent = message.text;
-            statusMessageElem.style.opacity = '1';
-            
-            // 🆕 TRIGGER INVIO EMAIL con retry automatico
-            if (message.triggerEmail && !emailSent) {
-                sendInvoiceEmailWithRetry();
-            }
-            
-            currentStatusIndex++;
-            
-            if (currentStatusIndex < statusMessages.length) {
-                setTimeout(updateStatusMessage, message.duration);
-            }
-        }, 300);
-    }
-
-    // 🆕 FUNZIONE MIGLIORATA: Invio email con retry automatico
-    function sendInvoiceEmailWithRetry(attempt = 1) {
-        if (emailSent) {
-            console.log('✅ Email già inviata, skip');
-            return;
+        if (response && response.success) {
+            console.log('✅ Fattura inviata con successo a:', response.email);
+        } else {
+            console.error('❌ Errore invio email:', response?.error || 'Unknown error');
         }
         
-        if (attempt > MAX_EMAIL_ATTEMPTS) {
-            console.error('❌ Raggiunto numero massimo di tentativi invio email');
-            showEmailStatus('Errore invio email. Contatta il supporto.', 'error');
-            return;
-        }
-        
-        console.log(`📧 Tentativo ${attempt}/${MAX_EMAIL_ATTEMPTS} invio email...`);
-        
-        const urlParams = new URLSearchParams(window.location.search);
-        const sessionId = urlParams.get('session_id');
-        const orderIdParam = urlParams.get('id_ordine');
-        
-        if (!sessionId) {
-            console.warn('⚠️ Nessun session_id disponibile per invio email');
-            showEmailStatus('Impossibile inviare email (dati mancanti)', 'error');
-            return;
-        }
-        
-        // Mostra indicatore
-        if (attempt === 1) {
-            showEmailStatus('Invio conferma in corso...', 'loading');
-        }
-        
-        const cart = JSON.parse(localStorage.getItem('lh360_cart') || '[]');
-        const subtotal = cart.reduce((sum, item) => sum + (item.price * (item.qty || 1)), 0);
-        const shipping = subtotal >= 150 ? 0 : 15;
-        const total = subtotal + shipping;
-        
-        const params = new URLSearchParams({
-            action: 'send_invoice',
-            session_id: sessionId,
-            order_id: orderIdParam || 'N/A',
-            items: JSON.stringify(cart.map(item => ({
-                title: item.title || 'Prodotto',
-                quantity: item.qty || 1,
-                price: item.price || 0,
-                color: item.color || '',
-                size: item.size || '',
-                image: item.image || ''
-            }))),
-            subtotal: subtotal.toFixed(2),
-            shipping: shipping.toFixed(2),
-            total: total.toFixed(2),
-            callback: 'handleEmailResponse_' + Date.now(),
-            t: Date.now(),
-            // 🆕 Flag per mobile debugging
-            mobile: /iPhone|iPad|iPod|Android/i.test(navigator.userAgent) ? '1' : '0'
-        });
-        
-        const callbackName = params.get('callback');
-        const script = document.createElement('script');
-        script.src = `${webAppUrl}?${params.toString()}`;
-        
-        // Timeout più lungo per mobile (15 secondi)
-        const timeout = setTimeout(() => {
-            console.warn(`⏱️ Timeout tentativo ${attempt}, retry...`);
-            cleanup();
-            
-            if (attempt < MAX_EMAIL_ATTEMPTS) {
-                setTimeout(() => sendInvoiceEmailWithRetry(attempt + 1), 1000);
-            } else {
-                showEmailStatus('Errore invio email. Controlla la tua casella.', 'error');
-            }
-        }, 15000);
-        
-        window[callbackName] = function(response) {
-            clearTimeout(timeout);
-            
-            console.log('✅ Risposta invio email:', response);
-            
-            if (response && response.success) {
-                emailSent = true;
-                console.log(`✅ Email inviata con successo a: ${response.email}`);
-                showEmailStatus(`Conferma inviata a ${response.email}`, 'success');
-                
-                // Salva stato invio email
-                try {
-                    localStorage.setItem('lh360_email_sent_' + orderIdParam, new Date().toISOString());
-                } catch (e) {}
-            } else {
-                console.error(`❌ Errore tentativo ${attempt}:`, response?.error || 'Unknown error');
-                
-                if (attempt < MAX_EMAIL_ATTEMPTS) {
-                    setTimeout(() => sendInvoiceEmailWithRetry(attempt + 1), 1500);
-                } else {
-                    showEmailStatus('Email non inviata. Controlla spam o contattaci.', 'error');
-                }
-            }
-            
-            cleanup();
-        };
-        
-        script.onerror = function() {
-            clearTimeout(timeout);
-            console.error(`❌ Errore di rete tentativo ${attempt}`);
-            cleanup();
-            
-            if (attempt < MAX_EMAIL_ATTEMPTS) {
-                setTimeout(() => sendInvoiceEmailWithRetry(attempt + 1), 2000);
-            } else {
-                showEmailStatus('Errore di rete. Verifica la connessione.', 'error');
-            }
-        };
-        
-        function cleanup() {
-            try {
-                if (script.parentNode) document.body.removeChild(script);
-                delete window[callbackName];
-            } catch (e) {}
-        }
-        
-        document.body.appendChild(script);
-    }
-
-    // 🆕 Mostra notifica stato email
-    function showEmailStatus(message, type = 'loading') {
-        const statusElem = document.getElementById('emailStatus');
-        const textElem = document.getElementById('emailStatusText');
-        
-        if (!statusElem || !textElem) return;
-        
-        statusElem.className = 'email-status show ' + type;
-        textElem.textContent = message;
-        
-        // Auto-hide dopo 5 secondi (solo per success/error)
-        if (type !== 'loading') {
-            setTimeout(() => {
-                statusElem.classList.remove('show');
-            }, 5000);
-        }
-    }
+        // Cleanup
+        try {
+            if (script.parentNode) document.body.removeChild(script);
+            delete window[callbackName];
+        } catch (e) {}
+    };
+    
+    script.onerror = function() {
+        console.error('❌ Errore di rete durante invio email');
+        try {
+            if (script.parentNode) document.body.removeChild(script);
+            delete window[callbackName];
+        } catch (e) {}
+    };
+    
+    document.body.appendChild(script);
+    
+    // Timeout di sicurezza
+    setTimeout(() => {
+        try {
+            if (script.parentNode) document.body.removeChild(script);
+            delete window[callbackName];
+        } catch (e) {}
+    }, 10000);
+}
 
 function completeLoadingSequence() {
     clearTimeout(loadTimeout);
@@ -1826,5 +1762,4 @@ function loadPurchasedItems() {
     </script>    
 </body>
 </html>
-
 
