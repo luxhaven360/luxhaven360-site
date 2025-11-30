@@ -804,11 +804,27 @@ function showFallbackError(errorMsg, errorDetails = 'Verifica la tua connessione
         renderOrders(pendingOrders);
         ordersRendered = true;
         
-        // Mostra banner di avvertimento
+        // Mostra banner di avvertimento elegante
         const ordersList = document.getElementById('ordersList');
         const warningBanner = document.createElement('div');
-        warningBanner.style.cssText = 'background: rgba(251, 191, 36, 0.1); border: 1px solid rgba(251, 191, 36, 0.3); border-radius: 12px; padding: 16px; margin-bottom: 24px; text-align: center; color: #fbbf24; font-size: 14px;';
-        warningBanner.innerHTML = '⚠️ Impossibile sincronizzare con il server. Mostrando ordini salvati localmente.';
+        warningBanner.style.cssText = `
+            background: linear-gradient(135deg, rgba(251, 191, 36, 0.1), rgba(245, 158, 11, 0.05));
+            border: 1px solid rgba(251, 191, 36, 0.3);
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 24px;
+            text-align: center;
+            box-shadow: 0 4px 12px rgba(251, 191, 36, 0.1);
+        `;
+        warningBanner.innerHTML = `
+            <div style="font-size: 32px; margin-bottom: 8px;">⚠️</div>
+            <div style="color: #fbbf24; font-size: 15px; font-weight: 500; margin-bottom: 6px;">
+                Impossibile sincronizzare con il server
+            </div>
+            <div style="color: #a1a1aa; font-size: 13px; line-height: 1.5;">
+                Mostrando ordini salvati localmente. Gli ordini potrebbero non essere aggiornati.
+            </div>
+        `;
         ordersList.insertBefore(warningBanner, ordersList.firstChild);
         
         return;
@@ -821,7 +837,7 @@ function showFallbackError(errorMsg, errorDetails = 'Verifica la tua connessione
 }
 
 // ==================================================================
-// CARICAMENTO ORDINI (Logica V5 - Fallback Migliorato)
+// CARICAMENTO ORDINI (Logica V6 - Timeout Ridotto + Fallback Immediato)
 // ==================================================================
 
 async function loadOrders() {
@@ -848,7 +864,7 @@ async function loadOrders() {
             renderOrders(pendingOrders);
             ordersRendered = true;
         }
-        return; // STOP.
+        return;
     }
 
     // --- MODO B: Tutti gli ordini (da icona navbar) ---
@@ -866,15 +882,15 @@ async function loadOrders() {
         
         console.log('🔗 URL richiesta:', apiUrl);
         
-        // Timeout ridotto a 5 secondi su mobile
+        // Timeout RIDOTTO a 3 secondi per UX migliore su mobile
         const timeout = setTimeout(() => {
-            console.warn('⏱️ Timeout API dopo 5 secondi');
+            console.warn('⏱️ Timeout API dopo 3 secondi - Fallback immediato');
             cleanup();
             showFallbackError(
-                '⚠️ Timeout API ordini', 
-                'Il server non risponde. Mostrando ordini salvati localmente.'
+                '⚠️ Timeout connessione server', 
+                'Il server non risponde entro 3 secondi. Mostrando ordini salvati.'
             );
-        }, 5000);
+        }, 3000);
 
         const cleanup = () => {
             try { if (script.parentNode) document.body.removeChild(script); } catch (e) {}
@@ -921,7 +937,7 @@ async function loadOrders() {
                 showEmptyState();
             } else {
                 renderOrders(allOrders);
-                console.log(`✅ Ordini renderizzati: ${allOrders.length} totali`);
+                console.log(`✅ Ordini renderizzati: ${allOrders.length} totali (${apiOrders.length} da server)`);
             }
             
             ordersRendered = true;
@@ -933,8 +949,8 @@ async function loadOrders() {
             clearTimeout(timeout);
             cleanup();
             showFallbackError(
-                '❌ Errore caricamento script API', 
-                'Impossibile contattare il server. Mostrando ordini salvati.'
+                '❌ Impossibile caricare script API', 
+                'Problema di connessione o restrizioni di sicurezza. Mostrando ordini salvati.'
             );
         };
         
@@ -1021,6 +1037,7 @@ loadOrders();
     </script>
 </body>
 </html>
+
 
 
 
