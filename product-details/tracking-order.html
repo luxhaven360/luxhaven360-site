@@ -819,28 +819,35 @@ async function loadOrders() {
     console.log('Modalità VISTA: tutti gli ordini (all/default)');
     
     try {
-        const pendingOrders = getPendingOrdersFromLocalStorage(); // Li prendiamo per il merge
+        const pendingOrders = getPendingOrdersFromLocalStorage();
 
         const callbackName = 'handleOrdersData_' + Date.now();
         const script = document.createElement('script');
+        // Aggiunta parametro t=timestamp per evitare cache su mobile
         script.src = `${WEB_APP_URL}?action=get_orders&callback=${callbackName}&t=${Date.now()}`;
         
-        // Funzione di fallback UNIFICATA per errori
-        const showFallbackError = (errorMsg, errorDetails = 'Verifica la tua connessione e riprova.') => {
+        const showFallbackError = (errorMsg) => {
             console.error(errorMsg);
             if (ordersRendered) return; 
             
             document.getElementById('loadingState').style.display = 'none';
-            // In modalità 'all', se l'API fallisce, NON mostriamo il local storage.
-            // Mostriamo solo uno stato vuoto/errore.
-            showEmptyState('Impossibile caricare gli ordini', errorDetails);
+            
+            // SE l'API fallisce ma abbiamo ordini locali, mostriamoli comunque!
+            if (pendingOrders.length > 0) {
+                 console.log('⚠️ API fallita, mostro ordini locali pending.');
+                 renderOrders(pendingOrders);
+                 // Puoi aggiungere un piccolo toast/avviso che dice "Connessione lenta, visualizzi solo gli ordini recenti di questo dispositivo"
+            } else {
+                 showEmptyState('Impossibile caricare gli ordini', 'Verifica la tua connessione o riprova più tardi.');
+            }
             ordersRendered = true; 
         };
 
+        // *** MODIFICA IMPORTANTE: Aumentato timeout da 8000 a 25000 per reti mobili ***
         const timeout = setTimeout(() => {
             cleanup();
             showFallbackError('⚠️ Timeout API ordini');
-        }, 8000); // Timeout 8 secondi
+        }, 25000); 
 
         const cleanup = () => {
             try { if (script.parentNode) document.body.removeChild(script); } catch (e) {}
@@ -860,28 +867,24 @@ async function loadOrders() {
             
             let allOrders = [];
             const apiOrders = data.orders || [];
-            allOrders = [...apiOrders]; // Inizia con gli ordini da API
+            allOrders = [...apiOrders]; 
             
-            // Fai il merge con gli ordini pending (solo se non già presenti)
+            // Merge con local storage
             if (pendingOrders.length > 0) {
                 const apiIds = new Set(apiOrders.map(o => o.id));
                 pendingOrders.forEach(pending => {
                     if (!apiIds.has(pending.id)) {
                         allOrders.push(pending);
-                        console.log(`Aggiunto ordine pending ${pending.id} alla lista API.`);
                     } else {
-                        // L'ordine è stato confermato, puliamo il local storage
                         localStorage.removeItem('lh360_pending_order');
-                        console.log(`✅ Ordine pending ${pending.id} confermato da API.`);
                     }
                 });
             }
             
             if (allOrders.length === 0) {
-                showEmptyState(); // Mostra "Nessun ordine recente"
+                showEmptyState(); 
             } else {
                 renderOrders(allOrders);
-                console.log(`✅ Ordini caricati (API + Merge): ${allOrders.length} totali`);
             }
             
             ordersRendered = true;
@@ -977,3 +980,4 @@ loadOrders();
     </script>
 </body>
 </html>
+
