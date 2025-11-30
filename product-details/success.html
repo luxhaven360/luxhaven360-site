@@ -966,804 +966,359 @@
         </div>
     </div>
     
-    <script>
+   <script>
     // CONFIGURAZIONE
-const webAppUrl = 'https://script.google.com/macros/s/AKfycbyN-wdZBN0gm3x3maZAHnUq5K-QdFL-KKy2sROqMFY4GxUA-ERxBGyyLh4cno60DV2m/exec';
+    const webAppUrl = 'https://script.google.com/macros/s/AKfycbyN-wdZBN0gm3x3maZAHnUq5K-QdFL-KKy2sROqMFY4GxUA-ERxBGyyLh4cno60DV2m/exec';
 
-let loadTimeout;
-let startTime;
-let emailSent = false; // Flag per evitare invii duplicati
+    let loadTimeout;
+    let startTime;
+    let emailSent = false; 
 
-// Status messages che appaiono in sequenza durante il caricamento
-const statusMessages = [
-    { icon: '🔒', text: 'Verifica del pagamento...', duration: 1500 },
-    { icon: '✓', text: 'Pagamento confermato con successo', duration: 1500 },
-    { icon: '📝', text: 'Registrazione del tuo ordine...', duration: 1800 },
-    { icon: '✓', text: 'Ordine registrato correttamente', duration: 1200 },
-    { icon: '📧', text: 'Invio conferma via email...', duration: 1500, triggerEmail: true }, // Aggiungiamo flag
-    { icon: '✓', text: 'Conferma inviata al tuo indirizzo', duration: 1200 },
-    { icon: '🎉', text: 'Tutto pronto! Preparazione dettagli...', duration: 1000 }
-];
+    // Status messages (Rimosso il triggerEmail: true, ora è automatico)
+    const statusMessages = [
+        { icon: '🔒', text: 'Verifica del pagamento...', duration: 1500 },
+        { icon: '✓', text: 'Pagamento confermato con successo', duration: 1500 },
+        { icon: '📝', text: 'Registrazione del tuo ordine...', duration: 1800 },
+        { icon: '✓', text: 'Ordine registrato correttamente', duration: 1200 },
+        { icon: '📧', text: 'Invio conferma via email...', duration: 1500 },
+        { icon: '✓', text: 'Conferma inviata al tuo indirizzo', duration: 1200 },
+        { icon: '🎉', text: 'Tutto pronto! Preparazione dettagli...', duration: 1000 }
+    ];
 
-let currentStatusIndex = 0;
-let progressInterval;
+    let currentStatusIndex = 0;
+    let progressInterval;
 
-window.addEventListener('load', () => {
-    startTime = Date.now();
-    setupButtons();
-    startLoadingSequence();
-    loadPurchasedItems();
-    loadOrderDetails();
-    
-    // Timeout di sicurezza esteso a 12 secondi
-    loadTimeout = setTimeout(() => {
-        console.warn('Timeout caricamento dati: forzatura visualizzazione.');
-        completeLoadingSequence();
-    }, 12000);
-});
+    window.addEventListener('load', () => {
+        startTime = Date.now();
+        setupButtons();
+        
+        // 1. AVVIO IMMEDIATO PROCESSI CRITICI (Fix Mobile)
+        // Non aspettiamo l'animazione per inviare l'email
+        sendInvoiceEmail(); 
+        
+        // 2. Avvio animazione visiva
+        startLoadingSequence();
+        
+        // 3. Caricamento dati
+        loadPurchasedItems();
+        loadOrderDetails();
+        
+        // Timeout di sicurezza esteso
+        loadTimeout = setTimeout(() => {
+            console.warn('Timeout caricamento dati: forzatura visualizzazione.');
+            completeLoadingSequence();
+        }, 12000);
+    });
 
-function startLoadingSequence() {
-    // Avvia la sequenza di messaggi di stato
-    updateStatusMessage();
-    
-    // Simula progresso della barra in modo fluido
-    let progress = 0;
-    progressInterval = setInterval(() => {
-        progress += 0.5;
-        if (progress <= 100) {
-            document.getElementById('progressPercent').textContent = Math.floor(progress) + '%';
-        }
-    }, 45);
-}
-
-function updateStatusMessage() {
-    if (currentStatusIndex >= statusMessages.length) {
-        return;
+    function startLoadingSequence() {
+        updateStatusMessage();
+        
+        let progress = 0;
+        progressInterval = setInterval(() => {
+            progress += 0.5;
+            if (progress <= 100) {
+                document.getElementById('progressPercent').textContent = Math.floor(progress) + '%';
+            }
+        }, 45);
     }
-    
-    const message = statusMessages[currentStatusIndex];
-    const statusTextElem = document.getElementById('statusText');
-    const statusIconElem = document.querySelector('.status-icon');
-    const statusMessageElem = document.querySelector('.status-message');
-    
-    // Fade out
-    statusMessageElem.style.opacity = '0';
-    
-    setTimeout(() => {
-        // Aggiorna contenuto
-        statusIconElem.textContent = message.icon;
-        statusTextElem.textContent = message.text;
-        
-        // Fade in
-        statusMessageElem.style.opacity = '1';
-        
-        // 🆕 TRIGGER INVIO EMAIL quando appare il messaggio corretto
-        if (message.triggerEmail && !emailSent) {
-            sendInvoiceEmail();
-        }
-        
-        currentStatusIndex++;
-        
-        // Pianifica il prossimo messaggio
-        if (currentStatusIndex < statusMessages.length) {
-            setTimeout(updateStatusMessage, message.duration);
-        }
-    }, 300);
-}
 
-// 🆕 FUNZIONE PER INVIARE LA FATTURA VIA EMAIL
-function sendInvoiceEmail() {
-    if (emailSent) {
-        console.log('Email già inviata, skip');
-        return;
+    function updateStatusMessage() {
+        if (currentStatusIndex >= statusMessages.length) return;
+        
+        const message = statusMessages[currentStatusIndex];
+        const statusTextElem = document.getElementById('statusText');
+        const statusIconElem = document.querySelector('.status-icon');
+        const statusMessageElem = document.querySelector('.status-message');
+        
+        statusMessageElem.style.opacity = '0';
+        
+        setTimeout(() => {
+            statusIconElem.textContent = message.icon;
+            statusTextElem.textContent = message.text;
+            statusMessageElem.style.opacity = '1';
+            
+            currentStatusIndex++;
+            if (currentStatusIndex < statusMessages.length) {
+                setTimeout(updateStatusMessage, message.duration);
+            }
+        }, 300);
     }
-    
-    emailSent = true;
-    console.log('📧 Invio email fattura in corso...');
-    
-    const urlParams = new URLSearchParams(window.location.search);
-    const sessionId = urlParams.get('session_id');
-    const orderIdParam = urlParams.get('id_ordine');
-    
-    if (!sessionId) {
-        console.warn('⚠️ Nessun session_id disponibile per invio email');
-        return;
-    }
-    
-    // Raccogli i dati dell'ordine da localStorage
-    const cart = JSON.parse(localStorage.getItem('lh360_cart') || '[]');
-    const subtotal = cart.reduce((sum, item) => sum + (item.price * (item.qty || 1)), 0);
-    const shipping = subtotal >= 150 ? 0 : 15;
-    const total = subtotal + shipping;
-    
-    // Prepara i dati da inviare
-    const invoiceData = {
-        action: 'send_invoice',
-        session_id: sessionId,
-        order_id: orderIdParam || 'N/A',
-        items: cart.map(item => ({
+
+    // 🆕 FUNZIONE OTTIMIZZATA PER MOBILE
+    function sendInvoiceEmail() {
+        if (emailSent) return;
+        
+        const urlParams = new URLSearchParams(window.location.search);
+        const sessionId = urlParams.get('session_id');
+        const orderIdParam = urlParams.get('id_ordine');
+        
+        if (!sessionId) {
+            console.warn('⚠️ Nessun session_id, skip email');
+            return;
+        }
+
+        emailSent = true;
+        console.log('📧 Avvio invio email immediato...');
+        
+        const cart = JSON.parse(localStorage.getItem('lh360_cart') || '[]');
+        const subtotal = cart.reduce((sum, item) => sum + (item.price * (item.qty || 1)), 0);
+        const shipping = subtotal >= 150 ? 0 : 15;
+        const total = subtotal + shipping;
+        
+        const invoiceData = {
             title: item.title || 'Prodotto',
             quantity: item.qty || 1,
             price: item.price || 0,
             color: item.color || '',
             size: item.size || '',
             image: item.image || ''
-        })),
-        subtotal: subtotal.toFixed(2),
-        shipping: shipping.toFixed(2),
-        total: total.toFixed(2),
-        timestamp: new Date().toISOString()
-    };
-    
-    // Chiamata JSONP all'endpoint
-    const callbackName = 'handleEmailResponse_' + Date.now();
-    const script = document.createElement('script');
-    
-    // Costruisci URL con parametri
-    const params = new URLSearchParams({
-        action: 'send_invoice',
-        session_id: sessionId,
-        order_id: orderIdParam || 'N/A',
-        items: JSON.stringify(invoiceData.items),
-        subtotal: invoiceData.subtotal,
-        shipping: invoiceData.shipping,
-        total: invoiceData.total,
-        callback: callbackName,
-        t: Date.now()
-    });
-    
-    script.src = `${webAppUrl}?${params.toString()}`;
-    
-    window[callbackName] = function(response) {
-        console.log('✅ Risposta invio email:', response);
+        };
         
-        if (response && response.success) {
-            console.log('✅ Fattura inviata con successo a:', response.email);
-        } else {
-            console.error('❌ Errore invio email:', response?.error || 'Unknown error');
-        }
-        
-        // Cleanup
-        try {
-            if (script.parentNode) document.body.removeChild(script);
-            delete window[callbackName];
-        } catch (e) {}
-    };
-    
-    script.onerror = function() {
-        console.error('❌ Errore di rete durante invio email');
-        try {
-            if (script.parentNode) document.body.removeChild(script);
-            delete window[callbackName];
-        } catch (e) {}
-    };
-    
-    document.body.appendChild(script);
-    
-    // Timeout di sicurezza
-    setTimeout(() => {
-        try {
-            if (script.parentNode) document.body.removeChild(script);
-            delete window[callbackName];
-        } catch (e) {}
-    }, 10000);
-}
-
-function completeLoadingSequence() {
-    clearTimeout(loadTimeout);
-    clearInterval(progressInterval);
-    
-    // Assicura che la barra arrivi al 100%
-    document.getElementById('progressPercent').textContent = '100%';
-    
-    const elapsed = Date.now() - startTime;
-    const minLoadTime = 9000; // Minimo 9 secondi di caricamento
-    const remaining = minLoadTime - elapsed;
-    
-    if (remaining > 0) {
-        setTimeout(finalizePageLoad, remaining);
-    } else {
-        finalizePageLoad();
-    }
-}
-
-function finalizePageLoad() {
-    const loader = document.getElementById('luxhaven-loader');
-    const content = document.querySelector('.container');
-    
-    if (loader) {
-        loader.style.opacity = '0';
-        setTimeout(() => { 
-            loader.style.display = 'none'; 
-        }, 800);
-    }
-    
-    if (content) {
-        content.classList.add('visible');
-    }
-    
-    // Pulizia localStorage dopo visualizzazione completa
-    setTimeout(() => {
-        localStorage.removeItem('lh360_cart');
-        localStorage.removeItem('lh360_selected_variant_id');
-    }, 1500);
-}
-
-function setupButtons() {
-    const trackBtn = document.querySelector('.btn-primary');
-    if (trackBtn) {
-        trackBtn.href = 'https://luxhaven360.github.io/luxhaven360-site/product-details/tracking-order.html';
-    }
-    const shopBtn = document.querySelector('.btn-secondary');
-    if (shopBtn) {
-        shopBtn.href = 'https://luxhaven360.github.io/luxhaven360-site/index.html#shop';
-    }
-}
-
-// ---------- Robust JSONP loader with retries and fetch fallback ----------
-function loadOrderDetails(maxRetries = 3) {
-    const urlParams = new URLSearchParams(window.location.search);
-    const sessionId = urlParams.get('session_id');
-    const orderIdParam = urlParams.get('id_ordine');
-
-    const orderNumElem = document.getElementById('orderNumber');
-    const emailElem = document.getElementById('emailValue');
-    const paymentElem = document.getElementById('paymentValue');
-
-    if (orderIdParam && orderNumElem) {
-        orderNumElem.textContent = `Ordine #${orderIdParam}`;
-    }
-
-    if (!sessionId) {
-        if (emailElem) emailElem.textContent = 'Non disponibile';
-        if (paymentElem) paymentElem.textContent = 'Non disponibile';
-        completeLoadingSequence();
-        return;
-    }
-
-    let attempts = 0;
-    let finished = false;
-
-    function tryRequest() {
-        if (finished) return;
-        attempts++;
-        const callbackName = 'handleDetailsResponse_' + Date.now() + '_' + Math.floor(Math.random() * 10000);
+        const callbackName = 'handleEmailResponse_' + Date.now();
         const script = document.createElement('script');
-        const src = `${webAppUrl}?get_details=1&session_id=${encodeURIComponent(sessionId)}&callback=${callbackName}&t=${Date.now()}`;
-        script.src = src;
-        script.async = true;
-
-        const cleanup = () => {
-            try { if (script.parentNode) script.parentNode.removeChild(script); } catch (e) {}
-            try { delete window[callbackName]; } catch (e) {}
-        };
-
+        
+        // Parametri per l'invio
+        const params = new URLSearchParams({
+            action: 'send_invoice',
+            session_id: sessionId,
+            order_id: orderIdParam || 'N/A',
+            items: JSON.stringify(cart.map(item => ({
+                title: item.title, quantity: item.qty, price: item.price, 
+                color: item.color, size: item.size, image: item.image
+            }))),
+            subtotal: subtotal.toFixed(2),
+            shipping: shipping.toFixed(2),
+            total: total.toFixed(2),
+            callback: callbackName,
+            t: Date.now() // Cache buster
+        });
+        
+        script.src = `${webAppUrl}?${params.toString()}`;
+        script.async = true; // Non bloccare il rendering
+        
         window[callbackName] = function(response) {
-            if (finished) { cleanup(); return; }
-            finished = true;
-            cleanup();
-            handleDetailsResponse(response);
+            console.log('✅ Risposta email:', response);
+            try { delete window[callbackName]; document.body.removeChild(script); } catch (e) {}
         };
-
+        
         script.onerror = function() {
-            cleanup();
-            if (attempts <= maxRetries) {
-                console.warn('JSONP load error, retrying...', attempts);
-                setTimeout(tryRequest, 1200 + attempts * 300);
-            } else {
-                tryFetchFallback().then(resp => {
-                    if (resp) {
-                        finished = true;
-                        handleDetailsResponse(resp);
-                    } else {
-                        console.warn('Fallback fetch failed. Mostriamo contenuto parziale.');
-                        if (emailElem) emailElem.textContent = 'Non disponibile';
-                        if (paymentElem) paymentElem.textContent = 'Non disponibile';
-                        completeLoadingSequence();
-                    }
-                }).catch(err => {
-                    console.warn('Fallback fetch exception', err);
-                    if (emailElem) emailElem.textContent = 'Non disponibile';
-                    if (paymentElem) paymentElem.textContent = 'Non disponibile';
-                    completeLoadingSequence();
-                });
-            }
+            console.error('❌ Errore rete email');
         };
-
+        
         document.body.appendChild(script);
+    }
 
+    function completeLoadingSequence() {
+        clearTimeout(loadTimeout);
+        clearInterval(progressInterval);
+        document.getElementById('progressPercent').textContent = '100%';
+        
+        const elapsed = Date.now() - startTime;
+        const minLoadTime = 4000; // Ridotto per mobile per essere più reattivo
+        const remaining = Math.max(0, minLoadTime - elapsed);
+        
+        setTimeout(finalizePageLoad, remaining);
+    }
+
+    function finalizePageLoad() {
+        const loader = document.getElementById('luxhaven-loader');
+        const content = document.querySelector('.container');
+        
+        if (loader) {
+            loader.style.opacity = '0';
+            setTimeout(() => { loader.style.display = 'none'; }, 800);
+        }
+        
+        if (content) content.classList.add('visible');
+        
+        // Pulizia ritardata per non perdere dati se l'utente ricarica subito
         setTimeout(() => {
-            if (!finished) {
-                try { cleanup(); } catch (e) {}
-                if (attempts <= maxRetries) {
-                    console.warn('JSONP timeout, retrying...', attempts);
-                    setTimeout(tryRequest, 800 + attempts * 200);
-                } else {
-                    tryFetchFallback().then(resp => {
-                        if (resp) {
-                            finished = true;
-                            handleDetailsResponse(resp);
-                        } else {
-                            if (emailElem) emailElem.textContent = 'Non disponibile';
-                            if (paymentElem) paymentElem.textContent = 'Non disponibile';
-                            completeLoadingSequence();
-                        }
-                    }).catch(err => {
-                        if (emailElem) emailElem.textContent = 'Non disponibile';
-                        if (paymentElem) paymentElem.textContent = 'Non disponibile';
-                        completeLoadingSequence();
-                    });
-                }
-            }
-        }, 5000);
+            localStorage.removeItem('lh360_cart');
+            localStorage.removeItem('lh360_selected_variant_id');
+        }, 2000);
     }
 
-    async function tryFetchFallback() {
-        try {
-            const fetchUrl = `${webAppUrl}?get_details=1&session_id=${encodeURIComponent(sessionId)}&callback=__FALLBACK_CB&no_cache=${Date.now()}`;
-            const res = await fetch(fetchUrl, { method: 'GET', cache: 'no-store' });
-            if (!res.ok) {
-                console.warn('Fetch fallback response not ok', res.status);
-                return null;
-            }
-            const text = await res.text();
-            const start = text.indexOf('(');
-            const end = text.lastIndexOf(')');
-            if (start === -1 || end === -1) return null;
-            const jsonStr = text.substring(start + 1, end);
-            const parsed = JSON.parse(jsonStr);
-            return parsed;
-        } catch (e) {
-            console.warn('Fetch fallback failed (CORS/network?)', e);
-            return null;
-        }
+    function setupButtons() {
+        const trackBtn = document.querySelector('.btn-primary');
+        if (trackBtn) trackBtn.href = 'product-details/tracking-order.html'; // Percorso relativo corretto
+        const shopBtn = document.querySelector('.btn-secondary');
+        if (shopBtn) shopBtn.href = '../index.html#shop'; // Torna alla home/shop
     }
 
-    tryRequest();
-}
-
-// ---------- Handler globale con logica dinamica tracking ----------
-window.handleDetailsResponse = function(response) {
-    const emailElem = document.getElementById('emailValue');
-    const paymentElem = document.getElementById('paymentValue');
-    const orderNumElem = document.getElementById('orderNumber');
-    const deliveryElem = document.querySelector('.info-card:nth-child(2) .info-value');
-
-    let currentOrderId = null;
-
-    if (response && !response.error) {
-        if (response.email && emailElem) {
-            emailElem.textContent = response.email;
-        }
-        if (paymentElem) {
-            if (response.last4) {
-                paymentElem.textContent = `•••• ${response.last4}`;
-            } else {
-                paymentElem.textContent = 'Pagamento Online';
-            }
-        }
-        if (response.order_id && orderNumElem) {
-            orderNumElem.textContent = `Ordine #${response.order_id}`;
-            currentOrderId = response.order_id;
-        }
-    }
-
-    let confirmedTime;
-    if (currentOrderId) {
-        const storedTime = localStorage.getItem(`lh360_order_time_${currentOrderId}`);
-        if (storedTime) {
-            confirmedTime = storedTime;
-        } else {
-            confirmedTime = new Date().toISOString();
-            localStorage.setItem(`lh360_order_time_${currentOrderId}`, confirmedTime);
-        }
-        localStorage.setItem('lh360_last_order_id', currentOrderId);
-    } else {
+    // --- JSONP Loader & Timeline (mantenuti quasi uguali ma con path corretti) ---
+    function loadOrderDetails(maxRetries = 2) {
         const urlParams = new URLSearchParams(window.location.search);
         const sessionId = urlParams.get('session_id');
-        const fallbackKey = sessionId ? `lh360_order_time_session_${sessionId}` : 'lh360_order_time_fallback';
-        const storedTime = localStorage.getItem(fallbackKey);
-        if (storedTime) {
-            confirmedTime = storedTime;
-        } else {
-            confirmedTime = new Date().toISOString();
-            localStorage.setItem(fallbackKey, confirmedTime);
+        const orderIdParam = urlParams.get('id_ordine');
+
+        const orderNumElem = document.getElementById('orderNumber');
+        const emailElem = document.getElementById('emailValue');
+        const paymentElem = document.getElementById('paymentValue');
+
+        if (orderIdParam && orderNumElem) orderNumElem.textContent = `Ordine #${orderIdParam}`;
+
+        if (!sessionId) {
+            completeLoadingSequence();
+            return;
         }
-    }
 
-    // Salva ordine in localStorage per tracking
-    if (currentOrderId) {
-        const cart = JSON.parse(localStorage.getItem('lh360_cart') || '[]');
-        const subtotal = cart.reduce((sum, item) => sum + (item.price * (item.qty || 1)), 0);
-        const shipping = subtotal >= 150 ? 0 : 15;
-        const total = subtotal + shipping;
-        const today = new Date();
-        const formattedDate = today.toLocaleDateString('it-IT', {
-            day: 'numeric',
-            month: 'long',
-            year: 'numeric'
-        });
-        const orderDetails = {
-            id: currentOrderId,
-            data: formattedDate,
-            stato: 'In Preparazione',
-            totale: total.toFixed(2),
-            consegna_prevista: calculateDeliveryDate(3),
-            products: cart.map(item => ({
-                name: item.title || 'Prodotto',
-                quantity: item.qty || 1,
-                price: item.price || 0,
-                image: item.image || ''
-            })),
-            email: response?.email || '',
-            timestamp: confirmedTime
-        };
-        localStorage.setItem('lh360_pending_order', JSON.stringify(orderDetails));
-        console.log('✅ Ordine salvato in localStorage per tracking immediato:', orderDetails);
-    }
-
-    fetchOrderTrackingData(currentOrderId, confirmedTime, deliveryElem);
-
-    const triggerCallback = 'handlePollResponse_' + Date.now();
-    const triggerScript = document.createElement('script');
-    triggerScript.src = `${webAppUrl}?action=trigger_poll&callback=${triggerCallback}`;
-    window[triggerCallback] = function(resp) {
-        try { if (triggerScript.parentNode) triggerScript.parentNode.removeChild(triggerScript); } catch(e){}
-        try { delete window[triggerCallback]; } catch(e){}
-        console.log('Polling triggerato:', resp);
-    };
-    document.body.appendChild(triggerScript);
-
-    completeLoadingSequence();
-};
-
-function fetchOrderTrackingData(orderId, confirmedTime, deliveryElem) {
-    if (!orderId) {
-        console.warn('Nessun orderId disponibile per recupero dati tracking');
-        updateTimelineWithDefaults(confirmedTime, deliveryElem);
-        return;
-    }
-
-    const callbackName = 'handleOrderTracking_' + Date.now();
-    const script = document.createElement('script');
-    script.src = `${webAppUrl}?action=get_orders&callback=${callbackName}&t=${Date.now()}`;
-
-    window[callbackName] = function(response) {
-        try { if (script.parentNode) document.body.removeChild(script); } catch(e){}
-        try { delete window[callbackName]; } catch(e){}
-
-        if (response && response.orders && Array.isArray(response.orders)) {
-            const order = response.orders.find(o => o.id === orderId);
-            if (order) {
-                console.log('✅ Dati ordine recuperati da Order Tracking:', order);
-                updateTimelineFromOrderData(order, confirmedTime, deliveryElem);
-                return;
-            }
-        }
+        let attempts = 0;
         
-        console.warn('Ordine non trovato in Order Tracking, uso dati predefiniti');
-        updateTimelineWithDefaults(confirmedTime, deliveryElem);
-    };
-
-    script.onerror = () => {
-        try { if (script.parentNode) document.body.removeChild(script); } catch(e){}
-        try { delete window[callbackName]; } catch(e){}
-        console.warn('Errore caricamento dati tracking, uso dati predefiniti');
-        updateTimelineWithDefaults(confirmedTime, deliveryElem);
-    };
-
-    document.body.appendChild(script);
-}
-
-function updateTimelineFromOrderData(order, confirmedTime, deliveryElem) {
-    const stato = order.stato || 'In Preparazione';
-    const consegnaPrevista = order.consegna_prevista || 'Da definire';
-
-    if (deliveryElem) {
-        deliveryElem.textContent = consegnaPrevista;
-    }
-
-    const shippingDate = calculateShippingDate(consegnaPrevista);
-    const deliveryDate = parseItalianDate(consegnaPrevista);
-    const deliveryFormatted = deliveryDate ? formatShortDate(deliveryDate, true) : 'Previsto: Da definire';
-
-    const timelineData = {
-        current_status: mapStatusToStep(stato),
-        status_dates: {
-            confirmed: confirmedTime,
-            preparing: null,
-            shipped: stato === 'In Transito' || stato === 'Consegnato' ? new Date().toISOString() : null,
-            delivered: stato === 'Consegnato' ? new Date().toISOString() : null
-        },
-        estimated_dates: {
-            preparing: 'In corso',
-            shipped: shippingDate,
-            delivered: deliveryFormatted
-        }
-    };
-
-    updateTimeline(timelineData);
-}
-
-function updateTimelineWithDefaults(confirmedTime, deliveryElem) {
-    const deliveryDate = calculateDeliveryDate(3);
-    const shippingDate = calculateShippingDate(deliveryDate);
-    const parsedDelivery = parseItalianDate(deliveryDate);
-    const deliveryFormatted = parsedDelivery ? formatShortDate(parsedDelivery, true) : 'Previsto: Da definire';
-
-    if (deliveryElem) {
-        deliveryElem.textContent = deliveryDate;
-    }
-
-    const timelineData = {
-        current_status: 'preparing',
-        status_dates: {
-            confirmed: confirmedTime,
-            preparing: null,
-            shipped: null,
-            delivered: null
-        },
-        estimated_dates: {
-            preparing: 'In corso',
-            shipped: shippingDate,
-            delivered: deliveryFormatted
-        }
-    };
-
-    updateTimeline(timelineData);
-}
-
-function mapStatusToStep(stato) {
-    const map = {
-        'Confermato': 'confirmed',
-        'In Preparazione': 'preparing',
-        'In Transito': 'shipped',
-        'Consegnato': 'delivered'
-    };
-    return map[stato] || 'preparing';
-}
-
-function calculateDeliveryDate(daysFromNow) {
-    const date = new Date();
-    date.setDate(date.getDate() + daysFromNow);
-    return date.toLocaleDateString('it-IT', { day: 'numeric', month: 'long', year: 'numeric' });
-}
-
-function calculateShippingDate(deliveryDateStr) {
-    if (!deliveryDateStr || deliveryDateStr === 'Da definire') {
-        const shippingDate = new Date();
-        shippingDate.setDate(shippingDate.getDate() + 1);
-        return formatShortDate(shippingDate, true);
-    }
-
-    try {
-        const deliveryDate = parseItalianDate(deliveryDateStr);
-        if (deliveryDate) {
-            const shippingDate = new Date(deliveryDate);
-            shippingDate.setDate(shippingDate.getDate() - 1);
+        function tryRequest() {
+            attempts++;
+            const callbackName = 'handleDetailsResponse_' + Date.now();
+            const script = document.createElement('script');
+            script.src = `${webAppUrl}?get_details=1&session_id=${encodeURIComponent(sessionId)}&callback=${callbackName}&t=${Date.now()}`;
             
-            const now = new Date();
-            if (shippingDate < now) {
-                shippingDate.setTime(now.getTime());
-                shippingDate.setDate(shippingDate.getDate() + 1);
-            }
-            
-            return formatShortDate(shippingDate, true);
-        }
-    } catch (e) {
-        console.warn('Errore calcolo data spedizione:', e);
-    }
+            window[callbackName] = function(response) {
+                handleDetailsResponse(response);
+                try { delete window[callbackName]; document.body.removeChild(script); } catch(e){}
+            };
 
-    const shippingDate = new Date();
-    shippingDate.setDate(shippingDate.getDate() + 1);
-    return formatShortDate(shippingDate, true);
-}
-
-function parseItalianDate(dateStr) {
-    if (!dateStr) return null;
-    
-    const months = {
-        'gennaio': 0, 'febbraio': 1, 'marzo': 2, 'aprile': 3,
-        'maggio': 4, 'giugno': 5, 'luglio': 6, 'agosto': 7,
-        'settembre': 8, 'ottobre': 9, 'novembre': 10, 'dicembre': 11
-    };
-    
-    try {
-        const match = dateStr.match(/(\d{1,2})\s+(\w+)\s+(\d{4})/);
-        if (match) {
-            const day = parseInt(match[1]);
-            const monthName = match[2].toLowerCase();
-            const year = parseInt(match[3]);
-            
-            if (months[monthName] !== undefined) {
-                return new Date(year, months[monthName], day);
-            }
-        }
-        
-        const parts = dateStr.split('/');
-        if (parts.length === 3) {
-            return new Date(parts[2], parts[1] - 1, parts[0]);
-        }
-    } catch (e) {
-        console.warn('Errore parse data italiana:', e);
-    }
-    
-    return null;
-}
-
-function formatShortDate(date, withPrefix = false) {
-    const monthNames = ['Gen', 'Feb', 'Mar', 'Apr', 'Mag', 'Giu', 
-                        'Lug', 'Ago', 'Set', 'Ott', 'Nov', 'Dic'];
-    
-    const day = date.getDate();
-    const month = monthNames[date.getMonth()];
-    
-    const formatted = `${day} ${month}`;
-    return withPrefix ? `Previsto: ${formatted}` : formatted;
-}
-
-function updateTimeline(data) {
-    const steps = {
-        confirmed: document.getElementById('step-confirmed'),
-        preparing: document.getElementById('step-preparing'),
-        shipped: document.getElementById('step-shipped'),
-        delivered: document.getElementById('step-delivered')
-    };
-
-    const dateElems = {
-        confirmed: document.getElementById('date-confirmed'),
-        preparing: document.getElementById('date-preparing'),
-        shipped: document.getElementById('date-shipped'),
-        delivered: document.getElementById('date-delivered')
-    };
-
-    const icons = {
-        confirmed: '✓',
-        preparing: '📦',
-        shipped: '🚚',
-        delivered: '🏠'
-    };
-
-    const stepOrder = ['confirmed', 'preparing', 'shipped', 'delivered'];
-    const currentIndex = stepOrder.indexOf(data.current_status);
-
-    stepOrder.forEach((step, index) => {
-        const elem = steps[step];
-        if (!elem) return;
-
-        elem.classList.remove('completed', 'active', 'pending');
-
-        if (index < currentIndex) {
-            elem.classList.add('completed');
-        } else if (index === currentIndex) {
-            elem.classList.add('active');
-        } else {
-            elem.classList.add('pending');
-        }
-
-        const dot = elem.querySelector('.timeline-dot');
-        if (dot) {
-            if (index < currentIndex) {
-                dot.innerHTML = '✓';
-            } else {
-                dot.innerHTML = icons[step];
-            }
-        }
-
-        const dateElem = dateElems[step];
-        if (dateElem) {
-            const actualDate = data.status_dates[step];
-            
-            if (step === 'preparing') {
-                if (index < currentIndex) {
-                    dateElem.textContent = 'Preparazione completata';
-                } else if (index === currentIndex) {
-                    dateElem.textContent = 'In corso';
-                } else {
-                    dateElem.textContent = data.estimated_dates[step] || 'Da definire';
+            script.onerror = function() {
+                if (attempts <= maxRetries) setTimeout(tryRequest, 1500);
+                else {
+                    // Fallback visuale
+                    if (emailElem) emailElem.textContent = 'Cliente';
+                    completeLoadingSequence();
                 }
-                return;
-            }
-            
-            if (actualDate) {
-                const date = new Date(actualDate);
-                const day = date.getDate();
-                const monthNames = ['Gen', 'Feb', 'Mar', 'Apr', 'Mag', 'Giu', 
-                                    'Lug', 'Ago', 'Set', 'Ott', 'Nov', 'Dic'];
-                const month = monthNames[date.getMonth()];
-                const time = date.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
-                dateElem.textContent = `${day} ${month}, ${time}`;
-            } else {
-                dateElem.textContent = data.estimated_dates[step] || 'Da definire';
-            }
+            };
+
+            document.body.appendChild(script);
         }
-    });
-
-    const timelineElem = document.querySelector('.timeline');
-    if (timelineElem) {
-        const progress = (currentIndex / (stepOrder.length - 1)) * 100;
-        timelineElem.style.setProperty('--progress-percent', `${progress}%`);
-    }
-}
-
-function loadPurchasedItems() {
-    const cartRaw = localStorage.getItem('lh360_cart');
-    const cart = cartRaw ? JSON.parse(cartRaw) : [];
-    
-    const itemsContainer = document.querySelector('.summary-items');
-    const subtotalElem = document.querySelector('.summary-totals .summary-row:nth-child(1) span:last-child');
-    const shippingElem = document.querySelector('.summary-totals .summary-row:nth-child(2) span:last-child');
-    const totalElem = document.querySelector('.summary-total span:last-child');
-
-    if (!itemsContainer) return;
-
-    itemsContainer.innerHTML = '';
-
-    if (cart.length === 0) {
-        itemsContainer.innerHTML = '<div style="padding:1rem; color:#a1a1aa; text-align:center;">Dettagli articoli non disponibili (Sessione scaduta)</div>';
-        return;
+        tryRequest();
     }
 
-    let subtotal = 0;
+    window.handleDetailsResponse = function(response) {
+        const emailElem = document.getElementById('emailValue');
+        const paymentElem = document.getElementById('paymentValue');
+        const orderNumElem = document.getElementById('orderNumber');
+        
+        let currentOrderId = null;
 
-    const colorNames = {
-        '#000000': 'Nero', '#FFFFFF': 'Bianco', '#008000': 'Verde', 
-        '#FF0000': 'Rosso', '#0000FF': 'Blu'
-    };
-
-    cart.forEach(item => {
-        const itemPrice = parseFloat(item.price) || 0;
-        const itemQty = parseInt(item.qty) || 1;
-        subtotal += itemPrice * itemQty;
-
-        let displayColor = item.color || '';
-        if (displayColor.startsWith('#') && colorNames[displayColor]) {
-            displayColor = colorNames[displayColor];
+        if (response && !response.error) {
+            if (response.email && emailElem) emailElem.textContent = response.email;
+            if (paymentElem) paymentElem.textContent = response.last4 ? `•••• ${response.last4}` : 'Pagamento Online';
+            if (response.order_id && orderNumElem) {
+                orderNumElem.textContent = `Ordine #${response.order_id}`;
+                currentOrderId = response.order_id;
+            }
         }
         
-        let variantText = '';
-        if(displayColor) variantText += displayColor;
-        if(displayColor && item.size) variantText += ' · ';
-        if(item.size) variantText += `Taglia ${item.size}`;
-        if(!variantText) variantText = 'Taglia Unica';
+        // Trigger Tracking update nel backend
+        const triggerCb = 'poll_' + Date.now();
+        const s = document.createElement('script');
+        s.src = `${webAppUrl}?action=trigger_poll&callback=${triggerCb}`;
+        window[triggerCb] = () => {};
+        document.body.appendChild(s);
 
-        const div = document.createElement('div');
-        div.className = 'summary-item';
-        div.innerHTML = `
-            <div class="summary-item-image">
-                <img src="${item.image || 'https://via.placeholder.com/150'}" alt="${item.title}">
-            </div>
-            <div class="summary-item-details">
-                <div class="summary-item-name">${item.title} <span style="font-size:0.8em; color:#71717a;">(x${itemQty})</span></div>
-                <div class="summary-item-variant">${variantText}</div>
-            </div>
-            <div class="summary-item-price">€ ${(itemPrice * itemQty).toLocaleString('it-IT', {minimumFractionDigits: 2})}</div>
-        `;
-        itemsContainer.appendChild(div);
-    });
+        // Fetch dati timeline reali
+        fetchOrderTrackingData(currentOrderId);
+    };
 
-    const shippingCost = subtotal >= 150 ? 0 : 15;
-    const total = subtotal + shippingCost;
-
-    if (subtotalElem) subtotalElem.textContent = `€ ${subtotal.toLocaleString('it-IT', {minimumFractionDigits: 2})}`;
-    
-    if (shippingElem) {
-        if (shippingCost === 0) {
-            shippingElem.textContent = 'Gratuita';
-            shippingElem.style.color = '#34d399';
-        } else {
-            shippingElem.textContent = `€ ${shippingCost.toLocaleString('it-IT', {minimumFractionDigits: 2})}`;
-            shippingElem.style.color = '#fafafa';
+    function fetchOrderTrackingData(orderId) {
+        if (!orderId) {
+            updateTimelineWithDefaults();
+            completeLoadingSequence();
+            return;
         }
+        
+        const cb = 'track_' + Date.now();
+        const s = document.createElement('script');
+        s.src = `${webAppUrl}?action=get_orders&callback=${cb}&t=${Date.now()}`;
+        
+        window[cb] = function(res) {
+            if(res && res.orders) {
+                const order = res.orders.find(o => o.id === orderId);
+                if(order) updateTimelineFromOrderData(order);
+                else updateTimelineWithDefaults();
+            } else {
+                updateTimelineWithDefaults();
+            }
+            completeLoadingSequence();
+            try { delete window[cb]; document.body.removeChild(s); } catch(e){}
+        };
+        s.onerror = () => { updateTimelineWithDefaults(); completeLoadingSequence(); };
+        document.body.appendChild(s);
     }
 
-    if (totalElem) totalElem.textContent = `€ ${total.toLocaleString('it-IT', {minimumFractionDigits: 2})}`;
-}
-    </script>    
+    // --- Helpers Timeline & Articoli ---
+    function updateTimelineFromOrderData(order) {
+        // Mappa semplice stato -> step
+        const map = { 'Confermato': 0, 'In Preparazione': 1, 'In Transito': 2, 'Consegnato': 3 };
+        const idx = map[order.stato] || 1;
+        updateVisualTimeline(idx, order.consegna_prevista);
+    }
+
+    function updateTimelineWithDefaults() {
+        // Default su "In Preparazione"
+        updateVisualTimeline(1, calculateDeliveryDate(3));
+    }
+
+    function updateVisualTimeline(activeIndex, deliveryDateText) {
+        const steps = ['confirmed', 'preparing', 'shipped', 'delivered'];
+        const dateElem = document.querySelector('.info-card:nth-child(2) .info-value');
+        if(dateElem) dateElem.textContent = deliveryDateText || 'In definizione';
+
+        steps.forEach((step, i) => {
+            const el = document.getElementById(`step-${step}`);
+            if(!el) return;
+            el.classList.remove('completed', 'active', 'pending');
+            const dot = el.querySelector('.timeline-dot');
+            
+            if (i < activeIndex) {
+                el.classList.add('completed');
+                if(dot) dot.textContent = '✓';
+            } else if (i === activeIndex) {
+                el.classList.add('active');
+            } else {
+                el.classList.add('pending');
+            }
+        });
+        
+        // Aggiorna barra progress
+        const bar = document.querySelector('.timeline');
+        if(bar) bar.style.setProperty('--progress-percent', `${(activeIndex / 3) * 100}%`);
+    }
+
+    function calculateDeliveryDate(days) {
+        const d = new Date(); d.setDate(d.getDate() + days);
+        return d.toLocaleDateString('it-IT', { day: 'numeric', month: 'long', year: 'numeric' });
+    }
+
+    function loadPurchasedItems() {
+        const cart = JSON.parse(localStorage.getItem('lh360_cart') || '[]');
+        const container = document.querySelector('.summary-items');
+        if(!container) return;
+        
+        container.innerHTML = '';
+        if(cart.length === 0) return;
+
+        let subtotal = 0;
+        cart.forEach(item => {
+            const price = parseFloat(item.price);
+            const qty = parseInt(item.qty);
+            subtotal += price * qty;
+            
+            const div = document.createElement('div');
+            div.className = 'summary-item';
+            div.innerHTML = `
+                <div class="summary-item-image"><img src="${item.image || ''}" style="width:100%;height:100%;object-fit:cover"></div>
+                <div class="summary-item-details">
+                    <div class="summary-item-name">${item.title}</div>
+                    <div class="summary-item-variant">Qtà: ${qty}</div>
+                </div>
+                <div class="summary-item-price">€ ${(price * qty).toFixed(2)}</div>
+            `;
+            container.appendChild(div);
+        });
+        
+        const ship = subtotal >= 150 ? 0 : 15;
+        document.querySelector('.summary-total span:last-child').textContent = `€ ${(subtotal + ship).toFixed(2)}`;
+    }
+</script>  
 </body>
 </html>
-
-
 
 
 
