@@ -785,143 +785,146 @@ function getCategoryFromOrderId(orderId) {
 }
 
 // ==================================================================
-    // CARICAMENTO ORDINI (Logica V3 - Corretta, con RETRY e TIMEOUT aumentato)
-    // ==================================================================
+// CARICAMENTO ORDINI (Logica V4 - FIX MOBILE)
+// ==================================================================
 
-    async function loadOrders() {
-        if (ordersRendered) {
-            console.log('⚠️ Ordini già renderizzati, skip caricamento');
-            return;
+async function loadOrders() {
+    if (ordersRendered) {
+        console.log('⚠️ Ordini già renderizzati, skip caricamento');
+        return;
+    }
+
+    const urlParams = new URLSearchParams(window.location.search);
+    const viewMode = urlParams.get('view');
+
+    // --- MODO A: Solo ultimo ordine (da success.html) ---
+    if (viewMode === 'latest') {
+        console.log('📌 Modalità: Solo ultimo ordine (latest)');
+        document.getElementById('loadingState').style.display = 'none';
+        
+        const pendingOrders = getPendingOrdersFromLocalStorage();
+        
+        if (pendingOrders.length === 0) {
+            console.warn('❌ Vista "latest" ma nessun ordine pending trovato.');
+            showEmptyState('Nessun ordine trovato', 'Non è stato trovato un ordine recente in questo dispositivo.');
+        } else {
+            console.log(`✅ Render ordine pending: ${pendingOrders[0].id}`);
+            renderOrders(pendingOrders);
+            ordersRendered = true;
         }
+        return; // STOP
+    }
 
-        const urlParams = new URLSearchParams(window.location.search);
-        const viewMode = urlParams.get('view');
+    // --- MODO B: Tutti gli ordini attivi (da icona navbar) ---
+    console.log('📌 Modalità: Tutti gli ordini attivi (all/default)');
+    
+    try {
+        const pendingOrders = getPendingOrdersFromLocalStorage();
 
-        // --- MODO A: Solo ultimo ordine (da success.html) ---
-        if (viewMode === 'latest') {
-            console.log('Modalità VISTA: solo ultimo ordine (latest)');
+        const callbackName = 'handleOrdersData_' + Date.now();
+        const script = document.createElement('script');
+        script.src = `${WEB_APP_URL}?action=get_orders&callback=${callbackName}&t=${Date.now()}`;
+        
+        const timeout = setTimeout(() => {
+            console.warn('⏰ Timeout API (8s): uso fallback localStorage');
+            cleanup();
+            fallbackToLocalStorage();
+        }, 8000);
+
+        const cleanup = () => {
+            try { if (script.parentNode) document.body.removeChild(script); } catch (e) {}
+            try { delete window[callbackName]; } catch (e) {}
+        };
+        
+        // ✅ FIX: Fallback a localStorage invece di errore vuoto
+        const fallbackToLocalStorage = () => {
+            if (ordersRendered) return;
+            
+            clearTimeout(timeout);
             document.getElementById('loadingState').style.display = 'none';
             
-            const pendingOrders = getPendingOrdersFromLocalStorage();
-            
-            if (pendingOrders.length === 0) {
-                console.warn('Vista "latest" ma nessun ordine pending trovato.');
-                showEmptyState('Nessun ordine trovato', 'Non è stato trovato un ordine recente in questo dispositivo.');
-            } else {
-                console.log(`✅ Render ordine pending: ${pendingOrders[0].id}`);
+            if (pendingOrders.length > 0) {
+                console.log(`📦 Fallback: Mostro ${pendingOrders.length} ordini da localStorage`);
                 renderOrders(pendingOrders);
                 ordersRendered = true;
+            } else {
+                console.warn('❌ Nessun ordine disponibile (API timeout + localStorage vuoto)');
+                showEmptyState('Impossibile caricare gli ordini', 'Verifica la tua connessione e riprova.');
+                ordersRendered = true;
             }
-            return; // STOP.
-        }
-
-        // --- MODO B: Tutti gli ordini (da icona navbar) ---
-        console.log('Modalità VISTA: tutti gli ordini (all/default)');
+        };
         
-        try {
-            const pendingOrders = getPendingOrdersFromLocalStorage(); // Li prendiamo per il merge
-
-            // Funzione per fetch con retry
-            async function fetchOrdersWithRetry(maxRetries = 3, timeoutMs = 15000) {  // Timeout aumentato a 15s
-                let attempts = 0;
-                while (attempts < maxRetries) {
-                    attempts++;
-                    console.log(`Tentativo fetch API #${attempts}/${maxRetries}`);
-                    
-                    try {
-                        const data = await new Promise((resolve, reject) => {
-                            const callbackName = 'handleOrdersData_' + Date.now();
-                            const script = document.createElement('script');
-                            script.src = `${WEB_APP_URL}?action=get_orders&callback=${callbackName}&t=${Date.now()}`;
-                            
-                            const timeoutId = setTimeout(() => {
-                                reject(new Error('Timeout API'));
-                                cleanup();
-                            }, timeoutMs);
-
-                            const cleanup = () => {
-                                clearTimeout(timeoutId);
-                                try { if (script.parentNode) document.body.removeChild(script); } catch (e) {}
-                                try { delete window[callbackName]; } catch (e) {}
-                            };
-                            
-                            window[callbackName] = function(response) {
-                                cleanup();
-                                resolve(response);
-                            };
-                            
-                            script.onerror = () => {
-                                cleanup();
-                                reject(new Error('Errore caricamento script API'));
-                            };
-                            
-                            document.body.appendChild(script);
-                        });
-
-                        if (data.error) {
-                            throw new Error(`Errore API: ${data.error}`);
-                        }
-                        
-                        return data.orders || [];
-                        
-                    } catch (error) {
-                        console.error(`Tentativo #${attempts} fallito: ${error.message}`);
-                        if (attempts === maxRetries) {
-                            throw error;  // Fallimento definitivo
-                        }
-                        // Attesa esponenziale prima del retry (1s, 2s, 4s)
-                        await new Promise(resolve => setTimeout(resolve, Math.pow(2, attempts) * 1000));
-                    }
-                }
-            }
-
-            // Esegui fetch con retry
-            const apiOrders = await fetchOrdersWithRetry();
-
+        window[callbackName] = function(data) {
+            if (ordersRendered) return; 
+            clearTimeout(timeout);
             document.getElementById('loadingState').style.display = 'none';
             
-            let allOrders = [...apiOrders]; // Inizia con gli ordini da API
+            // ✅ Gestione errore API: mostra fallback invece di blocco totale
+            if (data.error) {
+                console.error('❌ Errore API:', data.error);
+                cleanup();
+                fallbackToLocalStorage();
+                return;
+            }
             
-            // Fai il merge con gli ordini pending (solo se non già presenti)
+            let allOrders = [];
+            const apiOrders = data.orders || [];
+            
+            console.log(`📥 API: Ricevuti ${apiOrders.length} ordini`);
+            
+            allOrders = [...apiOrders];
+            
+            // Merge con ordini pending (evita duplicati)
             if (pendingOrders.length > 0) {
                 const apiIds = new Set(apiOrders.map(o => o.id));
                 pendingOrders.forEach(pending => {
                     if (!apiIds.has(pending.id)) {
                         allOrders.push(pending);
-                        console.log(`Aggiunto ordine pending ${pending.id} alla lista API.`);
+                        console.log(`➕ Aggiunto ordine pending: ${pending.id}`);
                     } else {
-                        // L'ordine è stato confermato, puliamo il local storage
                         localStorage.removeItem('lh360_pending_order');
-                        console.log(`✅ Ordine pending ${pending.id} confermato da API.`);
+                        console.log(`✅ Ordine pending confermato da API: ${pending.id}`);
                     }
                 });
             }
             
             if (allOrders.length === 0) {
-                showEmptyState(); // Mostra "Nessun ordine recente"
+                console.log('📭 Nessun ordine attivo negli ultimi 30 giorni');
+                showEmptyState();
             } else {
+                console.log(`✅ Totale ordini da mostrare: ${allOrders.length}`);
                 renderOrders(allOrders);
-                console.log(`✅ Ordini caricati (API + Merge): ${allOrders.length} totali`);
             }
             
             ordersRendered = true;
+            cleanup();
+        };
+        
+        script.onerror = () => {
+            console.error('❌ Errore caricamento script JSONP');
+            clearTimeout(timeout);
+            cleanup();
+            fallbackToLocalStorage();
+        };
+        
+        document.body.appendChild(script);
+        
+    } catch (error) {
+        console.error('❌ Eccezione generale:', error);
+        if (!ordersRendered) {
+            document.getElementById('loadingState').style.display = 'none';
             
-        } catch (error) {
-            if (!ordersRendered) {
-                document.getElementById('loadingState').style.display = 'none';
-                
-                // Fallback: Se API fallisce completamente, mostra almeno gli ordini pending locali (se presenti)
-                const pendingOrders = getPendingOrdersFromLocalStorage();
-                if (pendingOrders.length > 0) {
-                    console.warn('API fallita, fallback a ordini locali pending');
-                    renderOrders(pendingOrders);
-                } else {
-                    showEmptyState('Impossibile caricare gli ordini', 'Verifica la tua connessione e riprova. Se il problema persiste, contatta il supporto.');
-                }
-                ordersRendered = true;
+            // Ultimo tentativo con localStorage
+            const pendingOrders = getPendingOrdersFromLocalStorage();
+            if (pendingOrders.length > 0) {
+                renderOrders(pendingOrders);
+            } else {
+                showEmptyState('Errore imprevisto', error.message);
             }
+            ordersRendered = true;
         }
     }
+}
 
 /**
  * Recupera l'ordine pending (se esiste e se è recente)
@@ -995,5 +998,3 @@ loadOrders();
     </script>
 </body>
 </html>
-
-
