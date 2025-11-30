@@ -788,18 +788,36 @@ function getCategoryFromOrderId(orderId) {
 // CARICAMENTO ORDINI (CON RETRY LOGIC)
 // ==================================================================
 
+// ==================================================================
+// CARICAMENTO ORDINI (CON LOGICA CONDIZIONALE)
+// ==================================================================
+
 async function loadOrders(retryCount = 0) {
     if (ordersRendered) {
         console.log('⚠️ Ordini già renderizzati, skip caricamento');
         return;
     }
+
+    // === 1. DETERMINA MODALITÀ DI VISUALIZZAZIONE ===
+    const urlParams = new URLSearchParams(window.location.search);
+    // 'latest' = solo da success.html (solo ordine pending)
+    // 'all' (o default) = da icona navbar (tutti gli ordini)
+    const viewMode = urlParams.get('view');
+
+    // --- MODO A: Solo ultimo ordine (da success.html) ---
+    if (viewMode === 'latest') {
+        console.log('Modalità VISTA: solo ultimo ordine (latest)');
+        // Usa la funzione esistente che carica solo da localStorage
+        loadFromLocalStorage(); 
+        return; // Interrompe l'esecuzione, non carica API
+    }
+
+    // --- MODO B: Tutti gli ordini (default, da icona navbar) ---
+    console.log('Modalità VISTA: tutti gli ordini (all/default)');
     
     try {
-        // Step 1: Carica ordini pending da localStorage (per il merge)
+        // Step 1: Carica ordini pending (per il merge)
         const pendingOrders = getPendingOrdersFromLocalStorage();
-        
-        // !! RIMOSSO BLOCCO DI RENDER PREMATURO !!
-        // Ora la pagina attenderà l'API
         
         // Step 2: Carica ordini da API
         const callbackName = 'handleOrdersData_' + Date.now();
@@ -808,8 +826,8 @@ async function loadOrders(retryCount = 0) {
         
         const timeout = setTimeout(() => {
             console.warn('⚠️ Timeout API ordini');
-            if (!ordersRendered) { // Se l'API fallisce, prova a caricare da localStorage
-                loadFromLocalStorage();
+            if (!ordersRendered) { 
+                loadFromLocalStorage(); // Fallback: mostra almeno il pending se API fallisce
             }
             cleanup();
         }, 8000);
@@ -821,7 +839,12 @@ async function loadOrders(retryCount = 0) {
             if (data.error) {
                 console.error('Error loading orders:', data.error);
                 if (!ordersRendered) {
-                    showEmptyState();
+                    // Se API dà errore, prova a mostrare almeno il pending
+                    if (pendingOrders.length > 0) {
+                        loadFromLocalStorage();
+                    } else {
+                        showEmptyState();
+                    }
                 }
                 cleanup();
                 return;
@@ -835,7 +858,7 @@ async function loadOrders(retryCount = 0) {
                 
                 if (data.orders && data.orders.length > 0) {
                     data.orders.forEach(apiOrder => {
-                        // Evita duplicati se l'ordine è sia pending che in API
+                        // Evita duplicati
                         if (!allOrders.find(o => o.id === apiOrder.id)) {
                             allOrders.push(apiOrder);
                         }
@@ -856,7 +879,7 @@ async function loadOrders(retryCount = 0) {
                 allOrders = data.orders || [];
             }
             
-            // Retry se pending mancanti in API
+            // Retry se pending mancanti in API (logica invariata)
             if (pendingOrders.length > 0 && retryCount < 3) {
                 const pendingIds = pendingOrders.map(o => o.id);
                 const apiIds = data.orders ? data.orders.map(o => o.id) : [];
@@ -870,14 +893,14 @@ async function loadOrders(retryCount = 0) {
                 }
             }
             
-            // Rendering UNICO (ora ordersRendered è ancora false)
+            // Rendering UNICO (ora 'ordersRendered' è false)
             if (!ordersRendered) {
                 if (allOrders.length === 0) {
                     showEmptyState();
                 } else {
                     renderOrders(allOrders);
                     ordersRendered = true;
-                    console.log(`✅ Ordini caricati: ${allOrders.length} totali`);
+                    console.log(`✅ Ordini caricati (API + Merge): ${allOrders.length} totali`);
                 }
             }
             
@@ -886,7 +909,7 @@ async function loadOrders(retryCount = 0) {
         
         script.onerror = () => {
             clearTimeout(timeout);
-            console.error('Errore API ordini');
+            console.error('Errore API ordini (onerror)');
             if (!ordersRendered) {
                 loadFromLocalStorage(); // Fallback
             }
@@ -985,3 +1008,4 @@ loadOrders();
     </script>
 </body>
 </html>
+
