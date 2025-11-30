@@ -784,169 +784,134 @@ function getCategoryFromOrderId(orderId) {
     return 'Prodotto';
 }
 
-function loadOrders() {
-        // Resetta stati
-        document.getElementById('loadingState').style.display = 'block';
-        document.getElementById('emptyState').style.display = 'none';
-        document.getElementById('ordersList').style.display = 'none';
-        ordersRendered = false;
-
-        const urlParams = new URLSearchParams(window.location.search);
-        const viewMode = urlParams.get('view');
-
-        // --- MODO A: Solo ultimo ordine (da success.html) ---
-        if (viewMode === 'latest') {
-            console.log('Modalità VISTA: solo ultimo ordine (latest)');
-            document.getElementById('loadingState').style.display = 'none';
-            
-            const pendingOrders = getPendingOrdersFromLocalStorage();
-            
-            if (pendingOrders.length === 0) {
-                console.warn('Vista "latest" ma nessun ordine pending trovato.');
-                showEmptyState('Nessun ordine trovato', 'Non è stato trovato un ordine recente in questo dispositivo.');
-            } else {
-                console.log(`✅ Render ordine pending: ${pendingOrders[0].id}`);
-                renderOrders(pendingOrders);
-                ordersRendered = true;
-            }
-            return; // STOP.
-        }
-
-        // --- MODO B: Tutti gli ordini (da icona navbar) ---
-        console.log('Modalità VISTA: tutti gli ordini (all/default)');
-        
-        fetchOrdersWithRetry(3); // Avvia con 3 ritentativi
+// ==================================================================
+// CARICAMENTO ORDINI (Logica V3 - Corretta)
+// ==================================================================
+async function loadOrders() {
+    if (ordersRendered) {
+        console.log('Ordini già renderizzati, skip');
+        return;
     }
 
-    /**
-     * Funzione per fetch ordini con ritentativi
-     * @param {number} retriesRemaining - Numero di ritentativi rimasti
-     */
-    function fetchOrdersWithRetry(retriesRemaining) {
-        if (retriesRemaining <= 0) {
-            document.getElementById('loadingState').style.display = 'none';
-            showEmptyState('Impossibile caricare gli ordini', 'Verifica la tua connessione e riprova.', true); // Mostra con bottone riprova
+    const urlParams = new URLSearchParams(window.location.search);
+    const viewMode = urlParams.get('view');
+
+    // === MODALITÀ LATEST (da success.html) ===
+    if (viewMode === 'latest') {
+        const pendingOrders = getPendingOrdersFromLocalStorage();
+        if (pendingOrders.length === 0) {
+            showEmptyState('Nessun ordine trovato', 'Non è stato trovato un ordine recente.');
+        } else {
+            renderOrders(pendingOrders);
+            ordersRendered = true;
+        }
+        document.getElementById('loadingState').style.display = 'none';
+        return;
+    }
+
+    // === MODALITÀ TUTTI GLI ORDINI ===
+    document.getElementById('loadingState').style.display = 'block';
+
+    // PROVA 1: CORS diretto (funziona su tutti i mobile moderni)
+    try {
+        const response = await fetch(`${WEB_APP_URL}?action=get_orders&nocache=${Date.now()}`, {
+            method: 'GET',
+            mode: 'cors',
+            credentials: 'omit',
+            headers: {
+                'Accept': 'application/json'
+            }
+        });
+
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+
+        const data = await response.json();
+
+        if (data.error) throw new Error(data.error);
+
+        const apiOrders = data.orders || [];
+        const pendingOrders = getPendingOrdersFromLocalStorage();
+        const apiIds = new Set(apiOrders.map(o => o.id));
+        const finalOrders = [...apiOrders];
+
+        pendingOrders.forEach(p => {
+            if (!apiIds.has(p.id)) finalOrders.push(p);
+            else localStorage.removeItem('lh360_pending_order');
+        });
+
+        if (finalOrders.length === 0) {
+            showEmptyState();
+        } else {
+            renderOrders(finalOrders);
+        }
+        ordersRendered = true;
+        document.getElementById('loadingState').style.display = 'none';
+        return;
+
+    } catch (err) {
+        console.warn('CORS fallito, passo a JSONP:', err.message);
+    }
+
+    // PROVA 2: JSONP di fallback (vecchio metodo, ma con timeout più lungo)
+    const callbackName = 'jsonp_orders_' + Date.now();
+    const script = document.createElement('script');
+    script.src = `${WEB_APP_URL}?action=get_orders&callback=${callbackName}&t=${Date.now()}`;
+
+    const timeout = setTimeout(() => {
+        console.error('Timeout JSONP');
+        cleanup();
+        if (!ordersRendered) {
+            showEmptyState('Impossibile contattare il server', 'Controlla la connessione e riprova.');
+            ordersRendered = true;
+        }
+    }, 12000);
+
+    const cleanup = () => {
+        clearTimeout(timeout);
+        try { document.body.removeChild(script); } catch(e) {}
+        try { delete window[callbackName]; } catch(e) {}
+    };
+
+    window[callbackName] = function(data) {
+        clearTimeout(timeout);
+        cleanup();
+        document.getElementById('loadingState').style.display = 'none';
+
+        if (data.error || !data.orders) {
+            showEmptyState('Errore del server', data.error || 'Nessun dato ricevuto');
+            ordersRendered = true;
             return;
         }
 
-        try {
-            const pendingOrders = getPendingOrdersFromLocalStorage(); // Li prendiamo per il merge
+        const apiOrders = data.orders || [];
+        const pendingOrders = getPendingOrdersFromLocalStorage();
+        const apiIds = new Set(apiOrders.map(o => o.id));
+        const finalOrders = [...apiOrders];
 
-            const callbackName = 'handleOrdersData_' + Date.now();
-            const script = document.createElement('script');
-            // Aggiunta parametro cache-buster 't' per evitare cache browser
-            script.src = `${WEB_APP_URL}?action=get_orders&callback=${callbackName}&t=${Date.now()}`;
-            
-            // Funzione di fallback UNIFICATA per errori
-            const showFallback = (errorMsg, errorDetails = 'Verifica la tua connessione e riprova.') => {
-                console.error(errorMsg);
-                if (ordersRendered) return; 
-                
-                document.getElementById('loadingState').style.display = 'none';
-                showEmptyState('Impossibile caricare gli ordini', errorDetails, true); // Mostra con bottone riprova
-                ordersRendered = true; 
-            };
+        pendingOrders.forEach(p => {
+            if (!apiIds.has(p.id)) finalOrders.push(p);
+            else localStorage.removeItem('lh360_pending_order');
+        });
 
-            const timeout = setTimeout(() => {
-                cleanup();
-                console.warn(`⚠️ Timeout API ordini (ritentativi rimasti: ${retriesRemaining - 1})`);
-                fetchOrdersWithRetry(retriesRemaining - 1); // Riprova
-            }, 15000); // Aumentato a 15 secondi per mobile
-
-            const cleanup = () => {
-                try { if (script.parentNode) document.body.removeChild(script); } catch (e) {}
-                try { delete window[callbackName]; } catch (e) {}
-            };
-            
-            window[callbackName] = function(data) {
-                if (ordersRendered) return; 
-                clearTimeout(timeout);
-                document.getElementById('loadingState').style.display = 'none';
-                
-                if (data.error) {
-                    cleanup();
-                    fetchOrdersWithRetry(retriesRemaining - 1); // Riprova in caso di errore API
-                    return;
-                }
-                
-                let allOrders = [];
-                const apiOrders = data.orders || [];
-                allOrders = [...apiOrders]; // Inizia con gli ordini da API
-                
-                // Fai il merge con gli ordini pending (solo se non già presenti)
-                if (pendingOrders.length > 0) {
-                    const apiIds = new Set(apiOrders.map(o => o.id));
-                    pendingOrders.forEach(pending => {
-                        if (!apiIds.has(pending.id)) {
-                            allOrders.push(pending);
-                            console.log(`Aggiunto ordine pending ${pending.id} alla lista API.`);
-                        } else {
-                            // L'ordine è stato confermato, puliamo il local storage
-                            localStorage.removeItem('lh360_pending_order');
-                            console.log(`✅ Ordine pending ${pending.id} confermato da API.`);
-                        }
-                    });
-                }
-                
-                if (allOrders.length === 0) {
-                    showEmptyState(); // Mostra "Nessun ordine recente"
-                } else {
-                    renderOrders(allOrders);
-                    console.log(`✅ Ordini caricati (API + Merge): ${allOrders.length} totali`);
-                }
-                
-                ordersRendered = true;
-                cleanup();
-            };
-            
-            script.onerror = () => {
-                clearTimeout(timeout);
-                cleanup();
-                console.warn(`Errore caricamento script API (onerror) - Ritentativi rimasti: ${retriesRemaining - 1}`);
-                fetchOrdersWithRetry(retriesRemaining - 1); // Riprova
-            };
-            
-            document.body.appendChild(script);
-            
-        } catch (error) {
-            if (!ordersRendered) {
-                document.getElementById('loadingState').style.display = 'none';
-                showEmptyState('Errore imprevisto', error.message, true);
-                ordersRendered = true;
-            }
+        if (finalOrders.length === 0) {
+            showEmptyState();
+        } else {
+            renderOrders(finalOrders);
         }
-    }
+        ordersRendered = true;
+    };
 
-    /**
-     * Mostra lo stato vuoto (con testi personalizzabili e opzionale bottone riprova)
-     * @param {string} title - Titolo (default: 'Nessun ordine recente')
-     * @param {string} text - Testo (default: 'Non hai ordini negli ultimi 30 giorni')
-     * @param {boolean} showRetry - Se true, aggiunge bottone "Riprova"
-     */
-    function showEmptyState(title = 'Nessun ordine recente', text = 'Non hai ordini negli ultimi 30 giorni', showRetry = false) {
-        const emptyState = document.getElementById('emptyState');
-        if (emptyState) {
-            emptyState.querySelector('.empty-title').textContent = title;
-            emptyState.querySelector('.empty-text').textContent = text;
-
-            // Gestione bottone riprova
-            let retryButton = emptyState.querySelector('.retry-button');
-            if (showRetry) {
-                if (!retryButton) {
-                    retryButton = document.createElement('button');
-                    retryButton.className = 'btn btn-primary retry-button';
-                    retryButton.textContent = 'Riprova';
-                    retryButton.onclick = () => loadOrders();
-                    retryButton.style.marginTop = '1rem';
-                    emptyState.appendChild(retryButton);
-                }
-            } else {
-                if (retryButton) retryButton.remove();
-            }
-
-            emptyState.style.display = 'block';
+    script.onerror = () => {
+        clearTimeout(timeout);
+        cleanup();
+        if (!ordersRendered) {
+            showEmptyState('Impossibile caricare gli ordini', 'Errore di rete. Riprova più tardi.');
+            ordersRendered = true;
         }
-    }
+    };
+
+    document.body.appendChild(script);
+}
 
 /**
  * Recupera l'ordine pending (se esiste e se è recente)
@@ -1001,6 +966,18 @@ function renderOrders(orders) {
     });
     
     ordersList.style.display = 'flex';
+}
+
+/**
+ * Mostra lo stato vuoto (con testi personalizzabili)
+ */
+function showEmptyState(title = 'Nessun ordine recente', text = 'Non hai ordini negli ultimi 30 giorni') {
+    const emptyState = document.getElementById('emptyState');
+    if (emptyState) {
+        emptyState.querySelector('.empty-title').textContent = title;
+        emptyState.querySelector('.empty-text').textContent = text;
+        emptyState.style.display = 'block';
+    }
 }
 
 // Avvio
