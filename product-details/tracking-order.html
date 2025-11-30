@@ -406,6 +406,7 @@
   letter-spacing: -0.5px;
 }
     
+
 .order-item {
     display: flex;
     gap: 1rem;
@@ -441,29 +442,7 @@
     flex-direction: column;
     gap: 0;
 }
-
-    @media (max-width: 768px) {
-        .orders-list {
-            display: flex !important;
-            flex-direction: column !important;
-            height: auto !important;
-            overflow-y: visible !important;
-            gap: 1.5rem !important;
-            padding-bottom: 4rem !important;
-        }
-        .order-card {
-            width: 100% !important;
-            margin: 0 !important;
-            animation: none !important; /* Disabilita anim per performance mobile */
-        }
-        body {
-            overflow-y: auto !important;
-        }
-        .container {
-            padding: 2rem 1rem !important;
-        }
-    }
-    </style>
+</style>
 </head>
 <body>
     <div class="container">
@@ -575,7 +554,7 @@ function parseAnyDateFormat(dateStr) {
     }
     
     // Formato 2: "dd MMMM yyyy" (italiano o inglese)
-    const textMatch = s.match(/(\d{1,2})\s+([a-z\u00e0-\u00f9]+)\s+(\d{4})/);
+    const textMatch = s.match(/(\d{1,2})\s+([a-zà-ù]+)\s+(\d{4})/);
     if (textMatch) {
         const giorno = parseInt(textMatch[1]);
         const meseStr = textMatch[2].toLowerCase();
@@ -810,21 +789,17 @@ function getCategoryFromOrderId(orderId) {
 // ==================================================================
 
 async function loadOrders(retryCount = 0) {
-    console.log("Device: " + navigator.userAgent + " - Tentativo caricamento ordini");
     if (ordersRendered) {
         console.log('⚠️ Ordini già renderizzati, skip caricamento');
         return;
     }
     
     try {
-        // Step 1: Mostra ordini pending da localStorage
+        // Step 1: Carica ordini pending da localStorage (per il merge)
         const pendingOrders = getPendingOrdersFromLocalStorage();
-        if (pendingOrders.length > 0) {
-            document.getElementById('loadingState').style.display = 'none';
-            renderOrders(pendingOrders);
-            ordersRendered = true;
-            console.log('✅ Ordini pending mostrati (localStorage)');
-        }
+        
+        // !! RIMOSSO BLOCCO DI RENDER PREMATURO !!
+        // Ora la pagina attenderà l'API
         
         // Step 2: Carica ordini da API
         const callbackName = 'handleOrdersData_' + Date.now();
@@ -833,7 +808,7 @@ async function loadOrders(retryCount = 0) {
         
         const timeout = setTimeout(() => {
             console.warn('⚠️ Timeout API ordini');
-            if (!ordersRendered && pendingOrders.length === 0) {
+            if (!ordersRendered) { // Se l'API fallisce, prova a caricare da localStorage
                 loadFromLocalStorage();
             }
             cleanup();
@@ -860,6 +835,7 @@ async function loadOrders(retryCount = 0) {
                 
                 if (data.orders && data.orders.length > 0) {
                     data.orders.forEach(apiOrder => {
+                        // Evita duplicati se l'ordine è sia pending che in API
                         if (!allOrders.find(o => o.id === apiOrder.id)) {
                             allOrders.push(apiOrder);
                         }
@@ -894,7 +870,7 @@ async function loadOrders(retryCount = 0) {
                 }
             }
             
-            // Rendering UNICO
+            // Rendering UNICO (ora ordersRendered è ancora false)
             if (!ordersRendered) {
                 if (allOrders.length === 0) {
                     showEmptyState();
@@ -911,8 +887,8 @@ async function loadOrders(retryCount = 0) {
         script.onerror = () => {
             clearTimeout(timeout);
             console.error('Errore API ordini');
-            if (!ordersRendered && pendingOrders.length === 0) {
-                loadFromLocalStorage();
+            if (!ordersRendered) {
+                loadFromLocalStorage(); // Fallback
             }
             cleanup();
         };
@@ -1004,13 +980,6 @@ function showEmptyState() {
     document.getElementById('emptyState').style.display = 'block';
 }
 
-
-    // Check mobile e forza reload se necessario
-    if (/Mobi|Android/i.test(navigator.userAgent)) {
-        console.log('Mobile detected - forcing wider search');
-        setTimeout(loadOrders, 1000); // Extra delay per mobile
-    }
-    
 // Avvio
 loadOrders();
     </script>
