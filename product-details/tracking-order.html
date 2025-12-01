@@ -875,6 +875,7 @@ function createOrderCard(order, index) {
             </div>
         </div>
         
+        <!-- Riepilogo -->
         <div class="order-summary">
             <div class="summary-row">
                 <span class="summary-label">Categoria</span>
@@ -894,6 +895,7 @@ function createOrderCard(order, index) {
             </div>
         </div>
         
+        <!-- Barra di avanzamento DINAMICA -->
         <div class="progress-section">
             <div class="progress-steps">
                 <div class="progress-line" style="width: ${progress}%; transition: width 1s ease;"></div>
@@ -910,6 +912,7 @@ function createOrderCard(order, index) {
             </div>
         </div>
         
+        <!-- Dettagli prodotto -->
         ${order.products && order.products.length > 0 ? `
 <div class="order-products-section">
     <details class="product-details">
@@ -1221,106 +1224,97 @@ function showEmptyState(title = 'Nessun ordine recente', text = 'Non hai ordini 
 
         let currentRecoveryEmail = '';
 
-async function handleSendCode(e) {
-  e.preventDefault();
-  const emailInput = document.getElementById('recoveryEmail');
-  const btn = document.getElementById('btnSendCode');
-  const email = emailInput.value.trim();
-
-  if (!email || !email.includes('@')) {
-    alert('Inserisci un\'email valida.');
-    return;
-  }
-
-  // UI Loading
-  const originalText = btn.innerText;
-  btn.innerText = 'Invio in corso...';
-  btn.disabled = true;
-
-  try {
-    const url = `${WEB_APP_URL}?action=send_recovery_code&email=${encodeURIComponent(email)}`;  // NO &callback= here
-    const response = await fetch(url);
+function handleSendCode(e) {
+    e.preventDefault();
+    const emailInput = document.getElementById('recoveryEmail');
+    const btn = document.getElementById('btnSendCode');
+    const email = emailInput.value.trim();
     
-    if (!response.ok) {
-      throw new Error(`Server error: ${response.status}`);
-    }
+    if (!email) return;
     
-    const data = await response.json();
-    console.log('Server response:', data); // Debug: Should now show {success: true} without parse error
-
-    if (data.success) {
-      currentRecoveryEmail = email;
-      document.getElementById('displayEmail').innerText = email;
-
-      // Switch to OTP step
-      document.getElementById('stepEmail').classList.remove('visible-step');
-      document.getElementById('stepEmail').classList.add('hidden-step');
-      setTimeout(() => {
-        document.getElementById('stepEmail').style.display = 'none';
-        document.getElementById('stepOtp').style.display = 'block';
-        setTimeout(() => {
-          document.getElementById('stepOtp').classList.remove('hidden-step');
-          document.getElementById('stepOtp').classList.add('visible-step');
-        }, 50);
-      }, 300);
-    } else {
-      alert('Errore: ' + (data.error || 'Impossibile inviare il codice'));
-    }
-  } catch (err) {
-    console.error('Error in handleSendCode:', err);
-    alert('Errore: ' + err.message);
-  } finally {
-    // Always reset button, even on error
-    btn.innerText = originalText;
-    btn.disabled = false;
-  }
+    // UI Loading
+    const originalText = btn.innerText;
+    btn.innerText = 'Invio in corso...';
+    btn.disabled = true;
+    
+    // Chiamata JSONP
+    const callbackName = 'cb_send_' + Date.now();
+    const script = document.createElement('script');
+    script.src = `${WEB_APP_URL}?action=send_recovery_code&email=${encodeURIComponent(email)}&callback=${callbackName}`;
+    
+    window[callbackName] = function(resp) {
+        delete window[callbackName];
+        document.body.removeChild(script);
+        
+        if (resp.success) {
+            currentRecoveryEmail = email;
+            document.getElementById('displayEmail').innerText = email;
+            
+            // Switch visivo step
+            document.getElementById('stepEmail').classList.remove('visible-step');
+            document.getElementById('stepEmail').classList.add('hidden-step');
+            setTimeout(() => {
+                document.getElementById('stepEmail').style.display = 'none';
+                document.getElementById('stepOtp').style.display = 'block';
+                setTimeout(() => {
+                    document.getElementById('stepOtp').classList.remove('hidden-step');
+                    document.getElementById('stepOtp').classList.add('visible-step');
+                }, 50);
+            }, 300);
+            
+        } else {
+            alert('Errore: ' + (resp.error || 'Impossibile inviare il codice'));
+            btn.innerText = originalText;
+            btn.disabled = false;
+        }
+    };
+    
+    document.body.appendChild(script);
 }
 
-async function handleVerifyCode(e) {
-  e.preventDefault();
-  const codeInput = document.getElementById('otpCode');
-  const btn = document.getElementById('btnVerifyCode');
-  const code = codeInput.value.trim().toUpperCase();
-
-  if (code.length < 8) {
-    alert('Inserisci un codice valido (almeno 8 caratteri).');
-    return;
-  }
-
-  // UI Loading
-  const originalText = btn.innerText;
-  btn.innerText = 'Verifica in corso...';
-  btn.disabled = true;
-
-  try {
-    const url = `${WEB_APP_URL}?action=verify_recovery_code&email=${encodeURIComponent(currentRecoveryEmail)}&code=${encodeURIComponent(code)}`;
-    const response = await fetch(url);
-    const data = await response.json();
-
-    console.log('Server response:', data); // Debug: Log full response
-
-    if (data.success) {
-      // SUCCESSO!
-      // 1. Salva email in localStorage
-      localStorage.setItem('lh360_user_email', currentRecoveryEmail);
-
-      // 2. Nascondi sezione recupero
-      document.getElementById('recoverySection').style.display = 'none';
-
-      // 3. Mostra loader e ricarica ordini
-      document.getElementById('loadingState').style.display = 'block';
-      ordersRendered = false; // Forza reload
-      loadOrders(); // Ricarica ora che abbiamo l'email
-    } else {
-      alert('Errore: ' + (data.error || 'Codice non valido'));
-    }
-  } catch (err) {
-    console.error('Fetch error in handleVerifyCode:', err);
-    alert('Errore di rete: ' + err.message);
-  } finally {
-    btn.innerText = originalText;
-    btn.disabled = false;
-  }
+function handleVerifyCode(e) {
+    e.preventDefault();
+    const codeInput = document.getElementById('otpCode');
+    const btn = document.getElementById('btnVerifyCode');
+    const code = codeInput.value.trim().toUpperCase();
+    
+    if (code.length < 8) return;
+    
+    // UI Loading
+    const originalText = btn.innerText;
+    btn.innerText = 'Verifica in corso...';
+    btn.disabled = true;
+    
+    // Chiamata JSONP
+    const callbackName = 'cb_verify_' + Date.now();
+    const script = document.createElement('script');
+    script.src = `${WEB_APP_URL}?action=verify_recovery_code&email=${encodeURIComponent(currentRecoveryEmail)}&code=${encodeURIComponent(code)}&callback=${callbackName}`;
+    
+    window[callbackName] = function(resp) {
+        delete window[callbackName];
+        document.body.removeChild(script);
+        
+        if (resp.success) {
+            // SUCCESSO!
+            // 1. Salva email in localStorage
+            localStorage.setItem('lh360_user_email', currentRecoveryEmail);
+            
+            // 2. Nascondi sezione recupero
+            document.getElementById('recoverySection').style.display = 'none';
+            
+            // 3. Mostra loader e ricarica ordini
+            document.getElementById('loadingState').style.display = 'block';
+            ordersRendered = false; // Forza reload
+            loadOrders(); // Ricarica ora che abbiamo l'email
+            
+        } else {
+            alert('Errore: ' + (resp.error || 'Codice non valido'));
+            btn.innerText = originalText;
+            btn.disabled = false;
+        }
+    };
+    
+    document.body.appendChild(script);
 }
 
 function resetRecoveryFlow(e) {
@@ -1349,7 +1343,3 @@ loadOrders();
     </script>
 </body>
 </html>
-
-
-
-
