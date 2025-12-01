@@ -823,6 +823,24 @@ async function loadOrders() {
 
     console.log('Modalità VISTA: tutti gli ordini (all/default)');
 
+    // --- INIZIO MODIFICA: Recupero Email ---
+    
+    // 1. Recupera l'email identificativa salvata al checkout
+    const userEmail = localStorage.getItem('lh360_user_email');
+
+    // 2. Se non c'è email salvata, l'utente è anonimo -> Mostra stato vuoto e FERMAT
+    if (!userEmail) {
+        console.warn('Nessuna email utente trovata in LocalStorage.');
+        if (loadingEl) loadingEl.style.display = 'none';
+        // Mostra un messaggio specifico per dire all'utente che non è loggato/riconosciuto
+        showEmptyState('Nessun ordine trovato', 'Effettua un ordine per visualizzare qui il tracking.');
+        ordersRendered = true;
+        return; 
+    }
+
+    console.log('🔍 Ricerca ordini per email:', userEmail);
+    // --- FINE MODIFICA ---
+
     const pendingOrders = getPendingOrdersFromLocalStorage();
 
     // timeout / abort controller
@@ -830,8 +848,16 @@ async function loadOrders() {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), TIMEOUT_MS);
 
-    // URL (senza callback) — il server risponde con JSONP nel tuo caso
-    const requestUrl = `${WEB_APP_URL}?action=get_orders&t=${Date.now()}`;
+    // --- INIZIO MODIFICA: Costruzione URL con Email ---
+    const params = new URLSearchParams({
+        action: 'get_orders',
+        email: userEmail, // Qui passiamo l'email al backend
+        t: Date.now()
+    });
+
+    // URL aggiornato con i parametri
+    const requestUrl = `${WEB_APP_URL}?${params.toString()}`;
+    // --- FINE MODIFICA ---
 
     try {
         console.log('Eseguo fetch verso', requestUrl);
@@ -1003,6 +1029,7 @@ loadOrders();
     </script>
 </body>
 </html>
+
 
 
 
