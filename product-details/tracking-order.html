@@ -1221,155 +1221,168 @@ function showEmptyState(title = 'Nessun ordine recente', text = 'Non hai ordini 
 
         let currentRecoveryEmail = '';
 
-// --- MODIFICA 1: Riscritto handleSendCode con fetch e try/catch ---
-async function handleSendCode(e) {
+/* ---------- HANDLE SEND CODE (robusto) ---------- */
+function handleSendCode(e) {
     e.preventDefault();
     const emailInput = document.getElementById('recoveryEmail');
     const btn = document.getElementById('btnSendCode');
-    const email = emailInput.value.trim();
-    
-    if (!email) return;
-    
+    const email = (emailInput.value || '').trim();
+
+    // Validazione semplice client-side
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!email || !emailRegex.test(email)) {
+        alert('Inserisci un indirizzo email valido.');
+        return;
+    }
+
     // UI Loading
     const originalText = btn.innerText;
     btn.innerText = 'Invio in corso...';
     btn.disabled = true;
-    let success = false;
 
-    try {
-        const params = new URLSearchParams({
-            action: 'send_recovery_code',
-            email: encodeURIComponent(email),
-            t: Date.now()
-        });
-        
-        // Usiamo fetch come in loadOrders(), non script injection
-        const requestUrl = `${WEB_APP_URL}?${params.toString()}`;
-        const resp = await fetch(requestUrl, { 
-            method: 'GET', 
-            cache: 'no-store', 
-            mode: 'cors' 
-        });
+    // Prepara JSONP
+    const callbackName = 'cb_send_' + Date.now() + '_' + Math.floor(Math.random() * 10000);
+    const script = document.createElement('script');
+    const TIMEOUT_MS = 12000; // 12s fallback
 
-        if (!resp.ok) {
-            throw new Error(`Errore di rete: ${resp.status} ${resp.statusText}`);
+    let timeoutId = null;
+    let cleaned = false;
+
+    const cleanup = (opts = {}) => {
+        if (cleaned) return;
+        cleaned = true;
+        try { delete window[callbackName]; } catch (e) {}
+        if (script && script.parentNode) script.parentNode.removeChild(script);
+        if (timeoutId) clearTimeout(timeoutId);
+        if (opts.restoreUI) {
+            try {
+                btn.innerText = originalText;
+                btn.disabled = false;
+            } catch (e) {}
         }
+    };
 
-        const txt = await resp.text();
-        
-        // Estrai JSON da JSONP (assumendo callback di default)
-        const jsonpMatch = txt.match(/^[\s\S]*?\(\s*([\s\S]*?)\s*\)\s*;?\s*$/);
-        if (!jsonpMatch || !jsonpMatch[1]) {
-            throw new Error('Risposta non valida dal server.');
-        }
-        
-        const respData = JSON.parse(jsonpMatch[1]);
-        
-        if (respData.success) {
-            success = true; // Flag per il blocco finally
-            currentRecoveryEmail = email;
-            document.getElementById('displayEmail').innerText = email;
-            
-            // Switch visivo step
-            document.getElementById('stepEmail').classList.remove('visible-step');
-            document.getElementById('stepEmail').classList.add('hidden-step');
-            setTimeout(() => {
-                document.getElementById('stepEmail').style.display = 'none';
-                document.getElementById('stepOtp').style.display = 'block';
+    // Definisci il callback globale JSONP
+    window[callbackName] = function(resp) {
+        try {
+            cleanup(); // rimuovi script e callback
+            if (resp && resp.success) {
+                currentRecoveryEmail = email;
+                document.getElementById('displayEmail').innerText = email;
+
+                // Switch visivo step
+                document.getElementById('stepEmail').classList.remove('visible-step');
+                document.getElementById('stepEmail').classList.add('hidden-step');
                 setTimeout(() => {
-                    document.getElementById('stepOtp').classList.remove('hidden-step');
-                    document.getElementById('stepOtp').classList.add('visible-step');
-                }, 50);
-            }, 300);
-            
-        } else {
-            throw new Error(respData.error || 'Impossibile inviare il codice');
+                    document.getElementById('stepEmail').style.display = 'none';
+                    document.getElementById('stepOtp').style.display = 'block';
+                    setTimeout(() => {
+                        document.getElementById('stepOtp').classList.remove('hidden-step');
+                        document.getElementById('stepOtp').classList.add('visible-step');
+                    }, 50);
+                }, 300);
+            } else {
+                console.warn('API send_recovery_code failed:', resp);
+                alert('Errore: ' + (resp && resp.error ? resp.error : 'Impossibile inviare il codice'));
+                // ripristina UI
+                btn.innerText = originalText;
+                btn.disabled = false;
+            }
+        } catch (err) {
+            console.error('Errore nel callback JSONP send_recovery_code:', err);
+            alert('Si è verificato un errore. Riprova.');
+            try { btn.innerText = originalText; btn.disabled = false; } catch (e) {}
         }
+    };
 
-    } catch (err) {
-        console.error('Errore in handleSendCode:', err);
-        alert('Errore: ' + err.message);
-    } finally {
-        // Ripristina il bottone SOLO se l'operazione non è riuscita
-        if (!success) {
-            btn.innerText = originalText;
-            btn.disabled = false;
-        }
-    }
+    // error handler se lo script non carica
+    script.onerror = function(ev) {
+        console.error('JSONP script load error:', ev);
+        cleanup({ restoreUI: true });
+        alert('Impossibile contattare il server. Controlla la connessione o riprova più tardi.');
+    };
+
+    // Timeout fallback (nel caso la risposta non chiami il callback)
+    timeoutId = setTimeout(() => {
+        console.warn('JSONP request timeout per callback:', callbackName);
+        cleanup({ restoreUI: true });
+        alert('Timeout invio codice. Riprovare.');
+    }, TIMEOUT_MS);
+
+    script.src = `${WEB_APP_URL}?action=send_recovery_code&email=${encodeURIComponent(email)}&callback=${callbackName}`;
+    document.body.appendChild(script);
 }
 
-// --- MODIFICA 2: Riscritto handleVerifyCode con fetch e try/catch ---
-async function handleVerifyCode(e) {
+/* ---------- HANDLE VERIFY CODE (piccola robustezza) ---------- */
+function handleVerifyCode(e) {
     e.preventDefault();
     const codeInput = document.getElementById('otpCode');
     const btn = document.getElementById('btnVerifyCode');
-    const code = codeInput.value.trim().toUpperCase();
-    
-    if (code.length < 8) return;
-    
-    // UI Loading
+    const code = (codeInput.value || '').trim().toUpperCase();
+
+    if (code.length < 8) {
+        alert('Inserisci un codice valido di 8 caratteri.');
+        return;
+    }
+
     const originalText = btn.innerText;
     btn.innerText = 'Verifica in corso...';
     btn.disabled = true;
-    let success = false;
 
-    try {
-        const params = new URLSearchParams({
-            action: 'verify_recovery_code',
-            email: encodeURIComponent(currentRecoveryEmail),
-            code: encodeURIComponent(code),
-            t: Date.now()
-        });
+    const callbackName = 'cb_verify_' + Date.now() + '_' + Math.floor(Math.random() * 10000);
+    const script = document.createElement('script');
+    const TIMEOUT_MS = 12000;
+    let timeoutId = null;
+    let cleaned = false;
 
-        const requestUrl = `${WEB_APP_URL}?${params.toString()}`;
-        const resp = await fetch(requestUrl, { 
-            method: 'GET', 
-            cache: 'no-store', 
-            mode: 'cors' 
-        });
-
-        if (!resp.ok) {
-            throw new Error(`Errore di rete: ${resp.status} ${resp.statusText}`);
+    const cleanup = (opts = {}) => {
+        if (cleaned) return;
+        cleaned = true;
+        try { delete window[callbackName]; } catch (e) {}
+        if (script && script.parentNode) script.parentNode.removeChild(script);
+        if (timeoutId) clearTimeout(timeoutId);
+        if (opts.restoreUI) {
+            try { btn.innerText = originalText; btn.disabled = false; } catch (e) {}
         }
+    };
 
-        const txt = await resp.text();
-        
-        // Estrai JSON da JSONP
-        const jsonpMatch = txt.match(/^[\s\S]*?\(\s*([\s\S]*?)\s*\)\s*;?\s*$/);
-        if (!jsonpMatch || !jsonpMatch[1]) {
-            throw new Error('Risposta non valida dal server.');
+    window[callbackName] = function(resp) {
+        try {
+            cleanup();
+            if (resp && resp.success) {
+                // SUCCESSO!
+                localStorage.setItem('lh360_user_email', currentRecoveryEmail || '');
+                document.getElementById('recoverySection').style.display = 'none';
+                document.getElementById('loadingState').style.display = 'block';
+                ordersRendered = false;
+                loadOrders();
+            } else {
+                console.warn('API verify_recovery_code failed:', resp);
+                alert('Errore: ' + (resp && resp.error ? resp.error : 'Codice non valido'));
+                btn.innerText = originalText;
+                btn.disabled = false;
+            }
+        } catch (err) {
+            console.error('Errore nel callback JSONP verify_recovery_code:', err);
+            alert('Si è verificato un errore. Riprova.');
+            try { btn.innerText = originalText; btn.disabled = false; } catch (e) {}
         }
+    };
 
-        const respData = JSON.parse(jsonpMatch[1]);
-        
-        if (respData.success) {
-            success = true; // Flag per il blocco finally
-            
-            // SUCCESSO!
-            // 1. Salva email in localStorage
-            localStorage.setItem('lh360_user_email', currentRecoveryEmail);
-            
-            // 2. Nascondi sezione recupero
-            document.getElementById('recoverySection').style.display = 'none';
-            
-            // 3. Mostra loader e ricarica ordini
-            document.getElementById('loadingState').style.display = 'block';
-            ordersRendered = false; // Forza reload
-            loadOrders(); // Ricarica ora che abbiamo l'email
-            
-        } else {
-            throw new Error(respData.error || 'Codice non valido');
-        }
+    script.onerror = function(ev) {
+        console.error('JSONP script load error (verify):', ev);
+        cleanup({ restoreUI: true });
+        alert('Impossibile contattare il server. Controlla la connessione o riprova più tardi.');
+    };
 
-    } catch (err) {
-        console.error('Errore in handleVerifyCode:', err);
-        alert('Errore: ' + err.message);
-    } finally {
-        if (!success) {
-            btn.innerText = originalText;
-            btn.disabled = false;
-        }
-    }
+    timeoutId = setTimeout(() => {
+        console.warn('JSONP verify timeout per callback:', callbackName);
+        cleanup({ restoreUI: true });
+        alert('Timeout verifica codice. Riprovare.');
+    }, TIMEOUT_MS);
+
+    script.src = `${WEB_APP_URL}?action=verify_recovery_code&email=${encodeURIComponent(currentRecoveryEmail)}&code=${encodeURIComponent(code)}&callback=${callbackName}`;
+    document.body.appendChild(script);
 }
 
 function resetRecoveryFlow(e) {
@@ -1398,3 +1411,4 @@ loadOrders();
     </script>
 </body>
 </html>
+
