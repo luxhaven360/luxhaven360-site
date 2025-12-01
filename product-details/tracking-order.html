@@ -650,6 +650,7 @@
         <a href="#" onclick="resetRecoveryFlow(event)" class="resend-link">← Usa un'altra email</a>
     </div>
 </div>
+    </div>
     <script>
         const WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbyUh0VScOtnTLHHIRrOeuDGugp0ynQLNjHue7PcP2JEoOQ5x2ZyuTVFdpaUHh6DGFE/exec';
 const CATEGORY_MAP = {
@@ -874,7 +875,6 @@ function createOrderCard(order, index) {
             </div>
         </div>
         
-        <!-- Riepilogo -->
         <div class="order-summary">
             <div class="summary-row">
                 <span class="summary-label">Categoria</span>
@@ -894,7 +894,6 @@ function createOrderCard(order, index) {
             </div>
         </div>
         
-        <!-- Barra di avanzamento DINAMICA -->
         <div class="progress-section">
             <div class="progress-steps">
                 <div class="progress-line" style="width: ${progress}%; transition: width 1s ease;"></div>
@@ -911,7 +910,6 @@ function createOrderCard(order, index) {
             </div>
         </div>
         
-        <!-- Dettagli prodotto -->
         ${order.products && order.products.length > 0 ? `
 <div class="order-products-section">
     <details class="product-details">
@@ -1223,7 +1221,8 @@ function showEmptyState(title = 'Nessun ordine recente', text = 'Non hai ordini 
 
         let currentRecoveryEmail = '';
 
-function handleSendCode(e) {
+// --- MODIFICA 1: Riscritto handleSendCode con fetch e try/catch ---
+async function handleSendCode(e) {
     e.preventDefault();
     const emailInput = document.getElementById('recoveryEmail');
     const btn = document.getElementById('btnSendCode');
@@ -1235,17 +1234,39 @@ function handleSendCode(e) {
     const originalText = btn.innerText;
     btn.innerText = 'Invio in corso...';
     btn.disabled = true;
-    
-    // Chiamata JSONP
-    const callbackName = 'cb_send_' + Date.now();
-    const script = document.createElement('script');
-    script.src = `${WEB_APP_URL}?action=send_recovery_code&email=${encodeURIComponent(email)}&callback=${callbackName}`;
-    
-    window[callbackName] = function(resp) {
-        delete window[callbackName];
-        document.body.removeChild(script);
+    let success = false;
+
+    try {
+        const params = new URLSearchParams({
+            action: 'send_recovery_code',
+            email: encodeURIComponent(email),
+            t: Date.now()
+        });
         
-        if (resp.success) {
+        // Usiamo fetch come in loadOrders(), non script injection
+        const requestUrl = `${WEB_APP_URL}?${params.toString()}`;
+        const resp = await fetch(requestUrl, { 
+            method: 'GET', 
+            cache: 'no-store', 
+            mode: 'cors' 
+        });
+
+        if (!resp.ok) {
+            throw new Error(`Errore di rete: ${resp.status} ${resp.statusText}`);
+        }
+
+        const txt = await resp.text();
+        
+        // Estrai JSON da JSONP (assumendo callback di default)
+        const jsonpMatch = txt.match(/^[\s\S]*?\(\s*([\s\S]*?)\s*\)\s*;?\s*$/);
+        if (!jsonpMatch || !jsonpMatch[1]) {
+            throw new Error('Risposta non valida dal server.');
+        }
+        
+        const respData = JSON.parse(jsonpMatch[1]);
+        
+        if (respData.success) {
+            success = true; // Flag per il blocco finally
             currentRecoveryEmail = email;
             document.getElementById('displayEmail').innerText = email;
             
@@ -1262,16 +1283,23 @@ function handleSendCode(e) {
             }, 300);
             
         } else {
-            alert('Errore: ' + (resp.error || 'Impossibile inviare il codice'));
+            throw new Error(respData.error || 'Impossibile inviare il codice');
+        }
+
+    } catch (err) {
+        console.error('Errore in handleSendCode:', err);
+        alert('Errore: ' + err.message);
+    } finally {
+        // Ripristina il bottone SOLO se l'operazione non è riuscita
+        if (!success) {
             btn.innerText = originalText;
             btn.disabled = false;
         }
-    };
-    
-    document.body.appendChild(script);
+    }
 }
 
-function handleVerifyCode(e) {
+// --- MODIFICA 2: Riscritto handleVerifyCode con fetch e try/catch ---
+async function handleVerifyCode(e) {
     e.preventDefault();
     const codeInput = document.getElementById('otpCode');
     const btn = document.getElementById('btnVerifyCode');
@@ -1283,17 +1311,40 @@ function handleVerifyCode(e) {
     const originalText = btn.innerText;
     btn.innerText = 'Verifica in corso...';
     btn.disabled = true;
-    
-    // Chiamata JSONP
-    const callbackName = 'cb_verify_' + Date.now();
-    const script = document.createElement('script');
-    script.src = `${WEB_APP_URL}?action=verify_recovery_code&email=${encodeURIComponent(currentRecoveryEmail)}&code=${encodeURIComponent(code)}&callback=${callbackName}`;
-    
-    window[callbackName] = function(resp) {
-        delete window[callbackName];
-        document.body.removeChild(script);
+    let success = false;
+
+    try {
+        const params = new URLSearchParams({
+            action: 'verify_recovery_code',
+            email: encodeURIComponent(currentRecoveryEmail),
+            code: encodeURIComponent(code),
+            t: Date.now()
+        });
+
+        const requestUrl = `${WEB_APP_URL}?${params.toString()}`;
+        const resp = await fetch(requestUrl, { 
+            method: 'GET', 
+            cache: 'no-store', 
+            mode: 'cors' 
+        });
+
+        if (!resp.ok) {
+            throw new Error(`Errore di rete: ${resp.status} ${resp.statusText}`);
+        }
+
+        const txt = await resp.text();
         
-        if (resp.success) {
+        // Estrai JSON da JSONP
+        const jsonpMatch = txt.match(/^[\s\S]*?\(\s*([\s\S]*?)\s*\)\s*;?\s*$/);
+        if (!jsonpMatch || !jsonpMatch[1]) {
+            throw new Error('Risposta non valida dal server.');
+        }
+
+        const respData = JSON.parse(jsonpMatch[1]);
+        
+        if (respData.success) {
+            success = true; // Flag per il blocco finally
+            
             // SUCCESSO!
             // 1. Salva email in localStorage
             localStorage.setItem('lh360_user_email', currentRecoveryEmail);
@@ -1307,13 +1358,18 @@ function handleVerifyCode(e) {
             loadOrders(); // Ricarica ora che abbiamo l'email
             
         } else {
-            alert('Errore: ' + (resp.error || 'Codice non valido'));
+            throw new Error(respData.error || 'Codice non valido');
+        }
+
+    } catch (err) {
+        console.error('Errore in handleVerifyCode:', err);
+        alert('Errore: ' + err.message);
+    } finally {
+        if (!success) {
             btn.innerText = originalText;
             btn.disabled = false;
         }
-    };
-    
-    document.body.appendChild(script);
+    }
 }
 
 function resetRecoveryFlow(e) {
@@ -1342,4 +1398,3 @@ loadOrders();
     </script>
 </body>
 </html>
-
