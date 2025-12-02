@@ -970,6 +970,30 @@
     // CONFIGURAZIONE
 const webAppUrl = 'https://script.google.com/macros/s/AKfycbyUh0VScOtnTLHHIRrOeuDGugp0ynQLNjHue7PcP2JEoOQ5x2ZyuTVFdpaUHh6DGFE/exec';
 
+        // *** 1. MODIFICA INIZIO: CATTURA IMMEDIATA CARRELLO ***
+    // Leggiamo il carrello e il totale UNA SOLA VOLTA all'avvio
+    // per sconfiggere la race condition con la pulizia del localStorage.
+    let _persistentCart = [];
+    let _persistentTotal = 0.00;
+    
+    try {
+        const cartRaw = localStorage.getItem('lh360_cart');
+        if (cartRaw) {
+            _persistentCart = JSON.parse(cartRaw);
+            if (Array.isArray(_persistentCart) && _persistentCart.length > 0) {
+                // Calcola il totale corretto qui
+                const subtotal = _persistentCart.reduce((sum, item) => sum + (parseFloat(item.price) || 0) * (parseInt(item.qty) || 1), 0);
+                const shippingCost = subtotal >= 150 ? 0 : 15;
+                _persistentTotal = subtotal + shippingCost;
+            }
+        }
+    } catch (e) {
+        console.error('Errore nel parsing del carrello persistente:', e);
+        _persistentCart = [];
+        _persistentTotal = 0.00;
+    }
+    // *** 1. MODIFICA FINE ***
+
 let loadTimeout;
 let startTime;
 let emailSent = false; // Flag per evitare invii duplicati
@@ -1416,10 +1440,16 @@ window.handleDetailsResponse = function(response) {
 
     // Salva ordine in localStorage per tracking
     if (currentOrderId) {
-        const cart = JSON.parse(localStorage.getItem('lh360_cart') || '[]');
-        const subtotal = cart.reduce((sum, item) => sum + (item.price * (item.qty || 1)), 0);
-        const shipping = subtotal >= 150 ? 0 : 15;
-        const total = subtotal + shipping;
+        // *** 2. MODIFICA INIZIO: USA DATI PERSISTENTI ***
+        // const cart = JSON.parse(localStorage.getItem('lh360_cart') || '[]'); // VECCHIO - Racy
+        // const subtotal = cart.reduce((sum, item) => sum + (item.price * (item.qty || 1)), 0); // VECCHIO
+        // const shipping = subtotal >= 150 ? 0 : 15; // VECCHIO
+        // const total = subtotal + shipping; // VECCHIO
+
+        // NUOVO: Usiamo le variabili globali sicure definite all'inizio
+        const cart = _persistentCart;
+        const total = _persistentTotal;
+        // *** 2. MODIFICA FINE ***
         const today = new Date();
         const formattedDate = today.toLocaleDateString('it-IT', {
             day: 'numeric',
@@ -1430,9 +1460,9 @@ window.handleDetailsResponse = function(response) {
             id: currentOrderId,
             data: formattedDate,
             stato: 'In Preparazione',
-            totale: total.toFixed(2),
+            totale: total.toFixed(2), // <-- Ora usa il totale corretto
             consegna_prevista: calculateDeliveryDate(3),
-            products: cart.map(item => ({
+            products: cart.map(item => ({ // <-- Ora usa il carrello corretto
                 name: item.title || 'Prodotto',
                 quantity: item.qty || 1,
                 price: item.price || 0,
@@ -1442,7 +1472,7 @@ window.handleDetailsResponse = function(response) {
             timestamp: confirmedTime
         };
         localStorage.setItem('lh360_pending_order', JSON.stringify(orderDetails));
-        console.log('✅ Ordine salvato in localStorage per tracking immediato:', orderDetails);
+        console.log('✅ Ordine salvato in localStorage (con dati persistenti):', orderDetails);
     }
 
     fetchOrderTrackingData(currentOrderId, confirmedTime, deliveryElem);
@@ -1730,8 +1760,11 @@ function updateTimeline(data) {
 }
 
 function loadPurchasedItems() {
-    const cartRaw = localStorage.getItem('lh360_cart');
-    const cart = cartRaw ? JSON.parse(cartRaw) : [];
+    // *** 3. MODIFICA INIZIO: USA DATI PERSISTENTI ***
+    // const cartRaw = localStorage.getItem('lh360_cart'); // VECCHIO
+    // const cart = cartRaw ? JSON.parse(cartRaw) : []; // VECCHIO
+    const cart = _persistentCart; // NUOVO
+    // *** 3. MODIFICA FINE ***
     
     const itemsContainer = document.querySelector('.summary-items');
     const subtotalElem = document.querySelector('.summary-totals .summary-row:nth-child(1) span:last-child');
@@ -1744,10 +1777,14 @@ function loadPurchasedItems() {
 
     if (cart.length === 0) {
         itemsContainer.innerHTML = '<div style="padding:1rem; color:#a1a1aa; text-align:center;">Dettagli articoli non disponibili (Sessione scaduta)</div>';
+        // Non calcoliamo i totali se il carrello è vuoto
+        if (subtotalElem) subtotalElem.textContent = `€ 0,00`;
+        if (shippingElem) shippingElem.textContent = `€ 0,00`;
+        if (totalElem) totalElem.textContent = `€ 0,00`;
         return;
     }
 
-    let subtotal = 0;
+    let subtotal = 0; // Lo ricalcoliamo qui solo per l'UI
 
     const colorNames = {
         '#000000': 'Nero', '#FFFFFF': 'Bianco', '#008000': 'Verde', 
@@ -1757,7 +1794,7 @@ function loadPurchasedItems() {
     cart.forEach(item => {
         const itemPrice = parseFloat(item.price) || 0;
         const itemQty = parseInt(item.qty) || 1;
-        subtotal += itemPrice * itemQty;
+        subtotal += itemPrice * itemQty; // Aggiorna subtotal per UI
 
         let displayColor = item.color || '';
         if (displayColor.startsWith('#') && colorNames[displayColor]) {
@@ -1785,13 +1822,18 @@ function loadPurchasedItems() {
         itemsContainer.appendChild(div);
     });
 
-    const shippingCost = subtotal >= 150 ? 0 : 15;
-    const total = subtotal + shippingCost;
+    // *** 3. MODIFICA INIZIO: USA DATI PERSISTENTI ***
+    // const shippingCost = subtotal >= 150 ? 0 : 15; // VECCHIO
+    // const total = subtotal + shippingCost; // VECCHIO
+    const total = _persistentTotal; // NUOVO
+    const shippingCost = total - subtotal; // Calcolo più sicuro
+    // *** 3. MODIFICA FINE ***
+
 
     if (subtotalElem) subtotalElem.textContent = `€ ${subtotal.toLocaleString('it-IT', {minimumFractionDigits: 2})}`;
     
     if (shippingElem) {
-        if (shippingCost === 0) {
+        if (shippingCost <= 0) { // Usiamo <= per sicurezza
             shippingElem.textContent = 'Gratuita';
             shippingElem.style.color = '#34d399';
         } else {
@@ -1805,3 +1847,4 @@ function loadPurchasedItems() {
     </script>    
 </body>
 </html>
+
