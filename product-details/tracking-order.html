@@ -1224,7 +1224,7 @@ function showEmptyState(title = 'Nessun ordine recente', text = 'Non hai ordini 
 
         let currentRecoveryEmail = '';
 
-function handleSendCode(e) {
+async function handleSendCode(e) {
     e.preventDefault();
     const emailInput = document.getElementById('recoveryEmail');
     const btn = document.getElementById('btnSendCode');
@@ -1233,49 +1233,49 @@ function handleSendCode(e) {
     if (!email) return;
     
     // UI Loading
-    const originalText = "Invia Codice di Sicurezza"; // Testo originale fisso per sicurezza
+    const originalText = "Invia Codice di Sicurezza";
     btn.innerText = 'Invio in corso...';
     btn.disabled = true;
-    
-    // Nome callback univoco
-    const callbackName = 'cb_send_' + Date.now();
-    
-    // Timeout di sicurezza (15 secondi)
-    const safetyTimeout = setTimeout(() => {
-        cleanup();
-        alert('Il server non risponde. Verifica la connessione o riprova tra poco.');
-        resetButton();
-    }, 15000);
 
-    // Funzione di pulizia
-    function cleanup() {
-        clearTimeout(safetyTimeout);
-        try { delete window[callbackName]; } catch(e){}
-        const s = document.getElementById('script-' + callbackName);
-        if (s) { try { document.body.removeChild(s); } catch(e){} }
-    }
+    // Parametri URL
+    const params = new URLSearchParams({
+        action: 'send_recovery_code',
+        email: email,
+        callback: 'cb_ignore', // Manteniamo il callback per compatibilità col backend
+        _: Date.now() // Cache buster
+    });
 
-    // Funzione reset bottone
-    function resetButton() {
-        btn.innerText = originalText;
-        btn.disabled = false;
-    }
+    const url = `${WEB_APP_URL}?${params.toString()}`;
 
-    // Creazione Script
-    const script = document.createElement('script');
-    script.id = 'script-' + callbackName;
-    // Aggiungiamo un parametro '_' extra per evitare cache aggressiva su mobile
-    script.src = `${WEB_APP_URL}?action=send_recovery_code&email=${encodeURIComponent(email)}&callback=${callbackName}&_=${Date.now()}`;
-    
-    // Gestione Successo JSONP
-    window[callbackName] = function(resp) {
-        cleanup();
+    try {
+        // USIAMO FETCH INVECE DI SCRIPT
+        // credentials: 'omit' è la chiave: rimuove i cookie e bypassa l'errore Google Drive
+        const response = await fetch(url, {
+            method: 'GET',
+            credentials: 'omit', 
+            redirect: 'follow'
+        });
+
+        if (!response.ok) throw new Error('Errore di rete: ' + response.status);
+
+        const text = await response.text();
         
-        if (resp && resp.success) {
+        // Puliamo la risposta JSONP per ottenere il JSON puro
+        // Il backend restituisce: cb_ignore({...})
+        // Noi estraiamo solo: {...}
+        const jsonMatch = text.match(/^\s*cb_ignore\s*\(([\s\S]*)\)\s*;?\s*$/);
+        
+        if (!jsonMatch) {
+            throw new Error('Risposta server non valida');
+        }
+
+        const resp = JSON.parse(jsonMatch[1]);
+
+        if (resp.success) {
             currentRecoveryEmail = email;
             document.getElementById('displayEmail').innerText = email;
             
-            // Switch visivo step
+            // Animazione cambio step
             const stepEmail = document.getElementById('stepEmail');
             const stepOtp = document.getElementById('stepOtp');
             
@@ -1290,25 +1290,20 @@ function handleSendCode(e) {
                     stepOtp.classList.add('visible-step');
                 }, 50);
             }, 300);
-            
         } else {
-            const errorMsg = resp && resp.error ? resp.error : 'Errore sconosciuto dal server';
-            alert('Errore: ' + errorMsg);
-            resetButton();
+            throw new Error(resp.error || 'Errore sconosciuto');
         }
-    };
-    
-    // Gestione Errore Caricamento Script (Network error, 404, 500 non-JSON)
-    script.onerror = function() {
-        cleanup();
-        alert('Impossibile contattare il server. Controlla la tua connessione internet.');
-        resetButton();
-    };
-    
-    document.body.appendChild(script);
+
+    } catch (error) {
+        console.error('Errore Fetch:', error);
+        alert('Errore: ' + error.message);
+    } finally {
+        btn.innerText = originalText;
+        btn.disabled = false;
+    }
 }
 
-function handleVerifyCode(e) {
+async function handleVerifyCode(e) {
     e.preventDefault();
     const codeInput = document.getElementById('otpCode');
     const btn = document.getElementById('btnVerifyCode');
@@ -1316,41 +1311,50 @@ function handleVerifyCode(e) {
     
     if (code.length < 8) return;
     
-    // UI Loading
-    const originalText = btn.innerText;
+    const originalText = "Verifica e Accedi";
     btn.innerText = 'Verifica in corso...';
     btn.disabled = true;
     
-    // Chiamata JSONP
-    const callbackName = 'cb_verify_' + Date.now();
-    const script = document.createElement('script');
-    script.src = `${WEB_APP_URL}?action=verify_recovery_code&email=${encodeURIComponent(currentRecoveryEmail)}&code=${encodeURIComponent(code)}&callback=${callbackName}`;
-    
-    window[callbackName] = function(resp) {
-        delete window[callbackName];
-        document.body.removeChild(script);
+    const params = new URLSearchParams({
+        action: 'verify_recovery_code',
+        email: currentRecoveryEmail,
+        code: code,
+        callback: 'cb_ignore',
+        _: Date.now()
+    });
+
+    const url = `${WEB_APP_URL}?${params.toString()}`;
+
+    try {
+        const response = await fetch(url, {
+            method: 'GET',
+            credentials: 'omit', // FONDAMENTALE
+            redirect: 'follow'
+        });
+
+        const text = await response.text();
+        const jsonMatch = text.match(/^\s*cb_ignore\s*\(([\s\S]*)\)\s*;?\s*$/);
         
+        if (!jsonMatch) throw new Error('Risposta server non valida');
+        
+        const resp = JSON.parse(jsonMatch[1]);
+
         if (resp.success) {
-            // SUCCESSO!
-            // 1. Salva email in localStorage
             localStorage.setItem('lh360_user_email', currentRecoveryEmail);
-            
-            // 2. Nascondi sezione recupero
             document.getElementById('recoverySection').style.display = 'none';
-            
-            // 3. Mostra loader e ricarica ordini
             document.getElementById('loadingState').style.display = 'block';
-            ordersRendered = false; // Forza reload
-            loadOrders(); // Ricarica ora che abbiamo l'email
-            
+            ordersRendered = false;
+            loadOrders(); 
         } else {
-            alert('Errore: ' + (resp.error || 'Codice non valido'));
-            btn.innerText = originalText;
-            btn.disabled = false;
+            throw new Error(resp.error || 'Codice non valido');
         }
-    };
-    
-    document.body.appendChild(script);
+
+    } catch (error) {
+        alert('Errore: ' + error.message);
+    } finally {
+        btn.innerText = originalText;
+        btn.disabled = false;
+    }
 }
 
 function resetRecoveryFlow(e) {
@@ -1379,5 +1383,6 @@ loadOrders();
     </script>
 </body>
 </html>
+
 
 
