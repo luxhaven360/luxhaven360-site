@@ -1233,40 +1233,76 @@ function handleSendCode(e) {
     if (!email) return;
     
     // UI Loading
-    const originalText = btn.innerText;
+    const originalText = "Invia Codice di Sicurezza"; // Testo originale fisso per sicurezza
     btn.innerText = 'Invio in corso...';
     btn.disabled = true;
     
-    // Chiamata JSONP
+    // Nome callback univoco
     const callbackName = 'cb_send_' + Date.now();
-    const script = document.createElement('script');
-    script.src = `${WEB_APP_URL}?action=send_recovery_code&email=${encodeURIComponent(email)}&callback=${callbackName}`;
     
+    // Timeout di sicurezza (15 secondi)
+    const safetyTimeout = setTimeout(() => {
+        cleanup();
+        alert('Il server non risponde. Verifica la connessione o riprova tra poco.');
+        resetButton();
+    }, 15000);
+
+    // Funzione di pulizia
+    function cleanup() {
+        clearTimeout(safetyTimeout);
+        try { delete window[callbackName]; } catch(e){}
+        const s = document.getElementById('script-' + callbackName);
+        if (s) { try { document.body.removeChild(s); } catch(e){} }
+    }
+
+    // Funzione reset bottone
+    function resetButton() {
+        btn.innerText = originalText;
+        btn.disabled = false;
+    }
+
+    // Creazione Script
+    const script = document.createElement('script');
+    script.id = 'script-' + callbackName;
+    // Aggiungiamo un parametro '_' extra per evitare cache aggressiva su mobile
+    script.src = `${WEB_APP_URL}?action=send_recovery_code&email=${encodeURIComponent(email)}&callback=${callbackName}&_=${Date.now()}`;
+    
+    // Gestione Successo JSONP
     window[callbackName] = function(resp) {
-        delete window[callbackName];
-        document.body.removeChild(script);
+        cleanup();
         
-        if (resp.success) {
+        if (resp && resp.success) {
             currentRecoveryEmail = email;
             document.getElementById('displayEmail').innerText = email;
             
             // Switch visivo step
-            document.getElementById('stepEmail').classList.remove('visible-step');
-            document.getElementById('stepEmail').classList.add('hidden-step');
+            const stepEmail = document.getElementById('stepEmail');
+            const stepOtp = document.getElementById('stepOtp');
+            
+            stepEmail.classList.remove('visible-step');
+            stepEmail.classList.add('hidden-step');
+            
             setTimeout(() => {
-                document.getElementById('stepEmail').style.display = 'none';
-                document.getElementById('stepOtp').style.display = 'block';
+                stepEmail.style.display = 'none';
+                stepOtp.style.display = 'block';
                 setTimeout(() => {
-                    document.getElementById('stepOtp').classList.remove('hidden-step');
-                    document.getElementById('stepOtp').classList.add('visible-step');
+                    stepOtp.classList.remove('hidden-step');
+                    stepOtp.classList.add('visible-step');
                 }, 50);
             }, 300);
             
         } else {
-            alert('Errore: ' + (resp.error || 'Impossibile inviare il codice'));
-            btn.innerText = originalText;
-            btn.disabled = false;
+            const errorMsg = resp && resp.error ? resp.error : 'Errore sconosciuto dal server';
+            alert('Errore: ' + errorMsg);
+            resetButton();
         }
+    };
+    
+    // Gestione Errore Caricamento Script (Network error, 404, 500 non-JSON)
+    script.onerror = function() {
+        cleanup();
+        alert('Impossibile contattare il server. Controlla la tua connessione internet.');
+        resetButton();
     };
     
     document.body.appendChild(script);
@@ -1343,3 +1379,4 @@ loadOrders();
     </script>
 </body>
 </html>
+
