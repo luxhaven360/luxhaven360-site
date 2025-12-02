@@ -125,10 +125,6 @@
             position: relative;
             margin-bottom: 2rem;
         }
-        
-        /* --- MODIFICA CSS INIZIO --- */
-
-        /* Linea grigia per desktop */
         .progress-steps::before {
             content: '';
             position: absolute;
@@ -137,18 +133,8 @@
             right: 0;
             height: 2px;
             background: rgba(39, 39, 42, 0.5);
+            z-index: 0;
         }
-        
-        /* Linea grigia #2 (per mobile) */
-        .progress-steps::after {
-            content: '';
-            position: absolute;
-            height: 2px;
-            background: rgba(39, 39, 42, 0.5);
-            display: none; /* Nascosta di default */
-        }
-        
-        /* Linea verde (comune) */
         .progress-line {
             position: absolute;
             top: 1.25rem;
@@ -156,18 +142,36 @@
             height: 2px;
             background: linear-gradient(90deg, #10b981, #34d399);
             transition: width 1s ease;
-            z-index: 2; /* Sopra la linea grigia */
+            z-index: 1; /* Assicurati sia sopra il grigio */
+        }
+        
+        /* --- NUOVO: Stili per la seconda riga mobile --- */
+        .progress-steps::after {
+            content: '';
+            position: absolute;
+            /* Calcolo Top: (top linea 1) + (altezza step 1) + (gap) */
+            /* (1.25rem) + (icona 2.5rem + margin 0.75rem + label ~1.3rem) + (gap 2rem) */
+            top: 7.8rem; 
+            left: 0;
+            right: 0;
+            height: 2px;
+            background: rgba(39, 39, 42, 0.5);
+            display: none; /* Nascosto di default */
+            z-index: 0;
         }
 
-        /* Linee mobili (nascoste di default) */
-        .progress-line.mobile-line-1,
-        .progress-line.mobile-line-2 {
-            display: none;
-            z-index: 2;
+        .progress-line-2 {
+            position: absolute;
+            top: 7.8rem; /* Stesso top */
+            left: 0;
+            height: 2px;
+            background: linear-gradient(90deg, #10b981, #34d399);
+            transition: width 1s ease;
+            display: none; /* Nascosto di default */
+            z-index: 1;
         }
-        
-        /* --- MODIFICA CSS FINE --- */
-        
+        /* --- FINE NUOVO --- */
+
         .step {
             position: relative;
             z-index: 2;
@@ -199,6 +203,7 @@
         .step-label {
             font-size: 0.8125rem;
             color: #71717a;
+            line-height: 1.6; /* Aggiunto per un calcolo altezza più stabile */
         }
         .step.completed .step-label,
         .step.active .step-label {
@@ -322,8 +327,6 @@
         @keyframes spin {
             to { transform: rotate(360deg); }
         }
-        
-        /* --- MODIFICA CSS MEDIA QUERY INIZIO --- */
         @media (max-width: 768px) {
             .title {
                 font-size: 2rem;
@@ -339,27 +342,17 @@
                 flex-wrap: wrap;
                 gap: 2rem;
             }
-            
-            /* Ridefinizione linee grigie per mobile */
-            .progress-steps::before {
-                /* Linea grigia riga 1 */
-                top: 1.25rem;
-                left: 25%;
-                width: 50%;
-                right: auto;
-            }
-            .progress-steps::after {
-                /* Linea grigia riga 2 */
-                display: block;
-                top: calc(2.5rem + 2rem + 1.25rem); /* icon_height + gap + line1_top */
-                left: 25%;
-                width: 50%;
-                right: auto;
-            }
-
             .step {
                 flex: 0 0 calc(50% - 1rem);
             }
+
+            /* --- NUOVO: Mostra le linee mobili --- */
+            .progress-steps::after,
+            .progress-line-2 {
+                display: block;
+            }
+            /* --- FINE NUOVO --- */
+
             .order-actions {
                 flex-direction: column;
             }
@@ -367,31 +360,7 @@
                 width: 100%;
                 justify-content: center;
             }
-            
-            /* Gestione linee progresso verdi per mobile */
-            .progress-line {
-                display: none; /* Nascondi linea desktop */
-            }
-
-            .progress-line.mobile-line-1 {
-                display: block;
-                top: 1.25rem;
-                left: 25%;
-                width: 0%; /* Sovrascritto da inline style */
-                max-width: 50%; /* Limita alla larghezza della linea grigia */
-            }
-
-            .progress-line.mobile-line-2 {
-                display: block;
-                top: calc(2.5rem + 2rem + 1.25rem); /* icon_height + gap + line1_top */
-                left: 25%;
-                width: 0%; /* Sovrascritto da inline style */
-                max-width: 50%; /* Limita alla larghezza della linea grigia */
-            }
         }
-        
-        /* --- MODIFICA CSS MEDIA QUERY FINE --- */
-        
         /* Aggiunta stile per il riepilogo articoli */
         .order-summary {
             display: flex;
@@ -902,133 +871,130 @@ function calcolaProgressoRealistico(dataOrdine, dataConsegna, statoCorrente) {
     return Math.max(0, Math.min(100, Math.round(progressoSmooth)));
 }
 
-// ==================================================================
-// CREAZIONE CARD ORDINE (VERSIONE UNIFICATA)
-// ==================================================================
+        // ==================================================================
+        // CREAZIONE CARD ORDINE (VERSIONE UNIFICATA)
+        // ==================================================================
 
-function createOrderCard(order, index) {
-    const articoli = order.articoli != null ? Number(order.articoli) :
-                    (order.products ? order.products.reduce((sum, p) => sum + (p.quantity || 1), 0) : 0);
-    const plural = articoli === 1 ? 'articolo' : 'articoli';
-    
-    // Determina categoria
-    const orderCategory = getCategoryFromOrderId(order.id);
-    
-    // === FORMATTAZIONE DATE UNIFORMI ===
-    const dataOrdineFormatted = formatDataItaliana(order.data);
-    const dataConsegnaFormatted = formatDataItaliana(order.consegna_prevista);
-    
-    // === CALCOLO PROGRESSO REALISTICO ===
-    const progress = calcolaProgressoRealistico(
-        order.data,
-        order.consegna_prevista,
-        order.stato
-    );
-    
-    // *** 1. MODIFICA JS INIZIO: Calcolo barre mobili ***
-    // progressRow1: 0-100% per la prima riga (che rappresenta 0-50% del totale)
-    const progressRow1 = Math.min(100, (progress / 50) * 100);
-    // progressRow2: 0-100% per la seconda riga (che rappresenta 50-100% del totale)
-    const progressRow2 = Math.max(0, (progress - 50) / 50) * 100;
-    // *** 1. MODIFICA JS FINE ***
+        function createOrderCard(order, index) {
+            const articoli = order.articoli != null ? Number(order.articoli) :
+                            (order.products ? order.products.reduce((sum, p) => sum + (p.quantity || 1), 0) : 0);
+            const plural = articoli === 1 ? 'articolo' : 'articoli';
+            
+            const orderCategory = getCategoryFromOrderId(order.id);
+            
+            // === FORMATTAZIONE DATE UNIFORMI ===
+            const dataOrdineFormatted = formatDataItaliana(order.data);
+            const dataConsegnaFormatted = formatDataItaliana(order.consegna_prevista);
+            
+            // === CALCOLO PROGRESSO REALISTICO ===
+            const progress = calcolaProgressoRealistico( // (progress = 0-100)
+                order.data,
+                order.consegna_prevista,
+                order.stato
+            );
 
-    // === DETERMINA STATO STEP ===
-    const steps = ['Confermato', 'In Preparazione', 'In Transito', 'Consegnato'];
-    const currentStepIndex = steps.indexOf(order.stato);
-    const isDelivered = order.stato === 'Consegnato';
-    
-    return `
-    <div class="order-card" style="animation-delay: ${index * 0.15}s">
-        <div class="order-header">
-            <div class="order-info">
-                <div class="order-title-wrapper">
-                   <span class="order-title-text">Ordine</span>
-                   <span class="order-title-number">#${order.id}</span>
-                </div>
-                <div class="order-date">${dataOrdineFormatted}</div>
-            </div>
-            <div class="status-badge ${order.stato.toLowerCase().replace(/\s+/g, '-')}">
-                ${order.stato}
-            </div>
-        </div>
-        
-        <div class="order-summary">
-            <div class="summary-row">
-                <span class="summary-label">Categoria</span>
-                <span class="summary-value">${orderCategory}</span>
-            </div>
-            <div class="summary-row">
-                <span class="summary-label">Totale ordine</span>
-                <span class="summary-value">€ ${formatPrice(order.totale)}</span>
-            </div>
-            <div class="summary-row">
-                <span class="summary-label">Articoli</span>
-                <span class="summary-value">${articoli} ${plural}</span>
-            </div>
-            <div class="summary-row">
-                <span class="summary-label">Consegna prevista</span>
-                <span class="summary-value">${dataConsegnaFormatted}</span>
-            </div>
-        </div>
-        
-        <div class="progress-section">
-            <div class="progress-steps">
-                
-                <div class="progress-line" style="width: ${progress}%;"></div>
-                
-                <div class="progress-line mobile-line-1" style="width: ${progressRow1}%;"></div>
-                <div class="progress-line mobile-line-2" style="width: ${progressRow2}%;"></div>
-                ${steps.map((step, i) => {
-                    const isCompleted = i < currentStepIndex || (i === 3 && isDelivered);
-                    const isActive = i === currentStepIndex && !isDelivered;
-                    const icon = STEP_ICONS[i];
-                    return `
-                    <div class="step ${isCompleted ? 'completed' : ''} ${isActive ? 'active' : ''}">
-                        <div class="step-icon">${isCompleted ? '✓' : icon}</div>
-                        <div class="step-label">${step}</div>
-                    </div>`;
-                }).join('')}
-            </div>
-        </div>
-        
-        ${order.products && order.products.length > 0 ? `
-<div class="order-products-section">
-    <details class="product-details">
-        <summary>
-            Visualizza dettagli prodotti (${articoli} ${plural})
-        </summary>
-        <div class="products-list">
-            ${order.products.map(p => {
-                let cleanName = p.name || 'Prodotto';
-                let imageUrl = p.image || '';
-
-                // Rimuovi varianti dal nome
-                if (cleanName.includes(' - ')) {
-                    cleanName = cleanName.split(' - ')[0].trim();
-                }
-
-                return `
-                <div class="product-item" style="display:flex; align-items:center; gap:16px; padding:16px; background:rgba(9,9,11,0.4); border-radius:12px; margin-bottom:8px;">
-                    ${imageUrl ? `
-                    <div style="width:64px; height:80px; border-radius:8px; overflow:hidden; flex-shrink:0; background:#18181b;">
-                        <img src="${imageUrl}" alt="${cleanName}" style="width:100%; height:100%; object-fit:cover;">
-                    </div>` : ''}
-                    <div style="flex:1;">
-                        <div class="product-name" style="font-weight:500; margin-bottom:6px;">${cleanName}</div>
-                        <div class="product-category" style="font-size:0.9rem; color:#10b981; font-weight:500;">
-                            📂 ${orderCategory}
+            // *** NUOVO: Calcolo progresso per le due linee mobili ***
+            // La prima linea (righe 1-2) va da 0% a 100% quando il progresso è 0-50
+            const progressRow1 = Math.min(100, progress * 2);
+            // La seconda linea (righe 3-4) va da 0% a 100% quando il progresso è 50-100
+            const progressRow2 = Math.max(0, (progress - 50) * 2);
+            // *** FINE NUOVO ***
+            
+            // === DETERMINA STATO STEP ===
+            const steps = ['Confermato', 'In Preparazione', 'In Transito', 'Consegnato'];
+            const currentStepIndex = steps.indexOf(order.stato);
+            const isDelivered = order.stato === 'Consegnato';
+            
+            return `
+            <div class="order-card" style="animation-delay: ${index * 0.15}s">
+                <div class="order-header">
+                    <div class="order-info">
+                        <div class="order-title-wrapper">
+                        <span class="order-title-text">Ordine</span>
+                        <span class="order-title-number">#${order.id}</span>
                         </div>
+                        <div class="order-date">${dataOrdineFormatted}</div>
                     </div>
-                    <div style="font-weight:bold; color:#34d399; margin:0 12px;">× ${p.quantity || 1}</div>
-                    <div style="font-weight:600;">€ ${formatPrice(p.price)}</div>
-                </div>`;
-            }).join('')}
+                    <div class="status-badge ${order.stato.toLowerCase().replace(/\s+/g, '-')}">
+                        ${order.stato}
+                    </div>
+                </div>
+                
+                <div class="order-summary">
+                    <div class="summary-row">
+                        <span class="summary-label">Categoria</span>
+                        <span class="summary-value">${orderCategory}</span>
+                    </div>
+                    <div class="summary-row">
+                        <span class="summary-label">Totale ordine</span>
+                        <span class="summary-value">€ ${formatPrice(order.totale)}</span>
+                    </div>
+                    <div class="summary-row">
+                        <span class="summary-label">Articoli</span>
+                        <span class="summary-value">${articoli} ${plural}</span>
+                    </div>
+                    <div class="summary-row">
+                        <span class="summary-label">Consegna prevista</span>
+                        <span class="summary-value">${dataConsegnaFormatted}</span>
+                    </div>
+                </div>
+                
+                <div class="progress-section">
+                    <div class="progress-steps">
+                        
+                        <div class="progress-line" style="width: ${progressRow1}%; transition: width 1s ease;"></div>
+                        <div class="progress-line-2" style="width: ${progressRow2}%; transition: width 1s ease;"></div>
+                        ${steps.map((step, i) => {
+                            const isCompleted = i < currentStepIndex || (i === 3 && isDelivered);
+                            const isActive = i === currentStepIndex && !isDelivered;
+                            const icon = STEP_ICONS[i];
+                            return `
+                            <div class="step ${isCompleted ? 'completed' : ''} ${isActive ? 'active' : ''}">
+                                <div class="step-icon">${isCompleted ? '✓' : icon}</div>
+                                <div class="step-label">${step}</div>
+                            </div>`;
+                        }).join('')}
+                    </div>
+                </div>
+                
+                ${order.products && order.products.length > 0 ? `
+        <div class="order-products-section">
+            <details class="product-details">
+                <summary>
+                    Visualizza dettagli prodotti (${articoli} ${plural})
+                </summary>
+                <div class="products-list">
+                    ${order.products.map(p => {
+                        let cleanName = p.name || 'Prodotto';
+                        let imageUrl = p.image || '';
+
+                        // Rimuovi varianti dal nome
+                        if (cleanName.includes(' - ')) {
+                            cleanName = cleanName.split(' - ')[0].trim();
+                        }
+
+                        return `
+                        <div class="product-item" style="display:flex; align-items:center; gap:16px; padding:16px; background:rgba(9,9,11,0.4); border-radius:12px; margin-bottom:8px;">
+                            ${imageUrl ? `
+                            <div style="width:64px; height:80px; border-radius:8px; overflow:hidden; flex-shrink:0; background:#18181b;">
+                                <img src="${imageUrl}" alt="${cleanName}" style="width:100%; height:100%; object-fit:cover;">
+                            </div>` : ''}
+                            <div style="flex:1;">
+                                <div class="product-name" style="font-weight:500; margin-bottom:6px;">${cleanName}</div>
+                                <div class="product-category" style="font-size:0.9rem; color:#10b981; font-weight:500;">
+                                    📂 ${orderCategory}
+                                </div>
+                            </div>
+                            <div style="font-weight:bold; color:#34d399; margin:0 12px;">× ${p.quantity || 1}</div>
+                            <div style="font-weight:600;">€ ${formatPrice(p.price)}</div>
+                        </div>`;
+                    }).join('')}
+                </div>
+            </details>
         </div>
-    </details>
-</div>
-` : ''}
-    </div>`;
-}
+        ` : ''}
+            </div>`;
+        }
 
 // ==================================================================
 // UTILITY FUNCTIONS
