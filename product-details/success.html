@@ -870,7 +870,7 @@
             <div class="info-card">
                 <span class="info-icon">📅</span>
                 <div class="info-label">Consegna Prevista</div>
-                <div class="info-value">8-9 Novembre 2024</div>
+                <div class="info-value">Caricamento...</div>
             </div>
             <div class="info-card">
                 <span class="info-icon">💳</span>
@@ -965,6 +965,7 @@
             </div>
         </div>
     </div>
+    
     <script>
     // CONFIGURAZIONE
 const webAppUrl = 'https://script.google.com/macros/s/AKfycbyUh0VScOtnTLHHIRrOeuDGugp0ynQLNjHue7PcP2JEoOQ5x2ZyuTVFdpaUHh6DGFE/exec';
@@ -973,7 +974,7 @@ let loadTimeout;
 let startTime;
 let emailSent = false; // Flag per evitare invii duplicati
 
-// Status messages (invariati)
+// Status messages che appaiono in sequenza durante il caricamento
 const statusMessages = [
     { icon: '🔒', text: 'Verifica del pagamento...', duration: 1500 },
     { icon: '✓', text: 'Pagamento confermato con successo', duration: 1500 },
@@ -1050,15 +1051,14 @@ function updateStatusMessage() {
     }, 300);
 }
 
-// 🆕 FUNZIONE PER INVIARE LA FATTURA VIA EMAIL (Fetch-first)
-async function sendInvoiceEmail() {
+// 🆕 FUNZIONE PER INVIARE LA FATTURA VIA EMAIL (con fallback fetch)
+function sendInvoiceEmail() {
     if (emailSent) {
         console.log('Email già inviata, skip');
         return;
     }
-    emailSent = true; // Imposta flag all'inizio
     
-    console.log('📧 Tentativo invio email (Fetch)...');
+    console.log('📧 Tentativo invio email (JSONP)...');
     
     const urlParams = new URLSearchParams(window.location.search);
     const sessionId = urlParams.get('session_id');
@@ -1070,12 +1070,7 @@ async function sendInvoiceEmail() {
     }
     
     // Raccogli i dati dell'ordine da localStorage
-    const cart = JSON.parse(localStorage.getItem('lh360_cart') || '[]')
-    if (cart.length === 0) {
-        console.warn('⚠️ Cart vuoto, invio email annullato.');
-        return;
-    }
-
+    const cart = JSON.parse(localStorage.getItem('lh360_cart') || '[]');
     const subtotal = cart.reduce((sum, item) => sum + (item.price * (item.qty || 1)), 0);
     const shipping = subtotal >= 150 ? 0 : 15;
     const total = subtotal + shipping;
@@ -1104,24 +1099,82 @@ async function sendInvoiceEmail() {
         subtotal: invoiceData.subtotal,
         shipping: invoiceData.shipping,
         total: invoiceData.total,
-        t: Date.now(),
-        callback: '__FETCH_CB' // Usa dummy callback per fetch
+        t: Date.now()
     });
     
+    // Chiamata JSONP all'endpoint
+    const callbackName = 'handleEmailResponse_' + Date.now();
+    params.set('callback', callbackName);
+    
+    const script = document.createElement('script');
+    script.src = `${webAppUrl}?${params.toString()}`;
+
+    const cleanup = () => {
+        try { if (script.parentNode) document.body.removeChild(script); } catch (e) {}
+        try { delete window[callbackName]; } catch (e) {}
+    };
+
+    const fallback = () => {
+        if (emailSent) return; // Non eseguire se JSONP ha già avuto successo
+        console.warn('JSONP per email fallito, tento con fetch...');
+        
+        // Imposta il flag per evitare doppi invii
+        emailSent = true; 
+        cleanup();
+        
+        // Tenta con il nuovo metodo fetch
+        trySendEmailWithFetch(params);
+    };
+
+    window[callbackName] = function(response) {
+        if (emailSent) return; // Già gestito (es. dal fallback)
+        emailSent = true;
+        
+        console.log('✅ Risposta invio email (JSONP):', response);
+        if (response && response.success) {
+            console.log('✅ Fattura inviata (JSONP) a:', response.email);
+        } else {
+            console.error('❌ Errore invio email (JSONP):', response?.error || 'Unknown error');
+        }
+        cleanup();
+    };
+    
+    script.onerror = fallback;
+    document.body.appendChild(script);
+    
+    // Timeout di sicurezza
+    setTimeout(fallback, 10000); // Se JSONP non risponde in 10s, usa fetch
+}
+
+// 🆕 FUNZIONE FALLBACK PER INVIO EMAIL TRAMITE FETCH
+async function trySendEmailWithFetch(params) {
     try {
+        // Rimuovi 'callback' e aggiungi un dummy per il parsing del server
+        params.delete('callback');
+        params.set('callback', '__FETCH_CB');
+        
         const fetchUrl = `${webAppUrl}?${params.toString()}`;
-        const res = await fetch(fetchUrl, { 
-            method: 'GET', 
-            cache: 'no-store',
-            signal: AbortSignal.timeout(10000) // 10s timeout
-        });
+        const res = await fetch(fetchUrl, { method: 'GET', cache: 'no-store' });
         
         if (!res.ok) {
-            throw new Error(`Server response not OK: ${res.status}`);
+            console.warn('Fetch fallback email response not ok', res.status);
+            return;
         }
         
-        const parsed = await res.json();
+        const text = await res.text();
+        // Estrai il JSON dalla risposta JSONP
+        const start = text.indexOf('(');
+        const end = text.lastIndexOf(')');
         
+        if (start === -1 || end === -1) {
+            console.warn('Fetch fallback email risposta non valida', text);
+            return;
+        }
+        
+        const jsonStr = text.substring(start + 1, end);
+        const parsed = JSON.parse(jsonStr);
+        
+        // Logga il successo da fetch
         console.log('✅ Risposta invio email (Fetch):', parsed);
         if (parsed && parsed.success) {
             console.log('✅ Fattura inviata (Fetch) a:', parsed.email);
@@ -1130,11 +1183,9 @@ async function sendInvoiceEmail() {
         }
         
     } catch (e) {
-        console.error('❌ Eccezione Fetch invio email:', e);
-        // Non c'è fallback, il JSONP falliva comunque.
+        console.error('❌ Eccezione Fetch fallback email:', e);
     }
 }
-
 
 function completeLoadingSequence() {
     clearTimeout(loadTimeout);
@@ -1189,8 +1240,7 @@ function setupButtons() {
 }
 
 // ---------- Robust JSONP loader with retries and fetch fallback ----------
-// *** MODIFICATO: Riscritto come Fetch-first ***
-async function loadOrderDetails() {
+function loadOrderDetails(maxRetries = 3) {
     const urlParams = new URLSearchParams(window.location.search);
     const sessionId = urlParams.get('session_id');
     const orderIdParam = urlParams.get('id_ordine');
@@ -1206,73 +1256,110 @@ async function loadOrderDetails() {
     if (!sessionId) {
         if (emailElem) emailElem.textContent = 'Non disponibile';
         if (paymentElem) paymentElem.textContent = 'Non disponibile';
-        console.warn('Nessun session_id, caricamento dettagli annullato.');
         completeLoadingSequence();
         return;
     }
 
-    try {
-        const fetchUrl = `${webAppUrl}?get_details=1&session_id=${encodeURIComponent(sessionId)}&callback=__FETCH_CB&t=${Date.now()}`;
-        const res = await fetch(fetchUrl, { 
-            method: 'GET', 
-            cache: 'no-store',
-            signal: AbortSignal.timeout(8000) // 8s timeout
-        });
-
-        if (!res.ok) {
-            throw new Error(`Server response not OK: ${res.status}`);
-        }
-
-        const responseData = await res.json();
-        console.log('✅ Dettagli ordine caricati via Fetch:', responseData);
-        handleDetailsResponse(responseData); // Chiama handler esistente
-
-    } catch (err) {
-        console.error('❌ Fetch loadOrderDetails fallito:', err);
-        // Fallback a JSONP (versione semplificata)
-        console.warn('Riprovo con JSONP...');
-        loadOrderDetails_JSONP_Fallback(sessionId, emailElem, paymentElem);
-    }
-}
-
-// Fallback JSONP per loadOrderDetails
-function loadOrderDetails_JSONP_Fallback(sessionId, emailElem, paymentElem) {
+    let attempts = 0;
     let finished = false;
-    const callbackName = 'handleDetailsResponse_' + Date.now();
-    const script = document.createElement('script');
-    const src = `${webAppUrl}?get_details=1&session_id=${encodeURIComponent(sessionId)}&callback=${callbackName}&t=${Date.now()}`;
-    script.src = src;
-    script.async = true;
 
-    const cleanup = () => {
-        try { if (script.parentNode) script.parentNode.removeChild(script); } catch (e) {}
-        try { delete window[callbackName]; } catch (e) {}
-    };
-
-    window[callbackName] = function(response) {
-        if (finished) { cleanup(); return; }
-        finished = true;
-        cleanup();
-        handleDetailsResponse(response);
-    };
-
-    script.onerror = function() {
+    function tryRequest() {
         if (finished) return;
-        cleanup();
-        console.error('❌ Fallback JSONP fallito. Mostro contenuto parziale.');
-        if (emailElem) emailElem.textContent = 'Non disponibile';
-        if (paymentElem) paymentElem.textContent = 'Non disponibile';
-        completeLoadingSequence();
-    };
+        attempts++;
+        const callbackName = 'handleDetailsResponse_' + Date.now() + '_' + Math.floor(Math.random() * 10000);
+        const script = document.createElement('script');
+        const src = `${webAppUrl}?get_details=1&session_id=${encodeURIComponent(sessionId)}&callback=${callbackName}&t=${Date.now()}`;
+        script.src = src;
+        script.async = true;
 
-    document.body.appendChild(script);
-    setTimeout(() => {
-        if (!finished) {
-            script.onerror(); // Trigger manuale errore su timeout
+        const cleanup = () => {
+            try { if (script.parentNode) script.parentNode.removeChild(script); } catch (e) {}
+            try { delete window[callbackName]; } catch (e) {}
+        };
+
+        window[callbackName] = function(response) {
+            if (finished) { cleanup(); return; }
+            finished = true;
+            cleanup();
+            handleDetailsResponse(response);
+        };
+
+        script.onerror = function() {
+            cleanup();
+            if (attempts <= maxRetries) {
+                console.warn('JSONP load error, retrying...', attempts);
+                setTimeout(tryRequest, 1200 + attempts * 300);
+            } else {
+                tryFetchFallback().then(resp => {
+                    if (resp) {
+                        finished = true;
+                        handleDetailsResponse(resp);
+                    } else {
+                        console.warn('Fallback fetch failed. Mostriamo contenuto parziale.');
+                        if (emailElem) emailElem.textContent = 'Non disponibile';
+                        if (paymentElem) paymentElem.textContent = 'Non disponibile';
+                        completeLoadingSequence();
+                    }
+                }).catch(err => {
+                    console.warn('Fallback fetch exception', err);
+                    if (emailElem) emailElem.textContent = 'Non disponibile';
+                    if (paymentElem) paymentElem.textContent = 'Non disponibile';
+                    completeLoadingSequence();
+                });
+            }
+        };
+
+        document.body.appendChild(script);
+
+        setTimeout(() => {
+            if (!finished) {
+                try { cleanup(); } catch (e) {}
+                if (attempts <= maxRetries) {
+                    console.warn('JSONP timeout, retrying...', attempts);
+                    setTimeout(tryRequest, 800 + attempts * 200);
+                } else {
+                    tryFetchFallback().then(resp => {
+                        if (resp) {
+                            finished = true;
+                            handleDetailsResponse(resp);
+                        } else {
+                            if (emailElem) emailElem.textContent = 'Non disponibile';
+                            if (paymentElem) paymentElem.textContent = 'Non disponibile';
+                            completeLoadingSequence();
+                        }
+                    }).catch(err => {
+                        if (emailElem) emailElem.textContent = 'Non disponibile';
+                        if (paymentElem) paymentElem.textContent = 'Non disponibile';
+                        completeLoadingSequence();
+                    });
+                }
+            }
+        }, 5000);
+    }
+
+    async function tryFetchFallback() {
+        try {
+            const fetchUrl = `${webAppUrl}?get_details=1&session_id=${encodeURIComponent(sessionId)}&callback=__FALLBACK_CB&no_cache=${Date.now()}`;
+            const res = await fetch(fetchUrl, { method: 'GET', cache: 'no-store' });
+            if (!res.ok) {
+                console.warn('Fetch fallback response not ok', res.status);
+                return null;
+            }
+            const text = await res.text();
+            const start = text.indexOf('(');
+            const end = text.lastIndexOf(')');
+            if (start === -1 || end === -1) return null;
+            const jsonStr = text.substring(start + 1, end);
+            const parsed = JSON.parse(jsonStr);
+            return parsed;
+        } catch (e) {
+            console.warn('Fetch fallback failed (CORS/network?)', e);
+            return null;
         }
-    }, 5000);
-}
+    }
 
+    tryRequest();
+}
 
 // ---------- Handler globale con logica dinamica tracking ----------
 window.handleDetailsResponse = function(response) {
@@ -1286,10 +1373,6 @@ window.handleDetailsResponse = function(response) {
     if (response && !response.error) {
         if (response.email && emailElem) {
             emailElem.textContent = response.email;
-
-            // *** NUOVO: Salva email per tracking futuro ***
-            localStorage.setItem('lh360_user_email', response.email);
-            console.log('📧 Email salvata per tracking:', response.email);
         }
         if (paymentElem) {
             if (response.last4) {
@@ -1329,46 +1412,33 @@ window.handleDetailsResponse = function(response) {
 
     // Salva ordine in localStorage per tracking
     if (currentOrderId) {
-        // *** FIX PROBLEMA 2: Leggi carrello QUI ***
         const cart = JSON.parse(localStorage.getItem('lh360_cart') || '[]');
-        
-        // *** FIX PROBLEMA 2: Controlla se carrello è vuoto ***
-        if (cart.length > 0) {
-            const subtotal = cart.reduce((sum, item) => sum + (item.price * (item.qty || 1)), 0);
-            const shipping = subtotal >= 150 ? 0 : 15;
-            const total = subtotal + shipping;
-            const today = new Date();
-            const formattedDate = today.toLocaleDateString('it-IT', {
-                day: 'numeric',
-                month: 'long',
-                year: 'numeric'
-            });
-
-            // *** FIX PROBLEMA 2: Aggiunto campo 'articoli' ***
-            const totalQty = cart.reduce((sum, item) => sum + (item.qty || 1), 0);
-            
-            const orderDetails = {
-                id: currentOrderId,
-                data: formattedDate,
-                stato: 'In Preparazione', // Stato iniziale
-                totale: total.toFixed(2),
-                consegna_prevista: calculateDeliveryDate(3),
-                products: cart.map(item => ({
-                    name: item.title || 'Prodotto',
-                    quantity: item.qty || 1,
-                    price: item.price || 0,
-                    image: item.image || ''
-                })),
-                email: response?.email || '',
-                timestamp: confirmedTime,
-                articoli: totalQty // *** CAMPO AGGIUNTO ***
-            };
-            
-            localStorage.setItem('lh360_pending_order', JSON.stringify(orderDetails));
-            console.log('✅ Ordine salvato in localStorage per tracking immediato:', orderDetails);
-        } else {
-            console.warn('🛒 Carrello vuoto rilevato in handleDetailsResponse. Evito di sovrascrivere lh360_pending_order. (Probabile refresh pagina)');
-        }
+        const subtotal = cart.reduce((sum, item) => sum + (item.price * (item.qty || 1)), 0);
+        const shipping = subtotal >= 150 ? 0 : 15;
+        const total = subtotal + shipping;
+        const today = new Date();
+        const formattedDate = today.toLocaleDateString('it-IT', {
+            day: 'numeric',
+            month: 'long',
+            year: 'numeric'
+        });
+        const orderDetails = {
+            id: currentOrderId,
+            data: formattedDate,
+            stato: 'In Preparazione',
+            totale: total.toFixed(2),
+            consegna_prevista: calculateDeliveryDate(3),
+            products: cart.map(item => ({
+                name: item.title || 'Prodotto',
+                quantity: item.qty || 1,
+                price: item.price || 0,
+                image: item.image || ''
+            })),
+            email: response?.email || '',
+            timestamp: confirmedTime
+        };
+        localStorage.setItem('lh360_pending_order', JSON.stringify(orderDetails));
+        console.log('✅ Ordine salvato in localStorage per tracking immediato:', orderDetails);
     }
 
     fetchOrderTrackingData(currentOrderId, confirmedTime, deliveryElem);
@@ -1386,49 +1456,45 @@ window.handleDetailsResponse = function(response) {
     completeLoadingSequence();
 };
 
-// *** MODIFICATO: Riscritto come Fetch-first ***
-async function fetchOrderTrackingData(orderId, confirmedTime, deliveryElem) {
+function fetchOrderTrackingData(orderId, confirmedTime, deliveryElem) {
     if (!orderId) {
         console.warn('Nessun orderId disponibile per recupero dati tracking');
         updateTimelineWithDefaults(confirmedTime, deliveryElem);
         return;
     }
 
-    try {
-        const fetchUrl = `${webAppUrl}?action=get_orders&callback=__FETCH_CB&t=${Date.now()}`;
-        const res = await fetch(fetchUrl, {
-            method: 'GET',
-            cache: 'no-store',
-            signal: AbortSignal.timeout(8000) // 8s timeout
-        });
+    const callbackName = 'handleOrderTracking_' + Date.now();
+    const script = document.createElement('script');
+    script.src = `${webAppUrl}?action=get_orders&callback=${callbackName}&t=${Date.now()}`;
 
-        if (!res.ok) {
-            throw new Error(`Server response not OK: ${res.status}`);
-        }
-
-        const response = await res.json();
+    window[callbackName] = function(response) {
+        try { if (script.parentNode) document.body.removeChild(script); } catch(e){}
+        try { delete window[callbackName]; } catch(e){}
 
         if (response && response.orders && Array.isArray(response.orders)) {
             const order = response.orders.find(o => o.id === orderId);
             if (order) {
-                console.log('✅ Dati ordine recuperati da Order Tracking (Fetch):', order);
+                console.log('✅ Dati ordine recuperati da Order Tracking:', order);
                 updateTimelineFromOrderData(order, confirmedTime, deliveryElem);
                 return;
             }
         }
         
-        console.warn('Ordine non trovato in Order Tracking (Fetch), uso dati predefiniti');
+        console.warn('Ordine non trovato in Order Tracking, uso dati predefiniti');
         updateTimelineWithDefaults(confirmedTime, deliveryElem);
+    };
 
-    } catch (err) {
-        console.error('❌ Errore caricamento dati tracking (Fetch):', err);
-        console.warn('Uso dati predefiniti.');
+    script.onerror = () => {
+        try { if (script.parentNode) document.body.removeChild(script); } catch(e){}
+        try { delete window[callbackName]; } catch(e){}
+        console.warn('Errore caricamento dati tracking, uso dati predefiniti');
         updateTimelineWithDefaults(confirmedTime, deliveryElem);
-    }
+    };
+
+    document.body.appendChild(script);
 }
 
 function updateTimelineFromOrderData(order, confirmedTime, deliveryElem) {
-    // ... (funzione invariata) ...
     const stato = order.stato || 'In Preparazione';
     const consegnaPrevista = order.consegna_prevista || 'Da definire';
 
@@ -1459,7 +1525,6 @@ function updateTimelineFromOrderData(order, confirmedTime, deliveryElem) {
 }
 
 function updateTimelineWithDefaults(confirmedTime, deliveryElem) {
-    // ... (funzione invariata) ...
     const deliveryDate = calculateDeliveryDate(3);
     const shippingDate = calculateShippingDate(deliveryDate);
     const parsedDelivery = parseItalianDate(deliveryDate);
@@ -1488,7 +1553,6 @@ function updateTimelineWithDefaults(confirmedTime, deliveryElem) {
 }
 
 function mapStatusToStep(stato) {
-    // ... (funzione invariata) ...
     const map = {
         'Confermato': 'confirmed',
         'In Preparazione': 'preparing',
@@ -1499,14 +1563,12 @@ function mapStatusToStep(stato) {
 }
 
 function calculateDeliveryDate(daysFromNow) {
-    // ... (funzione invariata) ...
     const date = new Date();
     date.setDate(date.getDate() + daysFromNow);
     return date.toLocaleDateString('it-IT', { day: 'numeric', month: 'long', year: 'numeric' });
 }
 
 function calculateShippingDate(deliveryDateStr) {
-    // ... (funzione invariata) ...
     if (!deliveryDateStr || deliveryDateStr === 'Da definire') {
         const shippingDate = new Date();
         shippingDate.setDate(shippingDate.getDate() + 1);
@@ -1537,7 +1599,6 @@ function calculateShippingDate(deliveryDateStr) {
 }
 
 function parseItalianDate(dateStr) {
-    // ... (funzione invariata) ...
     if (!dateStr) return null;
     
     const months = {
@@ -1570,7 +1631,6 @@ function parseItalianDate(dateStr) {
 }
 
 function formatShortDate(date, withPrefix = false) {
-    // ... (funzione invariata) ...
     const monthNames = ['Gen', 'Feb', 'Mar', 'Apr', 'Mag', 'Giu', 
                         'Lug', 'Ago', 'Set', 'Ott', 'Nov', 'Dic'];
     
@@ -1582,7 +1642,6 @@ function formatShortDate(date, withPrefix = false) {
 }
 
 function updateTimeline(data) {
-    // ... (funzione invariata) ...
     const steps = {
         confirmed: document.getElementById('step-confirmed'),
         preparing: document.getElementById('step-preparing'),
@@ -1667,7 +1726,6 @@ function updateTimeline(data) {
 }
 
 function loadPurchasedItems() {
-    // ... (funzione invariata) ...
     const cartRaw = localStorage.getItem('lh360_cart');
     const cart = cartRaw ? JSON.parse(cartRaw) : [];
     
