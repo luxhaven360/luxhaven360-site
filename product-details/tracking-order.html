@@ -1028,11 +1028,13 @@ async function loadOrders() {
     const loadingEl = document.getElementById('loadingState');
     const ordersListEl = document.getElementById('ordersList');
     const emptyEl = document.getElementById('emptyState');
+    const recoverySection = document.getElementById('recoverySection');
 
     // Assicuriamoci che lo stato iniziale sia visibile
     if (loadingEl) loadingEl.style.display = 'block';
     if (ordersListEl) ordersListEl.style.display = 'none';
     if (emptyEl) emptyEl.style.display = 'none';
+    if (recoverySection) recoverySection.style.display = 'none';
 
     const urlParams = new URLSearchParams(window.location.search);
     const viewMode = urlParams.get('view');
@@ -1055,33 +1057,64 @@ async function loadOrders() {
 
     console.log('Modalità VISTA: tutti gli ordini (all/default)');
 
-    // --- INIZIO MODIFICA: Recupero Email ---
-    
-    // 1. Recupera l'email
+    // --- MODIFICA RICHIESTA: Controllo preliminare Email ---
     const userEmail = localStorage.getItem('lh360_user_email');
 
-    // 2. LOGICA MODIFICATA:
     if (!userEmail) {
-        console.warn('Nessuna email salvata. Mostro modulo di recupero.');
-        if (loadingEl) loadingEl.style.display = 'none';
+        console.log('Nessuna email salvata. Controllo se esistono ordini attivi nel sistema...');
         
-        // Invece di showEmptyState, mostriamo la Recovery Section
-        const recoverySection = document.getElementById('recoverySection');
-        if (recoverySection) {
-            recoverySection.style.display = 'block';
-            // Assicuriamoci che l'empty state standard sia nascosto
-            if (emptyEl) emptyEl.style.display = 'none'; 
-        } else {
-             // Fallback se per caso non c'è l'HTML
-             showEmptyState('Nessun ordine trovato', 'Effettua un ordine per visualizzare qui il tracking.');
+        // Chiamata per verificare se ci sono ordini attivi in generale
+        try {
+            const checkUrl = `${WEB_APP_URL}?get_active_count=1&callback=cb_ignore&t=${Date.now()}`;
+            
+            // Usiamo fetch con credentials: 'omit' per coerenza
+            const checkResp = await fetch(checkUrl, { 
+                method: 'GET', 
+                credentials: 'omit', 
+                redirect: 'follow' 
+            });
+
+            if (checkResp.ok) {
+                const text = await checkResp.text();
+                // Parsing JSONP (cb_ignore({...}))
+                const jsonMatch = text.match(/^\s*cb_ignore\s*\(([\s\S]*)\)\s*;?\s*$/);
+                
+                if (jsonMatch && jsonMatch[1]) {
+                    const data = JSON.parse(jsonMatch[1]);
+                    
+                    if (data && data.count > 0) {
+                        // CI SONO ordini attivi -> Mostra modulo recupero
+                        console.log(`Trovati ${data.count} ordini attivi globali. Mostro recupero.`);
+                        if (loadingEl) loadingEl.style.display = 'none';
+                        if (recoverySection) recoverySection.style.display = 'block';
+                    } else {
+                        // NON CI SONO ordini attivi -> Mostra stato vuoto
+                        console.log('Nessun ordine attivo globale. Mostro empty state.');
+                        if (loadingEl) loadingEl.style.display = 'none';
+                        showEmptyState('Nessun ordine trovato', 'Effettua un ordine per visualizzare qui il tracking.');
+                    }
+                } else {
+                    // Fallback in caso di parse fallito: mostra recupero per sicurezza
+                    console.warn('Parse JSONP fallito durante check ordini. Mostro recupero.');
+                    if (loadingEl) loadingEl.style.display = 'none';
+                    if (recoverySection) recoverySection.style.display = 'block';
+                }
+            } else {
+                 throw new Error('Network response was not ok during check');
+            }
+        } catch (e) {
+            // Errore check: mostra recupero per non bloccare l'utente in caso di problemi di rete
+            console.error('Errore durante check ordini attivi:', e);
+            if (loadingEl) loadingEl.style.display = 'none';
+            if (recoverySection) recoverySection.style.display = 'block';
         }
         
         ordersRendered = true;
         return; 
     }
 
+    // Se l'email c'è, proseguiamo col caricamento normale
     console.log('🔍 Ricerca ordini per email:', userEmail);
-    // --- FINE MODIFICA ---
 
     const pendingOrders = getPendingOrdersFromLocalStorage();
 
@@ -1090,16 +1123,13 @@ async function loadOrders() {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), TIMEOUT_MS);
 
-    // --- INIZIO MODIFICA: Costruzione URL con Email ---
     const params = new URLSearchParams({
         action: 'get_orders',
-        email: userEmail, // Qui passiamo l'email al backend
+        email: userEmail, 
         t: Date.now()
     });
 
-    // URL aggiornato con i parametri
     const requestUrl = `${WEB_APP_URL}?${params.toString()}`;
-    // --- FINE MODIFICA ---
 
     try {
         console.log('Eseguo fetch verso', requestUrl);
@@ -1227,11 +1257,6 @@ function getPendingOrdersFromLocalStorage() {
     }
     return orders;
 }
-
-/**
- * Funzione RIMOSSA (ora la sua logica è in loadOrders)
- * function loadFromLocalStorage() { ... }
- */
 
 /**
  * Renderizza la lista di ordini
