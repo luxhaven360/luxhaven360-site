@@ -834,30 +834,53 @@
             }
         }
 
-        /* --- AGGIUNTA CSS PER STELLE COMPATTE E FIX GLITCH --- */
+        /* --- AGGIUNGI O SOSTITUISCI QUESTO CSS NEL BLOCCO <style> --- */
 
-/* Fix per evitare lo zoom al click */
+/* Fix per evitare lo zoom/glitch al click sulle stelle */
 .rating-selector {
-    transform: none !important; /* Forza la rimozione dello scale */
+    transform: none !important;
     transition: none !important;
+    display: flex;
+    gap: 0.25rem;
+    align-items: center;
+    cursor: pointer;
 }
 .rating-selector:active, .rating-selector:hover {
     transform: none !important;
 }
 
-/* Stelle compatte visualizzazione */
+/* Stelle nel form di input */
+.rating-star {
+    font-size: 2rem;
+    color: #27272a;
+    position: relative;
+    transition: color 0.2s;
+    display: inline-block;
+}
+.rating-star.full { color: #fbbf24; }
+.rating-star.half { color: #27272a; }
+.rating-star.half::before {
+    content: '★';
+    position: absolute;
+    left: 0; top: 0; width: 50%;
+    overflow: hidden; color: #fbbf24;
+    pointer-events: none;
+}
+.rating-star:hover { transform: scale(1.1); } /* Hover leggero solo sulla singola stella */
+
+/* Stelle compatte per la lista recensioni (es: ★★⯪☆☆) */
 .stars-compact {
-    font-family: "Segoe UI Symbol", "DejaVu Sans", sans-serif; /* Font che supportano caratteri speciali */
-    letter-spacing: -2px; /* Riduce lo spazio tra le stelle */
+    font-family: "Segoe UI Symbol", "DejaVu Sans", sans-serif;
+    letter-spacing: -2px;
     color: #fbbf24;
     font-size: 1.2rem;
 }
 
-/* Stile data esteso */
+/* Data formattata (es: 5 dicembre 2025) */
 .review-date {
     font-size: 0.85rem;
     color: #a1a1aa;
-    text-transform: capitalize; /* Rende maiuscola la prima lettera del mese */
+    text-transform: capitalize;
 }
     </style>
     <script src="https://unpkg.com/dompurify@2.4.0/dist/purify.min.js"></script>
@@ -1047,31 +1070,24 @@
             return new URLSearchParams(window.location.search).get(name);
         }
 
-        /* --- HELPER FORMATTAZIONE --- */
+        /* --- NUOVE FUNZIONI HELPER --- */
 
-// Genera la data in formato "5 dicembre 2025"
+// Formatta data: "5 dicembre 2025"
 function formatDateExtended(dateInput) {
     if (!dateInput) return '';
     const d = new Date(dateInput);
-    if (isNaN(d.getTime())) return dateInput; // Ritorna stringa originale se non parsabile
-    
-    return d.toLocaleDateString('it-IT', {
-        day: 'numeric',
-        month: 'long',
-        year: 'numeric'
-    });
+    if (isNaN(d.getTime())) return dateInput; 
+    return d.toLocaleDateString('it-IT', { day: 'numeric', month: 'long', year: 'numeric' });
 }
 
-// Genera le stelle compatte usando i caratteri Unicode richiesti
+// Genera stelle compatte: "★★⯪☆☆"
 function generateCompactStars(rating) {
     const val = parseFloat(rating);
     const full = Math.floor(val);
     const hasHalf = (val - full) >= 0.5;
     const empty = 5 - full - (hasHalf ? 1 : 0);
-
-    // Caratteri: ★ (piena), ⯪ (mezza sinistra), ☆ (vuota)
-    let str = '';
-    str += '★'.repeat(full);
+    
+    let str = '★'.repeat(full);
     if (hasHalf) str += '⯪';
     str += '☆'.repeat(empty);
     
@@ -1349,20 +1365,14 @@ function generateCompactStars(rating) {
             }
         }
 
-        /**
-         * Visualizza le recensioni nella pagina
-         */
-        function displayReviews(reviews) {
+        /* --- FUNZIONI PRINCIPALI CORRETTE --- */
+
+function displayReviews(reviews) {
     const container = document.getElementById('reviewsList');
     if (!container) return;
 
     if (reviews.length === 0) {
-        container.innerHTML = `
-            <div class="no-reviews">
-                <div class="no-reviews-icon">★</div>
-                <p>Nessuna recensione ancora. Sii il primo a recensire questo prodotto!</p>
-            </div>
-        `;
+        container.innerHTML = `<div class="no-reviews"><div class="no-reviews-icon">★</div><p>Nessuna recensione ancora. Sii il primo!</p></div>`;
         updateReviewsSummary(0, 0, {});
         return;
     }
@@ -1372,12 +1382,8 @@ function generateCompactStars(rating) {
     const totalRating = reviews.reduce((sum, r) => sum + parseFloat(r.rating), 0);
     const averageRating = totalReviews > 0 ? (totalRating / totalReviews) : 0;
     
-    // Distribuzione
     const distribution = { 5: 0, 4: 0, 3: 0, 2: 0, 1: 0 };
     reviews.forEach(r => {
-        let star = Math.floor(r.rating);
-        if (r.rating - star >= 0.5) star += 0.5; // Arrotonda per statistica se serve, o usa Math.round
-        // Semplificazione: aggreghiamo le mezze stelle all'intero inferiore o superiore per la barra
         const bucket = Math.round(r.rating); 
         if (distribution[bucket] !== undefined) distribution[bucket]++;
     });
@@ -1389,22 +1395,18 @@ function generateCompactStars(rating) {
         const reviewEl = document.createElement('div');
         reviewEl.className = 'review-item';
         
-        // Usa le nuove funzioni di formattazione
-        const dateFormatted = formatDateExtended(review.date);
-        const starsHtml = generateCompactStars(review.rating);
-        
+        // Uso helpers per data e stelle
         reviewEl.innerHTML = `
             <div class="review-header">
                 <div>
                     <div class="review-author">${safeText(review.name)}</div>
-                    <div class="review-date">${dateFormatted}</div>
+                    <div class="review-date">${formatDateExtended(review.date)}</div>
                 </div>
-                <div>${starsHtml}</div>
+                <div>${generateCompactStars(review.rating)}</div>
             </div>
             ${review.title ? `<div class="review-title">${safeText(review.title)}</div>` : ''}
             <p class="review-text">${safeText(review.comment)}</p>
         `;
-        
         container.appendChild(reviewEl);
     });
 }
@@ -1445,55 +1447,38 @@ function setupReviewForm() {
     const container = document.getElementById('ratingSelector');
     const stars = container.querySelectorAll('.rating-star');
     
-    // Funzione helper per colorare le stelle nel form
     function updateStarVisuals(rating) {
         stars.forEach((star, index) => {
             const starValue = index + 1;
-            star.className = 'rating-star'; // Reset classi
-            
-            if (rating >= starValue) {
-                star.classList.add('full');
-            } else if (rating >= starValue - 0.5) {
-                star.classList.add('half');
-            }
+            star.className = 'rating-star'; 
+            if (rating >= starValue) star.classList.add('full');
+            else if (rating >= starValue - 0.5) star.classList.add('half');
         });
     }
 
-    // Gestione Hover e Click
     stars.forEach((star, index) => {
-        // Movimento mouse: anteprima del voto
         star.addEventListener('mousemove', (e) => {
             const rect = star.getBoundingClientRect();
             const isLeftHalf = (e.clientX - rect.left) < (rect.width / 2);
-            const currentHoverRating = (index + 1) - (isLeftHalf ? 0.5 : 0);
-            
-            updateStarVisuals(currentHoverRating);
+            updateStarVisuals((index + 1) - (isLeftHalf ? 0.5 : 0));
         });
 
-        // Click: conferma il voto
         star.addEventListener('click', (e) => {
-        const rect = star.getBoundingClientRect();
-        const isLeftHalf = (e.clientX - rect.left) < (rect.width / 2);
-        selectedReviewRating = (index + 1) - (isLeftHalf ? 0.5 : 0);
-    
-        // RIMOSSO: container.style.transform = "scale(1.1)"; 
-       // RIMOSSO: setTimeout(...)
-     });
+            const rect = star.getBoundingClientRect();
+            const isLeftHalf = (e.clientX - rect.left) < (rect.width / 2);
+            selectedReviewRating = (index + 1) - (isLeftHalf ? 0.5 : 0);
+            // NOTA: Nessuna animazione qui per evitare glitch
+        });
+    }); // <--- QUESTA ERA LA CHIUSURA MANCANTE CHE CAUSAVA L'ERRORE!
 
-    // Uscita dal container: ripristina il voto selezionato (o 0 se nessuno)
     container.addEventListener('mouseleave', () => {
         updateStarVisuals(selectedReviewRating);
     });
 
-    // Form submit
     const form = document.getElementById('reviewForm');
     form.addEventListener('submit', async (e) => {
         e.preventDefault();
-        
-        if (selectedReviewRating === 0) {
-            alert('Seleziona una valutazione con le stelle');
-            return;
-        }
+        if (selectedReviewRating === 0) { alert('Seleziona una valutazione'); return; }
 
         const submitBtn = document.getElementById('submitReviewBtn');
         submitBtn.disabled = true;
@@ -1504,54 +1489,42 @@ function setupReviewForm() {
             sku: currentProductSku,
             name: document.getElementById('reviewName').value,
             email: document.getElementById('reviewEmail').value,
-            rating: selectedReviewRating, // Ora supporta decimali (es. 4.5)
+            rating: selectedReviewRating,
             title: document.getElementById('reviewTitle').value,
             comment: document.getElementById('reviewComment').value
         };
 
         try {
             const params = new URLSearchParams(formData).toString();
-            // Aggiungiamo un timestamp per evitare cache del browser sulla richiesta
             const url = `${REVIEWS_API_URL}?${params}&callback=handleSubmitResponse&_=${Date.now()}`;
-            
             const script = document.createElement('script');
             script.src = url;
-            // Gestione errore script (es. blocco rete)
-            script.onerror = () => {
-                alert('Errore di connessione. Riprova.');
-                submitBtn.disabled = false;
-                submitBtn.textContent = 'Pubblica Recensione';
-            };
+            script.onerror = () => { alert('Errore connessione'); submitBtn.disabled = false; submitBtn.textContent = 'Pubblica Recensione'; };
             document.body.appendChild(script);
-            
         } catch (error) {
-            console.error('Errore invio recensione:', error);
-            alert('Errore durante l\'invio. Riprova più tardi.');
+            console.error(error);
             submitBtn.disabled = false;
             submitBtn.textContent = 'Pubblica Recensione';
         }
     });
 }
 
-        /**
- * Callback per invio recensione
- */
 function handleSubmitResponse(response) {
     const submitBtn = document.getElementById('submitReviewBtn');
     submitBtn.disabled = false;
     submitBtn.textContent = 'Pubblica Recensione';
 
     if (response.success) {
-        alert('✅ Recensione inviata con successo!');
+        alert('✅ Recensione inviata!');
 
-        // 1. Dati della nuova recensione
+        // 1. Dati per aggiornamento immediato (Optimistic UI)
         const nameVal = document.getElementById('reviewName').value;
         const titleVal = document.getElementById('reviewTitle').value;
         const commentVal = document.getElementById('reviewComment').value;
         const ratingVal = selectedReviewRating;
-        const now = new Date(); // Data attuale
+        const now = new Date(); 
 
-        // 2. Aggiorna DOM Lista Recensioni (Optimistic UI)
+        // 2. Inserisci nuova recensione in cima alla lista
         const container = document.getElementById('reviewsList');
         const noReviewsMsg = container.querySelector('.no-reviews');
         if (noReviewsMsg) noReviewsMsg.remove();
@@ -1573,42 +1546,13 @@ function handleSubmitResponse(response) {
         `;
         container.insertBefore(reviewEl, container.firstChild);
 
-        // 3. Aggiorna Statistiche in Tempo Reale
-        const countEl = document.getElementById('reviewsCount');
-        const numberEl = document.getElementById('ratingNumber');
-        
-        // Leggi valori attuali
-        let currentCount = 0;
-        let currentAvg = 0;
-        
-        if (countEl && countEl.textContent) {
-             const match = countEl.textContent.match(/(\d+)/);
-             if (match) currentCount = parseInt(match[0]);
-        }
-        if (numberEl) {
-             currentAvg = parseFloat(numberEl.textContent) || 0;
-        }
-
-        // Calcola nuovi totali
-        const newCount = currentCount + 1;
-        // Formula media cumulativa: ((vecchia_media * vecchi_count) + nuovo_voto) / nuovo_count
-        const newAvg = ((currentAvg * currentCount) + ratingVal) / newCount;
-
-        // Scrivi nel DOM
-        updateReviewsSummary(newAvg, newCount, null); // Passiamo null distribution per ora o ricalcolala se necessario
-        
-        // Aggiorna barre distribuzione (logica semplificata per UI immediata)
-        // Nota: per un aggiornamento barre perfetto servirebbe leggere lo stato attuale delle barre, 
-        // ma per ora aggiornare il numero e le stelle principali è la priorità visiva.
-        
-        // Reset form
+        // 3. Reset totale
         document.getElementById('reviewForm').reset();
         selectedReviewRating = 0;
         document.querySelectorAll('#ratingSelector .rating-star').forEach(s => { 
-            s.classList.remove('full'); 
-            s.classList.remove('half'); 
+            s.classList.remove('full'); s.classList.remove('half'); 
         });
-
+        
     } else {
         alert('❌ ' + (response.error || 'Errore durante l\'invio.'));
     }
@@ -1790,6 +1734,7 @@ function handleSubmitResponse(response) {
     </script>
 </body>
 </html>
+
 
 
 
