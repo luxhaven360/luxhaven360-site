@@ -590,21 +590,47 @@
             font-family: inherit;
         }
 
-        /* Rating selector premium */
-        .rating-selector {
-            display: flex;
-            gap: 0.5rem;
-            align-items: center;
-        }
+        /* --- SOSTITUISCI LA SEZIONE .rating-selector ESISTENTE CON QUESTA --- */
 
-        .rating-star {
-            font-size: 2rem;
-            color: #27272a;
-            cursor: pointer;
-            transition: all 0.3s;
-        }
+.rating-selector {
+    display: flex;
+    gap: 0.25rem; /* Ridotto gap per facilitare il passaggio tra stelle */
+    align-items: center;
+    cursor: pointer;
+}
 
-        .rating-star:hover,
+.rating-star {
+    font-size: 2rem;
+    color: #27272a; /* Colore stella vuota */
+    position: relative;
+    transition: color 0.2s;
+    display: inline-block;
+}
+
+/* Stella Piena */
+.rating-star.full {
+    color: #fbbf24;
+}
+
+/* Mezza Stella (usando pseudo-elemento come nella visualizzazione) */
+.rating-star.half {
+    color: #27272a; /* Base vuota */
+}
+.rating-star.half::before {
+    content: '★';
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 50%;
+    overflow: hidden;
+    color: #fbbf24;
+    pointer-events: none; /* Ignora click sul pseudo-elemento */
+}
+
+/* Hover effect generale (opzionale, per feedback visivo extra) */
+.rating-star:hover {
+    transform: scale(1.1);
+}
         .rating-star.active {
             color: #fbbf24;
             transform: scale(1.1);
@@ -1355,89 +1381,174 @@
         }
 
         /**
-         * Setup form recensioni
-         */
-        function setupReviewForm() {
-            // Rating selector
-            const stars = document.querySelectorAll('.rating-star');
-            stars.forEach((star, index) => {
-                star.addEventListener('click', () => {
-                    selectedReviewRating = index + 1;
-                    stars.forEach((s, i) => {
-                        if (i <= index) {
-                            s.classList.add('active');
-                        } else {
-                            s.classList.remove('active');
-                        }
-                    });
-                });
-            });
+ * Setup form recensioni con supporto mezze stelle
+ */
+function setupReviewForm() {
+    const container = document.getElementById('ratingSelector');
+    const stars = container.querySelectorAll('.rating-star');
+    
+    // Funzione helper per colorare le stelle nel form
+    function updateStarVisuals(rating) {
+        stars.forEach((star, index) => {
+            const starValue = index + 1;
+            star.className = 'rating-star'; // Reset classi
+            
+            if (rating >= starValue) {
+                star.classList.add('full');
+            } else if (rating >= starValue - 0.5) {
+                star.classList.add('half');
+            }
+        });
+    }
 
-            // Form submit
-            const form = document.getElementById('reviewForm');
-            form.addEventListener('submit', async (e) => {
-                e.preventDefault();
-                
-                if (selectedReviewRating === 0) {
-                    alert('Seleziona una valutazione con le stelle');
-                    return;
-                }
+    // Gestione Hover e Click
+    stars.forEach((star, index) => {
+        // Movimento mouse: anteprima del voto
+        star.addEventListener('mousemove', (e) => {
+            const rect = star.getBoundingClientRect();
+            const isLeftHalf = (e.clientX - rect.left) < (rect.width / 2);
+            const currentHoverRating = (index + 1) - (isLeftHalf ? 0.5 : 0);
+            
+            updateStarVisuals(currentHoverRating);
+        });
 
-                const submitBtn = document.getElementById('submitReviewBtn');
-                submitBtn.disabled = true;
-                submitBtn.textContent = 'Invio in corso...';
+        // Click: conferma il voto
+        star.addEventListener('click', (e) => {
+            const rect = star.getBoundingClientRect();
+            const isLeftHalf = (e.clientX - rect.left) < (rect.width / 2);
+            selectedReviewRating = (index + 1) - (isLeftHalf ? 0.5 : 0);
+            
+            // Feedback visivo (piccola animazione)
+            container.style.transform = "scale(1.1)";
+            setTimeout(() => container.style.transform = "scale(1)", 200);
+        });
+    });
 
-                const formData = {
-                    action: 'submit_review',
-                    sku: currentProductSku,
-                    name: document.getElementById('reviewName').value,
-                    email: document.getElementById('reviewEmail').value,
-                    rating: selectedReviewRating,
-                    title: document.getElementById('reviewTitle').value,
-                    comment: document.getElementById('reviewComment').value
-                };
+    // Uscita dal container: ripristina il voto selezionato (o 0 se nessuno)
+    container.addEventListener('mouseleave', () => {
+        updateStarVisuals(selectedReviewRating);
+    });
 
-                try {
-                    const params = new URLSearchParams(formData).toString();
-                    const url = `${REVIEWS_API_URL}?${params}&callback=handleSubmitResponse`;
-                    
-                    const script = document.createElement('script');
-                    script.src = url;
-                    document.body.appendChild(script);
-                    
-                } catch (error) {
-                    console.error('Errore invio recensione:', error);
-                    alert('Errore durante l\'invio. Riprova più tardi.');
-                    submitBtn.disabled = false;
-                    submitBtn.textContent = 'Pubblica Recensione';
-                }
-            });
+    // Form submit
+    const form = document.getElementById('reviewForm');
+    form.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        
+        if (selectedReviewRating === 0) {
+            alert('Seleziona una valutazione con le stelle');
+            return;
         }
 
-        /**
-         * Callback per invio recensione
-         */
-        function handleSubmitResponse(response) {
-            const submitBtn = document.getElementById('submitReviewBtn');
+        const submitBtn = document.getElementById('submitReviewBtn');
+        submitBtn.disabled = true;
+        submitBtn.textContent = 'Invio in corso...';
+
+        const formData = {
+            action: 'submit_review',
+            sku: currentProductSku,
+            name: document.getElementById('reviewName').value,
+            email: document.getElementById('reviewEmail').value,
+            rating: selectedReviewRating, // Ora supporta decimali (es. 4.5)
+            title: document.getElementById('reviewTitle').value,
+            comment: document.getElementById('reviewComment').value
+        };
+
+        try {
+            const params = new URLSearchParams(formData).toString();
+            // Aggiungiamo un timestamp per evitare cache del browser sulla richiesta
+            const url = `${REVIEWS_API_URL}?${params}&callback=handleSubmitResponse&_=${Date.now()}`;
             
-            if (response.success) {
-                alert('✅ Recensione inviata con successo! Grazie per il tuo feedback.');
-                
-                // Reset form
-                document.getElementById('reviewForm').reset();
-                selectedReviewRating = 0;
-                document.querySelectorAll('.rating-star').forEach(s => s.classList.remove('active'));
-                
-                // Ricarica recensioni
-                loadReviews(currentProductSku);
-                
-            } else {
-                alert('❌ ' + (response.error || 'Errore durante l\'invio. Riprova.'));
-            }
+            const script = document.createElement('script');
+            script.src = url;
+            // Gestione errore script (es. blocco rete)
+            script.onerror = () => {
+                alert('Errore di connessione. Riprova.');
+                submitBtn.disabled = false;
+                submitBtn.textContent = 'Pubblica Recensione';
+            };
+            document.body.appendChild(script);
             
+        } catch (error) {
+            console.error('Errore invio recensione:', error);
+            alert('Errore durante l\'invio. Riprova più tardi.');
             submitBtn.disabled = false;
             submitBtn.textContent = 'Pubblica Recensione';
         }
+    });
+}
+
+        /**
+ * Callback per invio recensione
+ */
+function handleSubmitResponse(response) {
+    const submitBtn = document.getElementById('submitReviewBtn');
+    
+    // 1. FIX: Resetta SEMPRE il pulsante, indipendentemente dall'esito
+    submitBtn.disabled = false;
+    submitBtn.textContent = 'Pubblica Recensione';
+
+    if (response.success) {
+        // Messaggio di successo
+        alert('✅ Recensione inviata con successo! Grazie per il tuo feedback.');
+        
+        // 2. AGGIORNAMENTO OTTIMISTICO (Mostra subito la recensione)
+        const nameVal = document.getElementById('reviewName').value;
+        const titleVal = document.getElementById('reviewTitle').value;
+        const commentVal = document.getElementById('reviewComment').value;
+        const dateStr = new Date().toLocaleDateString('it-IT'); // Data odierna formato IT
+
+        const newReviewObj = {
+            name: nameVal,
+            date: dateStr,
+            rating: selectedReviewRating,
+            title: titleVal,
+            comment: commentVal
+        };
+
+        // Inserisci in cima alla lista visuale
+        const container = document.getElementById('reviewsList');
+        
+        // Rimuovi il messaggio "nessuna recensione" se presente
+        const noReviewsMsg = container.querySelector('.no-reviews');
+        if (noReviewsMsg) {
+            noReviewsMsg.remove();
+        }
+
+        const reviewEl = document.createElement('div');
+        reviewEl.className = 'review-item';
+        // Animazione di ingresso
+        reviewEl.style.animation = "fadeIn 0.5s ease-out"; 
+        
+        const starsHtml = '★'.repeat(Math.floor(newReviewObj.rating)) + 
+                          (newReviewObj.rating % 1 !== 0 ? '<span style="position:relative;display:inline-block">☆<span style="position:absolute;left:0;top:0;width:50%;overflow:hidden;color:#fbbf24">★</span></span>' : '') +
+                          '☆'.repeat(5 - Math.ceil(newReviewObj.rating));
+
+        reviewEl.innerHTML = `
+            <div class="review-header">
+                <div>
+                    <div class="review-author">${safeText(newReviewObj.name)}</div>
+                    <div class="review-date">${safeText(newReviewObj.date)}</div>
+                </div>
+                <div class="stars" style="font-size:1rem;color:#fbbf24;">${starsHtml}</div>
+            </div>
+            ${newReviewObj.title ? `<div class="review-title">${safeText(newReviewObj.title)}</div>` : ''}
+            <p class="review-text">${safeText(newReviewObj.comment)}</p>
+        `;
+
+        // Prepend (aggiungi all'inizio)
+        container.insertBefore(reviewEl, container.firstChild);
+
+        // Reset form e variabili
+        document.getElementById('reviewForm').reset();
+        selectedReviewRating = 0;
+        // Resetta visivamente le stelle nel form
+        const stars = document.querySelectorAll('#ratingSelector .rating-star');
+        stars.forEach(s => { s.classList.remove('full'); s.classList.remove('half'); });
+        
+    } else {
+        alert('❌ ' + (response.error || 'Errore durante l\'invio. Riprova.'));
+    }
+}
 
         /* ====== Caricamento Prodotto ====== */
         async function loadProduct() {
@@ -1615,4 +1726,5 @@
     </script>
 </body>
 </html>
+
 
