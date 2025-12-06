@@ -1172,12 +1172,19 @@ function completeLoader() {
 
         /* --- NUOVE FUNZIONI HELPER --- */
 
-// Formatta data: "5 dicembre 2025"
+// Formatta data: riceve già "5 Dicembre 2025" dal backend
 function formatDateExtended(dateInput) {
     if (!dateInput) return '';
+    // Se è una stringa formattata, restituiscila così com'è
+    if (typeof dateInput === 'string' && dateInput.includes(' ')) {
+        return dateInput.toLowerCase(); // Lowercase per "dicembre" invece di "Dicembre"
+    }
+    // Fallback: se fosse un ISO date, prova a parsarla
     const d = new Date(dateInput);
-    if (isNaN(d.getTime())) return dateInput; 
-    return d.toLocaleDateString('it-IT', { day: 'numeric', month: 'long', year: 'numeric' });
+    if (!isNaN(d.getTime())) {
+        return d.toLocaleDateString('it-IT', { day: 'numeric', month: 'long', year: 'numeric' });
+    }
+    return dateInput;
 }
 
 // Genera stelle compatte: "★★⯪☆☆"
@@ -1440,7 +1447,7 @@ function generateCompactStars(rating) {
          */
         async function loadReviews(sku) {
     if (!sku) {
-        reviewsLoaded = true; // Nessuno SKU = considera caricato
+        reviewsLoaded = true;
         completeLoader();
         return;
     }
@@ -1448,11 +1455,9 @@ function generateCompactStars(rating) {
     try {
         const url = `${REVIEWS_API_URL}?action=get_reviews&sku=${encodeURIComponent(sku)}&callback=handleReviewsResponse`;
         
-        // Crea script tag per JSONP
         const script = document.createElement('script');
         script.src = url;
         
-        // Timeout di sicurezza: se dopo 10 secondi non risponde, continua
         const timeoutId = setTimeout(() => {
             if (!reviewsLoaded) {
                 console.warn('Timeout caricamento recensioni');
@@ -1902,4 +1907,5 @@ function handleSubmitResponse(response) {
     </script>
 </body>
 </html>
+
 
