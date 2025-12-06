@@ -1050,179 +1050,136 @@
     </div>
 
     <script>
-       /* ======================================
-       RECENSIONI - SISTEMA FETCH (MOBILE FIX) & NO MEZZE STELLE
-       ====================================== */
-    
-    const REVIEWS_API_URL = 'https://script.google.com/macros/s/AKfycbxKoAiuDQ1uG4WS8Jp1TvvWu30kANX1T2erTJuy7q8N2ND9_mq4qVNqDVLpv1I-_jUp/exec';
-    
-    let currentProductSku = '';
-    let selectedReviewRating = 0;
-    let currentReviewsData = []; 
-    let productLoaded = false;
-    let reviewsLoaded = false;
+        /* ======================================
+           CONFIGURAZIONE & VARIABILI GLOBALI
+           ====================================== */
+        
+        // URL dello script Apps Script
+        const REVIEWS_API_URL = 'https://script.google.com/macros/s/AKfycbxKoAiuDQ1uG4WS8Jp1TvvWu30kANX1T2erTJuy7q8N2ND9_mq4qVNqDVLpv1I-_jUp/exec';
+        
+        let currentProductSku = '';
+        let selectedReviewRating = 0;
+        let currentReviewsData = []; 
+        let productLoaded = false;
+        let reviewsLoaded = false;
 
         /* ====== Loader Dinamico ====== */
- const loadingMessages = [
-    'Recupero informazioni prodotto',
-    'Caricamento immagini ad alta risoluzione',
-    'Verifica disponibilità',
-    'Caricamento recensioni verificate',
-    'Preparazione esperienza visiva',
-    'Ottimizzazione contenuti',
-    'Finalizzazione dettagli'
-];
+        const loadingMessages = [
+            'Recupero informazioni prodotto',
+            'Caricamento immagini ad alta risoluzione',
+            'Verifica disponibilità',
+            'Caricamento recensioni verificate',
+            'Preparazione esperienza visiva',
+            'Ottimizzazione contenuti',
+            'Finalizzazione dettagli'
+        ];
 
-let currentMessageIndex = 0;
-let loaderInterval;
-let progressInterval;
+        let currentMessageIndex = 0;
+        let loaderInterval;
+        let progressInterval;
 
-function startDynamicLoader() {
-    const messageEl = document.getElementById('loader-message');
-    const progressEl = document.getElementById('loader-progress');
-    
-    if (!messageEl || !progressEl) return;
-    
-    // Mostra primo messaggio
-    messageEl.textContent = loadingMessages[0];
-    messageEl.style.opacity = '1';
-    
-    // Avanza barra progressivamente
-    let progress = 0;
-    progressInterval = setInterval(() => {
-        progress += Math.random() * 15;
-        if (progress > 85) progress = 85; // Non raggiungere 100% prima del caricamento
-        progressEl.style.width = progress + '%';
-    }, 400);
-    
-    // Cambia messaggi dinamicamente
-    loaderInterval = setInterval(() => {
-        currentMessageIndex++;
-        if (currentMessageIndex >= loadingMessages.length) {
-            currentMessageIndex = loadingMessages.length - 1;
-            return;
-        }
-        
-        messageEl.style.opacity = '0';
-        setTimeout(() => {
-            messageEl.textContent = loadingMessages[currentMessageIndex];
+        function startDynamicLoader() {
+            const messageEl = document.getElementById('loader-message');
+            const progressEl = document.getElementById('loader-progress');
+            
+            if (!messageEl || !progressEl) return;
+            
+            messageEl.textContent = loadingMessages[0];
             messageEl.style.opacity = '1';
-        }, 300);
-        
-    }, 1200);
-}
-
-function completeLoader() {
-    // Verifica che sia prodotto che recensioni siano caricati
-    if (!productLoaded || !reviewsLoaded) {
-        return; // Non completare ancora
-    }
-    
-    clearInterval(loaderInterval);
-    clearInterval(progressInterval);
-    
-    const progressEl = document.getElementById('loader-progress');
-    const messageEl = document.getElementById('loader-message');
-    
-    if (progressEl) progressEl.style.width = '100%';
-    if (messageEl) {
-        messageEl.style.opacity = '0';
-        setTimeout(() => {
-            messageEl.textContent = 'Completato';
-            messageEl.style.opacity = '1';
-        }, 200);
-    }
-    
-    setTimeout(() => {
-        const loader = document.getElementById('luxhaven-loader');
-        if(loader) {
-            loader.style.opacity = '0';
-            setTimeout(() => loader.style.display = 'none', 500);
+            
+            let progress = 0;
+            progressInterval = setInterval(() => {
+                progress += Math.random() * 15;
+                if (progress > 85) progress = 85; 
+                progressEl.style.width = progress + '%';
+            }, 400);
+            
+            loaderInterval = setInterval(() => {
+                currentMessageIndex++;
+                if (currentMessageIndex >= loadingMessages.length) {
+                    currentMessageIndex = loadingMessages.length - 1;
+                    return;
+                }
+                messageEl.style.opacity = '0';
+                setTimeout(() => {
+                    messageEl.textContent = loadingMessages[currentMessageIndex];
+                    messageEl.style.opacity = '1';
+                }, 300);
+            }, 1200);
         }
-    }, 800);
-}
+
+        function completeLoader() {
+            if (!productLoaded || !reviewsLoaded) return;
+            
+            clearInterval(loaderInterval);
+            clearInterval(progressInterval);
+            
+            const progressEl = document.getElementById('loader-progress');
+            const messageEl = document.getElementById('loader-message');
+            
+            if (progressEl) progressEl.style.width = '100%';
+            if (messageEl) {
+                messageEl.style.opacity = '0';
+                setTimeout(() => {
+                    messageEl.textContent = 'Completato';
+                    messageEl.style.opacity = '1';
+                }, 200);
+            }
+            
+            setTimeout(() => {
+                const loader = document.getElementById('luxhaven-loader');
+                if(loader) {
+                    loader.style.opacity = '0';
+                    setTimeout(() => loader.style.display = 'none', 500);
+                }
+            }, 800);
+        }
 
         /* ====== Utilità ====== */
         function qs(name) {
             return new URLSearchParams(window.location.search).get(name);
         }
 
-        /* --- NUOVE FUNZIONI HELPER --- */
+        function formatDateExtended(dateInput) {
+            if (!dateInput) return '';
+            const monthsENtoIT = {
+                'january': 'Gennaio', 'february': 'Febbraio', 'march': 'Marzo',
+                'april': 'Aprile', 'may': 'Maggio', 'june': 'Giugno',
+                'july': 'Luglio', 'august': 'Agosto', 'september': 'Settembre',
+                'october': 'Ottobre', 'november': 'Novembre', 'december': 'Dicembre'
+            };
 
-// Formatta data: riceve già "5 Dicembre 2025" dal backend
-function formatDateExtended(dateInput) {
-    if (!dateInput) return '';
-
-    // Mappa per traduzione manuale (sicura al 100% indipendentemente dal browser)
-    const monthsENtoIT = {
-        'january': 'Gennaio', 'february': 'Febbraio', 'march': 'Marzo',
-        'april': 'Aprile', 'may': 'Maggio', 'june': 'Giugno',
-        'july': 'Luglio', 'august': 'Agosto', 'september': 'Settembre',
-        'october': 'Ottobre', 'november': 'Novembre', 'december': 'Dicembre'
-    };
-
-    let dateStr = '';
-
-    // Caso 1: È già un oggetto Date
-    if (dateInput instanceof Date) {
-        // Usa il formatter nativo italiano
-        return new Intl.DateTimeFormat('it-IT', { day: 'numeric', month: 'long', year: 'numeric' }).format(dateInput);
-    }
-    
-    // Caso 2: È una stringa (es. "06 December 2025" o ISO)
-    if (typeof dateInput === 'string') {
-        // Se contiene testo (es. "December"), facciamo traduzione e pulizia manuale
-        if (dateInput.match(/[a-zA-Z]/)) {
-            // Rimuovi zero iniziale dai giorni (es. "06" -> "6")
-            let cleanDate = dateInput.replace(/^0+/, '').replace(/ 0+/, ' ');
-            
-            // Traduci il mese
-            Object.keys(monthsENtoIT).forEach(enMonth => {
-                const regex = new RegExp(enMonth, 'i'); // Case insensitive
-                if (cleanDate.match(regex)) {
-                    cleanDate = cleanDate.replace(regex, monthsENtoIT[enMonth]);
+            let dateStr = '';
+            if (dateInput instanceof Date) {
+                return new Intl.DateTimeFormat('it-IT', { day: 'numeric', month: 'long', year: 'numeric' }).format(dateInput);
+            }
+            if (typeof dateInput === 'string') {
+                if (dateInput.match(/[a-zA-Z]/)) {
+                    let cleanDate = dateInput.replace(/^0+/, '').replace(/ 0+/, ' ');
+                    Object.keys(monthsENtoIT).forEach(enMonth => {
+                        const regex = new RegExp(enMonth, 'i');
+                        if (cleanDate.match(regex)) {
+                            cleanDate = cleanDate.replace(regex, monthsENtoIT[enMonth]);
+                        }
+                    });
+                    return cleanDate;
+                } 
+                const d = new Date(dateInput);
+                if (!isNaN(d.getTime())) {
+                    return new Intl.DateTimeFormat('it-IT', { day: 'numeric', month: 'long', year: 'numeric' }).format(d);
                 }
-            });
-            return cleanDate;
-        } 
-        
-        // Se è una stringa ISO o numerica, prova a convertirla in Date
-        const d = new Date(dateInput);
-        if (!isNaN(d.getTime())) {
-            return new Intl.DateTimeFormat('it-IT', { day: 'numeric', month: 'long', year: 'numeric' }).format(d);
+            }
+            return dateInput;
         }
-    }
-
-    return dateInput;
-}
-
-// --- LOGICA STELLE INTERE ---
-    
-    // Genera HTML stelle per la lista (Solo piene/vuote)
-    function generateCompactStars(rating) {
-        const fullStars = Math.round(rating); // Arrotonda sempre
-        let html = '';
-        for(let i=1; i<=5; i++) {
-            if (i <= fullStars) html += '★';
-            else html += '<span class="empty">★</span>';
-        }
-        return `<span class="stars-compact">${html}</span>`;
-    }
 
         function formatPrice(p, currency = 'EUR') {
-            try {
-                return new Intl.NumberFormat('it-IT', { style: 'currency', currency }).format(p);
-            } catch (e) {
-                return p + ' ' + currency;
-            }
+            try { return new Intl.NumberFormat('it-IT', { style: 'currency', currency }).format(p); } 
+            catch (e) { return p + ' ' + currency; }
         }
 
         function formatCount(n) {
-            try {
-                return new Intl.NumberFormat('it-IT').format(n);
-            } catch (e) {
-                return n;
-            }
+            try { return new Intl.NumberFormat('it-IT').format(n); } 
+            catch (e) { return n; }
         }
 
         function safeText(s){
@@ -1246,9 +1203,7 @@ function formatDateExtended(dateInput) {
                 const div = document.createElement('div');
                 div.className = 'thumbnail' + (i === currentImage ? ' active' : '');
                 div.innerHTML = `<img src="${src}" alt="Vista ${i+1}" />`;
-                div.addEventListener('click', () => {
-                    selectImage(i);
-                });
+                div.addEventListener('click', () => { selectImage(i); });
                 thumbs.appendChild(div);
             });
         }
@@ -1268,11 +1223,6 @@ function formatDateExtended(dateInput) {
         });
 
         /* ====== Colori e Taglie ====== */
-        let selectedColor = null;
-        let selectedSize = null;
-        let selectedVariantId = null;
-        let currentProduct = null;
-
         function renderColors(colors) {
             const container = document.getElementById('colorOptions');
             container.innerHTML = '';
@@ -1334,14 +1284,7 @@ function formatDateExtended(dateInput) {
         function switchTab(tabName, btn) {
             document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
             document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
-
-            if (btn) {
-                btn.classList.add('active');
-            } else {
-                const fallback = document.querySelector(`.tab[onclick*="${tabName}"]`);
-                if (fallback) fallback.classList.add('active');
-            }
-
+            if (btn) btn.classList.add('active');
             const target = document.getElementById(tabName);
             if (target) target.classList.add('active');
         }
@@ -1353,21 +1296,33 @@ function formatDateExtended(dateInput) {
             if(!isActive) faqItem.classList.add('active');
         }
 
-// Renderizza stelle nel container header (Solo piene/vuote)
-    function renderStars(containerId, ratingValue) {
-        const container = document.getElementById(containerId);
-        if (!container) return;
-        container.innerHTML = '';
-        
-        const fullStars = Math.round(parseFloat(ratingValue) || 0);
-        
-        for (let i = 1; i <= 5; i++) {
-            const span = document.createElement('span');
-            span.className = i <= fullStars ? 'star' : 'star star-empty';
-            span.textContent = '★';
-            container.appendChild(span);
+        /* ====== Stelle (Logica Numeri Interi) ====== */
+        // Renderizza stelle nel container header (Solo piene/vuote)
+        function renderStars(containerId, ratingValue) {
+            const container = document.getElementById(containerId);
+            if (!container) return;
+            container.innerHTML = '';
+            
+            const fullStars = Math.round(parseFloat(ratingValue) || 0);
+            
+            for (let i = 1; i <= 5; i++) {
+                const span = document.createElement('span');
+                span.className = i <= fullStars ? 'star' : 'star star-empty';
+                span.textContent = '★';
+                container.appendChild(span);
+            }
         }
-    }
+
+        // Genera HTML stelle per la lista (Solo piene/vuote)
+        function generateCompactStars(rating) {
+            const fullStars = Math.round(rating); // Arrotonda sempre
+            let html = '';
+            for(let i=1; i<=5; i++) {
+                if (i <= fullStars) html += '★';
+                else html += '<span class="empty">★</span>';
+            }
+            return `<span class="stars-compact">${html}</span>`;
+        }
 
         /* ====== Specifiche ====== */
         function renderSpecsGrid(specs) {
@@ -1382,28 +1337,13 @@ function formatDateExtended(dateInput) {
             specsGrid.style.display = 'grid';
 
             const order = ['composition', 'weight', 'origin', 'fit'];
-            const labels = {
-                composition: 'Composizione',
-                weight: 'Peso',
-                origin: 'Origine',
-                fit: 'Vestibilità'
-            };
+            const labels = { composition: 'Composizione', weight: 'Peso', origin: 'Origine', fit: 'Vestibilità' };
 
             order.forEach(key => {
                 if (specs[key]) {
                     const div = document.createElement('div');
                     div.className = 'spec-row';
                     div.innerHTML = `<span class="spec-label">${labels[key] || key}</span><span>${safeText(specs[key])}</span>`;
-                    specsGrid.appendChild(div);
-                }
-            });
-
-            Object.keys(specs).forEach(key => {
-                if (order.indexOf(key) === -1) {
-                    const pretty = key.replace(/([A-Z])/g, ' $1').replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
-                    const div = document.createElement('div');
-                    div.className = 'spec-row';
-                    div.innerHTML = `<span class="spec-label">${pretty}</span><span>${safeText(specs[key])}</span>`;
                     specsGrid.appendChild(div);
                 }
             });
@@ -1433,312 +1373,197 @@ function formatDateExtended(dateInput) {
         }
 
         /* ======================================
-   RECENSIONI - NUOVO SISTEMA DI CARICAMENTO (FIX MOBILE)
-   ====================================== */
+           RECENSIONI - SISTEMA FETCH (MOBILE FIX)
+           ====================================== */
 
-// Definiamo la callback GLOBALE esplicitamente su window per evitare errori di scope su mobile
-window.handleReviewsResponse = function(response) {
-    console.log('📥 Risposta recensioni ricevuta:', response);
-    
-    // Rimuovi lo script loader dal DOM per pulizia
-    const oldScript = document.getElementById('reviews-loader-script');
-    if (oldScript) oldScript.remove();
-    
-    // Cancella il timeout di sicurezza
-    if (window.reviewsTimeout) {
-        clearTimeout(window.reviewsTimeout);
-        window.reviewsTimeout = null;
-    }
-
-    if (response && response.success && response.reviews) {
-        currentReviewsData = response.reviews;
-        displayReviews(currentReviewsData);
-    } else {
-        console.warn('⚠️ Nessuna recensione trovata o errore risposta');
-        displayReviews([]);
-    }
-    
-    reviewsLoaded = true;
-    completeLoader();
-};
-
-// --- CARICAMENTO DATI (FETCH) ---
-
-    async function loadReviews(sku) {
-        if (!sku) {
-            reviewsLoaded = true;
-            completeLoader();
-            return;
-        }
-
-        // URL senza callback per ricevere JSON puro
-        const url = `${REVIEWS_API_URL}?action=get_reviews&sku=${encodeURIComponent(sku)}&_=${Date.now()}`;
-
-        try {
-            // Fetch è supportato nativamente da tutti i browser mobile moderni
-            const response = await fetch(url);
-            
-            if (!response.ok) throw new Error('Network response was not ok');
-            
-            const data = await response.json(); // Parsing JSON automatico
-            
-            if (data && data.success) {
-                currentReviewsData = data.reviews || [];
-                displayReviews(currentReviewsData);
-            } else {
-                displayReviews([]);
+        async function loadReviews(sku) {
+            if (!sku) {
+                reviewsLoaded = true;
+                completeLoader();
+                return;
             }
-        } catch (error) {
-            console.error("Errore fetch recensioni:", error);
-            displayReviews([]); // Fallback vuoto per non rompere la UI
-        } finally {
-            reviewsLoaded = true;
-            completeLoader();
-        }
-    }
 
-    function displayReviews(reviews) {
-        const container = document.getElementById('reviewsList');
-        if (!container) return;
-
-        if (!reviews || reviews.length === 0) {
-            container.innerHTML = `<div class="no-reviews"><div class="no-reviews-icon">★</div><p>Nessuna recensione ancora. Sii il primo!</p></div>`;
-            updateReviewsSummary(0, 0, {});
-            return;
-        }
-
-        const totalReviews = reviews.length;
-        const totalRating = reviews.reduce((sum, r) => sum + parseFloat(r.rating), 0);
-        const averageRating = totalReviews > 0 ? (totalRating / totalReviews) : 0;
-        
-        // Distribuzione voti (Bucket interi)
-        const distribution = { 5: 0, 4: 0, 3: 0, 2: 0, 1: 0 };
-        reviews.forEach(r => {
-            let bucket = Math.round(r.rating);
-            if (bucket < 1) bucket = 1;
-            if (bucket > 5) bucket = 5;
-            distribution[bucket]++;
-        });
-
-        updateReviewsSummary(averageRating, totalReviews, distribution);
-
-        container.innerHTML = '';
-        reviews.forEach(review => {
-            const reviewEl = document.createElement('div');
-            reviewEl.className = 'review-item';
-            reviewEl.innerHTML = `
-                <div class="review-header">
-                    <div>
-                        <div class="review-author">${safeText(review.name)}</div>
-                        <div class="review-date">${safeText(review.date)}</div>
-                    </div>
-                    <div>${generateCompactStars(review.rating)}</div>
-                </div>
-                ${review.title ? `<div class="review-title">${safeText(review.title)}</div>` : ''}
-                <p class="review-text">${safeText(review.comment)}</p>
-            `;
-            container.appendChild(reviewEl);
-        });
-    }
-
-    function updateReviewsSummary(avgRating, count, distribution) {
-        const ratingNumber = document.getElementById('ratingNumber');
-        const reviewsCount = document.getElementById('reviewsCount');
-        const ratingText = document.getElementById('ratingText');
-
-        // Arrotonda la media visuale a 1 decimale, ma le stelle sono intere
-        if (ratingNumber) ratingNumber.textContent = avgRating.toFixed(1);
-        if (reviewsCount) reviewsCount.textContent = `${count} recension${count !== 1 ? 'i' : 'e'}`;
-        if (ratingText) ratingText.textContent = `${avgRating.toFixed(1)} (${formatCount(count)} recensioni)`;
-
-        renderStars('reviewsStarsContainer', avgRating);
-        renderStars('starsContainer', avgRating);
-
-        if (count > 0) {
-            for (let i = 5; i >= 1; i--) {
-                const percentage = ((distribution[i] || 0) / count) * 100;
-                const bar = document.querySelectorAll('.rating-bar')[5 - i]; // 5-5=0 (prima barra), etc.
-                if (bar) {
-                    const fill = bar.querySelector('.rating-bar-fill');
-                    if (fill) fill.style.width = percentage + '%';
-                }
-            }
-        }
-    }
-
-    // --- INVIO RECENSIONE (FETCH) & INPUT INTERO ---
-
-    function setupReviewForm() {
-        const container = document.getElementById('ratingSelector');
-        const stars = container.querySelectorAll('.rating-star');
-        
-        // Funzione visuale semplice: colora tutte le stelle fino a quella corrente
-        function highlightStars(count) {
-            stars.forEach((star, index) => {
-                if (index < count) star.classList.add('full');
-                else star.classList.remove('full');
-            });
-        }
-
-        stars.forEach((star, index) => {
-            // Hover: illumina intere stelle
-            star.addEventListener('mouseenter', () => {
-                highlightStars(index + 1);
-            });
-
-            // Click: seleziona intero
-            star.addEventListener('click', () => {
-                selectedReviewRating = index + 1;
-                highlightStars(selectedReviewRating);
-            });
-        });
-
-        // Mouse leave: torna alla selezione salvata
-        container.addEventListener('mouseleave', () => {
-            highlightStars(selectedReviewRating);
-        });
-
-        const form = document.getElementById('reviewForm');
-        form.addEventListener('submit', async (e) => {
-            e.preventDefault();
-            if (selectedReviewRating === 0) { alert('Seleziona una valutazione'); return; }
-
-            const submitBtn = document.getElementById('submitReviewBtn');
-            submitBtn.disabled = true;
-            submitBtn.textContent = 'Invio in corso...';
-
-            const formData = new URLSearchParams();
-            formData.append('action', 'submit_review');
-            formData.append('sku', currentProductSku);
-            formData.append('name', document.getElementById('reviewName').value);
-            formData.append('email', document.getElementById('reviewEmail').value);
-            formData.append('rating', selectedReviewRating); // È un intero ora
-            formData.append('title', document.getElementById('reviewTitle').value);
-            formData.append('comment', document.getElementById('reviewComment').value);
+            // URL senza callback per ricevere JSON puro
+            const url = `${REVIEWS_API_URL}?action=get_reviews&sku=${encodeURIComponent(sku)}&_=${Date.now()}`;
 
             try {
-                // Fetch POST
-                const response = await fetch(REVIEWS_API_URL, {
-                    method: 'POST',
-                    body: formData
-                });
+                // Fetch nativo (funziona su mobile)
+                const response = await fetch(url);
+                if (!response.ok) throw new Error('Network response was not ok');
                 
-                const result = await response.json();
-
-                if (result.success) {
-                    // Aggiornamento ottimistico UI
-                    const newReview = {
-                        name: document.getElementById('reviewName').value,
-                        date: 'Appena adesso',
-                        rating: selectedReviewRating,
-                        title: document.getElementById('reviewTitle').value,
-                        comment: document.getElementById('reviewComment').value
-                    };
-                    
-                    currentReviewsData.unshift(newReview);
+                const data = await response.json();
+                
+                if (data && data.success) {
+                    currentReviewsData = data.reviews || [];
                     displayReviews(currentReviewsData);
-                    
-                    form.reset();
-                    selectedReviewRating = 0;
-                    highlightStars(0);
-                    submitBtn.textContent = 'Recensione Inviata!';
-                    setTimeout(() => {
-                        submitBtn.disabled = false;
-                        submitBtn.textContent = 'Pubblica Recensione';
-                    }, 2000);
                 } else {
-                    throw new Error(result.error || 'Errore sconosciuto');
+                    displayReviews([]);
                 }
             } catch (error) {
-                console.error(error);
-                alert('Errore invio: ' + error.message);
-                submitBtn.disabled = false;
-                submitBtn.textContent = 'Pubblica Recensione';
+                console.error("Errore fetch recensioni:", error);
+                displayReviews([]); 
+            } finally {
+                reviewsLoaded = true;
+                completeLoader();
             }
-        });
-    }
+        }
 
-function handleSubmitResponse(response) {
-    const submitBtn = document.getElementById('submitReviewBtn');
-    submitBtn.disabled = false;
-    submitBtn.textContent = 'Pubblica Recensione';
+        function displayReviews(reviews) {
+            const container = document.getElementById('reviewsList');
+            if (!container) return;
 
-    if (response.success) {
-        // alert('✅ Recensione inviata!'); // Opzionale: rimuovi se vuoi meno click per l'utente
+            if (!reviews || reviews.length === 0) {
+                container.innerHTML = `<div class="no-reviews"><div class="no-reviews-icon">★</div><p>Nessuna recensione ancora. Sii il primo!</p></div>`;
+                updateReviewsSummary(0, 0, {});
+                return;
+            }
 
-        // 1. Recupera dati dal form per aggiornamento immediato (Optimistic UI)
-        const nameVal = document.getElementById('reviewName').value;
-        const titleVal = document.getElementById('reviewTitle').value;
-        const commentVal = document.getElementById('reviewComment').value;
-        const ratingVal = parseFloat(selectedReviewRating);
-        const now = new Date(); 
+            const totalReviews = reviews.length;
+            const totalRating = reviews.reduce((sum, r) => sum + parseFloat(r.rating), 0);
+            const averageRating = totalReviews > 0 ? (totalRating / totalReviews) : 0;
+            
+            const distribution = { 5: 0, 4: 0, 3: 0, 2: 0, 1: 0 };
+            reviews.forEach(r => {
+                let bucket = Math.round(r.rating);
+                if (bucket < 1) bucket = 1;
+                if (bucket > 5) bucket = 5;
+                distribution[bucket]++;
+            });
 
-        // 2. Crea oggetto nuova recensione
-        const newReviewObj = {
-            sku: currentProductSku,
-            name: nameVal,
-            email: document.getElementById('reviewEmail').value,
-            rating: ratingVal,
-            title: titleVal,
-            comment: commentVal,
-            date: now.toISOString()
-        };
+            updateReviewsSummary(averageRating, totalReviews, distribution);
 
-        // 3. Aggiorna lo stato globale dei dati (aggiungi in cima)
-        currentReviewsData.unshift(newReviewObj);
+            container.innerHTML = '';
+            reviews.forEach(review => {
+                const reviewEl = document.createElement('div');
+                reviewEl.className = 'review-item';
+                reviewEl.innerHTML = `
+                    <div class="review-header">
+                        <div>
+                            <div class="review-author">${safeText(review.name)}</div>
+                            <div class="review-date">${safeText(review.date)}</div>
+                        </div>
+                        <div>${generateCompactStars(review.rating)}</div>
+                    </div>
+                    ${review.title ? `<div class="review-title">${safeText(review.title)}</div>` : ''}
+                    <p class="review-text">${safeText(review.comment)}</p>
+                `;
+                container.appendChild(reviewEl);
+            });
+        }
 
-        // 4. RICALCOLA LE STATISTICHE IN TEMPO REALE
-        const totalReviews = currentReviewsData.length;
-        const totalRating = currentReviewsData.reduce((sum, r) => sum + parseFloat(r.rating), 0);
-        const averageRating = totalReviews > 0 ? (totalRating / totalReviews) : 0;
-        
-        const distribution = { 5: 0, 4: 0, 3: 0, 2: 0, 1: 0 };
-        currentReviewsData.forEach(r => {
-            const bucket = Math.round(r.rating); 
-            if (distribution[bucket] !== undefined) distribution[bucket]++;
-        });
+        function updateReviewsSummary(avgRating, count, distribution) {
+            const ratingNumber = document.getElementById('ratingNumber');
+            const reviewsCount = document.getElementById('reviewsCount');
+            const ratingText = document.getElementById('ratingText');
 
-        // 5. Aggiorna la UI del Summary (Numeri e Barre)
-        updateReviewsSummary(averageRating, totalReviews, distribution);
+            if (ratingNumber) ratingNumber.textContent = avgRating.toFixed(1);
+            if (reviewsCount) reviewsCount.textContent = `${count} recension${count !== 1 ? 'i' : 'e'}`;
+            if (ratingText) ratingText.textContent = `${avgRating.toFixed(1)} (${formatCount(count)} recensioni)`;
 
-        // 6. Inserisci visivamente la recensione nel DOM
-        const container = document.getElementById('reviewsList');
-        const noReviewsMsg = container.querySelector('.no-reviews');
-        if (noReviewsMsg) noReviewsMsg.remove();
+            renderStars('reviewsStarsContainer', avgRating);
+            renderStars('starsContainer', avgRating);
 
-        const reviewEl = document.createElement('div');
-        reviewEl.className = 'review-item';
-        reviewEl.style.animation = "fadeIn 0.5s ease-out";
-        
-        reviewEl.innerHTML = `
-            <div class="review-header">
-                <div>
-                    <div class="review-author">${safeText(nameVal)}</div>
-                    <div class="review-date">${formatDateExtended(now)}</div>
-                </div>
-                <div>${generateCompactStars(ratingVal)}</div>
-            </div>
-            ${titleVal ? `<div class="review-title">${safeText(titleVal)}</div>` : ''}
-            <p class="review-text">${safeText(commentVal)}</p>
-        `;
-        
-        // Inserisce come primo elemento
-        container.insertBefore(reviewEl, container.firstChild);
+            if (count > 0) {
+                for (let i = 5; i >= 1; i--) {
+                    const percentage = ((distribution[i] || 0) / count) * 100;
+                    const bar = document.querySelectorAll('.rating-bar')[5 - i]; 
+                    if (bar) {
+                        const fill = bar.querySelector('.rating-bar-fill');
+                        if (fill) fill.style.width = percentage + '%';
+                    }
+                }
+            }
+        }
 
-        // 7. Reset Form e scroll verso la nuova recensione
-        document.getElementById('reviewForm').reset();
-        selectedReviewRating = 0;
-        document.querySelectorAll('#ratingSelector .rating-star').forEach(s => { 
-            s.classList.remove('full'); s.classList.remove('half'); 
-        });
+        /* --- INVIO RECENSIONE (FETCH) & INPUT INTERO --- */
 
-        // Scroll fluido per mostrare all'utente la sua recensione appena apparsa
-        reviewEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        
-    } else {
-        alert('❌ ' + (response.error || 'Errore durante l\'invio.'));
-    }
-}
+        function setupReviewForm() {
+            const container = document.getElementById('ratingSelector');
+            const stars = container.querySelectorAll('.rating-star');
+            
+            function highlightStars(count) {
+                stars.forEach((star, index) => {
+                    if (index < count) star.classList.add('full');
+                    else star.classList.remove('full');
+                });
+            }
+
+            stars.forEach((star, index) => {
+                star.addEventListener('mouseenter', () => { highlightStars(index + 1); });
+                star.addEventListener('click', () => {
+                    selectedReviewRating = index + 1;
+                    highlightStars(selectedReviewRating);
+                });
+            });
+
+            container.addEventListener('mouseleave', () => {
+                highlightStars(selectedReviewRating);
+            });
+
+            const form = document.getElementById('reviewForm');
+            form.addEventListener('submit', async (e) => {
+                e.preventDefault();
+                if (selectedReviewRating === 0) { alert('Seleziona una valutazione'); return; }
+
+                const submitBtn = document.getElementById('submitReviewBtn');
+                submitBtn.disabled = true;
+                submitBtn.textContent = 'Invio in corso...';
+
+                const formData = new URLSearchParams();
+                formData.append('action', 'submit_review');
+                formData.append('sku', currentProductSku);
+                formData.append('name', document.getElementById('reviewName').value);
+                formData.append('email', document.getElementById('reviewEmail').value);
+                formData.append('rating', selectedReviewRating);
+                formData.append('title', document.getElementById('reviewTitle').value);
+                formData.append('comment', document.getElementById('reviewComment').value);
+
+                try {
+                    const response = await fetch(REVIEWS_API_URL, {
+                        method: 'POST',
+                        body: formData
+                    });
+                    
+                    const result = await response.json();
+
+                    if (result.success) {
+                        const newReview = {
+                            name: document.getElementById('reviewName').value,
+                            date: 'Appena adesso',
+                            rating: selectedReviewRating,
+                            title: document.getElementById('reviewTitle').value,
+                            comment: document.getElementById('reviewComment').value
+                        };
+                        
+                        currentReviewsData.unshift(newReview);
+                        displayReviews(currentReviewsData);
+                        
+                        form.reset();
+                        selectedReviewRating = 0;
+                        highlightStars(0);
+                        submitBtn.textContent = 'Recensione Inviata!';
+                        setTimeout(() => {
+                            submitBtn.disabled = false;
+                            submitBtn.textContent = 'Pubblica Recensione';
+                        }, 2000);
+                        
+                        // Scroll automatico alla recensione
+                        setTimeout(() => {
+                            const list = document.getElementById('reviewsList');
+                            if(list.firstChild) list.firstChild.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                        }, 100);
+
+                    } else {
+                        throw new Error(result.error || 'Errore sconosciuto');
+                    }
+                } catch (error) {
+                    console.error(error);
+                    alert('Errore invio: ' + error.message);
+                    submitBtn.disabled = false;
+                    submitBtn.textContent = 'Pubblica Recensione';
+                }
+            });
+        }
 
         /* ====== Caricamento Prodotto ====== */
         async function loadProduct() {
@@ -1773,18 +1598,14 @@ function handleSubmitResponse(response) {
                 product = { ...product, ...details };
                 populateProduct(product);
 
-                // Segna prodotto come caricato
                 productLoaded = true;
                 
-                // Carica recensioni
                 if (currentProductSku) {
                     loadReviews(currentProductSku);
                 } else {
-                    // Se non c'è SKU, considera recensioni caricate
                     reviewsLoaded = true;
                 }
                 
-                // Prova a completare il loader (completerà solo se anche le recensioni sono pronte)
                 completeLoader();
 
             } catch (err) {
@@ -1922,3 +1743,4 @@ function handleSubmitResponse(response) {
     </script>
 </body>
 </html>
+
