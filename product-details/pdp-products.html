@@ -1081,8 +1081,12 @@
         let selectedReviewRating = 0;
         let currentReviewsData = []; // Mantiene lo stato locale delle recensioni per calcoli live
 
+        /* ====== Stato Caricamento ====== */
+        let productLoaded = false;
+        let reviewsLoaded = false;
+
         /* ====== Loader Dinamico ====== */
-const loadingMessages = [
+ const loadingMessages = [
     'Recupero informazioni prodotto',
     'Caricamento immagini ad alta risoluzione',
     'Verifica disponibilità',
@@ -1132,6 +1136,11 @@ function startDynamicLoader() {
 }
 
 function completeLoader() {
+    // Verifica che sia prodotto che recensioni siano caricati
+    if (!productLoaded || !reviewsLoaded) {
+        return; // Non completare ancora
+    }
+    
     clearInterval(loaderInterval);
     clearInterval(progressInterval);
     
@@ -1430,32 +1439,59 @@ function generateCompactStars(rating) {
          * Carica recensioni dal server
          */
         async function loadReviews(sku) {
-            if (!sku) return;
-            
-            try {
-                const url = `${REVIEWS_API_URL}?action=get_reviews&sku=${encodeURIComponent(sku)}&callback=handleReviewsResponse`;
-                
-                // Crea script tag per JSONP
-                const script = document.createElement('script');
-                script.src = url;
-                document.body.appendChild(script);
-                
-            } catch (error) {
-                console.error('Errore caricamento recensioni:', error);
+    if (!sku) {
+        reviewsLoaded = true; // Nessuno SKU = considera caricato
+        completeLoader();
+        return;
+    }
+    
+    try {
+        const url = `${REVIEWS_API_URL}?action=get_reviews&sku=${encodeURIComponent(sku)}&callback=handleReviewsResponse`;
+        
+        // Crea script tag per JSONP
+        const script = document.createElement('script');
+        script.src = url;
+        
+        // Timeout di sicurezza: se dopo 10 secondi non risponde, continua
+        const timeoutId = setTimeout(() => {
+            if (!reviewsLoaded) {
+                console.warn('Timeout caricamento recensioni');
+                reviewsLoaded = true;
+                completeLoader();
             }
-        }
+        }, 10000);
+        
+        script.onerror = () => {
+            clearTimeout(timeoutId);
+            console.error('Errore caricamento script recensioni');
+            reviewsLoaded = true;
+            completeLoader();
+        };
+        
+        document.body.appendChild(script);
+        
+    } catch (error) {
+        console.error('Errore caricamento recensioni:', error);
+        reviewsLoaded = true;
+        completeLoader();
+    }
+}
 
         /**
          * Callback JSONP per gestire la risposta
          */
         function handleReviewsResponse(response) {
     if (response.success && response.reviews) {
-        currentReviewsData = response.reviews; // Salviamo i dati globalmente
+        currentReviewsData = response.reviews;
         displayReviews(currentReviewsData);
     } else {
         currentReviewsData = [];
         displayReviews([]);
     }
+    
+    // Segna recensioni come caricate
+    reviewsLoaded = true;
+    completeLoader(); // Prova a completare il loader
 }
 
         /* --- FUNZIONI PRINCIPALI CORRETTE --- */
@@ -1717,16 +1753,26 @@ function handleSubmitResponse(response) {
                 product = { ...product, ...details };
                 populateProduct(product);
 
+                // Segna prodotto come caricato
+                productLoaded = true;
+                
                 // Carica recensioni
                 if (currentProductSku) {
                     loadReviews(currentProductSku);
+                } else {
+                    // Se non c'è SKU, considera recensioni caricate
+                    reviewsLoaded = true;
                 }
                 
-                // Completa il loader dinamico
+                // Prova a completare il loader (completerà solo se anche le recensioni sono pronte)
                 completeLoader();
 
             } catch (err) {
                 console.error(err);
+                productLoaded = true;
+                reviewsLoaded = true;
+                clearInterval(loaderInterval);
+                clearInterval(progressInterval);
                 document.getElementById('luxhaven-loader').style.display = 'none';
                 document.querySelector('.container').innerHTML = `<div style="padding:4rem;color:#fca5a5">Errore: ${err.message}</div>`;
             }
@@ -1856,3 +1902,4 @@ function handleSubmitResponse(response) {
     </script>
 </body>
 </html>
+
