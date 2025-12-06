@@ -1471,34 +1471,32 @@ function generateCompactStars(rating) {
         }
 
         /* ======================================
-   RECENSIONI - NUOVO SISTEMA DI CARICAMENTO (FIX MOBILE)
+   RECENSIONI - NUOVO SISTEMA DI CARICAMENTO (FIX MOBILE & RETRY)
    ====================================== */
 
-// Definiamo la callback GLOBALE esplicitamente su window per evitare errori di scope su mobile
+// Callback globale definita esplicitamente su window
 window.handleReviewsResponse = function(response) {
     console.log('📥 Risposta recensioni ricevuta:', response);
     
-    // Rimuovi lo script loader dal DOM per pulizia
+    // Pulizia
     const oldScript = document.getElementById('reviews-loader-script');
     if (oldScript) oldScript.remove();
-    
-    // Cancella il timeout di sicurezza
-    if (window.reviewsTimeout) {
-        clearTimeout(window.reviewsTimeout);
-        window.reviewsTimeout = null;
-    }
+    if (window.reviewsTimeout) clearTimeout(window.reviewsTimeout);
 
     if (response && response.success && response.reviews) {
         currentReviewsData = response.reviews;
         displayReviews(currentReviewsData);
     } else {
-        console.warn('⚠️ Nessuna recensione trovata o errore risposta');
+        // Fallback elegante
         displayReviews([]);
     }
     
     reviewsLoaded = true;
     completeLoader();
 };
+
+// Variabile per gestire i tentativi
+let reviewRetries = 0;
 
 function loadReviews(sku) {
     if (!sku) {
@@ -1507,14 +1505,14 @@ function loadReviews(sku) {
         return;
     }
     
-    // Pulisci script precedenti
+    // Rimuovi script precedenti
     const existing = document.getElementById('reviews-loader-script');
     if (existing) existing.remove();
 
-    console.log(`📡 Caricamento recensioni per: ${sku}`);
-
-    // Crea URL con timestamp per evitare caching aggressivo su mobile
+    // Timestamp per evitare cache aggressiva dei browser mobile
     const timestamp = new Date().getTime();
+    
+    // Costruzione URL
     const scriptUrl = `${REVIEWS_API_URL}?action=get_reviews&sku=${encodeURIComponent(sku)}&callback=handleReviewsResponse&_=${timestamp}`;
 
     const script = document.createElement('script');
@@ -1522,27 +1520,35 @@ function loadReviews(sku) {
     script.id = 'reviews-loader-script';
     script.async = true;
     
-    // Gestione errore nativo del tag script
+    // GESTIONE ERRORE SPECIFICA PER MOBILE
     script.onerror = function() {
-        console.error("❌ Errore caricamento script (onerror trigger)");
-        // Non blocchiamo tutto, mostriamo 0 recensioni e sblocchiamo il loader
-        reviewsLoaded = true;
-        completeLoader();
-        displayReviews([]); 
-    };
-
-    // Timeout di sicurezza (20 secondi per connessioni mobili lente)
-    window.reviewsTimeout = setTimeout(() => {
-        if (!reviewsLoaded) {
-            console.warn("⏱️ Timeout caricamento recensioni mobile");
+        console.error("❌ Errore caricamento script recensioni.");
+        
+        // TENTATIVO DI RETRY (Massimo 1 volta)
+        if (reviewRetries < 1) {
+            console.log("🔄 Riprovo il caricamento delle recensioni...");
+            reviewRetries++;
+            setTimeout(() => loadReviews(sku), 1500); // Riprova dopo 1.5 secondi
+        } else {
+            // Se fallisce ancora, sblocca il loader e mostra 0 recensioni
             reviewsLoaded = true;
             completeLoader();
-            displayReviews([]); // Mostra vuoto invece di bloccarsi
+            displayReviews([]); 
         }
-    }, 20000);
+    };
 
-    // Inserisci in HEAD invece che BODY (più compatibile con mobile)
-    document.getElementsByTagName('head')[0].appendChild(script);
+    // Timeout di sicurezza allungato per reti 4G/5G lente
+    window.reviewsTimeout = setTimeout(() => {
+        if (!reviewsLoaded) {
+            console.warn("⏱️ Timeout recensioni scaduto");
+            reviewsLoaded = true;
+            completeLoader();
+            displayReviews([]);
+        }
+    }, 25000); // 25 secondi
+
+    // FIX CRITICO: Usa document.body invece di head su mobile per ordine esecuzione
+    document.body.appendChild(script);
 }
 
         /* --- FUNZIONI PRINCIPALI CORRETTE --- */
@@ -1953,5 +1959,6 @@ function handleSubmitResponse(response) {
     </script>
 </body>
 </html>
+
 
 
