@@ -478,9 +478,17 @@
             margin-bottom: 2rem;
         }
 
-        .rating-overview {
-            text-align: center;
-        }
+/* 3. Fix Allineamento Stelle Mobile vs Desktop */
+
+/* Desktop default: Rating overview già gestito, ma forziamo il layout */
+.rating-overview {
+    text-align: center; /* Default fallback */
+}
+
+.rating-overview .stars {
+    justify-content: center; /* Assicura che le stelle siano centrate nel loro container flex */
+    margin-top: 0.5rem;
+}
 
         .rating-number {
             font-size: 3rem;
@@ -818,11 +826,6 @@
             .specs-grid {
                 grid-template-columns: 1fr;
             }
-
-            .reviews-summary {
-                flex-direction: column;
-                gap: 2rem;
-            }
         }
 
         @media (max-width: 640px) {
@@ -834,6 +837,99 @@
                 grid-template-columns: 1fr;
             }
         }
+
+        /* Mobile specifico */
+@media (max-width: 768px) {
+    .reviews-summary {
+        flex-direction: column; /* Impila Overview sopra le Barre */
+        align-items: center;    /* Centra tutto orizzontalmente */
+        gap: 2rem;
+    }
+
+    .rating-overview {
+        display: flex;
+        flex-direction: column;
+        align-items: center; /* CRUCIALE: Centra numero e stelle */
+        width: 100%;
+    }
+    
+    .rating-number {
+        line-height: 1;
+        margin-bottom: 0.5rem;
+    }
+    
+    .rating-overview .stars {
+        justify-content: center; /* Assicura che le stelle siano centrate */
+        margin-bottom: 0.25rem;
+    }
+    
+    .rating-bars {
+        width: 100%; /* Le barre riprendono larghezza piena */
+    }
+}
+
+        /* --- NUOVO CSS PER RECENSIONI --- */
+
+/* 1. Navigazione Recensioni (Frecce) */
+.reviews-nav-container {
+    display: flex;
+    justify-content: center;
+    gap: 1.5rem;
+    margin-top: 2rem;
+    margin-bottom: 2rem;
+}
+
+.review-nav-btn {
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid #27272a;
+    color: #D4AF37;
+    width: 3rem;
+    height: 3rem;
+    border-radius: 50%;
+    font-size: 1.5rem;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    user-select: none;
+}
+
+.review-nav-btn:hover:not(:disabled) {
+    background: rgba(212, 175, 55, 0.1);
+    border-color: #D4AF37;
+    transform: scale(1.1);
+}
+
+.review-nav-btn:disabled {
+    opacity: 0.3;
+    cursor: not-allowed;
+    border-color: transparent;
+    color: #52525b;
+}
+
+/* 2. Avviso professionale "Non modificabile" */
+.review-disclaimer {
+    background: rgba(212, 175, 55, 0.05); /* Sfondo dorato molto tenue */
+    border-left: 3px solid #D4AF37;
+    padding: 1rem;
+    margin-bottom: 1.5rem;
+    border-radius: 0 0.5rem 0.5rem 0;
+}
+
+.review-disclaimer p {
+    font-size: 0.85rem;
+    color: #d4d4d8;
+    margin: 0;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.disclaimer-icon {
+    color: #D4AF37;
+    font-size: 1.1rem;
+}
 
         /* --- AGGIUNGI O SOSTITUISCI QUESTO CSS NEL BLOCCO <style> --- */
 
@@ -991,7 +1087,7 @@
                 </table>
             </div>
 
-            <div id="reviews" class="tab-content">
+<div id="reviews" class="tab-content">
     <div id="reviewsSummary" class="reviews-summary">
         <div class="rating-overview">
             <div class="rating-number" id="ratingNumber">0.0</div>
@@ -1009,8 +1105,19 @@
 
     <div id="reviewsList"></div>
 
+    <div id="reviewsPagination" class="reviews-nav-container" style="display: none;">
+        <button id="prevReviewPage" class="review-nav-btn">←</button>
+        <span id="pageIndicator" style="color: #52525b; font-size: 0.9rem; align-self: center;"></span>
+        <button id="nextReviewPage" class="review-nav-btn">→</button>
+    </div>
+
     <div class="review-form-container" style="margin-top: 3rem;">
         <h3 class="review-form-title">Scrivi una Recensione</h3>
+        
+        <div class="review-disclaimer">
+            <p><span class="disclaimer-icon">ⓘ</span> Nota bene: Per garantire l'integrità delle opinioni, una volta inviata, la recensione non potrà essere modificata o eliminata.</p>
+        </div>
+
         <p class="review-form-subtitle">Condividi la tua esperienza con questo prodotto</p>
         
         <form id="reviewForm">
@@ -1083,6 +1190,11 @@
         let currentReviewsData = []; 
         let productLoaded = false;
         let reviewsLoaded = false;
+
+        // --- VARIABILI GLOBALI AGGIUNTE ---
+        let currentReviewPage = 0;
+        const REVIEWS_PER_PAGE = 4;
+        let allReviewsCache = []; // Memorizza tutte le recensioni scaricate
 
         /* ====== Loader Dinamico ====== */
         const loadingMessages = [
@@ -1437,37 +1549,42 @@ function formatReviewDate(dateInput) {
             }
         }
 
-        function displayReviews(reviews) {
-            const container = document.getElementById('reviewsList');
-            if (!container) return;
+        // --- FUNZIONE DISPLAY REVIEWS AGGIORNATA (Paginazione) ---
+function displayReviews(reviews) {
+    allReviewsCache = reviews || []; // Salva in cache
+    currentReviewPage = 0; // Reset alla prima pagina
+    renderReviewsPage();
+    updateReviewsSummaryData(allReviewsCache); // Funzione helper per statistiche
+}
 
-            if (!reviews || reviews.length === 0) {
-                container.innerHTML = `<div class="no-reviews"><div class="no-reviews-icon">★</div><p>Nessuna recensione ancora. Sii il primo!</p></div>`;
-                updateReviewsSummary(0, 0, {});
-                return;
-            }
+function renderReviewsPage() {
+    const container = document.getElementById('reviewsList');
+    const navContainer = document.getElementById('reviewsPagination');
+    const prevBtn = document.getElementById('prevReviewPage');
+    const nextBtn = document.getElementById('nextReviewPage');
+    
+    if (!container) return;
+    container.innerHTML = '';
 
-            const totalReviews = reviews.length;
-            const totalRating = reviews.reduce((sum, r) => sum + parseFloat(r.rating), 0);
-            const averageRating = totalReviews > 0 ? (totalRating / totalReviews) : 0;
-            
-            const distribution = { 5: 0, 4: 0, 3: 0, 2: 0, 1: 0 };
-            reviews.forEach(r => {
-                let bucket = Math.round(r.rating);
-                if (bucket < 1) bucket = 1;
-                if (bucket > 5) bucket = 5;
-                distribution[bucket]++;
-            });
+    if (allReviewsCache.length === 0) {
+        container.innerHTML = `<div class="no-reviews"><div class="no-reviews-icon">★</div><p>Nessuna recensione ancora. Sii il primo!</p></div>`;
+        if(navContainer) navContainer.style.display = 'none';
+        return;
+    }
 
-            updateReviewsSummary(averageRating, totalReviews, distribution);
+    // Calcola slice per la pagina corrente
+    const start = currentReviewPage * REVIEWS_PER_PAGE;
+    const end = start + REVIEWS_PER_PAGE;
+    const pageReviews = allReviewsCache.slice(start, end);
 
-            container.innerHTML = '';
-    reviews.forEach(review => {
-        // *** MODIFICA QUI: Usa la nuova funzione formatReviewDate ***
+    // Renderizza elementi
+    pageReviews.forEach(review => {
         const formattedDate = formatReviewDate(review.date); 
-        
         const reviewEl = document.createElement('div');
         reviewEl.className = 'review-item';
+        // Animazione fade-in semplice
+        reviewEl.style.animation = 'fadeIn 0.5s ease';
+        
         reviewEl.innerHTML = `
             <div class="review-header">
                 <div>
@@ -1480,6 +1597,52 @@ function formatReviewDate(dateInput) {
         `;
         container.appendChild(reviewEl);
     });
+
+    // Gestione Navigazione (Mostra solo se >= 4 recensioni totali)
+    if (allReviewsCache.length >= 4) {
+        navContainer.style.display = 'flex';
+        
+        // Stato bottoni
+        prevBtn.disabled = currentReviewPage === 0;
+        nextBtn.disabled = end >= allReviewsCache.length;
+        
+        // Listener (rimuovi precedenti per evitare duplicati se richiamato)
+        prevBtn.onclick = () => {
+            if (currentReviewPage > 0) {
+                currentReviewPage--;
+                renderReviewsPage();
+                // Scroll leggero verso l'inizio della lista
+                document.getElementById('reviewsSummary').scrollIntoView({behavior: 'smooth'});
+            }
+        };
+        
+        nextBtn.onclick = () => {
+            if (end < allReviewsCache.length) {
+                currentReviewPage++;
+                renderReviewsPage();
+                document.getElementById('reviewsSummary').scrollIntoView({behavior: 'smooth'});
+            }
+        };
+    } else {
+        navContainer.style.display = 'none';
+    }
+}
+
+// Funzione helper estratta per pulizia codice (Statistiche)
+function updateReviewsSummaryData(reviews) {
+    const totalReviews = reviews.length;
+    const totalRating = reviews.reduce((sum, r) => sum + parseFloat(r.rating), 0);
+    const averageRating = totalReviews > 0 ? (totalRating / totalReviews) : 0;
+    
+    const distribution = { 5: 0, 4: 0, 3: 0, 2: 0, 1: 0 };
+    reviews.forEach(r => {
+        let bucket = Math.round(r.rating);
+        if (bucket < 1) bucket = 1;
+        if (bucket > 5) bucket = 5;
+        distribution[bucket]++;
+    });
+
+    updateReviewsSummary(averageRating, totalReviews, distribution);
 }
 
         function updateReviewsSummary(avgRating, count, distribution) {
@@ -1778,6 +1941,7 @@ function formatReviewDate(dateInput) {
     </script>
 </body>
 </html>
+
 
 
 
