@@ -979,6 +979,86 @@
     color: #a1a1aa;
     text-transform: capitalize;
 }
+
+        /* Stili Modale Premium */
+.custom-modal {
+    position: fixed;
+    top: 0; left: 0; width: 100%; height: 100%;
+    background: rgba(0, 0, 0, 0.8);
+    backdrop-filter: blur(8px);
+    z-index: 10000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.3s ease;
+}
+
+.custom-modal.active {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+.modal-content {
+    background: linear-gradient(135deg, #18181b, #0f0f0f);
+    border: 1px solid #D4AF37;
+    padding: 2.5rem;
+    border-radius: 1.5rem;
+    max-width: 450px;
+    width: 90%;
+    text-align: center;
+    box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5), 0 0 30px rgba(212, 175, 55, 0.1);
+    transform: scale(0.9);
+    transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.custom-modal.active .modal-content {
+    transform: scale(1);
+}
+
+.modal-icon {
+    font-size: 3rem;
+    margin-bottom: 1rem;
+    color: #D4AF37;
+}
+
+.modal-title {
+    color: #D4AF37;
+    font-size: 1.5rem;
+    margin-bottom: 1rem;
+    font-weight: 300;
+}
+
+.modal-message {
+    color: #fafafa;
+    font-size: 1.1rem;
+    margin-bottom: 0.5rem;
+    line-height: 1.6;
+}
+
+.modal-submessage {
+    color: #a1a1aa;
+    font-size: 0.9rem;
+    margin-bottom: 2rem;
+}
+
+.modal-btn {
+    background: #D4AF37;
+    color: #000;
+    border: none;
+    padding: 1rem 2.5rem;
+    border-radius: 2rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.3s;
+    font-size: 1rem;
+}
+
+.modal-btn:hover {
+    background: #fff;
+    transform: scale(1.05);
+}
     </style>
     <script src="https://unpkg.com/dompurify@2.4.0/dist/purify.min.js"></script>
     <script>
@@ -1176,6 +1256,16 @@
             </div>
         </div>
     </div>
+
+    <div id="duplicateReviewModal" class="custom-modal">
+    <div class="modal-content">
+        <div class="modal-icon">⚠️</div>
+        <h3 class="modal-title">Attenzione</h3>
+        <p class="modal-message">Abbiamo notato che hai già inviato una recensione per questo prodotto di recente.</p>
+        <p class="modal-submessage">Per garantire la qualità delle opinioni, è consentita una sola recensione per articolo.</p>
+        <button class="modal-btn" onclick="closeModal('duplicateReviewModal')">Ho capito</button>
+    </div>
+</div>
 
     <script>
         /* ======================================
@@ -1513,57 +1603,109 @@ function formatReviewDate(dateInput) {
             });
         }
 
-        /* ======================================
-           RECENSIONI - SISTEMA FETCH (MOBILE FIX)
-           ====================================== */
+        /* --- 1. FUNZIONE CALCOLO TEMPO DINAMICO --- */
+function getDynamicTime(timestamp, staticDateStr) {
+    if (!timestamp) return staticDateStr; // Fallback se manca timestamp
+    
+    const now = Date.now();
+    const diff = now - timestamp;
+    
+    // Meno di 1 minuto
+    if (diff < 60000) {
+        return 'Appena adesso';
+    }
+    
+    // Meno di 60 minuti
+    if (diff < 3600000) {
+        const minutes = Math.floor(diff / 60000);
+        return `${minutes} minut${minutes === 1 ? 'o' : 'i'} fa`;
+    }
+    
+    // Meno di 24 ore
+    if (diff < 86400000) {
+        const hours = Math.floor(diff / 3600000);
+        return `${hours} or${hours === 1 ? 'a' : 'e'} fa`;
+    }
+    
+    // Oltre 24 ore: Mostra data formattata (es: 6 Dicembre 2025)
+    return staticDateStr;
+}
 
-        async function loadReviews(sku) {
-            if (!sku) {
-                reviewsLoaded = true;
-                completeLoader();
-                return;
-            }
+/* --- 2. LOGICA MODALE --- */
+function closeModal(modalId) {
+    document.getElementById(modalId).classList.remove('active');
+}
 
-            // URL senza callback per ricevere JSON puro
-            const url = `${REVIEWS_API_URL}?action=get_reviews&sku=${encodeURIComponent(sku)}&_=${Date.now()}`;
+/* --- 3. FETCH RECENSIONI (POLLING INCLUSO) --- */
+let reviewsPollingInterval;
 
-            try {
-                // Fetch nativo (funziona su mobile)
-                const response = await fetch(url);
-                if (!response.ok) throw new Error('Network response was not ok');
-                
-                const data = await response.json();
-                
-                if (data && data.success) {
-                    currentReviewsData = data.reviews || [];
-                    displayReviews(currentReviewsData);
-                } else {
-                    displayReviews([]);
+async function loadReviews(sku, isPolling = false) {
+    if (!sku) {
+        reviewsLoaded = true;
+        completeLoader();
+        return;
+    }
+
+    const url = `${REVIEWS_API_URL}?action=get_reviews&sku=${encodeURIComponent(sku)}&_=${Date.now()}`;
+
+    try {
+        const response = await fetch(url);
+        if (!response.ok) throw new Error('Network response was not ok');
+        
+        const data = await response.json();
+        
+        if (data && data.success) {
+            const newReviews = data.reviews || [];
+            
+            // Se è polling, aggiorna solo se ci sono cambiamenti
+            if (isPolling) {
+                // Semplice check: se il numero è diverso o il timestamp dell'ultimo è più recente
+                if (newReviews.length !== currentReviewsData.length || 
+                   (newReviews.length > 0 && currentReviewsData.length > 0 && newReviews[0].timestamp !== currentReviewsData[0].timestamp)) {
+                    
+                    currentReviewsData = newReviews;
+                    displayReviews(currentReviewsData, true); // true = mantieni pagina corrente
+                    console.log('Recensioni aggiornate in tempo reale via polling');
                 }
-            } catch (error) {
-                console.error("Errore fetch recensioni:", error);
-                displayReviews([]); 
-            } finally {
-                reviewsLoaded = true;
-                completeLoader();
+            } else {
+                // Primo caricamento
+                currentReviewsData = newReviews;
+                displayReviews(currentReviewsData);
             }
         }
+    } catch (error) {
+        console.error("Errore fetch recensioni:", error);
+    } finally {
+        if (!isPolling) {
+            reviewsLoaded = true;
+            completeLoader();
+            // Avvia il polling dopo il primo caricamento
+            if (!reviewsPollingInterval) {
+                reviewsPollingInterval = setInterval(() => loadReviews(currentProductSku, true), 10000); // Check ogni 10 sec
+            }
+            // Avvia aggiornamento testi "tempo fa" ogni minuto
+            setInterval(updateTimeLabels, 60000);
+        }
+    }
+}
 
-        // --- FUNZIONE DISPLAY REVIEWS AGGIORNATA (Paginazione) ---
-function displayReviews(reviews) {
-    allReviewsCache = reviews || []; // Salva in cache
-    currentReviewPage = 0; // Reset alla prima pagina
+/* --- 4. RENDERIZZAZIONE AGGIORNATA --- */
+function displayReviews(reviews, keepPage = false) {
+    allReviewsCache = reviews || [];
+    if (!keepPage) currentReviewPage = 0; // Reset pagina solo se non è un update polling
+    
     renderReviewsPage();
-    updateReviewsSummaryData(allReviewsCache); // Funzione helper per statistiche
+    updateReviewsSummaryData(allReviewsCache);
 }
 
 function renderReviewsPage() {
     const container = document.getElementById('reviewsList');
     const navContainer = document.getElementById('reviewsPagination');
-    const prevBtn = document.getElementById('prevReviewPage');
-    const nextBtn = document.getElementById('nextReviewPage');
-    
     if (!container) return;
+    
+    // Salviamo la posizione di scroll attuale se stiamo aggiornando
+    const scrollPos = container.scrollTop;
+
     container.innerHTML = '';
 
     if (allReviewsCache.length === 0) {
@@ -1572,24 +1714,26 @@ function renderReviewsPage() {
         return;
     }
 
-    // Calcola slice per la pagina corrente
     const start = currentReviewPage * REVIEWS_PER_PAGE;
     const end = start + REVIEWS_PER_PAGE;
     const pageReviews = allReviewsCache.slice(start, end);
 
-    // Renderizza elementi
     pageReviews.forEach(review => {
-        const formattedDate = formatReviewDate(review.date); 
+        // Usa timestamp se presente, altrimenti fallback alla data statica
+        const timeDisplay = getDynamicTime(review.timestamp, formatReviewDate(review.date));
+        
         const reviewEl = document.createElement('div');
         reviewEl.className = 'review-item';
-        // Animazione fade-in semplice
-        reviewEl.style.animation = 'fadeIn 0.5s ease';
-        
+        // Aggiungi data-timestamp per aggiornamenti client-side
+        reviewEl.dataset.timestamp = review.timestamp || 0;
+        reviewEl.dataset.staticDate = formatReviewDate(review.date);
+
         reviewEl.innerHTML = `
             <div class="review-header">
                 <div>
                     <div class="review-author">${safeText(review.name)}</div>
-                    <div class="review-date">${formattedDate}</div> </div>
+                    <div class="review-date dynamic-time">${timeDisplay}</div> 
+                </div>
                 <div>${generateCompactStars(review.rating)}</div>
             </div>
             ${review.title ? `<div class="review-title">${safeText(review.title)}</div>` : ''}
@@ -1598,34 +1742,38 @@ function renderReviewsPage() {
         container.appendChild(reviewEl);
     });
 
-    // Gestione Navigazione (Mostra solo se >= 4 recensioni totali)
+    // Gestione paginazione (invariata)
     if (allReviewsCache.length >= 4) {
         navContainer.style.display = 'flex';
+        document.getElementById('prevReviewPage').disabled = currentReviewPage === 0;
+        document.getElementById('nextReviewPage').disabled = end >= allReviewsCache.length;
+        document.getElementById('pageIndicator').textContent = `${currentReviewPage + 1} / ${Math.ceil(allReviewsCache.length / REVIEWS_PER_PAGE)}`;
         
-        // Stato bottoni
-        prevBtn.disabled = currentReviewPage === 0;
-        nextBtn.disabled = end >= allReviewsCache.length;
-        
-        // Listener (rimuovi precedenti per evitare duplicati se richiamato)
-        prevBtn.onclick = () => {
-            if (currentReviewPage > 0) {
-                currentReviewPage--;
-                renderReviewsPage();
-                // Scroll leggero verso l'inizio della lista
-                document.getElementById('reviewsSummary').scrollIntoView({behavior: 'smooth'});
-            }
+        // Assegnazione handler click (IMPORTANTE: ricreare per aggiornare lo stato scope)
+        document.getElementById('prevReviewPage').onclick = () => {
+             if (currentReviewPage > 0) { currentReviewPage--; renderReviewsPage(); document.getElementById('reviewsSummary').scrollIntoView({behavior: 'smooth'}); }
         };
-        
-        nextBtn.onclick = () => {
-            if (end < allReviewsCache.length) {
-                currentReviewPage++;
-                renderReviewsPage();
-                document.getElementById('reviewsSummary').scrollIntoView({behavior: 'smooth'});
-            }
+        document.getElementById('nextReviewPage').onclick = () => {
+             if (end < allReviewsCache.length) { currentReviewPage++; renderReviewsPage(); document.getElementById('reviewsSummary').scrollIntoView({behavior: 'smooth'}); }
         };
     } else {
         navContainer.style.display = 'none';
     }
+}
+
+// Funzione leggera per aggiornare solo le etichette di tempo (senza ridisegnare tutto)
+function updateTimeLabels() {
+    const timeLabels = document.querySelectorAll('.dynamic-time');
+    timeLabels.forEach(label => {
+        const item = label.closest('.review-item');
+        if (item) {
+            const ts = parseInt(item.dataset.timestamp);
+            const staticDate = item.dataset.staticDate;
+            if (ts) {
+                label.textContent = getDynamicTime(ts, staticDate);
+            }
+        }
+    });
 }
 
 // Funzione helper estratta per pulizia codice (Statistiche)
@@ -1695,73 +1843,79 @@ function updateReviewsSummaryData(reviews) {
             });
 
             const form = document.getElementById('reviewForm');
-            form.addEventListener('submit', async (e) => {
-                e.preventDefault();
-                if (selectedReviewRating === 0) { alert('Seleziona una valutazione'); return; }
+    form.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        if (selectedReviewRating === 0) { alert('Seleziona una valutazione'); return; }
 
-                const submitBtn = document.getElementById('submitReviewBtn');
-                submitBtn.disabled = true;
-                submitBtn.textContent = 'Invio in corso...';
+        const submitBtn = document.getElementById('submitReviewBtn');
+        submitBtn.disabled = true;
+        submitBtn.textContent = 'Invio in corso...';
 
-                const formData = new URLSearchParams();
-                formData.append('action', 'submit_review');
-                formData.append('sku', currentProductSku);
-                formData.append('name', document.getElementById('reviewName').value);
-                formData.append('email', document.getElementById('reviewEmail').value);
-                formData.append('rating', selectedReviewRating);
-                formData.append('title', document.getElementById('reviewTitle').value);
-                formData.append('comment', document.getElementById('reviewComment').value);
+        const formData = new URLSearchParams();
+        formData.append('action', 'submit_review');
+        formData.append('sku', currentProductSku);
+        formData.append('name', document.getElementById('reviewName').value);
+        formData.append('email', document.getElementById('reviewEmail').value);
+        formData.append('rating', selectedReviewRating);
+        formData.append('title', document.getElementById('reviewTitle').value);
+        formData.append('comment', document.getElementById('reviewComment').value);
 
-                try {
-                    // Creiamo un oggetto form-data standard
-                    // Nota: Non impostare headers 'Content-Type' manualmente, lascia fare al browser
-                    const response = await fetch(REVIEWS_API_URL, {
-                        method: 'POST',
-                        body: formData
-                    });
+        try {
+            const response = await fetch(REVIEWS_API_URL, {
+                method: 'POST',
+                body: formData
+            });
 
-                    if (!response.ok) throw new Error('Network response was not ok');
-    
-                    const result = await response.json();
+            if (!response.ok) throw new Error('Network response was not ok');
+            const result = await response.json();
 
-                    if (result.success) {
-                        const newReview = {
-                            name: document.getElementById('reviewName').value,
-                            date: 'Appena adesso',
-                            rating: selectedReviewRating,
-                            title: document.getElementById('reviewTitle').value,
-                            comment: document.getElementById('reviewComment').value
-                        };
-                        
-                        currentReviewsData.unshift(newReview);
-                        displayReviews(currentReviewsData);
-                        
-                        form.reset();
-                        selectedReviewRating = 0;
-                        highlightStars(0);
-                        submitBtn.textContent = 'Recensione Inviata!';
-                        setTimeout(() => {
-                            submitBtn.disabled = false;
-                            submitBtn.textContent = 'Pubblica Recensione';
-                        }, 2000);
-                        
-                        // Scroll automatico alla recensione
-                        setTimeout(() => {
-                            const list = document.getElementById('reviewsList');
-                            if(list.firstChild) list.firstChild.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                        }, 100);
-
-                    } else {
-                        throw new Error(result.error || 'Errore sconosciuto');
-                    }
-                } catch (error) {
-                    console.error(error);
-                    alert('Errore invio: ' + error.message);
+            if (result.success) {
+                // Successo: Aggiungi localmente per feedback istantaneo
+                const newReview = {
+                    name: document.getElementById('reviewName').value,
+                    date: new Date(), // Temporaneo
+                    rating: selectedReviewRating,
+                    title: document.getElementById('reviewTitle').value,
+                    comment: document.getElementById('reviewComment').value,
+                    timestamp: Date.now()
+                };
+                
+                currentReviewsData.unshift(newReview);
+                displayReviews(currentReviewsData); // Reset pagina 0 per vedere la nuova
+                
+                form.reset();
+                selectedReviewRating = 0;
+                // Reset visuale stelle
+                document.querySelectorAll('.rating-star').forEach(s => s.classList.remove('full')); 
+                
+                submitBtn.textContent = 'Recensione Inviata!';
+                setTimeout(() => {
                     submitBtn.disabled = false;
                     submitBtn.textContent = 'Pubblica Recensione';
+                }, 2000);
+
+            } else {
+                // GESTIONE ERRORI SPECIFICI
+                if (result.error === 'DUPLICATE_REVIEW' || result.message.includes('già recensito')) {
+                    // Mostra il modale elegante
+                    document.getElementById('duplicateReviewModal').classList.add('active');
+                    submitBtn.disabled = false;
+                    submitBtn.textContent = 'Pubblica Recensione';
+                } else {
+                    throw new Error(result.error || 'Errore sconosciuto');
                 }
-            });
+            }
+        } catch (error) {
+            console.error(error);
+            // Fallback per errori generici
+            if (!document.getElementById('duplicateReviewModal').classList.contains('active')) {
+                alert('Errore invio: ' + error.message);
+            }
+            submitBtn.disabled = false;
+            submitBtn.textContent = 'Pubblica Recensione';
         }
+    });
+}
 
         /* ====== Caricamento Prodotto ====== */
         async function loadProduct() {
@@ -1941,6 +2095,7 @@ function updateReviewsSummaryData(reviews) {
     </script>
 </body>
 </html>
+
 
 
 
