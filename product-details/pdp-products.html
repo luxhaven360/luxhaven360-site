@@ -1471,23 +1471,28 @@ function generateCompactStars(rating) {
         }
 
         /* ======================================
-   RECENSIONI - NUOVO SISTEMA DI CARICAMENTO (FIX MOBILE & RETRY)
+   RECENSIONI - NUOVO SISTEMA DI CARICAMENTO (FIX MOBILE)
    ====================================== */
 
-// Callback globale definita esplicitamente su window
+// Definiamo la callback GLOBALE esplicitamente su window per evitare errori di scope su mobile
 window.handleReviewsResponse = function(response) {
     console.log('📥 Risposta recensioni ricevuta:', response);
     
-    // Pulizia
+    // Rimuovi lo script loader dal DOM per pulizia
     const oldScript = document.getElementById('reviews-loader-script');
     if (oldScript) oldScript.remove();
-    if (window.reviewsTimeout) clearTimeout(window.reviewsTimeout);
+    
+    // Cancella il timeout di sicurezza
+    if (window.reviewsTimeout) {
+        clearTimeout(window.reviewsTimeout);
+        window.reviewsTimeout = null;
+    }
 
     if (response && response.success && response.reviews) {
         currentReviewsData = response.reviews;
         displayReviews(currentReviewsData);
     } else {
-        // Fallback elegante
+        console.warn('⚠️ Nessuna recensione trovata o errore risposta');
         displayReviews([]);
     }
     
@@ -1495,60 +1500,49 @@ window.handleReviewsResponse = function(response) {
     completeLoader();
 };
 
-// Variabile per gestire i tentativi
-let reviewRetries = 0;
-
-function loadReviews(sku) {
+// Nuova funzione loadReviews basata su FETCH
+async function loadReviews(sku) {
     if (!sku) {
         reviewsLoaded = true;
         completeLoader();
         return;
     }
-    
-    // Rimuovi script precedenti
-    const existing = document.getElementById('reviews-loader-script');
-    if (existing) existing.remove();
 
-    // Timestamp per evitare cache aggressiva dei browser mobile
-    const timestamp = new Date().getTime();
-    
-    // Costruzione URL
-    const scriptUrl = `${REVIEWS_API_URL}?action=get_reviews&sku=${encodeURIComponent(sku)}&callback=handleReviewsResponse&_=${timestamp}`;
+    console.log(`📡 Fetching recensioni per: ${sku}`);
 
-    const script = document.createElement('script');
-    script.src = scriptUrl;
-    script.id = 'reviews-loader-script';
-    script.async = true;
-    
-    // GESTIONE ERRORE SPECIFICA PER MOBILE
-    script.onerror = function() {
-        console.error("❌ Errore caricamento script recensioni.");
+    try {
+        // Timestamp per evitare cache aggressiva su mobile
+        const timestamp = new Date().getTime();
+        const url = `${REVIEWS_API_URL}?action=get_reviews&sku=${encodeURIComponent(sku)}&_=${timestamp}`;
+
+        const response = await fetch(url, {
+            method: 'GET',
+            redirect: 'follow', // Importante per Google Scripts
+            headers: {
+                'Content-Type': 'text/plain;charset=utf-8',
+            }
+        });
+
+        if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+
+        const data = await response.json();
         
-        // TENTATIVO DI RETRY (Massimo 1 volta)
-        if (reviewRetries < 1) {
-            console.log("🔄 Riprovo il caricamento delle recensioni...");
-            reviewRetries++;
-            setTimeout(() => loadReviews(sku), 1500); // Riprova dopo 1.5 secondi
-        } else {
-            // Se fallisce ancora, sblocca il loader e mostra 0 recensioni
-            reviewsLoaded = true;
-            completeLoader();
-            displayReviews([]); 
-        }
-    };
+        console.log('📥 Dati ricevuti:', data);
 
-    // Timeout di sicurezza allungato per reti 4G/5G lente
-    window.reviewsTimeout = setTimeout(() => {
-        if (!reviewsLoaded) {
-            console.warn("⏱️ Timeout recensioni scaduto");
-            reviewsLoaded = true;
-            completeLoader();
+        if (data && data.success && data.reviews) {
+            currentReviewsData = data.reviews;
+            displayReviews(currentReviewsData);
+        } else {
             displayReviews([]);
         }
-    }, 25000); // 25 secondi
 
-    // FIX CRITICO: Usa document.body invece di head su mobile per ordine esecuzione
-    document.body.appendChild(script);
+    } catch (error) {
+        console.error("❌ Errore fetch recensioni:", error);
+        displayReviews([]); // Fallback graceful
+    } finally {
+        reviewsLoaded = true;
+        completeLoader();
+    }
 }
 
         /* --- FUNZIONI PRINCIPALI CORRETTE --- */
@@ -1670,25 +1664,33 @@ function setupReviewForm() {
         submitBtn.disabled = true;
         submitBtn.textContent = 'Invio in corso...';
 
-        const formData = {
+        // Prepara i parametri URL (Google Script doGet legge i parametri query)
+        const params = new URLSearchParams({
             action: 'submit_review',
             sku: currentProductSku,
             name: document.getElementById('reviewName').value,
             email: document.getElementById('reviewEmail').value,
             rating: selectedReviewRating,
             title: document.getElementById('reviewTitle').value,
-            comment: document.getElementById('reviewComment').value
-        };
+            comment: document.getElementById('reviewComment').value,
+            _: Date.now() // Cache buster
+        });
 
         try {
-            const params = new URLSearchParams(formData).toString();
-            const url = `${REVIEWS_API_URL}?${params}&callback=handleSubmitResponse&_=${Date.now()}`;
-            const script = document.createElement('script');
-            script.src = url;
-            script.onerror = () => { alert('Errore connessione'); submitBtn.disabled = false; submitBtn.textContent = 'Pubblica Recensione'; };
-            document.body.appendChild(script);
+            const response = await fetch(`${REVIEWS_API_URL}?${params.toString()}`, {
+                method: 'GET', // Usiamo GET perché il tuo script è su doGet
+                redirect: 'follow'
+            });
+
+            const data = await response.json();
+
+            // Usiamo la tua funzione esistente per gestire la UI post-invio
+            // Nota: ho modificato leggermente handleSubmitResponse sotto per accettare dati diretti
+            handleSubmitResponse(data);
+
         } catch (error) {
-            console.error(error);
+            console.error('Errore invio:', error);
+            alert('Errore di connessione. Riprova.');
             submitBtn.disabled = false;
             submitBtn.textContent = 'Pubblica Recensione';
         }
@@ -1959,6 +1961,3 @@ function handleSubmitResponse(response) {
     </script>
 </body>
 </html>
-
-
-
