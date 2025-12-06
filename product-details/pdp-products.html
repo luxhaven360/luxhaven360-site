@@ -1175,15 +1175,47 @@ function completeLoader() {
 // Formatta data: riceve già "5 Dicembre 2025" dal backend
 function formatDateExtended(dateInput) {
     if (!dateInput) return '';
-    // Se è una stringa formattata, restituiscila così com'è
-    if (typeof dateInput === 'string' && dateInput.includes(' ')) {
-        return dateInput.toLowerCase(); // Lowercase per "dicembre" invece di "Dicembre"
+
+    // Mappa per traduzione manuale (sicura al 100% indipendentemente dal browser)
+    const monthsENtoIT = {
+        'january': 'Gennaio', 'february': 'Febbraio', 'march': 'Marzo',
+        'april': 'Aprile', 'may': 'Maggio', 'june': 'Giugno',
+        'july': 'Luglio', 'august': 'Agosto', 'september': 'Settembre',
+        'october': 'Ottobre', 'november': 'Novembre', 'december': 'Dicembre'
+    };
+
+    let dateStr = '';
+
+    // Caso 1: È già un oggetto Date
+    if (dateInput instanceof Date) {
+        // Usa il formatter nativo italiano
+        return new Intl.DateTimeFormat('it-IT', { day: 'numeric', month: 'long', year: 'numeric' }).format(dateInput);
     }
-    // Fallback: se fosse un ISO date, prova a parsarla
-    const d = new Date(dateInput);
-    if (!isNaN(d.getTime())) {
-        return d.toLocaleDateString('it-IT', { day: 'numeric', month: 'long', year: 'numeric' });
+    
+    // Caso 2: È una stringa (es. "06 December 2025" o ISO)
+    if (typeof dateInput === 'string') {
+        // Se contiene testo (es. "December"), facciamo traduzione e pulizia manuale
+        if (dateInput.match(/[a-zA-Z]/)) {
+            // Rimuovi zero iniziale dai giorni (es. "06" -> "6")
+            let cleanDate = dateInput.replace(/^0+/, '').replace(/ 0+/, ' ');
+            
+            // Traduci il mese
+            Object.keys(monthsENtoIT).forEach(enMonth => {
+                const regex = new RegExp(enMonth, 'i'); // Case insensitive
+                if (cleanDate.match(regex)) {
+                    cleanDate = cleanDate.replace(regex, monthsENtoIT[enMonth]);
+                }
+            });
+            return cleanDate;
+        } 
+        
+        // Se è una stringa ISO o numerica, prova a convertirla in Date
+        const d = new Date(dateInput);
+        if (!isNaN(d.getTime())) {
+            return new Intl.DateTimeFormat('it-IT', { day: 'numeric', month: 'long', year: 'numeric' }).format(d);
+        }
     }
+
     return dateInput;
 }
 
@@ -1445,7 +1477,7 @@ function generateCompactStars(rating) {
         /**
          * Carica recensioni dal server
          */
-        async function loadReviews(sku) {
+async function loadReviews(sku) {
     if (!sku) {
         reviewsLoaded = true;
         completeLoader();
@@ -1456,80 +1488,65 @@ function generateCompactStars(rating) {
     const maxRetries = 3;
     
     function attemptLoad() {
-        try {
-            // Aggiungi timestamp per evitare cache
-            const timestamp = Date.now();
-            const url = `${REVIEWS_API_URL}?action=get_reviews&sku=${encodeURIComponent(sku)}&callback=handleReviewsResponse&_t=${timestamp}`;
-            
-            console.log(`📡 Tentativo ${retryCount + 1} caricamento recensioni per SKU: ${sku}`);
-            console.log(`URL: ${url}`);
-            
-            const script = document.createElement('script');
-            script.src = url;
-            script.id = 'reviews-loader-script';
-            
-            // Timeout più lungo su mobile
-            const timeoutDuration = 15000; // 15 secondi
-            
-            const timeoutId = setTimeout(() => {
-                if (!reviewsLoaded) {
-                    console.warn(`⏱️ Timeout caricamento recensioni (tentativo ${retryCount + 1})`);
-                    
-                    // Rimuovi script fallito
-                    const oldScript = document.getElementById('reviews-loader-script');
-                    if (oldScript) oldScript.remove();
-                    
-                    // Retry logic
-                    retryCount++;
-                    if (retryCount < maxRetries) {
-                        console.log(`🔄 Nuovo tentativo tra 2 secondi...`);
-                        setTimeout(attemptLoad, 2000);
-                    } else {
-                        console.error('❌ Tutti i tentativi falliti, mostro messaggio vuoto');
-                        reviewsLoaded = true;
-                        completeLoader();
-                        displayReviews([]); // Mostra "Nessuna recensione"
-                    }
-                }
-            }, timeoutDuration);
-            
-            script.onerror = () => {
-                clearTimeout(timeoutId);
-                console.error(`❌ Errore caricamento script recensioni (tentativo ${retryCount + 1})`);
+        // Pulisci eventuali script precedenti rimasti appesi
+        const existingScript = document.getElementById('reviews-loader-script');
+        if (existingScript) existingScript.remove();
+
+        // Timestamp per evitare cache aggressiva dei browser mobile
+        const timestamp = Date.now();
+        const url = `${REVIEWS_API_URL}?action=get_reviews&sku=${encodeURIComponent(sku)}&callback=handleReviewsResponse&_t=${timestamp}`;
+        
+        console.log(`📡 [Load] Tentativo ${retryCount + 1} per SKU: ${sku}`);
+        
+        const script = document.createElement('script');
+        script.src = url;
+        script.id = 'reviews-loader-script';
+        script.type = 'text/javascript'; // Esplicito per compatibilità mobile
+        script.async = true;             // Non bloccare il rendering
+        
+        // Timeout
+        const timeoutDuration = 20000; // 20 secondi (aumentato per reti 4G/5G instabili)
+        
+        const timeoutId = setTimeout(() => {
+            if (!reviewsLoaded) {
+                console.warn(`⏱️ Timeout (tentativo ${retryCount + 1})`);
+                script.remove(); // Rimuovi script fallito
                 
-                // Rimuovi script fallito
-                const oldScript = document.getElementById('reviews-loader-script');
-                if (oldScript) oldScript.remove();
-                
-                // Retry logic
                 retryCount++;
                 if (retryCount < maxRetries) {
-                    console.log(`🔄 Nuovo tentativo tra 2 secondi...`);
-                    setTimeout(attemptLoad, 2000);
+                    setTimeout(attemptLoad, 1500); // Riprova dopo 1.5s
                 } else {
-                    console.error('❌ Tutti i tentativi falliti');
-                    reviewsLoaded = true;
-                    completeLoader();
-                    displayReviews([]);
+                    console.error('❌ Timeout definitivo');
+                    fallbackNoReviews();
                 }
-            };
+            }
+        }, timeoutDuration);
+        
+        script.onerror = (e) => {
+            clearTimeout(timeoutId);
+            console.error(`❌ Errore caricamento script (tentativo ${retryCount + 1})`, e);
+            script.remove(); // Pulizia
             
-            script.onload = () => {
-                console.log('✅ Script recensioni caricato con successo');
-                clearTimeout(timeoutId);
-            };
-            
-            document.body.appendChild(script);
-            
-        } catch (error) {
-            console.error('❌ Errore generale caricamento recensioni:', error);
-            reviewsLoaded = true;
-            completeLoader();
-            displayReviews([]);
-        }
+            retryCount++;
+            if (retryCount < maxRetries) {
+                setTimeout(attemptLoad, 1500);
+            } else {
+                console.error('❌ Fallimento definitivo script');
+                fallbackNoReviews();
+            }
+        };
+        
+        // Appendere a HEAD è più sicuro su mobile rispetto a BODY
+        document.head.appendChild(script);
     }
     
-    // Inizia il primo tentativo
+    function fallbackNoReviews() {
+        reviewsLoaded = true;
+        completeLoader();
+        displayReviews([]); // Mostra UI vuota ma pulita
+    }
+    
+    // Avvia caricamento
     attemptLoad();
 }
 
@@ -1966,3 +1983,4 @@ function handleSubmitResponse(response) {
     </script>
 </body>
 </html>
+
