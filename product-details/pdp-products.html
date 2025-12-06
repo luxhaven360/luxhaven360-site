@@ -1452,51 +1452,110 @@ function generateCompactStars(rating) {
         return;
     }
     
-    try {
-        const url = `${REVIEWS_API_URL}?action=get_reviews&sku=${encodeURIComponent(sku)}&callback=handleReviewsResponse`;
-        
-        const script = document.createElement('script');
-        script.src = url;
-        
-        const timeoutId = setTimeout(() => {
-            if (!reviewsLoaded) {
-                console.warn('Timeout caricamento recensioni');
-                reviewsLoaded = true;
-                completeLoader();
-            }
-        }, 10000);
-        
-        script.onerror = () => {
-            clearTimeout(timeoutId);
-            console.error('Errore caricamento script recensioni');
+    let retryCount = 0;
+    const maxRetries = 3;
+    
+    function attemptLoad() {
+        try {
+            // Aggiungi timestamp per evitare cache
+            const timestamp = Date.now();
+            const url = `${REVIEWS_API_URL}?action=get_reviews&sku=${encodeURIComponent(sku)}&callback=handleReviewsResponse&_t=${timestamp}`;
+            
+            console.log(`📡 Tentativo ${retryCount + 1} caricamento recensioni per SKU: ${sku}`);
+            console.log(`URL: ${url}`);
+            
+            const script = document.createElement('script');
+            script.src = url;
+            script.id = 'reviews-loader-script';
+            
+            // Timeout più lungo su mobile
+            const timeoutDuration = 15000; // 15 secondi
+            
+            const timeoutId = setTimeout(() => {
+                if (!reviewsLoaded) {
+                    console.warn(`⏱️ Timeout caricamento recensioni (tentativo ${retryCount + 1})`);
+                    
+                    // Rimuovi script fallito
+                    const oldScript = document.getElementById('reviews-loader-script');
+                    if (oldScript) oldScript.remove();
+                    
+                    // Retry logic
+                    retryCount++;
+                    if (retryCount < maxRetries) {
+                        console.log(`🔄 Nuovo tentativo tra 2 secondi...`);
+                        setTimeout(attemptLoad, 2000);
+                    } else {
+                        console.error('❌ Tutti i tentativi falliti, mostro messaggio vuoto');
+                        reviewsLoaded = true;
+                        completeLoader();
+                        displayReviews([]); // Mostra "Nessuna recensione"
+                    }
+                }
+            }, timeoutDuration);
+            
+            script.onerror = () => {
+                clearTimeout(timeoutId);
+                console.error(`❌ Errore caricamento script recensioni (tentativo ${retryCount + 1})`);
+                
+                // Rimuovi script fallito
+                const oldScript = document.getElementById('reviews-loader-script');
+                if (oldScript) oldScript.remove();
+                
+                // Retry logic
+                retryCount++;
+                if (retryCount < maxRetries) {
+                    console.log(`🔄 Nuovo tentativo tra 2 secondi...`);
+                    setTimeout(attemptLoad, 2000);
+                } else {
+                    console.error('❌ Tutti i tentativi falliti');
+                    reviewsLoaded = true;
+                    completeLoader();
+                    displayReviews([]);
+                }
+            };
+            
+            script.onload = () => {
+                console.log('✅ Script recensioni caricato con successo');
+                clearTimeout(timeoutId);
+            };
+            
+            document.body.appendChild(script);
+            
+        } catch (error) {
+            console.error('❌ Errore generale caricamento recensioni:', error);
             reviewsLoaded = true;
             completeLoader();
-        };
-        
-        document.body.appendChild(script);
-        
-    } catch (error) {
-        console.error('Errore caricamento recensioni:', error);
-        reviewsLoaded = true;
-        completeLoader();
+            displayReviews([]);
+        }
     }
+    
+    // Inizia il primo tentativo
+    attemptLoad();
 }
 
         /**
          * Callback JSONP per gestire la risposta
          */
         function handleReviewsResponse(response) {
-    if (response.success && response.reviews) {
+    console.log('📥 Risposta recensioni ricevuta:', response);
+    
+    // Rimuovi lo script loader
+    const oldScript = document.getElementById('reviews-loader-script');
+    if (oldScript) oldScript.remove();
+    
+    if (response && response.success && response.reviews) {
+        console.log(`✅ ${response.reviews.length} recensioni caricate`);
         currentReviewsData = response.reviews;
         displayReviews(currentReviewsData);
     } else {
+        console.warn('⚠️ Nessuna recensione trovata o errore risposta');
         currentReviewsData = [];
         displayReviews([]);
     }
     
     // Segna recensioni come caricate
     reviewsLoaded = true;
-    completeLoader(); // Prova a completare il loader
+    completeLoader();
 }
 
         /* --- FUNZIONI PRINCIPALI CORRETTE --- */
@@ -1907,5 +1966,6 @@ function handleSubmitResponse(response) {
     </script>
 </body>
 </html>
+
 
 
