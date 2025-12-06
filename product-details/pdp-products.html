@@ -1500,49 +1500,49 @@ window.handleReviewsResponse = function(response) {
     completeLoader();
 };
 
-// Nuova funzione loadReviews basata su FETCH
-async function loadReviews(sku) {
+function loadReviews(sku) {
     if (!sku) {
         reviewsLoaded = true;
         completeLoader();
         return;
     }
+    
+    // Pulisci script precedenti
+    const existing = document.getElementById('reviews-loader-script');
+    if (existing) existing.remove();
 
-    console.log(`📡 Fetching recensioni per: ${sku}`);
+    console.log(`📡 Caricamento recensioni per: ${sku}`);
 
-    try {
-        // Timestamp per evitare cache aggressiva su mobile
-        const timestamp = new Date().getTime();
-        const url = `${REVIEWS_API_URL}?action=get_reviews&sku=${encodeURIComponent(sku)}&_=${timestamp}`;
+    // Crea URL con timestamp per evitare caching aggressivo su mobile
+    const timestamp = new Date().getTime();
+    const scriptUrl = `${REVIEWS_API_URL}?action=get_reviews&sku=${encodeURIComponent(sku)}&callback=handleReviewsResponse&_=${timestamp}`;
 
-        const response = await fetch(url, {
-            method: 'GET',
-            redirect: 'follow', // Importante per Google Scripts
-            headers: {
-                'Content-Type': 'text/plain;charset=utf-8',
-            }
-        });
-
-        if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-
-        const data = await response.json();
-        
-        console.log('📥 Dati ricevuti:', data);
-
-        if (data && data.success && data.reviews) {
-            currentReviewsData = data.reviews;
-            displayReviews(currentReviewsData);
-        } else {
-            displayReviews([]);
-        }
-
-    } catch (error) {
-        console.error("❌ Errore fetch recensioni:", error);
-        displayReviews([]); // Fallback graceful
-    } finally {
+    const script = document.createElement('script');
+    script.src = scriptUrl;
+    script.id = 'reviews-loader-script';
+    script.async = true;
+    
+    // Gestione errore nativo del tag script
+    script.onerror = function() {
+        console.error("❌ Errore caricamento script (onerror trigger)");
+        // Non blocchiamo tutto, mostriamo 0 recensioni e sblocchiamo il loader
         reviewsLoaded = true;
         completeLoader();
-    }
+        displayReviews([]); 
+    };
+
+    // Timeout di sicurezza (20 secondi per connessioni mobili lente)
+    window.reviewsTimeout = setTimeout(() => {
+        if (!reviewsLoaded) {
+            console.warn("⏱️ Timeout caricamento recensioni mobile");
+            reviewsLoaded = true;
+            completeLoader();
+            displayReviews([]); // Mostra vuoto invece di bloccarsi
+        }
+    }, 20000);
+
+    // Inserisci in HEAD invece che BODY (più compatibile con mobile)
+    document.getElementsByTagName('head')[0].appendChild(script);
 }
 
         /* --- FUNZIONI PRINCIPALI CORRETTE --- */
@@ -1664,33 +1664,25 @@ function setupReviewForm() {
         submitBtn.disabled = true;
         submitBtn.textContent = 'Invio in corso...';
 
-        // Prepara i parametri URL (Google Script doGet legge i parametri query)
-        const params = new URLSearchParams({
+        const formData = {
             action: 'submit_review',
             sku: currentProductSku,
             name: document.getElementById('reviewName').value,
             email: document.getElementById('reviewEmail').value,
             rating: selectedReviewRating,
             title: document.getElementById('reviewTitle').value,
-            comment: document.getElementById('reviewComment').value,
-            _: Date.now() // Cache buster
-        });
+            comment: document.getElementById('reviewComment').value
+        };
 
         try {
-            const response = await fetch(`${REVIEWS_API_URL}?${params.toString()}`, {
-                method: 'GET', // Usiamo GET perché il tuo script è su doGet
-                redirect: 'follow'
-            });
-
-            const data = await response.json();
-
-            // Usiamo la tua funzione esistente per gestire la UI post-invio
-            // Nota: ho modificato leggermente handleSubmitResponse sotto per accettare dati diretti
-            handleSubmitResponse(data);
-
+            const params = new URLSearchParams(formData).toString();
+            const url = `${REVIEWS_API_URL}?${params}&callback=handleSubmitResponse&_=${Date.now()}`;
+            const script = document.createElement('script');
+            script.src = url;
+            script.onerror = () => { alert('Errore connessione'); submitBtn.disabled = false; submitBtn.textContent = 'Pubblica Recensione'; };
+            document.body.appendChild(script);
         } catch (error) {
-            console.error('Errore invio:', error);
-            alert('Errore di connessione. Riprova.');
+            console.error(error);
             submitBtn.disabled = false;
             submitBtn.textContent = 'Pubblica Recensione';
         }
