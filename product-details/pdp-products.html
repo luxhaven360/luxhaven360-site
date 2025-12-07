@@ -1392,46 +1392,6 @@
             return new URLSearchParams(window.location.search).get(name);
         }
 
-        // --- SOSTITUISCI LA VECCHIA FUNZIONE formatDateExtended CON QUESTA ---
-
-function formatReviewDate(dateInput) {
-    if (!dateInput) return '';
-
-    const mesiItaliani = [
-        'Gennaio', 'Febbraio', 'Marzo', 'Aprile', 'Maggio', 'Giugno',
-        'Luglio', 'Agosto', 'Settembre', 'Ottobre', 'Novembre', 'Dicembre'
-    ];
-
-    let d;
-    
-    // Tentativo di parsing della data
-    if (dateInput instanceof Date) {
-        d = dateInput;
-    } else {
-        // Supporta timestamp o stringhe (anche "06 December 2025" o "2025-12-06")
-        d = new Date(dateInput);
-    }
-
-    // Se la data non è valida (es. stringa strana), prova a parsare manualmente "dd MMMM yyyy"
-    if (isNaN(d.getTime()) && typeof dateInput === 'string') {
-        // Fallback semplice per stringhe tipo "06 December 2025"
-        // Rimuove eventuali caratteri non necessari e prova a ricostruire
-        const parts = dateInput.split(' '); 
-        if(parts.length === 3) {
-             // Proviamo a passare il mese inglese al costruttore Date
-             d = new Date(dateInput);
-        }
-    }
-
-    if (isNaN(d.getTime())) return dateInput; // Ritorna originale se fallisce tutto
-
-    const giorno = d.getDate(); // Restituisce numero senza zero (es. 6)
-    const mese = mesiItaliani[d.getMonth()];
-    const anno = d.getFullYear();
-
-    return `${giorno} ${mese} ${anno}`;
-}
-
         function formatPrice(p, currency = 'EUR') {
             try { return new Intl.NumberFormat('it-IT', { style: 'currency', currency }).format(p); } 
             catch (e) { return p + ' ' + currency; }
@@ -1633,57 +1593,57 @@ function formatReviewDate(dateInput) {
         }
 
 /* --- LOGICA TEMPORALE AGGIORNATA --- */
-function getDynamicTime(dateWithTime) {
-    if (!dateWithTime) return '';
-    
-    // Parsing della data nel formato "07 December 2025 - 17:46"
-    // Convertiamo "07 December 2025 - 17:46" in un oggetto Date
-    let reviewDate;
+function getDynamicTime(dateTimeStr) {
+    if (!dateTimeStr) return '';
     
     try {
-        // Rimuoviamo il trattino e lo spazio per facilitare il parsing
-        const cleanedDate = dateWithTime.replace(' - ', ' ');
-        reviewDate = new Date(cleanedDate);
+        // Parse della stringa "07 December 2025 - 17:46"
+        const parts = dateTimeStr.split(' - ');
+        if (parts.length !== 2) return dateTimeStr;
         
-        // Verifica se la data è valida
-        if (isNaN(reviewDate.getTime())) {
-            return dateWithTime; // Fallback: mostra la stringa originale
+        const datePart = parts[0]; // "07 December 2025"
+        const timePart = parts[1]; // "17:46"
+        
+        // Creiamo oggetto Date
+        const reviewDate = new Date(datePart + ' ' + timePart);
+        
+        if (isNaN(reviewDate.getTime())) return dateTimeStr;
+        
+        const now = Date.now();
+        const reviewTimestamp = reviewDate.getTime();
+        const diff = now - reviewTimestamp;
+        
+        const oneMinute = 60 * 1000;
+        const oneHour = 60 * oneMinute;
+        const oneDay = 24 * oneHour;
+
+        // Controllo preventivo per orari futuri
+        if (diff < 0) return 'ora';
+
+        // 1. Meno di 1 minuto -> "ora"
+        if (diff < oneMinute) {
+            return 'ora';
         }
+        
+        // 2. Da 1 minuto a 59 minuti
+        if (diff < oneHour) {
+            const minutes = Math.floor(diff / oneMinute);
+            return `${minutes} minut${minutes === 1 ? 'o' : 'i'} fa`;
+        }
+        
+        // 3. Da 1 ora a 23 ore
+        if (diff < oneDay) {
+            const hours = Math.floor(diff / oneHour);
+            return `${hours} or${hours === 1 ? 'a' : 'e'} fa`;
+        }
+        
+        // 4. Oltre 24 ore -> Mostra solo la data (senza ora)
+        return datePart; // Es: "07 December 2025"
+        
     } catch (e) {
-        return dateWithTime;
+        console.error('Errore parsing data:', e);
+        return dateTimeStr;
     }
-    
-    const now = new Date();
-    const diff = now - reviewDate; // Differenza in millisecondi
-    
-    const oneMinute = 60 * 1000;
-    const oneHour = 60 * oneMinute;
-    const oneDay = 24 * oneHour;
-
-    // Controllo preventivo per date future
-    if (diff < 0) return 'ora';
-
-    // 1. Meno di 1 minuto -> "ora" (minuscolo)
-    if (diff < oneMinute) {
-        return 'ora';
-    }
-    
-    // 2. Da 1 minuto a 59 minuti
-    if (diff < oneHour) {
-        const minutes = Math.floor(diff / oneMinute);
-        return `${minutes} minut${minutes === 1 ? 'o' : 'i'} fa`;
-    }
-    
-    // 3. Da 1 ora a 23 ore
-    if (diff < oneDay) {
-        const hours = Math.floor(diff / oneHour);
-        return `${hours} or${hours === 1 ? 'a' : 'e'} fa`;
-    }
-    
-    // 4. Oltre 24 ore -> Mostra solo la data (rimuove l'orario)
-    // Estrae solo "07 December 2025" da "07 December 2025 - 17:46"
-    const datePart = dateWithTime.split(' - ')[0];
-    return datePart;
 }
 
 // Funzione per aggiornare le etichette di tempo in tempo reale
@@ -1692,10 +1652,10 @@ function updateTimeLabels() {
     timeLabels.forEach(label => {
         const item = label.closest('.review-item');
         if (item) {
-            const dateWithTime = item.dataset.dateWithTime;
+            const dateTimeStr = item.dataset.datetime;
             
-            if (dateWithTime) {
-                const newText = getDynamicTime(dateWithTime);
+            if (dateTimeStr) {
+                const newText = getDynamicTime(dateTimeStr);
                 if (label.textContent !== newText) {
                     label.textContent = newText;
                 }
@@ -1789,25 +1749,26 @@ function renderReviewsPage() {
     const pageReviews = allReviewsCache.slice(start, end);
 
     pageReviews.forEach(review => {
-        const timeDisplay = getDynamicTime(review.dateWithTime);
-        
-        const reviewEl = document.createElement('div');
-        reviewEl.className = 'review-item';
-        reviewEl.dataset.dateWithTime = review.dateWithTime; // Salva la data completa nel dataset
+    const dateTimeStr = review.dateTime || ''; // "07 December 2025 - 17:46"
+    const timeDisplay = getDynamicTime(dateTimeStr);
+    
+    const reviewEl = document.createElement('div');
+    reviewEl.className = 'review-item';
+    reviewEl.dataset.datetime = dateTimeStr; // Salviamo la data+ora completa
 
-        reviewEl.innerHTML = `
-            <div class="review-header">
-                <div>
-                    <div class="review-author">${safeText(review.name)}</div>
-                    <div class="review-date dynamic-time">${timeDisplay}</div> 
-                </div>
-                <div>${generateCompactStars(review.rating)}</div>
+    reviewEl.innerHTML = `
+        <div class="review-header">
+            <div>
+                <div class="review-author">${safeText(review.name)}</div>
+                <div class="review-date dynamic-time">${timeDisplay}</div> 
             </div>
-            ${review.title ? `<div class="review-title">${safeText(review.title)}</div>` : ''}
-            <p class="review-text">${safeText(review.comment)}</p>
-        `;
-        container.appendChild(reviewEl);
-    });
+            <div>${generateCompactStars(review.rating)}</div>
+        </div>
+        ${review.title ? `<div class="review-title">${safeText(review.title)}</div>` : ''}
+        <p class="review-text">${safeText(review.comment)}</p>
+    `;
+    container.appendChild(reviewEl);
+});
 
     // Gestione paginazione (invariata)
     if (allReviewsCache.length >= 4) {
@@ -1920,57 +1881,48 @@ function updateReviewsSummaryData(reviews) {
             if (!response.ok) throw new Error('Network response was not ok');
             const result = await response.json();
 
-            if (result.success) {if (result.success) {
-                // Usa la data formattata ritornata dal server
-                const dateWithTime = result.dateWithTime || new Date().toLocaleString('en-GB', {
-                    day: '2-digit',
-                    month: 'long',
-                    year: 'numeric',
-                    hour: '2-digit',
-                    minute: '2-digit',
-                    hour12: false
-                }).replace(',', ' -');
+            if (result.success) {
+    // Usa la data+ora ritornata dal server
+    const newReview = {
+        name: document.getElementById('reviewName').value,
+        dateTime: result.dateTime, // Es: "07 December 2025 - 17:46"
+        rating: selectedReviewRating,
+        title: document.getElementById('reviewTitle').value,
+        comment: document.getElementById('reviewComment').value
+    };
 
-                const newReview = {
-                    name: document.getElementById('reviewName').value,
-                    dateWithTime: dateWithTime,
-                    rating: selectedReviewRating,
-                    title: document.getElementById('reviewTitle').value,
-                    comment: document.getElementById('reviewComment').value
-                };
+    // Inserimento in cima
+    currentReviewsData.unshift(newReview);
+    displayReviews(currentReviewsData, true);
 
-                // Inserimento in cima
-                currentReviewsData.unshift(newReview);
-                displayReviews(currentReviewsData, true);
+    // Reset interfaccia
+    form.reset();
+    selectedReviewRating = 0;
+    document.querySelectorAll('.rating-star').forEach(s => s.classList.remove('full')); 
+    submitBtn.textContent = 'Recensione Inviata!';
 
-                // Reset interfaccia
-                form.reset();
-                selectedReviewRating = 0;
-                document.querySelectorAll('.rating-star').forEach(s => s.classList.remove('full')); 
-                submitBtn.textContent = 'Recensione Inviata!';
+    // Animazione scroll & evidenziazione
+    setTimeout(() => {
+        const listContainer = document.getElementById('reviewsList');
+        if (listContainer && listContainer.firstElementChild) {
+            const newElement = listContainer.firstElementChild;
+            
+            newElement.scrollIntoView({ 
+                behavior: 'smooth', 
+                block: 'center' 
+            });
 
-                // Animazione scroll & evidenziazione
-                setTimeout(() => {
-                    const listContainer = document.getElementById('reviewsList');
-                    if (listContainer && listContainer.firstElementChild) {
-                        const newElement = listContainer.firstElementChild;
-                        
-                        newElement.scrollIntoView({ 
-                            behavior: 'smooth', 
-                            block: 'center' 
-                        });
+            newElement.classList.remove('review-highlight-premium');
+            void newElement.offsetWidth;
+            newElement.classList.add('review-highlight-premium');
+        }
+    }, 100);
 
-                        newElement.classList.remove('review-highlight-premium');
-                        void newElement.offsetWidth;
-                        newElement.classList.add('review-highlight-premium');
-                    }
-                }, 100);
-
-                setTimeout(() => {
-                    submitBtn.disabled = false;
-                    submitBtn.textContent = 'Pubblica Recensione';
-                }, 2000);
-            } else {
+    setTimeout(() => {
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Pubblica Recensione';
+    }, 2000);
+} else {
                 // Gestione Errori (Duplicato ecc.)
                 if (result.error === 'DUPLICATE_REVIEW' || (result.message && result.message.includes('già recensito'))) {
                     document.getElementById('duplicateReviewModal').classList.add('active');
@@ -2169,6 +2121,7 @@ function updateReviewsSummaryData(reviews) {
     </script>
 </body>
 </html>
+
 
 
 
