@@ -1776,28 +1776,28 @@ function renderReviewsPage() {
     const pageReviews = allReviewsCache.slice(start, end);
 
     pageReviews.forEach(review => {
-        // Usa timestamp se presente, altrimenti fallback alla data statica
-        const timeDisplay = getDynamicTime(review.timestamp, formatReviewDate(review.date));
-        
-        const reviewEl = document.createElement('div');
-        reviewEl.className = 'review-item';
-        // Aggiungi data-timestamp per aggiornamenti client-side
-        reviewEl.dataset.timestamp = review.timestamp || 0;
-        reviewEl.dataset.staticDate = formatReviewDate(review.date);
+    const reviewTimestamp = review.timestamp || 0;
+    const staticDate = formatReviewDate(review.date);
+    const timeDisplay = getDynamicTime(reviewTimestamp, staticDate);
+    
+    const reviewEl = document.createElement('div');
+    reviewEl.className = 'review-item';
+    reviewEl.dataset.timestamp = reviewTimestamp;
+    reviewEl.dataset.staticDate = staticDate;
 
-        reviewEl.innerHTML = `
-            <div class="review-header">
-                <div>
-                    <div class="review-author">${safeText(review.name)}</div>
-                    <div class="review-date dynamic-time">${timeDisplay}</div> 
-                </div>
-                <div>${generateCompactStars(review.rating)}</div>
+    reviewEl.innerHTML = `
+        <div class="review-header">
+            <div>
+                <div class="review-author">${safeText(review.name)}</div>
+                <div class="review-date dynamic-time">${timeDisplay}</div> 
             </div>
-            ${review.title ? `<div class="review-title">${safeText(review.title)}</div>` : ''}
-            <p class="review-text">${safeText(review.comment)}</p>
-        `;
-        container.appendChild(reviewEl);
-    });
+            <div>${generateCompactStars(review.rating)}</div>
+        </div>
+        ${review.title ? `<div class="review-title">${safeText(review.title)}</div>` : ''}
+        <p class="review-text">${safeText(review.comment)}</p>
+    `;
+    container.appendChild(reviewEl);
+});
 
     // Gestione paginazione (invariata)
     if (allReviewsCache.length >= 4) {
@@ -1911,56 +1911,50 @@ function updateReviewsSummaryData(reviews) {
             const result = await response.json();
 
             if (result.success) {
-                // --- PUNTO CHIAVE: Creazione oggetto locale ---
-                // Creazione oggetto locale con timestamp attuale
-const nowTimestamp = Date.now(); 
+    // Creazione oggetto locale con timestamp attuale
+    const nowTimestamp = Date.now(); 
 
-const newReview = {
-    name: document.getElementById('reviewName').value,
-    date: new Date(), // Questo oggetto Date serve solo come base per formatReviewDate se passano 24h
-    rating: selectedReviewRating,
-    title: document.getElementById('reviewTitle').value,
-    comment: document.getElementById('reviewComment').value,
-    timestamp: nowTimestamp // FONDAMENTALE: Usiamo questo per calcolare "ora", "1 min fa", ecc.
-};
+    const newReview = {
+        name: document.getElementById('reviewName').value,
+        date: new Date().toISOString(), // Formato ISO per compatibilità
+        rating: selectedReviewRating,
+        title: document.getElementById('reviewTitle').value,
+        comment: document.getElementById('reviewComment').value,
+        timestamp: nowTimestamp // FONDAMENTALE: Usiamo questo per calcolare "ora", "1 min fa", ecc.
+    };
 
-// Inserimento in cima
-currentReviewsData.unshift(newReview);
-displayReviews(currentReviewsData); 
+    // Inserimento in cima
+    currentReviewsData.unshift(newReview);
+    displayReviews(currentReviewsData, true); // true per mantenere la pagina corrente
 
-// Reset interfaccia
-form.reset();
-selectedReviewRating = 0;
-document.querySelectorAll('.rating-star').forEach(s => s.classList.remove('full')); 
-submitBtn.textContent = 'Recensione Inviata!';
+    // Reset interfaccia
+    form.reset();
+    selectedReviewRating = 0;
+    document.querySelectorAll('.rating-star').forEach(s => s.classList.remove('full')); 
+    submitBtn.textContent = 'Recensione Inviata!';
 
-// --- ANIMAZIONE SCROLL & EVIDENZIAZIONE ---
-setTimeout(() => {
-    const listContainer = document.getElementById('reviewsList');
-    if (listContainer && listContainer.firstElementChild) {
-        const newElement = listContainer.firstElementChild;
-        
-        // 1. Scroll fluido e CENTRATO
-        newElement.scrollIntoView({ 
-            behavior: 'smooth', 
-            block: 'center' 
-        });
+    // Animazione scroll & evidenziazione
+    setTimeout(() => {
+        const listContainer = document.getElementById('reviewsList');
+        if (listContainer && listContainer.firstElementChild) {
+            const newElement = listContainer.firstElementChild;
+            
+            newElement.scrollIntoView({ 
+                behavior: 'smooth', 
+                block: 'center' 
+            });
 
-        // 2. Applicazione classe Premium
-        // Rimuovi e riaggiungi per forzare il riavvio dell'animazione se necessario
-        newElement.classList.remove('review-highlight-premium');
-        void newElement.offsetWidth; // Trigger reflow
-        newElement.classList.add('review-highlight-premium');
-    }
-}, 100);
-                // ------------------------------------------
+            newElement.classList.remove('review-highlight-premium');
+            void newElement.offsetWidth;
+            newElement.classList.add('review-highlight-premium');
+        }
+    }, 100);
 
-                setTimeout(() => {
-                    submitBtn.disabled = false;
-                    submitBtn.textContent = 'Pubblica Recensione';
-                }, 2000);
-
-            } else {
+    setTimeout(() => {
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Pubblica Recensione';
+    }, 2000);
+} else {
                 // Gestione Errori (Duplicato ecc.)
                 if (result.error === 'DUPLICATE_REVIEW' || (result.message && result.message.includes('già recensito'))) {
                     document.getElementById('duplicateReviewModal').classList.add('active');
@@ -2159,6 +2153,7 @@ setTimeout(() => {
     </script>
 </body>
 </html>
+
 
 
 
