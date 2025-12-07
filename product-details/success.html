@@ -1267,19 +1267,17 @@ function setupButtons() {
 function loadOrderDetails(maxRetries = 3) {
     const urlParams = new URLSearchParams(window.location.search);
     const sessionId = urlParams.get('session_id');
-    const orderIdParam = urlParams.get('id_ordine');
-
     const orderNumElem = document.getElementById('orderNumber');
     const emailElem = document.getElementById('emailValue');
     const paymentElem = document.getElementById('paymentValue');
 
+    // Visualizza subito ID se presente in URL
+    const orderIdParam = urlParams.get('id_ordine');
     if (orderIdParam && orderNumElem) {
         orderNumElem.textContent = `Ordine #${orderIdParam}`;
     }
 
     if (!sessionId) {
-        if (emailElem) emailElem.textContent = 'Non disponibile';
-        if (paymentElem) paymentElem.textContent = 'Non disponibile';
         completeLoadingSequence();
         return;
     }
@@ -1290,21 +1288,29 @@ function loadOrderDetails(maxRetries = 3) {
     function tryRequest() {
         if (finished) return;
         attempts++;
+        
+        // Genera nome callback unico
         const callbackName = 'handleDetailsResponse_' + Date.now() + '_' + Math.floor(Math.random() * 10000);
+        
         const script = document.createElement('script');
+        // Aggiungiamo parametro 't' per evitare cache browser
         const src = `${webAppUrl}?get_details=1&session_id=${encodeURIComponent(sessionId)}&callback=${callbackName}&t=${Date.now()}`;
         script.src = src;
         script.async = true;
 
+        // FIX ERRORI CONSOLE: Non cancellare la funzione, rendila vuota
         const cleanup = () => {
             try { if (script.parentNode) script.parentNode.removeChild(script); } catch (e) {}
-            try { delete window[callbackName]; } catch (e) {}
+            // Invece di delete, assegnamo una funzione vuota. 
+            // Se la risposta arriva tardi, chiamerà questa funzione e non succederà nulla (nessun errore rosso).
+            window[callbackName] = function() {}; 
         };
 
         window[callbackName] = function(response) {
-            if (finished) { cleanup(); return; }
+            if (finished) return;
             finished = true;
-            cleanup();
+            // Qui possiamo pulire davvero se vogliamo, o lasciare la funzione vuota
+            cleanup(); 
             handleDetailsResponse(response);
         };
 
@@ -1312,73 +1318,55 @@ function loadOrderDetails(maxRetries = 3) {
             cleanup();
             if (attempts <= maxRetries) {
                 console.warn('JSONP load error, retrying...', attempts);
-                setTimeout(tryRequest, 1200 + attempts * 300);
+                setTimeout(tryRequest, 1500 + (attempts * 500)); // Backoff incrementale
             } else {
-                tryFetchFallback().then(resp => {
-                    if (resp) {
-                        finished = true;
-                        handleDetailsResponse(resp);
-                    } else {
-                        console.warn('Fallback fetch failed. Mostriamo contenuto parziale.');
-                        if (emailElem) emailElem.textContent = 'Non disponibile';
-                        if (paymentElem) paymentElem.textContent = 'Non disponibile';
-                        completeLoadingSequence();
-                    }
-                }).catch(err => {
-                    console.warn('Fallback fetch exception', err);
-                    if (emailElem) emailElem.textContent = 'Non disponibile';
-                    if (paymentElem) paymentElem.textContent = 'Non disponibile';
-                    completeLoadingSequence();
-                });
+                tryFetchFallback();
             }
         };
 
         document.body.appendChild(script);
 
+        // Timeout più lungo per connessioni lente
         setTimeout(() => {
             if (!finished) {
-                try { cleanup(); } catch (e) {}
+                // Non segniamo finished = true qui, lasciamo che il retry faccia il suo corso
+                // Ma puliamo questo tentativo specifico
+                cleanup();
                 if (attempts <= maxRetries) {
                     console.warn('JSONP timeout, retrying...', attempts);
-                    setTimeout(tryRequest, 800 + attempts * 200);
+                    tryRequest();
                 } else {
-                    tryFetchFallback().then(resp => {
-                        if (resp) {
-                            finished = true;
-                            handleDetailsResponse(resp);
-                        } else {
-                            if (emailElem) emailElem.textContent = 'Non disponibile';
-                            if (paymentElem) paymentElem.textContent = 'Non disponibile';
-                            completeLoadingSequence();
-                        }
-                    }).catch(err => {
-                        if (emailElem) emailElem.textContent = 'Non disponibile';
-                        if (paymentElem) paymentElem.textContent = 'Non disponibile';
-                        completeLoadingSequence();
-                    });
+                    tryFetchFallback();
                 }
             }
-        }, 5000);
+        }, 8000); // 8 secondi di timeout per richiesta
     }
 
     async function tryFetchFallback() {
+        if (finished) return;
         try {
+            // Tentativo fetch moderno come ultima spiaggia
             const fetchUrl = `${webAppUrl}?get_details=1&session_id=${encodeURIComponent(sessionId)}&callback=__FALLBACK_CB&no_cache=${Date.now()}`;
-            const res = await fetch(fetchUrl, { method: 'GET', cache: 'no-store' });
-            if (!res.ok) {
-                console.warn('Fetch fallback response not ok', res.status);
-                return null;
-            }
+            const res = await fetch(fetchUrl);
+            if (!res.ok) throw new Error('Fetch failed');
+            
             const text = await res.text();
             const start = text.indexOf('(');
             const end = text.lastIndexOf(')');
-            if (start === -1 || end === -1) return null;
-            const jsonStr = text.substring(start + 1, end);
-            const parsed = JSON.parse(jsonStr);
-            return parsed;
+            if (start > -1 && end > -1) {
+                const jsonStr = text.substring(start + 1, end);
+                const parsed = JSON.parse(jsonStr);
+                finished = true;
+                handleDetailsResponse(parsed);
+                return;
+            }
         } catch (e) {
-            console.warn('Fetch fallback failed (CORS/network?)', e);
-            return null;
+            console.warn('Fallback fetch failed', e);
+        }
+        // Se tutto fallisce
+        if (!finished) {
+            finished = true;
+            completeLoadingSequence();
         }
     }
 
@@ -1847,5 +1835,6 @@ function loadPurchasedItems() {
     </script>    
 </body>
 </html>
+
 
 
