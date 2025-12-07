@@ -1610,18 +1610,18 @@ function getDynamicTime(timestamp, staticDateStr) {
     const now = Date.now();
     const diff = now - timestamp;
     
-    // Meno di 1 minuto
+    // Meno di 1 minuto (60.000 ms)
     if (diff < 60000) {
         return 'Appena adesso';
     }
     
-    // Meno di 60 minuti
+    // Meno di 1 ora (3.600.000 ms)
     if (diff < 3600000) {
         const minutes = Math.floor(diff / 60000);
         return `${minutes} minut${minutes === 1 ? 'o' : 'i'} fa`;
     }
     
-    // Meno di 24 ore
+    // Meno di 24 ore (86.400.000 ms)
     if (diff < 86400000) {
         const hours = Math.floor(diff / 3600000);
         return `${hours} or${hours === 1 ? 'a' : 'e'} fa`;
@@ -1631,13 +1631,32 @@ function getDynamicTime(timestamp, staticDateStr) {
     return staticDateStr;
 }
 
-/* --- 2. LOGICA MODALE --- */
-function closeModal(modalId) {
-    document.getElementById(modalId).classList.remove('active');
+// Funzione per aggiornare le etichette di tempo in tempo reale
+function updateTimeLabels() {
+    const timeLabels = document.querySelectorAll('.dynamic-time');
+    timeLabels.forEach(label => {
+        const item = label.closest('.review-item');
+        if (item) {
+            const ts = parseInt(item.dataset.timestamp);
+            const staticDate = item.dataset.staticDate;
+            
+            // Ricalcola solo se abbiamo un timestamp valido e recente (< 24h)
+            // Se è > 24h il testo rimane statico e non serve ricalcolare inutilmente,
+            // ma per sicurezza chiamiamo getDynamicTime che gestisce il fallback.
+            if (ts) {
+                const newText = getDynamicTime(ts, staticDate);
+                // Aggiorna il DOM solo se il testo è cambiato per evitare reflow inutili
+                if (label.textContent !== newText) {
+                    label.textContent = newText;
+                }
+            }
+        }
+    });
 }
 
-/* --- 3. FETCH RECENSIONI (POLLING INCLUSO) --- */
+/* --- FETCH RECENSIONI (POLLING INCLUSO) --- */
 let reviewsPollingInterval;
+let timeUpdateInterval; // Variabile per gestire l'intervallo del tempo
 
 async function loadReviews(sku, isPolling = false) {
     if (!sku) {
@@ -1657,18 +1676,15 @@ async function loadReviews(sku, isPolling = false) {
         if (data && data.success) {
             const newReviews = data.reviews || [];
             
-            // Se è polling, aggiorna solo se ci sono cambiamenti
             if (isPolling) {
-                // Semplice check: se il numero è diverso o il timestamp dell'ultimo è più recente
                 if (newReviews.length !== currentReviewsData.length || 
                    (newReviews.length > 0 && currentReviewsData.length > 0 && newReviews[0].timestamp !== currentReviewsData[0].timestamp)) {
                     
                     currentReviewsData = newReviews;
-                    displayReviews(currentReviewsData, true); // true = mantieni pagina corrente
+                    displayReviews(currentReviewsData, true); 
                     console.log('Recensioni aggiornate in tempo reale via polling');
                 }
             } else {
-                // Primo caricamento
                 currentReviewsData = newReviews;
                 displayReviews(currentReviewsData);
             }
@@ -1679,12 +1695,16 @@ async function loadReviews(sku, isPolling = false) {
         if (!isPolling) {
             reviewsLoaded = true;
             completeLoader();
-            // Avvia il polling dopo il primo caricamento
+            
+            // Polling per nuove recensioni dal server (ogni 10 sec)
             if (!reviewsPollingInterval) {
-                reviewsPollingInterval = setInterval(() => loadReviews(currentProductSku, true), 10000); // Check ogni 10 sec
+                reviewsPollingInterval = setInterval(() => loadReviews(currentProductSku, true), 10000); 
             }
-            // Avvia aggiornamento testi "tempo fa" ogni minuto
-            setInterval(updateTimeLabels, 60000);
+            
+            // Timer dedicato per aggiornare le scritte "X minuti fa" (ogni 30 secondi per precisione)
+            if (!timeUpdateInterval) {
+                timeUpdateInterval = setInterval(updateTimeLabels, 30000);
+            }
         }
     }
 }
@@ -1761,21 +1781,6 @@ function renderReviewsPage() {
     }
 }
 
-// Funzione leggera per aggiornare solo le etichette di tempo (senza ridisegnare tutto)
-function updateTimeLabels() {
-    const timeLabels = document.querySelectorAll('.dynamic-time');
-    timeLabels.forEach(label => {
-        const item = label.closest('.review-item');
-        if (item) {
-            const ts = parseInt(item.dataset.timestamp);
-            const staticDate = item.dataset.staticDate;
-            if (ts) {
-                label.textContent = getDynamicTime(ts, staticDate);
-            }
-        }
-    });
-}
-
 // Funzione helper estratta per pulizia codice (Statistiche)
 function updateReviewsSummaryData(reviews) {
     const totalReviews = reviews.length;
@@ -1820,29 +1825,29 @@ function updateReviewsSummaryData(reviews) {
         /* --- INVIO RECENSIONE (FETCH) & INPUT INTERO --- */
 
         function setupReviewForm() {
-            const container = document.getElementById('ratingSelector');
-            const stars = container.querySelectorAll('.rating-star');
-            
-            function highlightStars(count) {
-                stars.forEach((star, index) => {
-                    if (index < count) star.classList.add('full');
-                    else star.classList.remove('full');
-                });
-            }
+    const container = document.getElementById('ratingSelector');
+    const stars = container.querySelectorAll('.rating-star');
+    
+    function highlightStars(count) {
+        stars.forEach((star, index) => {
+            if (index < count) star.classList.add('full');
+            else star.classList.remove('full');
+        });
+    }
 
-            stars.forEach((star, index) => {
-                star.addEventListener('mouseenter', () => { highlightStars(index + 1); });
-                star.addEventListener('click', () => {
-                    selectedReviewRating = index + 1;
-                    highlightStars(selectedReviewRating);
-                });
-            });
+    stars.forEach((star, index) => {
+        star.addEventListener('mouseenter', () => { highlightStars(index + 1); });
+        star.addEventListener('click', () => {
+            selectedReviewRating = index + 1;
+            highlightStars(selectedReviewRating);
+        });
+    });
 
-            container.addEventListener('mouseleave', () => {
-                highlightStars(selectedReviewRating);
-            });
+    container.addEventListener('mouseleave', () => {
+        highlightStars(selectedReviewRating);
+    });
 
-            const form = document.getElementById('reviewForm');
+    const form = document.getElementById('reviewForm');
     form.addEventListener('submit', async (e) => {
         e.preventDefault();
         if (selectedReviewRating === 0) { alert('Seleziona una valutazione'); return; }
@@ -1871,33 +1876,57 @@ function updateReviewsSummaryData(reviews) {
 
             if (result.success) {
                 // Successo: Aggiungi localmente per feedback istantaneo
+                const nowTimestamp = Date.now();
                 const newReview = {
                     name: document.getElementById('reviewName').value,
-                    date: new Date(), // Temporaneo
+                    date: new Date(), 
                     rating: selectedReviewRating,
                     title: document.getElementById('reviewTitle').value,
                     comment: document.getElementById('reviewComment').value,
-                    timestamp: Date.now()
+                    timestamp: nowTimestamp // Timestamp fondamentale per il calcolo dinamico
                 };
                 
+                // Aggiungi in cima alla lista
                 currentReviewsData.unshift(newReview);
-                displayReviews(currentReviewsData); // Reset pagina 0 per vedere la nuova
+                // Aggiorna la vista mantenendo la pagina 0 (dove appare la nuova recensione)
+                displayReviews(currentReviewsData); 
                 
                 form.reset();
                 selectedReviewRating = 0;
-                // Reset visuale stelle
                 document.querySelectorAll('.rating-star').forEach(s => s.classList.remove('full')); 
                 
                 submitBtn.textContent = 'Recensione Inviata!';
+
+                // --- SCROLL AUTOMATICO ALLA NUOVA RECENSIONE ---
+                setTimeout(() => {
+                    const listContainer = document.getElementById('reviewsList');
+                    if (listContainer && listContainer.firstElementChild) {
+                        const newElement = listContainer.firstElementChild;
+                        
+                        // Scroll dolce verso l'elemento
+                        newElement.scrollIntoView({ 
+                            behavior: 'smooth', 
+                            block: 'center' 
+                        });
+
+                        // Effetto visivo "Flash" dorato per evidenziare l'inserimento
+                        newElement.style.transition = 'background-color 0.5s ease';
+                        newElement.style.backgroundColor = 'rgba(212, 175, 55, 0.15)'; // Oro trasparente
+                        
+                        setTimeout(() => {
+                            newElement.style.backgroundColor = 'transparent';
+                        }, 1500);
+                    }
+                }, 100);
+                // -----------------------------------------------
+
                 setTimeout(() => {
                     submitBtn.disabled = false;
                     submitBtn.textContent = 'Pubblica Recensione';
                 }, 2000);
 
             } else {
-                // GESTIONE ERRORI SPECIFICI
-                if (result.error === 'DUPLICATE_REVIEW' || result.message.includes('già recensito')) {
-                    // Mostra il modale elegante
+                if (result.error === 'DUPLICATE_REVIEW' || (result.message && result.message.includes('già recensito'))) {
                     document.getElementById('duplicateReviewModal').classList.add('active');
                     submitBtn.disabled = false;
                     submitBtn.textContent = 'Pubblica Recensione';
@@ -1907,7 +1936,6 @@ function updateReviewsSummaryData(reviews) {
             }
         } catch (error) {
             console.error(error);
-            // Fallback per errori generici
             if (!document.getElementById('duplicateReviewModal').classList.contains('active')) {
                 alert('Errore invio: ' + error.message);
             }
@@ -2095,6 +2123,7 @@ function updateReviewsSummaryData(reviews) {
     </script>
 </body>
 </html>
+
 
 
 
