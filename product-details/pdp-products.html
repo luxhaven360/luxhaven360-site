@@ -1059,6 +1059,20 @@
     background: #fff;
     transform: scale(1.05);
 }
+
+        /* --- ANIMAZIONE PREMIUM RECENSIONE --- */
+@keyframes goldPulse {
+    0% { background-color: transparent; border-left: 2px solid transparent; transform: translateX(0); }
+    10% { background-color: rgba(212, 175, 55, 0.15); border-left: 2px solid #D4AF37; transform: translateX(10px); }
+    80% { background-color: rgba(212, 175, 55, 0.05); border-left: 2px solid #D4AF37; transform: translateX(0); }
+    100% { background-color: transparent; border-left: 2px solid transparent; transform: translateX(0); }
+}
+
+.review-highlight-premium {
+    animation: goldPulse 3s cubic-bezier(0.22, 1, 0.36, 1) forwards; /* Curva di Bezier per fluidità */
+    border-radius: 4px; /* Leggero smusso per eleganza */
+}
+        
     </style>
     <script src="https://unpkg.com/dompurify@2.4.0/dist/purify.min.js"></script>
     <script>
@@ -1603,31 +1617,36 @@ function formatReviewDate(dateInput) {
             });
         }
 
-        /* --- 1. FUNZIONE CALCOLO TEMPO DINAMICO --- */
+        /* --- LOGICA TEMPORALE CORRETTA --- */
 function getDynamicTime(timestamp, staticDateStr) {
-    if (!timestamp) return staticDateStr; // Fallback se manca timestamp
+    // Se non c'è timestamp, usiamo la data statica come fallback
+    if (!timestamp) return staticDateStr; 
     
     const now = Date.now();
-    const diff = now - timestamp;
+    const diff = now - timestamp; // Differenza in millisecondi
     
-    // Meno di 1 minuto (60.000 ms)
-    if (diff < 60000) {
-        return 'Appena adesso';
+    const oneMinute = 60 * 1000;
+    const oneHour = 60 * oneMinute;
+    const oneDay = 24 * oneHour;
+
+    // 1. Meno di 1 minuto
+    if (diff < oneMinute) {
+        return 'ora';
     }
     
-    // Meno di 1 ora (3.600.000 ms)
-    if (diff < 3600000) {
-        const minutes = Math.floor(diff / 60000);
+    // 2. Tra 1 minuto e 59 minuti
+    if (diff < oneHour) {
+        const minutes = Math.floor(diff / oneMinute);
         return `${minutes} minut${minutes === 1 ? 'o' : 'i'} fa`;
     }
     
-    // Meno di 24 ore (86.400.000 ms)
-    if (diff < 86400000) {
-        const hours = Math.floor(diff / 3600000);
+    // 3. Tra 1 ora e 23 ore
+    if (diff < oneDay) {
+        const hours = Math.floor(diff / oneHour);
         return `${hours} or${hours === 1 ? 'a' : 'e'} fa`;
     }
     
-    // Oltre 24 ore: Mostra data formattata (es: 6 Dicembre 2025)
+    // 4. Oltre 24 ore (ritorna la data formattata, es: "6 Dicembre 2025")
     return staticDateStr;
 }
 
@@ -1823,7 +1842,6 @@ function updateReviewsSummaryData(reviews) {
         }
 
         /* --- INVIO RECENSIONE (FETCH) & INPUT INTERO --- */
-
         function setupReviewForm() {
     const container = document.getElementById('ratingSelector');
     const stars = container.querySelectorAll('.rating-star');
@@ -1875,50 +1893,54 @@ function updateReviewsSummaryData(reviews) {
             const result = await response.json();
 
             if (result.success) {
-                // Successo: Aggiungi localmente per feedback istantaneo
+                // --- PUNTO CHIAVE: Creazione oggetto locale ---
                 const nowTimestamp = Date.now();
+                // Passiamo 'new Date()' che verrà formattato solo se passano > 24 ore
+                // Ma nell'immediato useremo 'nowTimestamp'
                 const newReview = {
                     name: document.getElementById('reviewName').value,
                     date: new Date(), 
                     rating: selectedReviewRating,
                     title: document.getElementById('reviewTitle').value,
                     comment: document.getElementById('reviewComment').value,
-                    timestamp: nowTimestamp // Timestamp fondamentale per il calcolo dinamico
+                    timestamp: nowTimestamp // Fondamentale per la logica "ora"
                 };
                 
                 // Aggiungi in cima alla lista
                 currentReviewsData.unshift(newReview);
-                // Aggiorna la vista mantenendo la pagina 0 (dove appare la nuova recensione)
+                
+                // Forza il refresh della lista a pagina 0
                 displayReviews(currentReviewsData); 
                 
+                // Reset Form
                 form.reset();
                 selectedReviewRating = 0;
                 document.querySelectorAll('.rating-star').forEach(s => s.classList.remove('full')); 
-                
                 submitBtn.textContent = 'Recensione Inviata!';
 
-                // --- SCROLL AUTOMATICO ALLA NUOVA RECENSIONE ---
+                // --- EFFETTO SCROLL & HIGHLIGHT PREMIUM ---
                 setTimeout(() => {
                     const listContainer = document.getElementById('reviewsList');
+                    // Prendi il primo elemento (la nuova recensione)
                     if (listContainer && listContainer.firstElementChild) {
                         const newElement = listContainer.firstElementChild;
                         
-                        // Scroll dolce verso l'elemento
+                        // 1. Scroll fluido al centro dello schermo
                         newElement.scrollIntoView({ 
                             behavior: 'smooth', 
                             block: 'center' 
                         });
 
-                        // Effetto visivo "Flash" dorato per evidenziare l'inserimento
-                        newElement.style.transition = 'background-color 0.5s ease';
-                        newElement.style.backgroundColor = 'rgba(212, 175, 55, 0.15)'; // Oro trasparente
-                        
-                        setTimeout(() => {
-                            newElement.style.backgroundColor = 'transparent';
-                        }, 1500);
+                        // 2. Applica l'animazione CSS Premium definita nello stile
+                        // Rimuovi prima la classe se esisteva (caso raro) per riavviare animazione
+                        newElement.classList.remove('review-highlight-premium');
+                        // Forza un reflow per riavviare l'animazione se necessario
+                        void newElement.offsetWidth; 
+                        // Aggiungi classe
+                        newElement.classList.add('review-highlight-premium');
                     }
-                }, 100);
-                // -----------------------------------------------
+                }, 150); // Ritardo leggero per permettere al DOM di rendering
+                // ------------------------------------------
 
                 setTimeout(() => {
                     submitBtn.disabled = false;
@@ -1926,6 +1948,7 @@ function updateReviewsSummaryData(reviews) {
                 }, 2000);
 
             } else {
+                // Gestione Errori (Duplicato ecc.)
                 if (result.error === 'DUPLICATE_REVIEW' || (result.message && result.message.includes('già recensito'))) {
                     document.getElementById('duplicateReviewModal').classList.add('active');
                     submitBtn.disabled = false;
@@ -2123,6 +2146,7 @@ function updateReviewsSummaryData(reviews) {
     </script>
 </body>
 </html>
+
 
 
 
