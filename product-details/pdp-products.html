@@ -1633,18 +1633,34 @@ function formatReviewDate(dateInput) {
         }
 
 /* --- LOGICA TEMPORALE AGGIORNATA --- */
-function getDynamicTime(timestamp, staticDateStr) {
-    // Se il timestamp è 0 o null (es. vecchie recensioni server), usa la data statica
-    if (!timestamp || timestamp === 0) return staticDateStr; 
+function getDynamicTime(dateWithTime) {
+    if (!dateWithTime) return '';
     
-    const now = Date.now();
-    const diff = now - timestamp;
+    // Parsing della data nel formato "07 December 2025 - 17:46"
+    // Convertiamo "07 December 2025 - 17:46" in un oggetto Date
+    let reviewDate;
+    
+    try {
+        // Rimuoviamo il trattino e lo spazio per facilitare il parsing
+        const cleanedDate = dateWithTime.replace(' - ', ' ');
+        reviewDate = new Date(cleanedDate);
+        
+        // Verifica se la data è valida
+        if (isNaN(reviewDate.getTime())) {
+            return dateWithTime; // Fallback: mostra la stringa originale
+        }
+    } catch (e) {
+        return dateWithTime;
+    }
+    
+    const now = new Date();
+    const diff = now - reviewDate; // Differenza in millisecondi
     
     const oneMinute = 60 * 1000;
     const oneHour = 60 * oneMinute;
     const oneDay = 24 * oneHour;
 
-    // Controllo preventivo per orari futuri (disallineamento orologi)
+    // Controllo preventivo per date future
     if (diff < 0) return 'ora';
 
     // 1. Meno di 1 minuto -> "ora" (minuscolo)
@@ -1664,8 +1680,10 @@ function getDynamicTime(timestamp, staticDateStr) {
         return `${hours} or${hours === 1 ? 'a' : 'e'} fa`;
     }
     
-    // 4. Oltre 24 ore -> Data statica (es. "7 Dicembre 2025")
-    return staticDateStr;
+    // 4. Oltre 24 ore -> Mostra solo la data (rimuove l'orario)
+    // Estrae solo "07 December 2025" da "07 December 2025 - 17:46"
+    const datePart = dateWithTime.split(' - ')[0];
+    return datePart;
 }
 
 // Funzione per aggiornare le etichette di tempo in tempo reale
@@ -1674,15 +1692,10 @@ function updateTimeLabels() {
     timeLabels.forEach(label => {
         const item = label.closest('.review-item');
         if (item) {
-            const ts = parseInt(item.dataset.timestamp);
-            const staticDate = item.dataset.staticDate;
+            const dateWithTime = item.dataset.dateWithTime;
             
-            // Ricalcola solo se abbiamo un timestamp valido e recente (< 24h)
-            // Se è > 24h il testo rimane statico e non serve ricalcolare inutilmente,
-            // ma per sicurezza chiamiamo getDynamicTime che gestisce il fallback.
-            if (ts) {
-                const newText = getDynamicTime(ts, staticDate);
-                // Aggiorna il DOM solo se il testo è cambiato per evitare reflow inutili
+            if (dateWithTime) {
+                const newText = getDynamicTime(dateWithTime);
                 if (label.textContent !== newText) {
                     label.textContent = newText;
                 }
@@ -1776,28 +1789,25 @@ function renderReviewsPage() {
     const pageReviews = allReviewsCache.slice(start, end);
 
     pageReviews.forEach(review => {
-    const reviewTimestamp = review.timestamp || 0;
-    const staticDate = formatReviewDate(review.date);
-    const timeDisplay = getDynamicTime(reviewTimestamp, staticDate);
-    
-    const reviewEl = document.createElement('div');
-    reviewEl.className = 'review-item';
-    reviewEl.dataset.timestamp = reviewTimestamp;
-    reviewEl.dataset.staticDate = staticDate;
+        const timeDisplay = getDynamicTime(review.dateWithTime);
+        
+        const reviewEl = document.createElement('div');
+        reviewEl.className = 'review-item';
+        reviewEl.dataset.dateWithTime = review.dateWithTime; // Salva la data completa nel dataset
 
-    reviewEl.innerHTML = `
-        <div class="review-header">
-            <div>
-                <div class="review-author">${safeText(review.name)}</div>
-                <div class="review-date dynamic-time">${timeDisplay}</div> 
+        reviewEl.innerHTML = `
+            <div class="review-header">
+                <div>
+                    <div class="review-author">${safeText(review.name)}</div>
+                    <div class="review-date dynamic-time">${timeDisplay}</div> 
+                </div>
+                <div>${generateCompactStars(review.rating)}</div>
             </div>
-            <div>${generateCompactStars(review.rating)}</div>
-        </div>
-        ${review.title ? `<div class="review-title">${safeText(review.title)}</div>` : ''}
-        <p class="review-text">${safeText(review.comment)}</p>
-    `;
-    container.appendChild(reviewEl);
-});
+            ${review.title ? `<div class="review-title">${safeText(review.title)}</div>` : ''}
+            <p class="review-text">${safeText(review.comment)}</p>
+        `;
+        container.appendChild(reviewEl);
+    });
 
     // Gestione paginazione (invariata)
     if (allReviewsCache.length >= 4) {
@@ -1910,51 +1920,57 @@ function updateReviewsSummaryData(reviews) {
             if (!response.ok) throw new Error('Network response was not ok');
             const result = await response.json();
 
-            if (result.success) {
-    // Creazione oggetto locale con timestamp attuale
-    const nowTimestamp = Date.now(); 
+            if (result.success) {if (result.success) {
+                // Usa la data formattata ritornata dal server
+                const dateWithTime = result.dateWithTime || new Date().toLocaleString('en-GB', {
+                    day: '2-digit',
+                    month: 'long',
+                    year: 'numeric',
+                    hour: '2-digit',
+                    minute: '2-digit',
+                    hour12: false
+                }).replace(',', ' -');
 
-    const newReview = {
-        name: document.getElementById('reviewName').value,
-        date: new Date().toISOString(), // Formato ISO per compatibilità
-        rating: selectedReviewRating,
-        title: document.getElementById('reviewTitle').value,
-        comment: document.getElementById('reviewComment').value,
-        timestamp: nowTimestamp // FONDAMENTALE: Usiamo questo per calcolare "ora", "1 min fa", ecc.
-    };
+                const newReview = {
+                    name: document.getElementById('reviewName').value,
+                    dateWithTime: dateWithTime,
+                    rating: selectedReviewRating,
+                    title: document.getElementById('reviewTitle').value,
+                    comment: document.getElementById('reviewComment').value
+                };
 
-    // Inserimento in cima
-    currentReviewsData.unshift(newReview);
-    displayReviews(currentReviewsData, true); // true per mantenere la pagina corrente
+                // Inserimento in cima
+                currentReviewsData.unshift(newReview);
+                displayReviews(currentReviewsData, true);
 
-    // Reset interfaccia
-    form.reset();
-    selectedReviewRating = 0;
-    document.querySelectorAll('.rating-star').forEach(s => s.classList.remove('full')); 
-    submitBtn.textContent = 'Recensione Inviata!';
+                // Reset interfaccia
+                form.reset();
+                selectedReviewRating = 0;
+                document.querySelectorAll('.rating-star').forEach(s => s.classList.remove('full')); 
+                submitBtn.textContent = 'Recensione Inviata!';
 
-    // Animazione scroll & evidenziazione
-    setTimeout(() => {
-        const listContainer = document.getElementById('reviewsList');
-        if (listContainer && listContainer.firstElementChild) {
-            const newElement = listContainer.firstElementChild;
-            
-            newElement.scrollIntoView({ 
-                behavior: 'smooth', 
-                block: 'center' 
-            });
+                // Animazione scroll & evidenziazione
+                setTimeout(() => {
+                    const listContainer = document.getElementById('reviewsList');
+                    if (listContainer && listContainer.firstElementChild) {
+                        const newElement = listContainer.firstElementChild;
+                        
+                        newElement.scrollIntoView({ 
+                            behavior: 'smooth', 
+                            block: 'center' 
+                        });
 
-            newElement.classList.remove('review-highlight-premium');
-            void newElement.offsetWidth;
-            newElement.classList.add('review-highlight-premium');
-        }
-    }, 100);
+                        newElement.classList.remove('review-highlight-premium');
+                        void newElement.offsetWidth;
+                        newElement.classList.add('review-highlight-premium');
+                    }
+                }, 100);
 
-    setTimeout(() => {
-        submitBtn.disabled = false;
-        submitBtn.textContent = 'Pubblica Recensione';
-    }, 2000);
-} else {
+                setTimeout(() => {
+                    submitBtn.disabled = false;
+                    submitBtn.textContent = 'Pubblica Recensione';
+                }, 2000);
+            } else {
                 // Gestione Errori (Duplicato ecc.)
                 if (result.error === 'DUPLICATE_REVIEW' || (result.message && result.message.includes('già recensito'))) {
                     document.getElementById('duplicateReviewModal').classList.add('active');
@@ -2153,6 +2169,7 @@ function updateReviewsSummaryData(reviews) {
     </script>
 </body>
 </html>
+
 
 
 
