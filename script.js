@@ -51,7 +51,7 @@ document.addEventListener('click', (e) => {
 // ==================================================================
 
 // URL del Google Apps Script (Backend)
-const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxKoAiuDQ1uG4WS8Jp1TvvWu30kANX1T2erTJuy7q8N2ND9_mq4qVNqDVLpv1I-_jUp/exec';
+const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzRgxxOU8DdLLcuJkDpu2b07sCXPIANjZK5yy2CHs9ZXYRB-y_DtVsZpgclvDmFH9L5/exec';
 
 // Configurazione mappatura SKU -> Sezioni HTML
 const SECTIONS_CONFIG = {
@@ -359,4 +359,5 @@ window.addEventListener('pageshow', (event) => {
         initDynamicProducts(); 
     }
 });
+
 
