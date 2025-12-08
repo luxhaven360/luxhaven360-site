@@ -57,7 +57,7 @@ const SECTION_MAPPING = {
     'ME': { gridId: 'shopGrid', cta: 'Acquista', fallbackMsg: 'Shop momentaneamente vuoto.' }
 };
 
-const GOOGLE_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyUh0VScOtnTLHHIRrOeuDGugp0ynQLNjHue7PcP2JEoOQ5x2ZyuTVFdpaUHh6DGFE/exec'; // Verifica che sia il tuo URL corretto
+const GOOGLE_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzRgxxOU8DdLLcuJkDpu2b07sCXPIANjZK5yy2CHs9ZXYRB-y_DtVsZpgclvDmFH9L5/exec'; // Verifica che sia il tuo URL corretto
 
 // Funzione principale di inizializzazione
 async function initDynamicProducts() {
@@ -315,5 +315,6 @@ function hideLoader() {
         }, 500);
     }
 }
+
 
 
