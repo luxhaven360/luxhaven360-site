@@ -64,7 +64,7 @@ function initDynamicProducts() {
     // Chiama Apps Script
     // Nota: WEB_APP_URL deve essere definito globalmente o qui.
     // Usiamo una variabile globale se esiste, altrimenti definiscila qui o prendila da index.html
-    const scriptUrl = (typeof WEB_APP_URL !== 'undefined') ? WEB_APP_URL : 'INSERISCI_QUI_IL_TUO_URL_APPS_SCRIPT';
+    const scriptUrl = (typeof WEB_APP_URL !== 'undefined') ? WEB_APP_URL : 'https://script.google.com/macros/s/AKfycbzRgxxOU8DdLLcuJkDpu2b07sCXPIANjZK5yy2CHs9ZXYRB-y_DtVsZpgclvDmFH9L5/exec';
     
     // Callback name univoco
     const cbName = 'handleProducts_' + Date.now();
@@ -362,5 +362,6 @@ function hideLoader() {
         }, 500);
     }
 }
+
 
 
