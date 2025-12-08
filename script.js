@@ -43,207 +43,114 @@ document.addEventListener('click', (e) => {
     }
 });
 
-// --- Dynamic Products Loading (Versione Google Sheets) ---
+// ---------------------- Dynamic products loading ----------------------
+// Carica i JSON dalla cartella 'products' e popola le rispettive griglie.
+// Struttura attesa di ogni prodotto (esempio):
+// {
+//   "sku": "LH360-TSHIRT",
+//   "title": "Premium T-Shirt",
+//   "desc": "Maglietta premium in cotone pettinato con logo LuxHaven360.",
+//   "price": 120,
+//   "currency": "EUR",
+//   "icon": "👕",               // o "assets/img/tshirt.jpg"
+//   "stripe_link": "https://buy.stripe.com/abcd...",
+//   "cta": "Acquista"           // testo del bottone (es. "Acquista", "Prenota Ora", "Richiedi Visita")
+// }
 
-// Mappatura sezioni HTML e prefissi SKU
-const SECTION_CONFIG = {
-    'PR': { gridId: 'propertiesGrid', cta: 'Richiedi Visita' },  // Immobili
-    'SC': { gridId: 'supercarsGrid', cta: 'Test Drive' },        // Supercar
-    'EX': { gridId: 'staysGrid', cta: 'Prenota Ora' },           // Esperienze
-    'ME': { gridId: 'shopGrid', cta: 'Acquista' }                // Shop
-};
+const SECTIONS = [
+    { id: 'properties', json: 'products/properties.json', gridId: 'propertiesGrid', defaultCta: 'Richiedi Visita' },
+    { id: 'supercars', json: 'products/supercars.json', gridId: 'supercarsGrid', defaultCta: 'Test Drive' },
+    { id: 'stays', json: 'products/stays.json', gridId: 'staysGrid', defaultCta: 'Prenota Ora' },
+    { id: 'shop', json: 'products/shop.json', gridId: 'shopGrid', defaultCta: 'Acquista' }
+];
 
-// Funzione principale di inizializzazione
-function initDynamicProducts() {
-    // Mostra loader nelle griglie
-    Object.values(SECTION_CONFIG).forEach(config => {
-        const grid = document.getElementById(config.gridId);
-        if (grid) grid.innerHTML = '<div class="loading">Caricamento prodotti...</div>';
-    });
-
-    // Chiama Apps Script
-    // Nota: WEB_APP_URL deve essere definito globalmente o qui.
-    // Usiamo una variabile globale se esiste, altrimenti definiscila qui o prendila da index.html
-    const scriptUrl = (typeof WEB_APP_URL !== 'undefined') ? WEB_APP_URL : 'https://script.google.com/macros/s/AKfycbzRgxxOU8DdLLcuJkDpu2b07sCXPIANjZK5yy2CHs9ZXYRB-y_DtVsZpgclvDmFH9L5/exec';
-    
-    // Callback name univoco
-    const cbName = 'handleProducts_' + Date.now();
-    const url = `${scriptUrl}?action=get_products&callback=${cbName}&t=${Date.now()}`;
-
-    // JSONP Fetch
-    const script = document.createElement('script');
-    script.src = url;
-    
-    // Funzione callback globale
-    window[cbName] = function(data) {
-        processProductsData(data);
-        delete window[cbName];
-        script.remove();
-    };
-
-    script.onerror = function() {
-        console.error("Errore caricamento prodotti da Google Sheets");
-        showErrorInGrids();
-    };
-
-    document.body.appendChild(script);
-}
-
-// Processa i dati ricevuti dal foglio
-function processProductsData(products) {
-    if (!Array.isArray(products)) {
-        showErrorInGrids();
-        return;
+// utility per creare elementi DOM
+function el(tag, attrs = {}, children = []) {
+    const node = document.createElement(tag);
+    for (const k in attrs) {
+        if (k === 'class') node.className = attrs[k];
+        else if (k === 'html') node.innerHTML = attrs[k];
+        else node.setAttribute(k, attrs[k]);
     }
-
-    // Reset delle griglie
-    const gridsContent = {
-        'PR': [], 'SC': [], 'EX': [], 'ME': []
-    };
-
-    // Distribuzione prodotti in base allo SKU
-    products.forEach(prod => {
-        if (!prod.sku) return;
-        
-        // Prendi i primi 2 caratteri dello SKU (es. "PR" da "PR-14-V")
-        const prefix = prod.sku.substring(0, 2).toUpperCase();
-        
-        if (gridsContent[prefix]) {
-            gridsContent[prefix].push(prod);
-        }
-    });
-
-    // Renderizzazione
-    Object.keys(SECTION_CONFIG).forEach(prefix => {
-        const config = SECTION_CONFIG[prefix];
-        const grid = document.getElementById(config.gridId);
-        if (!grid) return;
-
-        grid.innerHTML = ''; // Pulisci loader
-
-        const items = gridsContent[prefix];
-
-        if (items.length === 0) {
-            // 4) Avviso dedicato se non ci sono prodotti
-            grid.innerHTML = `
-                <div class="empty-section" style="grid-column: 1/-1; text-align: center; padding: 4rem; border: 1px dashed #333; border-radius: 1rem;">
-                    <span style="font-size: 2rem; display: block; margin-bottom: 1rem; opacity: 0.5;">∅</span>
-                    <p style="color: #a1a1aa;">Al momento non ci sono prodotti disponibili in questa categoria.</p>
-                </div>`;
-            return;
-        }
-
-        items.forEach(prod => {
-            const card = createSheetProductCard(prod, config.cta, prefix);
-            grid.appendChild(card);
-        });
-    });
+    children.forEach(c => node.appendChild(typeof c === 'string' ? document.createTextNode(c) : c));
+    return node;
 }
 
-// Crea la card prodotto (adattata per i dati dello Sheet)
-function createSheetProductCard(prod, defaultCta, sectionCode) {
-    const card = document.createElement('div');
-    card.className = 'card';
+// format prezzo semplice
+function formatPrice(p, currency = 'EUR') {
+    try {
+        return new Intl.NumberFormat('it-IT', { style: 'currency', currency }).format(p);
+    } catch (e) {
+        return `${p} ${currency}`;
+    }
+}
 
-    // 2) & 3) Gestione Immagine (Immagine 1)
-    const imageContainer = document.createElement('div');
-    imageContainer.className = 'card-image';
-    
-    if (prod.image) {
-        const img = document.createElement('img');
-        img.src = prod.image;
-        img.alt = prod.title;
-        img.style.width = '100%';
-        img.style.height = '100%';
-        img.style.objectFit = 'cover';
-        img.loading = 'lazy';
-        imageContainer.appendChild(img);
+// funzione per creare una card prodotto
+function createProductCard(prod, defaultCta) {
+    // container
+    const card = el('div', { class: 'card' });
+
+    // image/icon
+    const imageContainer = el('div', { class: 'card-image' });
+    if (prod.icon) {
+        // se è url img, crea <img>, altrimenti usa emoji/testo
+        if (typeof prod.icon === 'string' && (prod.icon.startsWith('http') || prod.icon.endsWith('.jpg') || prod.icon.endsWith('.png') || prod.icon.endsWith('.webp') || prod.icon.endsWith('.jpeg'))) {
+            const img = el('img', { src: prod.icon, alt: prod.title, style: 'width:100%; height:auto; object-fit:cover;' });
+            imageContainer.appendChild(img);
+        } else {
+            imageContainer.textContent = prod.icon;
+        }
     } else {
-        // Fallback icona se manca immagine
-        imageContainer.textContent = sectionCode === 'ME' ? '👕' : (sectionCode === 'SC' ? '🏎️' : '🏠');
-        imageContainer.style.display = 'flex';
-        imageContainer.style.alignItems = 'center';
-        imageContainer.style.justifyContent = 'center';
-        imageContainer.style.fontSize = '3rem';
+        imageContainer.textContent = '📦';
     }
     card.appendChild(imageContainer);
 
-    // 3) Nome Prodotto
-    const title = document.createElement('h3');
-    title.className = 'card-title';
-    title.textContent = prod.title || 'Prodotto senza nome';
+    // title
+    const title = el('h3', { class: 'card-title' }, [document.createTextNode(prod.title || 'Untitled')]);
     card.appendChild(title);
 
-    // 3) Breve Descrizione
-    const desc = document.createElement('p');
-    desc.className = 'card-desc';
-    desc.textContent = prod.desc || '';
+    // desc
+    const desc = el('p', { class: 'card-desc' }, [document.createTextNode(prod.desc || '')]);
     card.appendChild(desc);
 
-    // 3) Prezzo (Formattazione valuta)
-    const priceDiv = document.createElement('div');
-    priceDiv.className = 'card-price';
-    // Gestisce sia numeri che stringhe dal foglio
-    let priceDisplay = '';
-    if (typeof prod.price === 'number') {
-        priceDisplay = new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR' }).format(prod.price);
-    } else {
-        priceDisplay = prod.price ? String(prod.price) : 'Prezzo su richiesta';
-        if (!priceDisplay.includes('€') && !isNaN(parseFloat(priceDisplay))) {
-             priceDisplay += ' €';
-        }
-    }
-    priceDiv.textContent = priceDisplay;
-    card.appendChild(priceDiv);
+    // price
+    const priceText = el('div', { class: 'card-price' }, [document.createTextNode(prod.price != null ? formatPrice(prod.price, prod.currency || 'EUR') : (prod.price_text || 'Contattaci'))]);
+    card.appendChild(priceText);
 
-    // Bottone CTA
-    const btn = document.createElement('button');
-    btn.className = 'btn';
-    btn.style.marginTop = '1.5rem';
-    btn.style.width = '100%';
-    btn.textContent = defaultCta;
+    // button area
+    const btn = el('button', { class: 'btn', style: 'margin-top: 1.5rem; width: 100%;' }, [document.createTextNode(prod.cta || defaultCta || 'Scopri')]);
 
-    // Gestione Click -> Dettaglio Prodotto
+    // attach product data as data- attributes for analytics / fallback
+    btn.dataset.sku = prod.sku || '';
+    btn.dataset.title = prod.title || '';
+    if (prod.stripe_link) btn.dataset.stripeLink = prod.stripe_link;
+    if (prod.action) btn.dataset.action = prod.action;
+
+    // on click behaviour:
     btn.addEventListener('click', (e) => {
-        e.preventDefault();
-        showLoader(); // Usa la tua funzione loader esistente
+        e.preventDefault(); // Previene navigazione immediata
+        
+        // 1. Mostra Loader
+        showLoader();
 
-        // Salva dati minimi per transizione fluida
-        localStorage.setItem('lh360_selected_sku', prod.sku);
-        localStorage.setItem('lh360_last_product', JSON.stringify({
-            sku: prod.sku,
-            title: prod.title,
-            ts: Date.now()
-        }));
+        // 2. Salva dati
+        try {
+            localStorage.setItem('lh360_last_product', JSON.stringify({ sku: btn.dataset.sku, title: btn.dataset.title, ts: Date.now() }));
+            localStorage.setItem('lh360_selected_sku', btn.dataset.sku || '');
+        } catch (e) {}
 
+        // 3. Naviga dopo un breve ritardo per far vedere l'animazione di start
         setTimeout(() => {
-            // Reindirizza alla pagina di dettaglio
-            // Assicurati che il percorso sia corretto rispetto alla tua struttura cartelle
-            const sectionName = getSectionNameFromCode(sectionCode);
-            window.location.href = `product-details/pdp-products.html?sku=${encodeURIComponent(prod.sku)}&section=${sectionName}`;
-        }, 800);
+            const base = 'product-details/pdp-products.html'; // Assicurati che il percorso sia corretto relativo alla pagina corrente
+            const sku = encodeURIComponent(btn.dataset.sku || '');
+            const section = encodeURIComponent(prod.sectionName || 'shop');
+            window.location.href = `${base}?sku=${sku}&section=${section}`;
+        }, 800); // 800ms di delay estetico
     });
 
     card.appendChild(btn);
 
     return card;
-}
-
-function getSectionNameFromCode(code) {
-    switch(code) {
-        case 'PR': return 'properties';
-        case 'SC': return 'supercars';
-        case 'EX': return 'stays';
-        case 'ME': return 'shop';
-        default: return 'shop';
-    }
-}
-
-function showErrorInGrids() {
-    Object.values(SECTION_CONFIG).forEach(config => {
-        const grid = document.getElementById(config.gridId);
-        if (grid) grid.innerHTML = '<div class="error">Impossibile caricare i prodotti. Riprova più tardi.</div>';
-    });
 }
 
 // carica e popola una sezione
@@ -276,6 +183,11 @@ async function loadSection(section) {
         console.error('Errore caricamento', section.json, err);
         grid.innerHTML = `<div class="error">Errore caricamento prodotti. Assicurati che ${section.json} sia raggiungibile. (${err.message})</div>`;
     }
+}
+
+// bootstrap: carica tutte le sezioni
+function initDynamicProducts() {
+    SECTIONS.forEach(s => loadSection(s));
 }
 
 // init al load
@@ -362,6 +274,4 @@ function hideLoader() {
         }, 500);
     }
 }
-
-
 
