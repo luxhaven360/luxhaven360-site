@@ -1,6 +1,4 @@
-// ==================================================================
-// 1. NAVIGAZIONE & UI (Logica originale mantenuta)
-// ==================================================================
+// --- Nav & UI (tuo script esistente mantenuto e ampliato) ---
 
 // Navigation
 function showSection(sectionId) {
@@ -45,241 +43,161 @@ document.addEventListener('click', (e) => {
     }
 });
 
+// ---------------------- Dynamic products loading ----------------------
+// Carica i JSON dalla cartella 'products' e popola le rispettive griglie.
+// Struttura attesa di ogni prodotto (esempio):
+// {
+//   "sku": "LH360-TSHIRT",
+//   "title": "Premium T-Shirt",
+//   "desc": "Maglietta premium in cotone pettinato con logo LuxHaven360.",
+//   "price": 120,
+//   "currency": "EUR",
+//   "icon": "👕",               // o "assets/img/tshirt.jpg"
+//   "stripe_link": "https://buy.stripe.com/abcd...",
+//   "cta": "Acquista"           // testo del bottone (es. "Acquista", "Prenota Ora", "Richiedi Visita")
+// }
 
-// ==================================================================
-// 2. GESTIONE PRODOTTI DA GOOGLE SHEET (Nuova Logica)
-// ==================================================================
+const SECTIONS = [
+    { id: 'properties', json: 'products/properties.json', gridId: 'propertiesGrid', defaultCta: 'Richiedi Visita' },
+    { id: 'supercars', json: 'products/supercars.json', gridId: 'supercarsGrid', defaultCta: 'Test Drive' },
+    { id: 'stays', json: 'products/stays.json', gridId: 'staysGrid', defaultCta: 'Prenota Ora' },
+    { id: 'shop', json: 'products/shop.json', gridId: 'shopGrid', defaultCta: 'Acquista' }
+];
 
-// URL del Google Apps Script (Backend)
-const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzRgxxOU8DdLLcuJkDpu2b07sCXPIANjZK5yy2CHs9ZXYRB-y_DtVsZpgclvDmFH9L5/exec';
-
-// Configurazione mappatura SKU -> Sezioni HTML
-const SECTIONS_CONFIG = {
-    'properties': { 
-        prefix: 'PR', 
-        gridId: 'propertiesGrid', 
-        cta: 'Richiedi Visita', 
-        fallback: 'Nessuna proprietà immobiliare disponibile al momento.' 
-    },
-    'supercars': { 
-        prefix: 'SC', 
-        gridId: 'supercarsGrid', 
-        cta: 'Prenota Test Drive', 
-        fallback: 'Nessuna supercar disponibile al momento.' 
-    },
-    'stays': { 
-        prefix: 'EX', 
-        gridId: 'staysGrid', 
-        cta: 'Scopri Esperienza', 
-        fallback: 'Nessuna esperienza esclusiva disponibile al momento.' 
-    },
-    'shop': { 
-        prefix: 'ME', 
-        gridId: 'shopGrid', 
-        cta: 'Acquista Ora', 
-        fallback: 'Shop momentaneamente vuoto.' 
+// utility per creare elementi DOM
+function el(tag, attrs = {}, children = []) {
+    const node = document.createElement(tag);
+    for (const k in attrs) {
+        if (k === 'class') node.className = attrs[k];
+        else if (k === 'html') node.innerHTML = attrs[k];
+        else node.setAttribute(k, attrs[k]);
     }
-};
+    children.forEach(c => node.appendChild(typeof c === 'string' ? document.createTextNode(c) : c));
+    return node;
+}
 
-/**
- * Funzione principale di avvio: recupera i dati dal server Google
- */
-async function initDynamicProducts() {
-    // 1. Mostra stato di caricamento ("loading...") su tutte le griglie
-    Object.values(SECTIONS_CONFIG).forEach(cfg => {
-        const grid = document.getElementById(cfg.gridId);
-        if (grid) grid.innerHTML = '<div class="loading">Aggiornamento catalogo...</div>';
-    });
-
+// format prezzo semplice
+function formatPrice(p, currency = 'EUR') {
     try {
-        // 2. Creiamo una richiesta JSONP per aggirare eventuali blocchi CORS semplici su script custom
-        const callbackName = 'productsCallback_' + Date.now();
-        const script = document.createElement('script');
-        // Parametro 'action=get_products' istruisce il backend a leggere il foglio
-        script.src = `${APPS_SCRIPT_URL}?action=get_products&callback=${callbackName}&t=${Date.now()}`;
-        
-        // Callback globale che riceverà i dati
-        window[callbackName] = function(response) {
-            if (response && response.products) {
-                distributeProducts(response.products);
-            } else {
-                handleError('Nessun dato ricevuto dal server.');
-            }
-            // Pulizia
-            try { delete window[callbackName]; } catch(e){}
-            script.remove();
-        };
-        
-        script.onerror = () => handleError('Errore di connessione al database prodotti.');
-        document.body.appendChild(script);
-
-    } catch (err) {
-        handleError(err.message);
+        return new Intl.NumberFormat('it-IT', { style: 'currency', currency }).format(p);
+    } catch (e) {
+        return `${p} ${currency}`;
     }
 }
 
-/**
- * Smista i prodotti scaricati nelle rispettive griglie in base al prefisso SKU
- */
-function distributeProducts(products) {
-    // Bucket temporanei per ogni categoria
-    const buckets = { 'PR': [], 'SC': [], 'EX': [], 'ME': [] };
+// funzione per creare una card prodotto
+function createProductCard(prod, defaultCta) {
+    // container
+    const card = el('div', { class: 'card' });
 
-    // Filtra ogni prodotto
-    products.forEach(prod => {
-        if (!prod.sku) return;
-        // Prende le prime 2 lettere (es. "PR" da "PR-01-V")
-        const prefix = prod.sku.substring(0, 2).toUpperCase();
-        
-        if (buckets[prefix]) {
-            buckets[prefix].push(prod);
+    // image/icon
+    const imageContainer = el('div', { class: 'card-image' });
+    if (prod.icon) {
+        // se è url img, crea <img>, altrimenti usa emoji/testo
+        if (typeof prod.icon === 'string' && (prod.icon.startsWith('http') || prod.icon.endsWith('.jpg') || prod.icon.endsWith('.png') || prod.icon.endsWith('.webp') || prod.icon.endsWith('.jpeg'))) {
+            const img = el('img', { src: prod.icon, alt: prod.title, style: 'width:100%; height:auto; object-fit:cover;' });
+            imageContainer.appendChild(img);
+        } else {
+            imageContainer.textContent = prod.icon;
         }
-    });
-
-    // Renderizza le griglie
-    Object.keys(SECTIONS_CONFIG).forEach(key => {
-        const config = SECTIONS_CONFIG[key];
-        const items = buckets[config.prefix] || [];
-        renderGrid(config.gridId, items, config.cta, config.fallback);
-    });
-}
-
-/**
- * Disegna le card HTML dentro la griglia specificata
- */
-function renderGrid(gridId, items, defaultCta, fallbackMsg) {
-    const grid = document.getElementById(gridId);
-    if (!grid) return;
-
-    grid.innerHTML = ''; // Rimuove il loader
-
-    // Caso vuoto
-    if (items.length === 0) {
-        grid.innerHTML = `
-            <div class="empty-state" style="grid-column: 1/-1; text-align: center; padding: 3rem; color: #888; border: 1px dashed #333; border-radius: 8px;">
-                <div style="font-size: 2rem; margin-bottom: 1rem; opacity: 0.5;">📦</div>
-                <p>${fallbackMsg}</p>
-            </div>`;
-        return;
-    }
-
-    // Creazione card per ogni prodotto
-    items.forEach(prod => {
-        const card = createProductCardFromSheet(prod, defaultCta);
-        grid.appendChild(card);
-    });
-}
-
-/**
- * Crea l'elemento DOM della Card Prodotto
- */
-function createProductCardFromSheet(prod, ctaLabel) {
-    const card = document.createElement('div');
-    card.className = 'card';
-
-    // 1. Gestione Immagine
-    let imageUrl = prod.image1 || '';
-    
-    // Se è un link Google Drive, estraiamo l'ID per usarlo direttamente
-    if (imageUrl.includes('drive.google.com')) {
-        const idMatch = imageUrl.match(/[-\w]{25,}/);
-        if (idMatch) {
-            // URL per visualizzazione diretta immagine
-            imageUrl = `https://lh3.googleusercontent.com/d/${idMatch[0]}=w800`; 
-        }
-    }
-    // Fallback se vuoto
-    if (!imageUrl) imageUrl = 'https://via.placeholder.com/400x300?text=No+Image';
-
-    // 2. Gestione Prezzo
-    let priceDisplay = '';
-    // Se il foglio invia un numero, lo formattiamo, altrimenti usiamo il testo grezzo
-    if (prod.price && !isNaN(parseFloat(prod.price))) {
-        priceDisplay = new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR' }).format(prod.price);
     } else {
-        priceDisplay = prod.price || 'Prezzo su richiesta';
+        imageContainer.textContent = '📦';
     }
+    card.appendChild(imageContainer);
 
-    // 3. Costruzione HTML
-    card.innerHTML = `
-        <div class="card-image">
-            <img src="${imageUrl}" alt="${safe(prod.title)}" style="width:100%; height:100%; object-fit:cover;">
-        </div>
-        <h3 class="card-title">${safe(prod.title)}</h3>
-        <p class="card-desc">${safe(prod.desc)}</p>
-        <div class="card-price">${priceDisplay}</div>
-        <button class="btn btn-primary" style="margin-top: 1.5rem; width: 100%;">
-            ${ctaLabel}
-        </button>
-    `;
+    // title
+    const title = el('h3', { class: 'card-title' }, [document.createTextNode(prod.title || 'Untitled')]);
+    card.appendChild(title);
 
-    // 4. Gestione Click Bottone
-    const btn = card.querySelector('button');
+    // desc
+    const desc = el('p', { class: 'card-desc' }, [document.createTextNode(prod.desc || '')]);
+    card.appendChild(desc);
+
+    // price
+    const priceText = el('div', { class: 'card-price' }, [document.createTextNode(prod.price != null ? formatPrice(prod.price, prod.currency || 'EUR') : (prod.price_text || 'Contattaci'))]);
+    card.appendChild(priceText);
+
+    // button area
+    const btn = el('button', { class: 'btn', style: 'margin-top: 1.5rem; width: 100%;' }, [document.createTextNode(prod.cta || defaultCta || 'Scopri')]);
+
+    // attach product data as data- attributes for analytics / fallback
+    btn.dataset.sku = prod.sku || '';
+    btn.dataset.title = prod.title || '';
+    if (prod.stripe_link) btn.dataset.stripeLink = prod.stripe_link;
+    if (prod.action) btn.dataset.action = prod.action;
+
+    // on click behaviour:
     btn.addEventListener('click', (e) => {
-        e.preventDefault();
-        goToProductDetail(prod, imageUrl); // Passiamo i dati alla funzione di navigazione
+        e.preventDefault(); // Previene navigazione immediata
+        
+        // 1. Mostra Loader
+        showLoader();
+
+        // 2. Salva dati
+        try {
+            localStorage.setItem('lh360_last_product', JSON.stringify({ sku: btn.dataset.sku, title: btn.dataset.title, ts: Date.now() }));
+            localStorage.setItem('lh360_selected_sku', btn.dataset.sku || '');
+        } catch (e) {}
+
+        // 3. Naviga dopo un breve ritardo per far vedere l'animazione di start
+        setTimeout(() => {
+            const base = 'product-details/pdp-products.html'; // Assicurati che il percorso sia corretto relativo alla pagina corrente
+            const sku = encodeURIComponent(btn.dataset.sku || '');
+            const section = encodeURIComponent(prod.sectionName || 'shop');
+            window.location.href = `${base}?sku=${sku}&section=${section}`;
+        }, 800); // 800ms di delay estetico
     });
+
+    card.appendChild(btn);
 
     return card;
 }
 
-/**
- * Gestisce la navigazione alla pagina dettaglio salvando i dati necessari
- */
-function goToProductDetail(prod, finalImageUrl) {
-    showLoader(); 
+// carica e popola una sezione
+async function loadSection(section) {
+    const grid = document.getElementById(section.gridId);
+    if (!grid) return;
 
-    // Determina la sezione in base allo SKU per l'URL (estetico)
-    let sectionParam = 'shop';
-    if (prod.sku.startsWith('PR')) sectionParam = 'properties';
-    if (prod.sku.startsWith('SC')) sectionParam = 'supercars';
-    if (prod.sku.startsWith('EX')) sectionParam = 'stays';
+    // stato caricamento
+    grid.innerHTML = '<div class="loading">Caricamento...</div>';
 
-    // Salviamo i dati nel LocalStorage per renderli disponibili subito alla PDP
-    // (utile per ridurre i tempi di attesa visuali o come cache)
     try {
-        localStorage.setItem('lh360_last_product', JSON.stringify({ 
-            sku: prod.sku, 
-            title: prod.title, 
-            image: finalImageUrl,
-            ts: Date.now() 
-        }));
-        localStorage.setItem('lh360_selected_sku', prod.sku || '');
-    } catch (e) {
-        console.error('Errore salvataggio localStorage', e);
-    }
+        const resp = await fetch(section.json, { cache: 'no-cache' });
+        if (!resp.ok) throw new Error('Network response was not ok: ' + resp.status);
+        const items = await resp.json();
 
-    // Navigazione con delay minimo per animazione loader
-    setTimeout(() => {
-        window.location.href = `product-details/pdp-products.html?sku=${encodeURIComponent(prod.sku)}&section=${sectionParam}`;
-    }, 500);
-}
-
-// Helper sicurezza XSS (sanitizza stringhe)
-function safe(str) {
-    if (!str) return '';
-    return String(str).replace(/[&<>"']/g, function(m) {
-        return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[m];
-    });
-}
-
-function handleError(msg) {
-    console.error(msg);
-    // Rimuove i loader e mostra errore nelle griglie
-    Object.values(SECTIONS_CONFIG).forEach(cfg => {
-        const grid = document.getElementById(cfg.gridId);
-        if(grid && grid.querySelector('.loading')) {
-            grid.innerHTML = `<div class="error" style="color: #ef4444; text-align:center; padding: 2rem;">
-                ⚠️ Impossibile caricare i contenuti.<br><span style="font-size:0.8em; opacity:0.7;">${msg}</span>
-            </div>`;
+        // svuota e popola
+        grid.innerHTML = '';
+        if (!Array.isArray(items) || items.length === 0) {
+            grid.innerHTML = `<div class="empty">Nessun prodotto disponibile in questa categoria.</div>`;
+            return;
         }
-    });
+
+        items.forEach(prod => {
+            // aggiungi meta utile
+            prod.sectionName = section.id;
+            const card = createProductCard(prod, section.defaultCta);
+            grid.appendChild(card);
+        });
+    } catch (err) {
+        console.error('Errore caricamento', section.json, err);
+        grid.innerHTML = `<div class="error">Errore caricamento prodotti. Assicurati che ${section.json} sia raggiungibile. (${err.message})</div>`;
+    }
 }
 
+// bootstrap: carica tutte le sezioni
+function initDynamicProducts() {
+    SECTIONS.forEach(s => loadSection(s));
+}
 
-// ==================================================================
-// 3. LOADER UTILITIES (Necessarie per l'effetto transizione)
-// ==================================================================
+// init al load
+window.addEventListener('DOMContentLoaded', () => {
+    initDynamicProducts();
+});
+
+// --- end ---
+
+// --- LOADER UTILITIES ---
 
 // Inietta l'HTML del loader se non esiste
 function injectLoader() {
@@ -308,56 +226,52 @@ function injectLoader() {
     document.body.insertAdjacentHTML('beforeend', loaderHTML);
 }
 
-// Nasconde immediatamente (fix per back-forward cache)
+// Nuova funzione per nascondere immediatamente il loader (fix per back-forward cache)
 function hideLoaderImmediately() {
     const loader = document.getElementById('luxhaven-loader');
     if (loader) {
         loader.style.opacity = '0';
         setTimeout(() => {
             loader.style.display = 'none';
-        }, 500);
+        }, 500); // Tempo per transizione
     }
 }
+
+// Aggiungi listener per nascondere loader su pageshow (quando si torna indietro) e load
+window.addEventListener('pageshow', (event) => {
+    hideLoaderImmediately();
+    if (event.persisted) {
+        // Reinit opzionali se la pagina è ripristinata dalla cache
+        initDynamicProducts(); // Esempio: ricarica prodotti se necessario
+    }
+});
+
+window.addEventListener('load', hideLoaderImmediately);
 
 // Mostra il loader
 function showLoader() {
     injectLoader();
     const loader = document.getElementById('luxhaven-loader');
     if (loader) {
-        loader.style.display = 'flex'; 
-        loader.style.opacity = '1';    
-        loader.classList.remove('visible'); 
-        void loader.offsetWidth; // Forza reflow
-        loader.classList.add('visible'); 
+        // Reset stili inline per override completo
+        loader.style.display = 'flex'; // Forza visibilità
+        loader.style.opacity = '1';    // Forza opacità immediata
+        loader.classList.remove('visible'); // Reset classe per ri-trigger transizione
+        // Forza reflow per applicare cambiamenti (trick per browser con cache issues)
+        void loader.offsetWidth;
+        loader.classList.add('visible'); // Ri-applica classe
     }
 }
 
-// Nasconde il loader con transizione
+// Nasconde il loader
 function hideLoader() {
     const loader = document.getElementById('luxhaven-loader');
     if (loader) {
         loader.classList.remove('visible');
+        // Rimuovi dal DOM dopo la transizione per pulizia (opzionale)
+        setTimeout(() => {
+            // loader.remove(); // Decommenta se vuoi rimuoverlo completamente
+        }, 500);
     }
 }
-
-// ==================================================================
-// 4. INIZIALIZZAZIONE GLOBALE
-// ==================================================================
-
-window.addEventListener('DOMContentLoaded', () => {
-    // Avvia caricamento prodotti da Sheet
-    initDynamicProducts();
-});
-
-window.addEventListener('load', hideLoaderImmediately);
-
-// Gestione tasto "Indietro" browser
-window.addEventListener('pageshow', (event) => {
-    hideLoaderImmediately();
-    if (event.persisted) {
-        // Se la pagina è stata caricata dalla cache bfcache, ricarichiamo i prodotti per sicurezza
-        initDynamicProducts(); 
-    }
-});
-
 
