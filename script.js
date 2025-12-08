@@ -43,109 +43,189 @@ document.addEventListener('click', (e) => {
     }
 });
 
-// ---------------------- Dynamic products loading ----------------------
-// Carica i JSON dalla cartella 'products' e popola le rispettive griglie.
-// Struttura attesa di ogni prodotto (esempio):
-// {
-//   "sku": "LH360-TSHIRT",
-//   "title": "Premium T-Shirt",
-//   "desc": "Maglietta premium in cotone pettinato con logo LuxHaven360.",
-//   "price": 120,
-//   "currency": "EUR",
-//   "icon": "👕",               // o "assets/img/tshirt.jpg"
-//   "stripe_link": "https://buy.stripe.com/abcd...",
-//   "cta": "Acquista"           // testo del bottone (es. "Acquista", "Prenota Ora", "Richiedi Visita")
-// }
+// ---------------------- Dynamic Products Loading (Google Sheets Source) ----------------------
 
-const SECTIONS = [
-    { id: 'properties', json: 'products/properties.json', gridId: 'propertiesGrid', defaultCta: 'Richiedi Visita' },
-    { id: 'supercars', json: 'products/supercars.json', gridId: 'supercarsGrid', defaultCta: 'Test Drive' },
-    { id: 'stays', json: 'products/stays.json', gridId: 'staysGrid', defaultCta: 'Prenota Ora' },
-    { id: 'shop', json: 'products/shop.json', gridId: 'shopGrid', defaultCta: 'Acquista' }
-];
+// Mappatura sezioni basata sui prefissi SKU
+// PR = Immobili (Properties)
+// SC = Supercar
+// EX = Esperienze (Stays)
+// ME = Shop (Merch)
+const SECTION_MAPPING = {
+    'PR': { gridId: 'propertiesGrid', cta: 'Richiedi Visita', fallbackMsg: 'Nessun immobile disponibile al momento.' },
+    'SC': { gridId: 'supercarsGrid', cta: 'Richiedi Info', fallbackMsg: 'Nessuna supercar disponibile.' },
+    'EX': { gridId: 'staysGrid', cta: 'Prenota Ora', fallbackMsg: 'Nessuna esperienza disponibile.' },
+    'ME': { gridId: 'shopGrid', cta: 'Acquista', fallbackMsg: 'Shop momentaneamente vuoto.' }
+};
 
-// utility per creare elementi DOM
-function el(tag, attrs = {}, children = []) {
-    const node = document.createElement(tag);
-    for (const k in attrs) {
-        if (k === 'class') node.className = attrs[k];
-        else if (k === 'html') node.innerHTML = attrs[k];
-        else node.setAttribute(k, attrs[k]);
-    }
-    children.forEach(c => node.appendChild(typeof c === 'string' ? document.createTextNode(c) : c));
-    return node;
-}
+const GOOGLE_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyUh0VScOtnTLHHIRrOeuDGugp0ynQLNjHue7PcP2JEoOQ5x2ZyuTVFdpaUHh6DGFE/exec'; // Verifica che sia il tuo URL corretto
 
-// format prezzo semplice
-function formatPrice(p, currency = 'EUR') {
+// Funzione principale di inizializzazione
+async function initDynamicProducts() {
+    // Mostra loader/placeholder nelle griglie
+    Object.values(SECTION_MAPPING).forEach(conf => {
+        const el = document.getElementById(conf.gridId);
+        if (el) el.innerHTML = '<div class="loading-grid">Caricamento eccellenze...</div>';
+    });
+
     try {
-        return new Intl.NumberFormat('it-IT', { style: 'currency', currency }).format(p);
-    } catch (e) {
-        return `${p} ${currency}`;
+        // Fetch unica per tutti i prodotti
+        // Aggiungiamo timestamp per evitare cache
+        const response = await fetch(`${GOOGLE_SCRIPT_URL}?action=get_all_products&callback=handleProducts&t=${Date.now()}`, {
+            method: 'GET'
+        });
+        
+        // Gestione risposta JSONP manuale (poiché fetch non gestisce JSONP nativamente e il server risponde callback(...))
+        // Alternativa: Se hai configurato doGet per tornare JSON puro senza callback wrapper se non richiesto, usa response.json().
+        // Qui assumiamo il formato standard Apps Script JSONP text
+        const text = await response.text();
+        
+        // Pulizia JSONP: Rimuove "handleProducts(" all'inizio e ")" alla fine
+        let jsonString = text;
+        if (text.startsWith('handleProducts(')) {
+            jsonString = text.substring('handleProducts('.length, text.length - 1);
+        } else if (text.startsWith('callback(')) {
+             jsonString = text.substring('callback('.length, text.length - 1);
+        }
+
+        let allProducts = [];
+        try {
+            allProducts = JSON.parse(jsonString);
+        } catch (e) {
+            console.error("Errore parsing JSON prodotti", e);
+            throw new Error("Formato dati non valido");
+        }
+
+        if (!Array.isArray(allProducts)) allProducts = [];
+
+        populateGrids(allProducts);
+
+    } catch (error) {
+        console.error("Errore caricamento prodotti:", error);
+        // Mostra errore nelle griglie
+        Object.values(SECTION_MAPPING).forEach(conf => {
+            const el = document.getElementById(conf.gridId);
+            if (el) el.innerHTML = '<div class="error-msg">Impossibile caricare il catalogo. Riprova più tardi.</div>';
+        });
     }
 }
 
-// funzione per creare una card prodotto
-function createProductCard(prod, defaultCta) {
-    // container
-    const card = el('div', { class: 'card' });
+// Distribuisce i prodotti nelle griglie corrette
+function populateGrids(products) {
+    // Pulisci le griglie
+    Object.values(SECTION_MAPPING).forEach(conf => {
+        const el = document.getElementById(conf.gridId);
+        if (el) el.innerHTML = '';
+    });
 
-    // image/icon
-    const imageContainer = el('div', { class: 'card-image' });
-    if (prod.icon) {
-        // se è url img, crea <img>, altrimenti usa emoji/testo
-        if (typeof prod.icon === 'string' && (prod.icon.startsWith('http') || prod.icon.endsWith('.jpg') || prod.icon.endsWith('.png') || prod.icon.endsWith('.webp') || prod.icon.endsWith('.jpeg'))) {
-            const img = el('img', { src: prod.icon, alt: prod.title, style: 'width:100%; height:auto; object-fit:cover;' });
-            imageContainer.appendChild(img);
-        } else {
-            imageContainer.textContent = prod.icon;
+    // Contatori per verificare se le sezioni sono vuote
+    const counters = { 'PR': 0, 'SC': 0, 'EX': 0, 'ME': 0 };
+
+    products.forEach(prod => {
+        if (!prod.sku) return;
+
+        // Estrai le prime 2 lettere dello SKU (Es. PR, SC, ME)
+        const prefix = prod.sku.substring(0, 2).toUpperCase();
+        const config = SECTION_MAPPING[prefix];
+
+        if (config) {
+            const grid = document.getElementById(config.gridId);
+            if (grid) {
+                const card = createSheetProductCard(prod, config.cta);
+                grid.appendChild(card);
+                counters[prefix]++;
+            }
         }
-    } else {
-        imageContainer.textContent = '📦';
-    }
+    });
+
+    // Gestione messaggi "Nessun prodotto"
+    Object.keys(SECTION_MAPPING).forEach(prefix => {
+        if (counters[prefix] === 0) {
+            const config = SECTION_MAPPING[prefix];
+            const grid = document.getElementById(config.gridId);
+            if (grid) {
+                grid.innerHTML = `<div class="empty-section"><p>${config.fallbackMsg}</p></div>`;
+            }
+        }
+    });
+}
+
+// Crea la card prodotto basata sui dati dello Sheet
+function createSheetProductCard(prod, defaultCta) {
+    const card = document.createElement('div');
+    card.className = 'card';
+
+    // 1. Immagine (Sostituisce Icona)
+    const imageContainer = document.createElement('div');
+    imageContainer.className = 'card-image';
+    
+    // Fallback immagine se vuota
+    const imgSrc = prod.image || 'https://via.placeholder.com/400x300?text=LuxHaven360';
+    
+    const img = document.createElement('img');
+    img.src = imgSrc;
+    img.alt = prod.title;
+    img.loading = "lazy"; // Performance
+    img.style.width = '100%';
+    img.style.height = '100%';
+    img.style.objectFit = 'cover';
+    
+    imageContainer.appendChild(img);
     card.appendChild(imageContainer);
 
-    // title
-    const title = el('h3', { class: 'card-title' }, [document.createTextNode(prod.title || 'Untitled')]);
+    // 2. Titolo
+    const title = document.createElement('h3');
+    title.className = 'card-title';
+    title.textContent = prod.title;
     card.appendChild(title);
 
-    // desc
-    const desc = el('p', { class: 'card-desc' }, [document.createTextNode(prod.desc || '')]);
+    // 3. Descrizione Breve
+    const desc = document.createElement('p');
+    desc.className = 'card-desc';
+    desc.textContent = prod.desc;
     card.appendChild(desc);
 
-    // price
-    const priceText = el('div', { class: 'card-price' }, [document.createTextNode(prod.price != null ? formatPrice(prod.price, prod.currency || 'EUR') : (prod.price_text || 'Contattaci'))]);
-    card.appendChild(priceText);
+    // 4. Prezzo
+    const priceDiv = document.createElement('div');
+    priceDiv.className = 'card-price';
+    // Formatta prezzo in Euro
+    const priceFormatted = new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR' }).format(prod.price);
+    priceDiv.textContent = priceFormatted;
+    card.appendChild(priceDiv);
 
-    // button area
-    const btn = el('button', { class: 'btn', style: 'margin-top: 1.5rem; width: 100%;' }, [document.createTextNode(prod.cta || defaultCta || 'Scopri')]);
-
-    // attach product data as data- attributes for analytics / fallback
-    btn.dataset.sku = prod.sku || '';
-    btn.dataset.title = prod.title || '';
-    if (prod.stripe_link) btn.dataset.stripeLink = prod.stripe_link;
-    if (prod.action) btn.dataset.action = prod.action;
-
-    // on click behaviour:
+    // 5. Bottone CTA
+    const btn = document.createElement('button');
+    btn.className = 'btn';
+    btn.style.marginTop = '1.5rem';
+    btn.style.width = '100%';
+    btn.textContent = defaultCta;
+    
+    // Evento Click
     btn.addEventListener('click', (e) => {
-        e.preventDefault(); // Previene navigazione immediata
-        
-        // 1. Mostra Loader
-        showLoader();
+        e.preventDefault();
+        showLoader(); // Mostra il loader globale esistente
 
-        // 2. Salva dati
+        // Salva selezione per la pagina di dettaglio
         try {
-            localStorage.setItem('lh360_last_product', JSON.stringify({ sku: btn.dataset.sku, title: btn.dataset.title, ts: Date.now() }));
-            localStorage.setItem('lh360_selected_sku', btn.dataset.sku || '');
+            localStorage.setItem('lh360_last_product', JSON.stringify({ 
+                sku: prod.sku, 
+                title: prod.title, 
+                ts: Date.now() 
+            }));
+            localStorage.setItem('lh360_selected_sku', prod.sku);
         } catch (e) {}
 
-        // 3. Naviga dopo un breve ritardo per far vedere l'animazione di start
+        // Navigazione
         setTimeout(() => {
-            const base = 'product-details/pdp-products.html'; // Assicurati che il percorso sia corretto relativo alla pagina corrente
-            const sku = encodeURIComponent(btn.dataset.sku || '');
-            const section = encodeURIComponent(prod.sectionName || 'shop');
-            window.location.href = `${base}?sku=${sku}&section=${section}`;
-        }, 800); // 800ms di delay estetico
+            const base = 'product-details/pdp-products.html';
+            // Passa anche la sezione (dedotta dallo SKU)
+            let sectionName = 'shop';
+            if (prod.sku.startsWith('PR')) sectionName = 'properties';
+            if (prod.sku.startsWith('SC')) sectionName = 'supercars';
+            if (prod.sku.startsWith('EX')) sectionName = 'stays';
+            
+            const skuParam = encodeURIComponent(prod.sku);
+            window.location.href = `${base}?sku=${skuParam}&section=${sectionName}`;
+        }, 800);
     });
 
     card.appendChild(btn);
@@ -153,49 +233,10 @@ function createProductCard(prod, defaultCta) {
     return card;
 }
 
-// carica e popola una sezione
-async function loadSection(section) {
-    const grid = document.getElementById(section.gridId);
-    if (!grid) return;
-
-    // stato caricamento
-    grid.innerHTML = '<div class="loading">Caricamento...</div>';
-
-    try {
-        const resp = await fetch(section.json, { cache: 'no-cache' });
-        if (!resp.ok) throw new Error('Network response was not ok: ' + resp.status);
-        const items = await resp.json();
-
-        // svuota e popola
-        grid.innerHTML = '';
-        if (!Array.isArray(items) || items.length === 0) {
-            grid.innerHTML = `<div class="empty">Nessun prodotto disponibile in questa categoria.</div>`;
-            return;
-        }
-
-        items.forEach(prod => {
-            // aggiungi meta utile
-            prod.sectionName = section.id;
-            const card = createProductCard(prod, section.defaultCta);
-            grid.appendChild(card);
-        });
-    } catch (err) {
-        console.error('Errore caricamento', section.json, err);
-        grid.innerHTML = `<div class="error">Errore caricamento prodotti. Assicurati che ${section.json} sia raggiungibile. (${err.message})</div>`;
-    }
-}
-
-// bootstrap: carica tutte le sezioni
-function initDynamicProducts() {
-    SECTIONS.forEach(s => loadSection(s));
-}
-
-// init al load
+// Avvia al caricamento della pagina
 window.addEventListener('DOMContentLoaded', () => {
     initDynamicProducts();
 });
-
-// --- end ---
 
 // --- LOADER UTILITIES ---
 
@@ -274,4 +315,5 @@ function hideLoader() {
         }, 500);
     }
 }
+
 
