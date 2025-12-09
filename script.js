@@ -62,7 +62,7 @@ async function initDynamicProducts() {
     });
 
     try {
-        const apiUrl = (typeof WEB_APP_URL !== 'undefined') ? WEB_APP_URL : 'https://script.google.com/macros/s/AKfycbxqTaxKPJa3VQr40qjnJ-cm-FUyGQFO7PQhwxg7jts8FxzQsrjVO_2uid6kdgsf-zLS/exec';
+        const apiUrl = (typeof WEB_APP_URL !== 'undefined') ? WEB_APP_URL : 'https://script.google.com/macros/s/AKfycbxSM1pTF1jU4TGJxpPgQtu-lrOEfDTvu-rW3FNmEbE9gCafvCiEJl3kZ56TpoyrhsQ/exec';
         
         // Aggiungo timestamp per forzare il refresh
         const response = await fetch(`${apiUrl}?action=get_products&callback=handleProducts&t=${Date.now()}`);
@@ -324,6 +324,7 @@ function hideLoader() {
         }, 500);
     }
 }
+
 
 
 
