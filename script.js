@@ -153,7 +153,7 @@ function loadProductsFromSheet() {
     const script = document.createElement('script');
     
     // Assumiamo che WEB_APP_URL sia definito in index.html, altrimenti fallback
-    const url = (typeof WEB_APP_URL !== 'undefined' ? WEB_APP_URL : 'https://script.google.com/macros/s/AKfycbxSM1pTF1jU4TGJxpPgQtu-lrOEfDTvu-rW3FNmEbE9gCafvCiEJl3kZ56TpoyrhsQ/exec') 
+    const url = (typeof WEB_APP_URL !== 'undefined' ? WEB_APP_URL : 'https://script.google.com/macros/s/AKfycbxy_eu8AGgkSntieyfZlpyFG5699GYaiTXnSSZaG0s8dC6LekZYF8KZeQugLQhy01Tt/exec') 
               + `?action=get_products&callback=${callbackName}&t=${Date.now()}`;
     
     script.src = url;
@@ -288,5 +288,6 @@ function hideLoader() {
     const loader = document.getElementById('luxhaven-loader');
     if (loader) loader.classList.remove('visible');
 }
+
 
 
