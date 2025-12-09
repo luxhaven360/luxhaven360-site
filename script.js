@@ -47,7 +47,7 @@ const CATEGORY_MAP = {
 
 // URL Web App (Assicurati che corrisponda a quello nel tuo HTML o definiscilo qui)
 // Se è già in index.html, usa window.WEB_APP_URL, altrimenti scommenta sotto:
-// const WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbxSM1pTF1jU4TGJxpPgQtu-lrOEfDTvu-rW3FNmEbE9gCafvCiEJl3kZ56TpoyrhsQ/exec';
+const WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbx-wNhNQkZ7QJ7pd08hMXLJPsE8B-FU6O2qF4HOmwtse-FLHyfeUpaVKL24iOf7UNzF/exec';
 
 // Utility per creare elementi DOM
 function el(tag, attrs = {}, children = []) {
@@ -287,6 +287,7 @@ function hideLoader() {
     const loader = document.getElementById('luxhaven-loader');
     if (loader) loader.classList.remove('visible');
 }
+
 
 
 
