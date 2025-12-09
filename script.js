@@ -1,5 +1,4 @@
-// --- Nav & UI (Tuo codice esistente per navigazione menu) ---
-// ... (Mantieni le funzioni showSection, toggleMenu, listener scroll e click outside) ...
+// --- Nav & UI (tuo script esistente mantenuto e ampliato) ---
 
 // Navigation
 function showSection(sectionId) {
@@ -12,8 +11,12 @@ function showSection(sectionId) {
         const el = document.getElementById(sectionId);
         if (el) el.classList.add('active');
     }
+    
+    // Close mobile menu
     const navLinks = document.getElementById('navLinks');
     if (navLinks) navLinks.classList.remove('active');
+    
+    // Scroll to top
     window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
@@ -21,12 +24,17 @@ function toggleMenu() {
     document.getElementById('navLinks').classList.toggle('active');
 }
 
+// Navbar scroll effect
 window.addEventListener('scroll', () => {
     const navbar = document.getElementById('navbar');
-    if (window.scrollY > 50) navbar.classList.add('scrolled');
-    else navbar.classList.remove('scrolled');
+    if (window.scrollY > 50) {
+        navbar.classList.add('scrolled');
+    } else {
+        navbar.classList.remove('scrolled');
+    }
 });
 
+// Close mobile menu when clicking outside
 document.addEventListener('click', (e) => {
     const nav = document.getElementById('navLinks');
     const toggle = document.querySelector('.mobile-toggle');
@@ -35,21 +43,21 @@ document.addEventListener('click', (e) => {
     }
 });
 
-// ---------------------- Dynamic products loading (DA SHEET) ----------------------
+// ---------------------- Dynamic products loading ----------------------
+// 🆕 Carica i prodotti dal Google Sheet "Prodotti" tramite API
+// Struttura del foglio (colonne dalla riga 7, dati dalla riga 8):
+// A: SKU, B: Nome Prodotto, C: Numero Prodotto, D: Categoria, E: Prezzo,
+// F: Consegna Prevista, G+H: Breve Descrizione, I: Colori, J: Taglie,
+// K: Descrizione Lunga, L-O: Immagini 1-4
 
-// Mappatura SKU Prefix -> ID Griglia HTML e CTA Default
-const CATEGORY_MAP = {
-    'PR': { gridId: 'propertiesGrid', cta: 'Richiedi Visita', sectionId: 'properties' }, // Immobili
-    'SC': { gridId: 'supercarsGrid', cta: 'Test Drive', sectionId: 'supercars' },      // Supercar
-    'EX': { gridId: 'staysGrid', cta: 'Prenota Ora', sectionId: 'stays' },             // Esperienze
-    'ME': { gridId: 'shopGrid', cta: 'Acquista', sectionId: 'shop' }                   // Merchandising
-};
+const SECTIONS = [
+    { id: 'properties', gridId: 'propertiesGrid', defaultCta: 'Richiedi Visita' },
+    { id: 'supercars', gridId: 'supercarsGrid', defaultCta: 'Test Drive' },
+    { id: 'stays', gridId: 'staysGrid', defaultCta: 'Prenota Ora' },
+    { id: 'shop', gridId: 'shopGrid', defaultCta: 'Acquista' }
+];
 
-// URL Web App (Assicurati che corrisponda a quello nel tuo HTML o definiscilo qui)
-// Se è già in index.html, usa window.WEB_APP_URL, altrimenti scommenta sotto:
-const WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbx-wNhNQkZ7QJ7pd08hMXLJPsE8B-FU6O2qF4HOmwtse-FLHyfeUpaVKL24iOf7UNzF/exec';
-
-// Utility per creare elementi DOM
+// utility per creare elementi DOM
 function el(tag, attrs = {}, children = []) {
     const node = document.createElement(tag);
     for (const k in attrs) {
@@ -61,234 +69,244 @@ function el(tag, attrs = {}, children = []) {
     return node;
 }
 
-// Format prezzo
-function formatPrice(p) {
-    // Se p è una stringa vuota o non numerica, gestisci gracefully
-    if (!p && p !== 0) return 'Prezzo su richiesta';
-    // Se è un numero puro
-    if (typeof p === 'number') {
-        return new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR' }).format(p);
+// format prezzo semplice
+function formatPrice(p, currency = 'EUR') {
+    try {
+        return new Intl.NumberFormat('it-IT', { style: 'currency', currency }).format(p);
+    } catch (e) {
+        return `${p} ${currency}`;
     }
-    // Se arriva già formattato o testo dal sheet, ritorna così com'è
-    return p;
 }
 
-// Crea card prodotto aggiornata per leggere i dati dal Sheet
-function createProductCard(prod, config) {
+// funzione per creare una card prodotto
+function createProductCard(prod, defaultCta) {
+    // container
     const card = el('div', { class: 'card' });
 
-    // 1. Immagine (Dalla colonna "Immagine 1" del sheet)
+    // image/icon
     const imageContainer = el('div', { class: 'card-image' });
-    if (prod.image1) {
-        const img = el('img', { 
-            src: prod.image1, 
-            alt: prod.title, 
-            style: 'width:100%; height:auto; object-fit:cover;' 
-        });
-        // Fallback errore immagine
-        img.onerror = function() { 
-            this.style.display='none'; 
-            imageContainer.textContent = '📷'; 
-        };
-        imageContainer.appendChild(img);
+    if (prod.icon) {
+        // se è url img, crea <img>, altrimenti usa emoji/testo
+        if (typeof prod.icon === 'string' && (prod.icon.startsWith('http') || prod.icon.endsWith('.jpg') || prod.icon.endsWith('.png') || prod.icon.endsWith('.webp') || prod.icon.endsWith('.jpeg'))) {
+            const img = el('img', { src: prod.icon, alt: prod.title, style: 'width:100%; height:100%; object-fit:cover;' });
+            imageContainer.appendChild(img);
+        } else {
+            imageContainer.textContent = prod.icon;
+        }
     } else {
-        imageContainer.textContent = '📦'; // Placeholder se manca immagine
+        imageContainer.textContent = '📦';
     }
     card.appendChild(imageContainer);
 
-    // 2. Titolo (Colonna Nome Prodotto)
+    // title
     const title = el('h3', { class: 'card-title' }, [document.createTextNode(prod.title || 'Untitled')]);
     card.appendChild(title);
 
-    // 3. Descrizione (Colonna Breve Descrizione)
+    // desc
     const desc = el('p', { class: 'card-desc' }, [document.createTextNode(prod.desc || '')]);
     card.appendChild(desc);
 
-    // 4. Prezzo (Colonna Prezzo)
-    const priceText = el('div', { class: 'card-price' }, [document.createTextNode(formatPrice(prod.price))]);
+    // price
+    const priceText = el('div', { class: 'card-price' }, [document.createTextNode(prod.price != null && prod.price > 0 ? formatPrice(prod.price, prod.currency || 'EUR') : (prod.price_text || 'Contattaci'))]);
     card.appendChild(priceText);
 
-    // 5. Bottone CTA
-    const btn = el('button', { class: 'btn', style: 'margin-top: 1.5rem; width: 100%;' }, [document.createTextNode(config.cta)]);
+    // button area
+    const btn = el('button', { class: 'btn', style: 'margin-top: 1.5rem; width: 100%;' }, [document.createTextNode(prod.cta || defaultCta || 'Scopri')]);
 
-    // Dataset per analytics/navigazione
-    btn.dataset.sku = prod.sku;
-    btn.dataset.title = prod.title;
+    // attach product data as data- attributes for analytics / fallback
+    btn.dataset.sku = prod.sku || '';
+    btn.dataset.title = prod.title || '';
+    if (prod.stripe_link) btn.dataset.stripeLink = prod.stripe_link;
+    if (prod.action) btn.dataset.action = prod.action;
 
-    // Click behavior
+    // on click behaviour:
     btn.addEventListener('click', (e) => {
-        e.preventDefault();
-        showLoader();
+        e.preventDefault(); // Previene navigazione immediata
         
+        // 1. Mostra Loader
+        showLoader();
+
+        // 2. Salva dati
         try {
-            localStorage.setItem('lh360_last_product', JSON.stringify({ 
-                sku: btn.dataset.sku, 
-                title: btn.dataset.title, 
-                ts: Date.now() 
-            }));
+            localStorage.setItem('lh360_last_product', JSON.stringify({ sku: btn.dataset.sku, title: btn.dataset.title, ts: Date.now() }));
             localStorage.setItem('lh360_selected_sku', btn.dataset.sku || '');
         } catch (e) {}
 
+        // 3. Naviga dopo un breve ritardo per far vedere l'animazione di start
         setTimeout(() => {
-            const base = 'product-details/pdp-products.html';
+            const base = 'product-details/pdp-products.html'; // Assicurati che il percorso sia corretto relativo alla pagina corrente
             const sku = encodeURIComponent(btn.dataset.sku || '');
-            const section = encodeURIComponent(config.sectionId);
+            const section = encodeURIComponent(prod.sectionName || prod.category || 'shop');
             window.location.href = `${base}?sku=${sku}&section=${section}`;
-        }, 800);
+        }, 800); // 800ms di delay estetico
     });
 
     card.appendChild(btn);
+
     return card;
 }
 
-// Funzione principale di caricamento
-function loadProductsFromSheet() {
-    // 1. Imposta stato "Loading" su tutte le griglie
-    Object.values(CATEGORY_MAP).forEach(conf => {
-        const grid = document.getElementById(conf.gridId);
-        if (grid) grid.innerHTML = '<div class="loading">Caricamento eccellenze...</div>';
-    });
+// 🆕 Carica prodotti dal Google Sheet tramite API JSONP
+async function loadSection(section) {
+    const grid = document.getElementById(section.gridId);
+    if (!grid) return;
 
-    const callbackName = 'handleProducts_' + Date.now();
-    const script = document.createElement('script');
-    
-    // Assumiamo che WEB_APP_URL sia definito in index.html, altrimenti fallback
-    const url = `${WEB_APP_URL}?action=get_products&callback=${callbackName}&t=${Date.now()}`;
-    
-    script.src = url;
+    // stato caricamento
+    grid.innerHTML = '<div class="loading">Caricamento...</div>';
 
-    window[callbackName] = function(data) {
-        // Pulisci le griglie
-        Object.values(CATEGORY_MAP).forEach(conf => {
-            const grid = document.getElementById(conf.gridId);
-            if (grid) grid.innerHTML = ''; 
+    try {
+        // Chiamata JSONP al Web App
+        const callbackName = 'loadProducts_' + section.id + '_' + Date.now();
+        const category = section.id; // properties, supercars, stays, shop
+        
+        const scriptUrl = `${WEB_APP_URL}?action=get_products&category=${category}&callback=${callbackName}&t=${Date.now()}`;
+        
+        const result = await new Promise((resolve, reject) => {
+            const timeout = setTimeout(() => {
+                cleanup();
+                reject(new Error('Timeout caricamento prodotti'));
+            }, 10000);
+            
+            window[callbackName] = function(response) {
+                clearTimeout(timeout);
+                cleanup();
+                resolve(response);
+            };
+            
+            const script = document.createElement('script');
+            script.src = scriptUrl;
+            script.onerror = () => {
+                clearTimeout(timeout);
+                cleanup();
+                reject(new Error('Errore rete durante il caricamento'));
+            };
+            
+            function cleanup() {
+                try { 
+                    if (script.parentNode) document.body.removeChild(script); 
+                } catch (e) {}
+                try { 
+                    delete window[callbackName]; 
+                } catch (e) {}
+            }
+            
+            document.body.appendChild(script);
         });
 
-        if (!data || data.error) {
-            console.error("Errore API prodotti:", data ? data.error : 'No data');
-            showErrorInGrids();
+        // Elabora risposta
+        if (!result.success || result.error) {
+            throw new Error(result.error || 'Errore caricamento prodotti');
+        }
+
+        const items = result.products || [];
+
+        // svuota e popola
+        grid.innerHTML = '';
+        
+        if (items.length === 0) {
+            grid.innerHTML = `<div class="empty" style="grid-column: 1/-1; text-align: center; padding: 3rem; color: rgba(245,245,245,0.5); font-size: 1.1rem;">Nessun prodotto disponibile in questa categoria.</div>`;
             return;
         }
 
-        if (Array.isArray(data) && data.length > 0) {
-            let countMap = { 'PR': 0, 'SC': 0, 'EX': 0, 'ME': 0 };
-
-            data.forEach(prod => {
-                // Determina categoria dallo SKU (es. PR-14-V -> prefix PR)
-                const prefix = prod.sku.split('-')[0];
-                const config = CATEGORY_MAP[prefix];
-
-                if (config) {
-                    const grid = document.getElementById(config.gridId);
-                    if (grid) {
-                        const card = createProductCard(prod, config);
-                        grid.appendChild(card);
-                        countMap[prefix]++;
-                    }
-                }
-            });
-
-            // Gestione categorie vuote
-            Object.keys(CATEGORY_MAP).forEach(prefix => {
-                if (countMap[prefix] === 0) {
-                    const conf = CATEGORY_MAP[prefix];
-                    const grid = document.getElementById(conf.gridId);
-                    if (grid) {
-                        grid.innerHTML = `<div class="empty">Al momento non ci sono disponibilità in questa categoria.</div>`;
-                    }
-                }
-            });
-
-        } else {
-            // Array vuoto globale
-            Object.values(CATEGORY_MAP).forEach(conf => {
-                const grid = document.getElementById(conf.gridId);
-                if (grid) grid.innerHTML = `<div class="empty">Nessun prodotto disponibile al momento.</div>`;
-            });
-        }
+        items.forEach(prod => {
+            // aggiungi meta utile
+            prod.sectionName = section.id;
+            const card = createProductCard(prod, section.defaultCta);
+            grid.appendChild(card);
+        });
         
-        cleanupScript(script, callbackName);
-    };
-
-    script.onerror = () => {
-        console.error("Errore di rete caricamento prodotti");
-        showErrorInGrids();
-        cleanupScript(script, callbackName);
-    };
-
-    document.body.appendChild(script);
+        console.log(`✅ Caricati ${items.length} prodotti per categoria "${section.id}"`);
+        
+    } catch (err) {
+        console.error('Errore caricamento sezione', section.id, err);
+        grid.innerHTML = `<div class="error" style="grid-column: 1/-1; text-align: center; padding: 3rem; color: #ef4444; font-size: 1.1rem;">Errore caricamento prodotti. Riprova più tardi. (${err.message})</div>`;
+    }
 }
 
-function showErrorInGrids() {
-    Object.values(CATEGORY_MAP).forEach(conf => {
-        const grid = document.getElementById(conf.gridId);
-        if (grid) grid.innerHTML = '<div class="error">Impossibile caricare i prodotti. Riprova più tardi.</div>';
-    });
+// bootstrap: carica tutte le sezioni
+function initDynamicProducts() {
+    SECTIONS.forEach(s => loadSection(s));
 }
 
-function cleanupScript(script, callbackName) {
-    if (script.parentNode) script.parentNode.removeChild(script);
-    delete window[callbackName];
-}
-
-// Init al load
+// init al load
 window.addEventListener('DOMContentLoaded', () => {
-    loadProductsFromSheet();
+    initDynamicProducts();
 });
 
-// --- Loader Utilities (Tuo codice esistente) ---
+// --- LOADER UTILITIES ---
+
+// Inietta l'HTML del loader se non esiste
 function injectLoader() {
     if (document.getElementById('luxhaven-loader')) return;
+
     const loaderHTML = `
     <div id="luxhaven-loader">
         <div class="lh-bg-gradient"></div>
         <div class="lh-loader-content">
             <img src="assets/logo-azienda.png" alt="LuxHaven360" class="lh-logo">
             <div class="lh-tagline">Curating Excellence</div>
+            
             <div class="lh-loader-wrapper">
-                <div class="lh-ring"></div><div class="lh-ring"></div><div class="lh-ring"></div>
+                <div class="lh-ring"></div>
+                <div class="lh-ring"></div>
+                <div class="lh-ring"></div>
             </div>
-            <div class="lh-progress-container"><div class="lh-progress-fill"></div></div>
+
+            <div class="lh-progress-container">
+                <div class="lh-progress-fill"></div>
+            </div>
             <div class="lh-loading-text">Caricamento</div>
         </div>
     </div>`;
+    
     document.body.insertAdjacentHTML('beforeend', loaderHTML);
 }
 
+// Nuova funzione per nascondere immediatamente il loader (fix per back-forward cache)
 function hideLoaderImmediately() {
     const loader = document.getElementById('luxhaven-loader');
     if (loader) {
         loader.style.opacity = '0';
-        setTimeout(() => { loader.style.display = 'none'; }, 500);
+        setTimeout(() => {
+            loader.style.display = 'none';
+        }, 500); // Tempo per transizione
     }
 }
 
+// Aggiungi listener per nascondere loader su pageshow (quando si torna indietro) e load
 window.addEventListener('pageshow', (event) => {
     hideLoaderImmediately();
     if (event.persisted) {
-        loadProductsFromSheet(); // Ricarica se torni indietro dalla cache
+        // Reinit opzionali se la pagina è ripristinata dalla cache
+        initDynamicProducts(); // Esempio: ricarica prodotti se necessario
     }
 });
+
 window.addEventListener('load', hideLoaderImmediately);
 
+// Mostra il loader
 function showLoader() {
     injectLoader();
     const loader = document.getElementById('luxhaven-loader');
     if (loader) {
-        loader.style.display = 'flex';
-        loader.style.opacity = '1';
-        loader.classList.remove('visible');
+        // Reset stili inline per override completo
+        loader.style.display = 'flex'; // Forza visibilità
+        loader.style.opacity = '1';    // Forza opacità immediata
+        loader.classList.remove('visible'); // Reset classe per ri-trigger transizione
+        // Forza reflow per applicare cambiamenti (trick per browser con cache issues)
         void loader.offsetWidth;
-        loader.classList.add('visible');
+        loader.classList.add('visible'); // Ri-applica classe
     }
 }
 
+// Nasconde il loader
 function hideLoader() {
     const loader = document.getElementById('luxhaven-loader');
-    if (loader) loader.classList.remove('visible');
+    if (loader) {
+        loader.classList.remove('visible');
+        // Rimuovi dal DOM dopo la transizione per pulizia (opzionale)
+        setTimeout(() => {
+            // loader.remove(); // Decommenta se vuoi rimuoverlo completamente
+        }, 500);
+    }
 }
-
-
-
-
-
