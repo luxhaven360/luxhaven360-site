@@ -324,7 +324,3 @@ function hideLoader() {
         }, 500);
     }
 }
-
-
-
-
