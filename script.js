@@ -289,3 +289,4 @@ function hideLoader() {
     if (loader) loader.classList.remove('visible');
 }
 
+
