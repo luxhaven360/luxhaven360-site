@@ -55,47 +55,53 @@ const CATEGORY_MAP = {
 
 // Funzione principale di inizializzazione
 async function initDynamicProducts() {
-    // Mostra loader nelle griglie
+    // Loader visivo
     Object.values(CATEGORY_MAP).forEach(conf => {
         const el = document.getElementById(conf.gridId);
-        if (el) el.innerHTML = '<div class="loading" style="grid-column:1/-1; text-align:center; padding:2rem;">Caricamento catalogo esclusivo...</div>';
+        if (el) el.innerHTML = '<div class="loading" style="grid-column:1/-1; text-align:center;">Caricamento catalogo...</div>';
     });
 
     try {
-        // Recupera URL Web App
         const apiUrl = (typeof WEB_APP_URL !== 'undefined') ? WEB_APP_URL : 'https://script.google.com/macros/s/AKfycbxqTaxKPJa3VQr40qjnJ-cm-FUyGQFO7PQhwxg7jts8FxzQsrjVO_2uid6kdgsf-zLS/exec';
         
-        // Aggiungi un parametro timestamp per evitare cache del browser
+        // Aggiungo timestamp per forzare il refresh
         const response = await fetch(`${apiUrl}?action=get_products&callback=handleProducts&t=${Date.now()}`);
         const text = await response.text();
         
-        // Gestione JSONP pulita
-        // Rimuove "handleProducts(" all'inizio e ");" alla fine
+        console.log("Risposta Server Grezza:", text); // DEBUG: Vedi cosa arriva davvero
+
+        // Pulizia JSONP aggressiva
         let jsonStr = text.trim();
-        if (jsonStr.startsWith('handleProducts(')) {
-            jsonStr = jsonStr.substring('handleProducts('.length, jsonStr.length - 1);
+        // Rimuove tutto ciò che c'è prima della prima parentesi graffa o quadra
+        if (jsonStr.indexOf('[') > -1) {
+             // Prende solo la parte dell'array JSON
+             jsonStr = jsonStr.substring(jsonStr.indexOf('['));
+             if (jsonStr.lastIndexOf(')') > -1) {
+                 jsonStr = jsonStr.substring(0, jsonStr.lastIndexOf(')'));
+             }
         }
 
         let products = [];
         try {
             products = JSON.parse(jsonStr);
         } catch (e) {
-            console.error("Errore parsing JSON:", e);
+            console.error("Errore Parse JSON. Stringa ricevuta:", jsonStr);
+            throw new Error("Formato dati non valido");
         }
 
-        // FIX ERRORE: Se products non è un array (es. errore server), usa array vuoto
+        // Se products non è un array, è un errore
         if (!Array.isArray(products)) {
-            console.warn("Risposta server non valida o vuota:", products);
-            products = []; 
+            console.error("I dati ricevuti non sono una lista:", products);
+            products = [];
         }
 
         renderProducts(products);
 
     } catch (err) {
-        console.error('Errore fetch prodotti:', err);
+        console.error('CRITICAL ERROR:', err);
         Object.values(CATEGORY_MAP).forEach(conf => {
             const el = document.getElementById(conf.gridId);
-            if (el) el.innerHTML = '<div class="error" style="grid-column:1/-1; text-align:center; color: #ff4444;">Impossibile caricare il catalogo al momento.</div>';
+            if (el) el.innerHTML = '<div class="error" style="grid-column:1/-1; text-align:center; color:red;">Errore caricamento prodotti.<br>Controlla console per dettagli.</div>';
         });
     }
 }
@@ -318,5 +324,6 @@ function hideLoader() {
         }, 500);
     }
 }
+
 
 
