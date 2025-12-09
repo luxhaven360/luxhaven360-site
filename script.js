@@ -43,200 +43,203 @@ document.addEventListener('click', (e) => {
     }
 });
 
-// ---------------------- Dynamic Products Loading (Google Sheets Source) ----------------------
+// ---------------------- Dynamic products loading (Google Sheets) ----------------------
 
-// Mappatura sezioni basata sui prefissi SKU
-// PR = Immobili (Properties)
-// SC = Supercar
-// EX = Esperienze (Stays)
-// ME = Shop (Merch)
-const SECTION_MAPPING = {
-    'PR': { gridId: 'propertiesGrid', cta: 'Richiedi Visita', fallbackMsg: 'Nessun immobile disponibile al momento.' },
-    'SC': { gridId: 'supercarsGrid', cta: 'Richiedi Info', fallbackMsg: 'Nessuna supercar disponibile.' },
-    'EX': { gridId: 'staysGrid', cta: 'Prenota Ora', fallbackMsg: 'Nessuna esperienza disponibile.' },
-    'ME': { gridId: 'shopGrid', cta: 'Acquista', fallbackMsg: 'Shop momentaneamente vuoto.' }
+// Mappatura Prefisso SKU -> ID Griglia HTML
+const CATEGORY_MAP = {
+    'PR': { gridId: 'propertiesGrid', title: 'Immobili' },
+    'SC': { gridId: 'supercarsGrid', title: 'Supercar' },
+    'EX': { gridId: 'staysGrid', title: 'Esperienze' },
+    'ME': { gridId: 'shopGrid', title: 'Shop' }
 };
 
-const GOOGLE_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzRgxxOU8DdLLcuJkDpu2b07sCXPIANjZK5yy2CHs9ZXYRB-y_DtVsZpgclvDmFH9L5/exec'; // Verifica che sia il tuo URL corretto
+// URL della tua Web App (Gia presente nel tuo file, riutilizziamo la costante se c'è o la definiamo)
+// Assicurati che questa costante sia definita all'inizio del file o qui:
+const GOOGLE_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzRgxxOU8DdLLcuJkDpu2b07sCXPIANjZK5yy2CHs9ZXYRB-y_DtVsZpgclvDmFH9L5/exec';
 
-// Funzione principale di inizializzazione
 async function initDynamicProducts() {
-    // Mostra loader/placeholder nelle griglie
-    Object.values(SECTION_MAPPING).forEach(conf => {
-        const el = document.getElementById(conf.gridId);
-        if (el) el.innerHTML = '<div class="loading-grid">Caricamento eccellenze...</div>';
+    // Mostra stato di caricamento su tutte le griglie
+    Object.values(CATEGORY_MAP).forEach(cat => {
+        const grid = document.getElementById(cat.gridId);
+        if (grid) grid.innerHTML = '<div class="loading-pulse"></div>'; // Puoi usare uno stile CSS loader qui
     });
 
     try {
-        // Fetch unica per tutti i prodotti
-        // Aggiungiamo timestamp per evitare cache
-        const response = await fetch(`${GOOGLE_SCRIPT_URL}?action=get_all_products&callback=handleProducts&t=${Date.now()}`, {
-            method: 'GET'
+        // Chiamata JSONP per aggirare CORS o fetch diretta se configurato
+        const callbackName = 'handleProductsResponse';
+        const scriptUrl = `${GOOGLE_SCRIPT_URL}?action=get_products&callback=${callbackName}&t=${Date.now()}`;
+        
+        // Creiamo una promise per gestire JSONP
+        await new Promise((resolve, reject) => {
+            window[callbackName] = (data) => {
+                if (data.error) reject(data.error);
+                else resolve(data.products);
+            };
+            
+            const script = document.createElement('script');
+            script.src = scriptUrl;
+            script.onerror = () => reject('Errore di connessione script Google');
+            document.body.appendChild(script);
+        }).then(products => {
+            distributeProducts(products);
         });
-        
-        // Gestione risposta JSONP manuale (poiché fetch non gestisce JSONP nativamente e il server risponde callback(...))
-        // Alternativa: Se hai configurato doGet per tornare JSON puro senza callback wrapper se non richiesto, usa response.json().
-        // Qui assumiamo il formato standard Apps Script JSONP text
-        const text = await response.text();
-        
-        // Pulizia JSONP: Rimuove "handleProducts(" all'inizio e ")" alla fine
-        let jsonString = text;
-        if (text.startsWith('handleProducts(')) {
-            jsonString = text.substring('handleProducts('.length, text.length - 1);
-        } else if (text.startsWith('callback(')) {
-             jsonString = text.substring('callback('.length, text.length - 1);
-        }
 
-        let allProducts = [];
-        try {
-            allProducts = JSON.parse(jsonString);
-        } catch (e) {
-            console.error("Errore parsing JSON prodotti", e);
-            throw new Error("Formato dati non valido");
-        }
-
-        if (!Array.isArray(allProducts)) allProducts = [];
-
-        populateGrids(allProducts);
-
-    } catch (error) {
-        console.error("Errore caricamento prodotti:", error);
+    } catch (err) {
+        console.error('Errore caricamento prodotti:', err);
         // Mostra errore nelle griglie
-        Object.values(SECTION_MAPPING).forEach(conf => {
-            const el = document.getElementById(conf.gridId);
-            if (el) el.innerHTML = '<div class="error-msg">Impossibile caricare il catalogo. Riprova più tardi.</div>';
+        Object.values(CATEGORY_MAP).forEach(cat => {
+            const grid = document.getElementById(cat.gridId);
+            if (grid) grid.innerHTML = `<div class="error-msg">Impossibile caricare i contenuti al momento.</div>`;
         });
     }
 }
 
-// Distribuisce i prodotti nelle griglie corrette
-function populateGrids(products) {
-    // Pulisci le griglie
-    Object.values(SECTION_MAPPING).forEach(conf => {
-        const el = document.getElementById(conf.gridId);
-        if (el) el.innerHTML = '';
+function distributeProducts(products) {
+    // 1. Pulisci le griglie
+    Object.values(CATEGORY_MAP).forEach(cat => {
+        const grid = document.getElementById(cat.gridId);
+        if (grid) grid.innerHTML = '';
     });
 
-    // Contatori per verificare se le sezioni sono vuote
-    const counters = { 'PR': 0, 'SC': 0, 'EX': 0, 'ME': 0 };
+    // Contatori per gestire messaggi "vuoto"
+    const counts = { 'PR': 0, 'SC': 0, 'EX': 0, 'ME': 0 };
 
+    // 2. Itera e crea card
     products.forEach(prod => {
-        if (!prod.sku) return;
-
-        // Estrai le prime 2 lettere dello SKU (Es. PR, SC, ME)
-        const prefix = prod.sku.substring(0, 2).toUpperCase();
-        const config = SECTION_MAPPING[prefix];
+        // Identifica categoria dal prefisso SKU (PR, SC, EX, ME)
+        const prefix = prod.original_sku_prefix; 
+        const config = CATEGORY_MAP[prefix];
 
         if (config) {
             const grid = document.getElementById(config.gridId);
             if (grid) {
-                const card = createSheetProductCard(prod, config.cta);
+                const card = createSheetProductCard(prod);
                 grid.appendChild(card);
-                counters[prefix]++;
+                counts[prefix]++;
             }
         }
     });
 
-    // Gestione messaggi "Nessun prodotto"
-    Object.keys(SECTION_MAPPING).forEach(prefix => {
-        if (counters[prefix] === 0) {
-            const config = SECTION_MAPPING[prefix];
+    // 3. Gestione sezioni vuote
+    Object.keys(CATEGORY_MAP).forEach(prefix => {
+        if (counts[prefix] === 0) {
+            const config = CATEGORY_MAP[prefix];
             const grid = document.getElementById(config.gridId);
             if (grid) {
-                grid.innerHTML = `<div class="empty-section"><p>${config.fallbackMsg}</p></div>`;
+                grid.innerHTML = `
+                    <div class="empty-section" style="grid-column: 1/-1; text-align: center; padding: 4rem; color: #a1a1aa;">
+                        <div style="font-size: 3rem; margin-bottom: 1rem;">💎</div>
+                        <h3>Collezione ${config.title} Sold Out</h3>
+                        <p>Iscriviti alla newsletter per i prossimi arrivi.</p>
+                    </div>`;
             }
         }
     });
 }
 
-// Crea la card prodotto basata sui dati dello Sheet
-function createSheetProductCard(prod, defaultCta) {
+function createSheetProductCard(prod) {
     const card = document.createElement('div');
     card.className = 'card';
 
-    // 1. Immagine (Sostituisce Icona)
-    const imageContainer = document.createElement('div');
-    imageContainer.className = 'card-image';
+    // Immagine (Usa Immagine 1 dal foglio)
+    const imgContainer = document.createElement('div');
+    imgContainer.className = 'card-image';
     
-    // Fallback immagine se vuota
-    const imgSrc = prod.image || 'https://via.placeholder.com/400x300?text=LuxHaven360';
-    
-    const img = document.createElement('img');
-    img.src = imgSrc;
-    img.alt = prod.title;
-    img.loading = "lazy"; // Performance
-    img.style.width = '100%';
-    img.style.height = '100%';
-    img.style.objectFit = 'cover';
-    
-    imageContainer.appendChild(img);
-    card.appendChild(imageContainer);
+    if (prod.image) {
+        const img = document.createElement('img');
+        img.src = prod.image;
+        img.alt = prod.title;
+        img.loading = 'lazy'; // Performance boost
+        img.style.width = '100%';
+        img.style.height = '100%';
+        img.style.objectFit = 'cover';
+        imgContainer.innerHTML = ''; // Rimuovi placeholder
+        imgContainer.appendChild(img);
+    } else {
+        imgContainer.textContent = '📷'; // Fallback icona
+    }
+    card.appendChild(imgContainer);
 
-    // 2. Titolo
+    // Titolo
     const title = document.createElement('h3');
     title.className = 'card-title';
     title.textContent = prod.title;
     card.appendChild(title);
 
-    // 3. Descrizione Breve
+    // Descrizione Breve
     const desc = document.createElement('p');
     desc.className = 'card-desc';
-    desc.textContent = prod.desc;
+    desc.textContent = prod.desc || '';
     card.appendChild(desc);
 
-    // 4. Prezzo
+    // Tipo (Villa, Test Drive...) - Opzionale, per estetica
+    if (prod.type) {
+        const typeBadge = document.createElement('div');
+        typeBadge.style.fontSize = '0.75rem';
+        typeBadge.style.color = '#D4AF37';
+        typeBadge.style.textTransform = 'uppercase';
+        typeBadge.style.letterSpacing = '1px';
+        typeBadge.style.marginBottom = '0.5rem';
+        typeBadge.textContent = prod.type;
+        // Inseriamo prima del prezzo
+        card.appendChild(typeBadge);
+    }
+
+    // Prezzo
     const priceDiv = document.createElement('div');
     priceDiv.className = 'card-price';
-    // Formatta prezzo in Euro
-    const priceFormatted = new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR' }).format(prod.price);
-    priceDiv.textContent = priceFormatted;
+    // Formatta prezzo se è un numero
+    if (prod.price && !isNaN(parseFloat(prod.price))) {
+        priceDiv.textContent = new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR' }).format(prod.price);
+    } else {
+        priceDiv.textContent = prod.price || 'Trattativa Riservata';
+    }
     card.appendChild(priceDiv);
 
-    // 5. Bottone CTA
+    // Bottone CTA
     const btn = document.createElement('button');
     btn.className = 'btn';
     btn.style.marginTop = '1.5rem';
     btn.style.width = '100%';
-    btn.textContent = defaultCta;
     
-    // Evento Click
-    btn.addEventListener('click', (e) => {
+    // Testo CTA basato sulla categoria
+    let ctaText = 'Scopri';
+    if (prod.original_sku_prefix === 'ME') ctaText = 'Acquista';
+    else if (prod.original_sku_prefix === 'PR') ctaText = 'Richiedi Visita';
+    else if (prod.original_sku_prefix === 'SC') ctaText = 'Prenota Test';
+    
+    btn.textContent = ctaText;
+
+    // Logica click (porta al PDP)
+    btn.onclick = (e) => {
         e.preventDefault();
-        showLoader(); // Mostra il loader globale esistente
+        showLoader(); // Usa la tua funzione loader esistente
+        
+        // Salva dati minimi per il caricamento rapido
+        localStorage.setItem('lh360_selected_sku', prod.sku);
+        localStorage.setItem('lh360_last_product', JSON.stringify({
+            sku: prod.sku,
+            title: prod.title,
+            ts: Date.now()
+        }));
 
-        // Salva selezione per la pagina di dettaglio
-        try {
-            localStorage.setItem('lh360_last_product', JSON.stringify({ 
-                sku: prod.sku, 
-                title: prod.title, 
-                ts: Date.now() 
-            }));
-            localStorage.setItem('lh360_selected_sku', prod.sku);
-        } catch (e) {}
-
-        // Navigazione
+        // Delay estetico per transizione
         setTimeout(() => {
-            const base = 'product-details/pdp-products.html';
-            // Passa anche la sezione (dedotta dallo SKU)
-            let sectionName = 'shop';
-            if (prod.sku.startsWith('PR')) sectionName = 'properties';
-            if (prod.sku.startsWith('SC')) sectionName = 'supercars';
-            if (prod.sku.startsWith('EX')) sectionName = 'stays';
-            
-            const skuParam = encodeURIComponent(prod.sku);
-            window.location.href = `${base}?sku=${skuParam}&section=${sectionName}`;
-        }, 800);
-    });
+            // Determina la sezione per caricare eventuali JSON specifici se ancora usati nel PDP,
+            // altrimenti il PDP dovrà essere aggiornato per leggere dal foglio (prossimo step).
+            // Per ora mandiamo alla pagina dettaglio generica.
+            window.location.href = `product-details/pdp-products.html?sku=${encodeURIComponent(prod.sku)}`;
+        }, 500);
+    };
 
     card.appendChild(btn);
 
     return card;
 }
 
-// Avvia al caricamento della pagina
-window.addEventListener('DOMContentLoaded', () => {
-    initDynamicProducts();
-});
+// Avvia al caricamento
+window.addEventListener('DOMContentLoaded', initDynamicProducts);
+
 
 // --- LOADER UTILITIES ---
 
@@ -315,6 +318,3 @@ function hideLoader() {
         }, 500);
     }
 }
-
-
-
