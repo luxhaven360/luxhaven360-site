@@ -58,20 +58,36 @@ async function initDynamicProducts() {
     // Mostra loader nelle griglie
     Object.values(CATEGORY_MAP).forEach(conf => {
         const el = document.getElementById(conf.gridId);
-        if (el) el.innerHTML = '<div class="loading">Caricamento prodotti esclusivi...</div>';
+        if (el) el.innerHTML = '<div class="loading" style="grid-column:1/-1; text-align:center; padding:2rem;">Caricamento catalogo esclusivo...</div>';
     });
 
     try {
-        // Recupera URL Web App (definito in index.html)
+        // Recupera URL Web App
         const apiUrl = (typeof WEB_APP_URL !== 'undefined') ? WEB_APP_URL : 'https://script.google.com/macros/s/AKfycbzRgxxOU8DdLLcuJkDpu2b07sCXPIANjZK5yy2CHs9ZXYRB-y_DtVsZpgclvDmFH9L5/exec';
         
-        // Chiama endpoint Apps Script
-        const response = await fetch(`${apiUrl}?action=get_products&callback=handleProducts`);
+        // Aggiungi un parametro timestamp per evitare cache del browser
+        const response = await fetch(`${apiUrl}?action=get_products&callback=handleProducts&t=${Date.now()}`);
         const text = await response.text();
         
-        // Gestione JSONP manuale pulita
-        const jsonStr = text.replace(/^handleProducts\(/, '').replace(/\)$/, '');
-        const products = JSON.parse(jsonStr);
+        // Gestione JSONP pulita
+        // Rimuove "handleProducts(" all'inizio e ");" alla fine
+        let jsonStr = text.trim();
+        if (jsonStr.startsWith('handleProducts(')) {
+            jsonStr = jsonStr.substring('handleProducts('.length, jsonStr.length - 1);
+        }
+
+        let products = [];
+        try {
+            products = JSON.parse(jsonStr);
+        } catch (e) {
+            console.error("Errore parsing JSON:", e);
+        }
+
+        // FIX ERRORE: Se products non è un array (es. errore server), usa array vuoto
+        if (!Array.isArray(products)) {
+            console.warn("Risposta server non valida o vuota:", products);
+            products = []; 
+        }
 
         renderProducts(products);
 
@@ -79,7 +95,7 @@ async function initDynamicProducts() {
         console.error('Errore fetch prodotti:', err);
         Object.values(CATEGORY_MAP).forEach(conf => {
             const el = document.getElementById(conf.gridId);
-            if (el) el.innerHTML = '<div class="error">Impossibile caricare il catalogo al momento.</div>';
+            if (el) el.innerHTML = '<div class="error" style="grid-column:1/-1; text-align:center; color: #ff4444;">Impossibile caricare il catalogo al momento.</div>';
         });
     }
 }
@@ -97,7 +113,8 @@ function renderProducts(products) {
 
     products.forEach(prod => {
         // Determina categoria dallo SKU (primi 2 caratteri)
-        const prefix = prod.sectionPrefix; 
+        // Se sectionPrefix non esiste, prova a ricavarlo dallo SKU
+        const prefix = prod.sectionPrefix || (prod.sku ? prod.sku.substring(0, 2).toUpperCase() : ''); 
         const config = CATEGORY_MAP[prefix];
 
         if (config) {
@@ -110,14 +127,21 @@ function renderProducts(products) {
         }
     });
 
-    // Gestione Categorie Vuote
+    // Gestione Categorie Vuote (Messaggio avviso)
     Object.keys(CATEGORY_MAP).forEach(prefix => {
         if (countMap[prefix] === 0) {
             const config = CATEGORY_MAP[prefix];
             const grid = document.getElementById(config.gridId);
             if (grid) {
-                grid.innerHTML = `<div class="empty-section" style="grid-column: 1/-1; text-align: center; padding: 2rem; color: #a1a1aa; border: 1px dashed #333;">
-                    Nessun prodotto disponibile in questa categoria al momento.
+                // Messaggio personalizzato in base alla categoria
+                let msg = "Collezione in aggiornamento.";
+                if(prefix === 'PR') msg = "Nessun immobile disponibile al momento.";
+                if(prefix === 'SC') msg = "Tutte le Supercar sono attualmente prenotate.";
+                
+                grid.innerHTML = `
+                <div class="empty-section" style="grid-column: 1/-1; text-align: center; padding: 4rem 2rem; color: #a1a1aa; border: 1px dashed rgba(212, 175, 55, 0.2); border-radius: 8px;">
+                    <div style="font-size: 2rem; margin-bottom: 1rem; opacity: 0.5;">💎</div>
+                    <p style="margin: 0;">${msg}</p>
                 </div>`;
             }
         }
@@ -294,3 +318,4 @@ function hideLoader() {
         }, 500);
     }
 }
+
