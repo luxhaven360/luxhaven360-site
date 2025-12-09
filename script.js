@@ -43,203 +43,179 @@ document.addEventListener('click', (e) => {
     }
 });
 
-// ---------------------- Dynamic products loading (Google Sheets) ----------------------
+// ---------------------- Dynamic products loading (FROM SHEET) ----------------------
 
-// Mappatura Prefisso SKU -> ID Griglia HTML
+// Mappatura Prefix SKU -> ID Sezione HTML
 const CATEGORY_MAP = {
-    'PR': { gridId: 'propertiesGrid', title: 'Immobili' },
-    'SC': { gridId: 'supercarsGrid', title: 'Supercar' },
-    'EX': { gridId: 'staysGrid', title: 'Esperienze' },
-    'ME': { gridId: 'shopGrid', title: 'Shop' }
+    'PR': { id: 'properties', gridId: 'propertiesGrid', cta: 'Richiedi Visita' }, // Immobili
+    'SC': { id: 'supercars', gridId: 'supercarsGrid', cta: 'Prenota Test Drive' }, // Supercar
+    'EX': { id: 'stays', gridId: 'staysGrid', cta: 'Scopri Esperienza' },         // Esperienze
+    'ME': { id: 'shop', gridId: 'shopGrid', cta: 'Acquista Ora' }                 // Merchandising
 };
 
-// URL della tua Web App (Gia presente nel tuo file, riutilizziamo la costante se c'è o la definiamo)
-// Assicurati che questa costante sia definita all'inizio del file o qui:
-const GOOGLE_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzRgxxOU8DdLLcuJkDpu2b07sCXPIANjZK5yy2CHs9ZXYRB-y_DtVsZpgclvDmFH9L5/exec';
-
+// Funzione principale di inizializzazione
 async function initDynamicProducts() {
-    // Mostra stato di caricamento su tutte le griglie
-    Object.values(CATEGORY_MAP).forEach(cat => {
-        const grid = document.getElementById(cat.gridId);
-        if (grid) grid.innerHTML = '<div class="loading-pulse"></div>'; // Puoi usare uno stile CSS loader qui
+    // Mostra loader nelle griglie
+    Object.values(CATEGORY_MAP).forEach(conf => {
+        const el = document.getElementById(conf.gridId);
+        if (el) el.innerHTML = '<div class="loading">Caricamento prodotti esclusivi...</div>';
     });
 
     try {
-        // Chiamata JSONP per aggirare CORS o fetch diretta se configurato
-        const callbackName = 'handleProductsResponse';
-        const scriptUrl = `${GOOGLE_SCRIPT_URL}?action=get_products&callback=${callbackName}&t=${Date.now()}`;
+        // Recupera URL Web App (definito in index.html)
+        const apiUrl = (typeof WEB_APP_URL !== 'undefined') ? WEB_APP_URL : 'https://script.google.com/macros/s/AKfycbzRgxxOU8DdLLcuJkDpu2b07sCXPIANjZK5yy2CHs9ZXYRB-y_DtVsZpgclvDmFH9L5/exec';
         
-        // Creiamo una promise per gestire JSONP
-        await new Promise((resolve, reject) => {
-            window[callbackName] = (data) => {
-                if (data.error) reject(data.error);
-                else resolve(data.products);
-            };
-            
-            const script = document.createElement('script');
-            script.src = scriptUrl;
-            script.onerror = () => reject('Errore di connessione script Google');
-            document.body.appendChild(script);
-        }).then(products => {
-            distributeProducts(products);
-        });
+        // Chiama endpoint Apps Script
+        const response = await fetch(`${apiUrl}?action=get_products&callback=handleProducts`);
+        const text = await response.text();
+        
+        // Gestione JSONP manuale pulita
+        const jsonStr = text.replace(/^handleProducts\(/, '').replace(/\)$/, '');
+        const products = JSON.parse(jsonStr);
+
+        renderProducts(products);
 
     } catch (err) {
-        console.error('Errore caricamento prodotti:', err);
-        // Mostra errore nelle griglie
-        Object.values(CATEGORY_MAP).forEach(cat => {
-            const grid = document.getElementById(cat.gridId);
-            if (grid) grid.innerHTML = `<div class="error-msg">Impossibile caricare i contenuti al momento.</div>`;
+        console.error('Errore fetch prodotti:', err);
+        Object.values(CATEGORY_MAP).forEach(conf => {
+            const el = document.getElementById(conf.gridId);
+            if (el) el.innerHTML = '<div class="error">Impossibile caricare il catalogo al momento.</div>';
         });
     }
 }
 
-function distributeProducts(products) {
-    // 1. Pulisci le griglie
-    Object.values(CATEGORY_MAP).forEach(cat => {
-        const grid = document.getElementById(cat.gridId);
-        if (grid) grid.innerHTML = '';
+// Renderizza i prodotti nelle giuste griglie
+function renderProducts(products) {
+    // 1. Pulisci griglie
+    Object.values(CATEGORY_MAP).forEach(conf => {
+        const el = document.getElementById(conf.gridId);
+        if (el) el.innerHTML = '';
     });
 
-    // Contatori per gestire messaggi "vuoto"
-    const counts = { 'PR': 0, 'SC': 0, 'EX': 0, 'ME': 0 };
+    // Contatore per verificare categorie vuote
+    const countMap = { 'PR': 0, 'SC': 0, 'EX': 0, 'ME': 0 };
 
-    // 2. Itera e crea card
     products.forEach(prod => {
-        // Identifica categoria dal prefisso SKU (PR, SC, EX, ME)
-        const prefix = prod.original_sku_prefix; 
+        // Determina categoria dallo SKU (primi 2 caratteri)
+        const prefix = prod.sectionPrefix; 
         const config = CATEGORY_MAP[prefix];
 
         if (config) {
             const grid = document.getElementById(config.gridId);
             if (grid) {
-                const card = createSheetProductCard(prod);
+                const card = createSheetProductCard(prod, config.cta, config.id);
                 grid.appendChild(card);
-                counts[prefix]++;
+                countMap[prefix]++;
             }
         }
     });
 
-    // 3. Gestione sezioni vuote
+    // Gestione Categorie Vuote
     Object.keys(CATEGORY_MAP).forEach(prefix => {
-        if (counts[prefix] === 0) {
+        if (countMap[prefix] === 0) {
             const config = CATEGORY_MAP[prefix];
             const grid = document.getElementById(config.gridId);
             if (grid) {
-                grid.innerHTML = `
-                    <div class="empty-section" style="grid-column: 1/-1; text-align: center; padding: 4rem; color: #a1a1aa;">
-                        <div style="font-size: 3rem; margin-bottom: 1rem;">💎</div>
-                        <h3>Collezione ${config.title} Sold Out</h3>
-                        <p>Iscriviti alla newsletter per i prossimi arrivi.</p>
-                    </div>`;
+                grid.innerHTML = `<div class="empty-section" style="grid-column: 1/-1; text-align: center; padding: 2rem; color: #a1a1aa; border: 1px dashed #333;">
+                    Nessun prodotto disponibile in questa categoria al momento.
+                </div>`;
             }
         }
     });
 }
 
-function createSheetProductCard(prod) {
+// Crea la card prodotto (adattata per i dati del Foglio)
+function createSheetProductCard(prod, defaultCta, sectionId) {
     const card = document.createElement('div');
     card.className = 'card';
 
-    // Immagine (Usa Immagine 1 dal foglio)
-    const imgContainer = document.createElement('div');
-    imgContainer.className = 'card-image';
+    // Immagine (Sostituisce l'icona)
+    const imageContainer = document.createElement('div');
+    imageContainer.className = 'card-image';
     
-    if (prod.image) {
+    if (prod.image1) {
         const img = document.createElement('img');
-        img.src = prod.image;
+        img.src = prod.image1;
         img.alt = prod.title;
-        img.loading = 'lazy'; // Performance boost
+        img.loading = 'lazy'; // Performance
         img.style.width = '100%';
-        img.style.height = '100%';
+        img.style.height = '250px'; // Altezza fissa per uniformità
         img.style.objectFit = 'cover';
-        imgContainer.innerHTML = ''; // Rimuovi placeholder
-        imgContainer.appendChild(img);
+        img.style.borderRadius = '8px';
+        imageContainer.appendChild(img);
     } else {
-        imgContainer.textContent = '📷'; // Fallback icona
+        // Fallback se manca immagine
+        imageContainer.innerHTML = '<div style="font-size:3rem; padding:2rem;">✨</div>';
     }
-    card.appendChild(imgContainer);
+    card.appendChild(imageContainer);
 
     // Titolo
     const title = document.createElement('h3');
     title.className = 'card-title';
-    title.textContent = prod.title;
+    title.textContent = prod.title || 'Prodotto Esclusivo';
     card.appendChild(title);
 
     // Descrizione Breve
     const desc = document.createElement('p');
     desc.className = 'card-desc';
-    desc.textContent = prod.desc || '';
+    desc.textContent = prod.desc || 'Dettagli su richiesta.';
     card.appendChild(desc);
-
-    // Tipo (Villa, Test Drive...) - Opzionale, per estetica
-    if (prod.type) {
-        const typeBadge = document.createElement('div');
-        typeBadge.style.fontSize = '0.75rem';
-        typeBadge.style.color = '#D4AF37';
-        typeBadge.style.textTransform = 'uppercase';
-        typeBadge.style.letterSpacing = '1px';
-        typeBadge.style.marginBottom = '0.5rem';
-        typeBadge.textContent = prod.type;
-        // Inseriamo prima del prezzo
-        card.appendChild(typeBadge);
-    }
 
     // Prezzo
     const priceDiv = document.createElement('div');
     priceDiv.className = 'card-price';
-    // Formatta prezzo se è un numero
-    if (prod.price && !isNaN(parseFloat(prod.price))) {
-        priceDiv.textContent = new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR' }).format(prod.price);
-    } else {
-        priceDiv.textContent = prod.price || 'Trattativa Riservata';
+    let priceText = 'Prezzo su richiesta';
+    if (prod.price) {
+        // Formatta prezzo se è un numero
+        if (!isNaN(prod.price)) {
+            priceText = new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR' }).format(prod.price);
+        } else {
+            priceText = prod.price; // Usa il testo se c'è scritto altro
+        }
     }
+    priceDiv.textContent = priceText;
     card.appendChild(priceDiv);
 
-    // Bottone CTA
+    // Bottone
     const btn = document.createElement('button');
     btn.className = 'btn';
     btn.style.marginTop = '1.5rem';
     btn.style.width = '100%';
-    
-    // Testo CTA basato sulla categoria
-    let ctaText = 'Scopri';
-    if (prod.original_sku_prefix === 'ME') ctaText = 'Acquista';
-    else if (prod.original_sku_prefix === 'PR') ctaText = 'Richiedi Visita';
-    else if (prod.original_sku_prefix === 'SC') ctaText = 'Prenota Test';
-    
-    btn.textContent = ctaText;
+    btn.textContent = defaultCta;
 
-    // Logica click (porta al PDP)
-    btn.onclick = (e) => {
+    // Gestione Click
+    btn.addEventListener('click', (e) => {
         e.preventDefault();
-        showLoader(); // Usa la tua funzione loader esistente
-        
-        // Salva dati minimi per il caricamento rapido
-        localStorage.setItem('lh360_selected_sku', prod.sku);
-        localStorage.setItem('lh360_last_product', JSON.stringify({
-            sku: prod.sku,
-            title: prod.title,
-            ts: Date.now()
-        }));
+        showLoader();
 
-        // Delay estetico per transizione
+        // Salva dati per la pagina dettagli
+        try {
+            localStorage.setItem('lh360_last_product', JSON.stringify({ 
+                sku: prod.sku, 
+                title: prod.title, 
+                ts: Date.now() 
+            }));
+            localStorage.setItem('lh360_selected_sku', prod.sku);
+        } catch (e) {}
+
         setTimeout(() => {
-            // Determina la sezione per caricare eventuali JSON specifici se ancora usati nel PDP,
-            // altrimenti il PDP dovrà essere aggiornato per leggere dal foglio (prossimo step).
-            // Per ora mandiamo alla pagina dettaglio generica.
-            window.location.href = `product-details/pdp-products.html?sku=${encodeURIComponent(prod.sku)}`;
-        }, 500);
-    };
+            const sku = encodeURIComponent(prod.sku);
+            const section = encodeURIComponent(sectionId); // shop, properties, etc.
+            window.location.href = `product-details/pdp-products.html?sku=${sku}&section=${section}`;
+        }, 800);
+    });
 
     card.appendChild(btn);
 
     return card;
 }
 
-// Avvia al caricamento
-window.addEventListener('DOMContentLoaded', initDynamicProducts);
+// init al load
+window.addEventListener('DOMContentLoaded', () => {
+    initDynamicProducts();
+});
 
+// --- end ---
 
 // --- LOADER UTILITIES ---
 
