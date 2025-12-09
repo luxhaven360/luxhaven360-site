@@ -63,7 +63,7 @@ async function initDynamicProducts() {
 
     try {
         // Recupera URL Web App
-        const apiUrl = (typeof WEB_APP_URL !== 'undefined') ? WEB_APP_URL : 'https://script.google.com/macros/s/AKfycbzRgxxOU8DdLLcuJkDpu2b07sCXPIANjZK5yy2CHs9ZXYRB-y_DtVsZpgclvDmFH9L5/exec';
+        const apiUrl = (typeof WEB_APP_URL !== 'undefined') ? WEB_APP_URL : 'https://script.google.com/macros/s/AKfycbxqTaxKPJa3VQr40qjnJ-cm-FUyGQFO7PQhwxg7jts8FxzQsrjVO_2uid6kdgsf-zLS/exec';
         
         // Aggiungi un parametro timestamp per evitare cache del browser
         const response = await fetch(`${apiUrl}?action=get_products&callback=handleProducts&t=${Date.now()}`);
@@ -318,4 +318,5 @@ function hideLoader() {
         }, 500);
     }
 }
+
 
