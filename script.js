@@ -1,4 +1,5 @@
-// --- Nav & UI (tuo script esistente mantenuto e ampliato) ---
+// --- Nav & UI (Tuo codice esistente per navigazione menu) ---
+// ... (Mantieni le funzioni showSection, toggleMenu, listener scroll e click outside) ...
 
 // Navigation
 function showSection(sectionId) {
@@ -11,12 +12,8 @@ function showSection(sectionId) {
         const el = document.getElementById(sectionId);
         if (el) el.classList.add('active');
     }
-    
-    // Close mobile menu
     const navLinks = document.getElementById('navLinks');
     if (navLinks) navLinks.classList.remove('active');
-    
-    // Scroll to top
     window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
@@ -24,17 +21,12 @@ function toggleMenu() {
     document.getElementById('navLinks').classList.toggle('active');
 }
 
-// Navbar scroll effect
 window.addEventListener('scroll', () => {
     const navbar = document.getElementById('navbar');
-    if (window.scrollY > 50) {
-        navbar.classList.add('scrolled');
-    } else {
-        navbar.classList.remove('scrolled');
-    }
+    if (window.scrollY > 50) navbar.classList.add('scrolled');
+    else navbar.classList.remove('scrolled');
 });
 
-// Close mobile menu when clicking outside
 document.addEventListener('click', (e) => {
     const nav = document.getElementById('navLinks');
     const toggle = document.querySelector('.mobile-toggle');
@@ -43,28 +35,21 @@ document.addEventListener('click', (e) => {
     }
 });
 
-// ---------------------- Dynamic products loading ----------------------
-// Carica i JSON dalla cartella 'products' e popola le rispettive griglie.
-// Struttura attesa di ogni prodotto (esempio):
-// {
-//   "sku": "LH360-TSHIRT",
-//   "title": "Premium T-Shirt",
-//   "desc": "Maglietta premium in cotone pettinato con logo LuxHaven360.",
-//   "price": 120,
-//   "currency": "EUR",
-//   "icon": "👕",               // o "assets/img/tshirt.jpg"
-//   "stripe_link": "https://buy.stripe.com/abcd...",
-//   "cta": "Acquista"           // testo del bottone (es. "Acquista", "Prenota Ora", "Richiedi Visita")
-// }
+// ---------------------- Dynamic products loading (DA SHEET) ----------------------
 
-const SECTIONS = [
-    { id: 'properties', json: 'products/properties.json', gridId: 'propertiesGrid', defaultCta: 'Richiedi Visita' },
-    { id: 'supercars', json: 'products/supercars.json', gridId: 'supercarsGrid', defaultCta: 'Test Drive' },
-    { id: 'stays', json: 'products/stays.json', gridId: 'staysGrid', defaultCta: 'Prenota Ora' },
-    { id: 'shop', json: 'products/shop.json', gridId: 'shopGrid', defaultCta: 'Acquista' }
-];
+// Mappatura SKU Prefix -> ID Griglia HTML e CTA Default
+const CATEGORY_MAP = {
+    'PR': { gridId: 'propertiesGrid', cta: 'Richiedi Visita', sectionId: 'properties' }, // Immobili
+    'SC': { gridId: 'supercarsGrid', cta: 'Test Drive', sectionId: 'supercars' },      // Supercar
+    'EX': { gridId: 'staysGrid', cta: 'Prenota Ora', sectionId: 'stays' },             // Esperienze
+    'ME': { gridId: 'shopGrid', cta: 'Acquista', sectionId: 'shop' }                   // Merchandising
+};
 
-// utility per creare elementi DOM
+// URL Web App (Assicurati che corrisponda a quello nel tuo HTML o definiscilo qui)
+// Se è già in index.html, usa window.WEB_APP_URL, altrimenti scommenta sotto:
+// const WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbxSM1pTF1jU4TGJxpPgQtu-lrOEfDTvu-rW3FNmEbE9gCafvCiEJl3kZ56TpoyrhsQ/exec';
+
+// Utility per creare elementi DOM
 function el(tag, attrs = {}, children = []) {
     const node = document.createElement(tag);
     for (const k in attrs) {
@@ -76,201 +61,230 @@ function el(tag, attrs = {}, children = []) {
     return node;
 }
 
-// format prezzo semplice
-function formatPrice(p, currency = 'EUR') {
-    try {
-        return new Intl.NumberFormat('it-IT', { style: 'currency', currency }).format(p);
-    } catch (e) {
-        return `${p} ${currency}`;
+// Format prezzo
+function formatPrice(p) {
+    // Se p è una stringa vuota o non numerica, gestisci gracefully
+    if (!p && p !== 0) return 'Prezzo su richiesta';
+    // Se è un numero puro
+    if (typeof p === 'number') {
+        return new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR' }).format(p);
     }
+    // Se arriva già formattato o testo dal sheet, ritorna così com'è
+    return p;
 }
 
-// funzione per creare una card prodotto
-function createProductCard(prod, defaultCta) {
-    // container
+// Crea card prodotto aggiornata per leggere i dati dal Sheet
+function createProductCard(prod, config) {
     const card = el('div', { class: 'card' });
 
-    // image/icon
+    // 1. Immagine (Dalla colonna "Immagine 1" del sheet)
     const imageContainer = el('div', { class: 'card-image' });
-    if (prod.icon) {
-        // se è url img, crea <img>, altrimenti usa emoji/testo
-        if (typeof prod.icon === 'string' && (prod.icon.startsWith('http') || prod.icon.endsWith('.jpg') || prod.icon.endsWith('.png') || prod.icon.endsWith('.webp') || prod.icon.endsWith('.jpeg'))) {
-            const img = el('img', { src: prod.icon, alt: prod.title, style: 'width:100%; height:auto; object-fit:cover;' });
-            imageContainer.appendChild(img);
-        } else {
-            imageContainer.textContent = prod.icon;
-        }
+    if (prod.image1) {
+        const img = el('img', { 
+            src: prod.image1, 
+            alt: prod.title, 
+            style: 'width:100%; height:auto; object-fit:cover;' 
+        });
+        // Fallback errore immagine
+        img.onerror = function() { 
+            this.style.display='none'; 
+            imageContainer.textContent = '📷'; 
+        };
+        imageContainer.appendChild(img);
     } else {
-        imageContainer.textContent = '📦';
+        imageContainer.textContent = '📦'; // Placeholder se manca immagine
     }
     card.appendChild(imageContainer);
 
-    // title
+    // 2. Titolo (Colonna Nome Prodotto)
     const title = el('h3', { class: 'card-title' }, [document.createTextNode(prod.title || 'Untitled')]);
     card.appendChild(title);
 
-    // desc
+    // 3. Descrizione (Colonna Breve Descrizione)
     const desc = el('p', { class: 'card-desc' }, [document.createTextNode(prod.desc || '')]);
     card.appendChild(desc);
 
-    // price
-    const priceText = el('div', { class: 'card-price' }, [document.createTextNode(prod.price != null ? formatPrice(prod.price, prod.currency || 'EUR') : (prod.price_text || 'Contattaci'))]);
+    // 4. Prezzo (Colonna Prezzo)
+    const priceText = el('div', { class: 'card-price' }, [document.createTextNode(formatPrice(prod.price))]);
     card.appendChild(priceText);
 
-    // button area
-    const btn = el('button', { class: 'btn', style: 'margin-top: 1.5rem; width: 100%;' }, [document.createTextNode(prod.cta || defaultCta || 'Scopri')]);
+    // 5. Bottone CTA
+    const btn = el('button', { class: 'btn', style: 'margin-top: 1.5rem; width: 100%;' }, [document.createTextNode(config.cta)]);
 
-    // attach product data as data- attributes for analytics / fallback
-    btn.dataset.sku = prod.sku || '';
-    btn.dataset.title = prod.title || '';
-    if (prod.stripe_link) btn.dataset.stripeLink = prod.stripe_link;
-    if (prod.action) btn.dataset.action = prod.action;
+    // Dataset per analytics/navigazione
+    btn.dataset.sku = prod.sku;
+    btn.dataset.title = prod.title;
 
-    // on click behaviour:
+    // Click behavior
     btn.addEventListener('click', (e) => {
-        e.preventDefault(); // Previene navigazione immediata
-        
-        // 1. Mostra Loader
+        e.preventDefault();
         showLoader();
-
-        // 2. Salva dati
+        
         try {
-            localStorage.setItem('lh360_last_product', JSON.stringify({ sku: btn.dataset.sku, title: btn.dataset.title, ts: Date.now() }));
+            localStorage.setItem('lh360_last_product', JSON.stringify({ 
+                sku: btn.dataset.sku, 
+                title: btn.dataset.title, 
+                ts: Date.now() 
+            }));
             localStorage.setItem('lh360_selected_sku', btn.dataset.sku || '');
         } catch (e) {}
 
-        // 3. Naviga dopo un breve ritardo per far vedere l'animazione di start
         setTimeout(() => {
-            const base = 'product-details/pdp-products.html'; // Assicurati che il percorso sia corretto relativo alla pagina corrente
+            const base = 'product-details/pdp-products.html';
             const sku = encodeURIComponent(btn.dataset.sku || '');
-            const section = encodeURIComponent(prod.sectionName || 'shop');
+            const section = encodeURIComponent(config.sectionId);
             window.location.href = `${base}?sku=${sku}&section=${section}`;
-        }, 800); // 800ms di delay estetico
+        }, 800);
     });
 
     card.appendChild(btn);
-
     return card;
 }
 
-// carica e popola una sezione
-async function loadSection(section) {
-    const grid = document.getElementById(section.gridId);
-    if (!grid) return;
+// Funzione principale di caricamento
+function loadProductsFromSheet() {
+    // 1. Imposta stato "Loading" su tutte le griglie
+    Object.values(CATEGORY_MAP).forEach(conf => {
+        const grid = document.getElementById(conf.gridId);
+        if (grid) grid.innerHTML = '<div class="loading">Caricamento eccellenze...</div>';
+    });
 
-    // stato caricamento
-    grid.innerHTML = '<div class="loading">Caricamento...</div>';
+    const callbackName = 'handleProducts_' + Date.now();
+    const script = document.createElement('script');
+    
+    // Assumiamo che WEB_APP_URL sia definito in index.html, altrimenti fallback
+    const url = (typeof WEB_APP_URL !== 'undefined' ? WEB_APP_URL : 'URL_DELLO_SCRIPT_QUI') 
+              + `?action=get_products&callback=${callbackName}&t=${Date.now()}`;
+    
+    script.src = url;
 
-    try {
-        const resp = await fetch(section.json, { cache: 'no-cache' });
-        if (!resp.ok) throw new Error('Network response was not ok: ' + resp.status);
-        const items = await resp.json();
+    window[callbackName] = function(data) {
+        // Pulisci le griglie
+        Object.values(CATEGORY_MAP).forEach(conf => {
+            const grid = document.getElementById(conf.gridId);
+            if (grid) grid.innerHTML = ''; 
+        });
 
-        // svuota e popola
-        grid.innerHTML = '';
-        if (!Array.isArray(items) || items.length === 0) {
-            grid.innerHTML = `<div class="empty">Nessun prodotto disponibile in questa categoria.</div>`;
+        if (!data || data.error) {
+            console.error("Errore API prodotti:", data ? data.error : 'No data');
+            showErrorInGrids();
             return;
         }
 
-        items.forEach(prod => {
-            // aggiungi meta utile
-            prod.sectionName = section.id;
-            const card = createProductCard(prod, section.defaultCta);
-            grid.appendChild(card);
-        });
-    } catch (err) {
-        console.error('Errore caricamento', section.json, err);
-        grid.innerHTML = `<div class="error">Errore caricamento prodotti. Assicurati che ${section.json} sia raggiungibile. (${err.message})</div>`;
-    }
+        if (Array.isArray(data) && data.length > 0) {
+            let countMap = { 'PR': 0, 'SC': 0, 'EX': 0, 'ME': 0 };
+
+            data.forEach(prod => {
+                // Determina categoria dallo SKU (es. PR-14-V -> prefix PR)
+                const prefix = prod.sku.split('-')[0];
+                const config = CATEGORY_MAP[prefix];
+
+                if (config) {
+                    const grid = document.getElementById(config.gridId);
+                    if (grid) {
+                        const card = createProductCard(prod, config);
+                        grid.appendChild(card);
+                        countMap[prefix]++;
+                    }
+                }
+            });
+
+            // Gestione categorie vuote
+            Object.keys(CATEGORY_MAP).forEach(prefix => {
+                if (countMap[prefix] === 0) {
+                    const conf = CATEGORY_MAP[prefix];
+                    const grid = document.getElementById(conf.gridId);
+                    if (grid) {
+                        grid.innerHTML = `<div class="empty">Al momento non ci sono disponibilità in questa categoria.</div>`;
+                    }
+                }
+            });
+
+        } else {
+            // Array vuoto globale
+            Object.values(CATEGORY_MAP).forEach(conf => {
+                const grid = document.getElementById(conf.gridId);
+                if (grid) grid.innerHTML = `<div class="empty">Nessun prodotto disponibile al momento.</div>`;
+            });
+        }
+        
+        cleanupScript(script, callbackName);
+    };
+
+    script.onerror = () => {
+        console.error("Errore di rete caricamento prodotti");
+        showErrorInGrids();
+        cleanupScript(script, callbackName);
+    };
+
+    document.body.appendChild(script);
 }
 
-// bootstrap: carica tutte le sezioni
-function initDynamicProducts() {
-    SECTIONS.forEach(s => loadSection(s));
+function showErrorInGrids() {
+    Object.values(CATEGORY_MAP).forEach(conf => {
+        const grid = document.getElementById(conf.gridId);
+        if (grid) grid.innerHTML = '<div class="error">Impossibile caricare i prodotti. Riprova più tardi.</div>';
+    });
 }
 
-// init al load
+function cleanupScript(script, callbackName) {
+    if (script.parentNode) script.parentNode.removeChild(script);
+    delete window[callbackName];
+}
+
+// Init al load
 window.addEventListener('DOMContentLoaded', () => {
-    initDynamicProducts();
+    loadProductsFromSheet();
 });
 
-// --- end ---
-
-// --- LOADER UTILITIES ---
-
-// Inietta l'HTML del loader se non esiste
+// --- Loader Utilities (Tuo codice esistente) ---
 function injectLoader() {
     if (document.getElementById('luxhaven-loader')) return;
-
     const loaderHTML = `
     <div id="luxhaven-loader">
         <div class="lh-bg-gradient"></div>
         <div class="lh-loader-content">
             <img src="assets/logo-azienda.png" alt="LuxHaven360" class="lh-logo">
             <div class="lh-tagline">Curating Excellence</div>
-            
             <div class="lh-loader-wrapper">
-                <div class="lh-ring"></div>
-                <div class="lh-ring"></div>
-                <div class="lh-ring"></div>
+                <div class="lh-ring"></div><div class="lh-ring"></div><div class="lh-ring"></div>
             </div>
-
-            <div class="lh-progress-container">
-                <div class="lh-progress-fill"></div>
-            </div>
+            <div class="lh-progress-container"><div class="lh-progress-fill"></div></div>
             <div class="lh-loading-text">Caricamento</div>
         </div>
     </div>`;
-    
     document.body.insertAdjacentHTML('beforeend', loaderHTML);
 }
 
-// Nuova funzione per nascondere immediatamente il loader (fix per back-forward cache)
 function hideLoaderImmediately() {
     const loader = document.getElementById('luxhaven-loader');
     if (loader) {
         loader.style.opacity = '0';
-        setTimeout(() => {
-            loader.style.display = 'none';
-        }, 500); // Tempo per transizione
+        setTimeout(() => { loader.style.display = 'none'; }, 500);
     }
 }
 
-// Aggiungi listener per nascondere loader su pageshow (quando si torna indietro) e load
 window.addEventListener('pageshow', (event) => {
     hideLoaderImmediately();
     if (event.persisted) {
-        // Reinit opzionali se la pagina è ripristinata dalla cache
-        initDynamicProducts(); // Esempio: ricarica prodotti se necessario
+        loadProductsFromSheet(); // Ricarica se torni indietro dalla cache
     }
 });
-
 window.addEventListener('load', hideLoaderImmediately);
 
-// Mostra il loader
 function showLoader() {
     injectLoader();
     const loader = document.getElementById('luxhaven-loader');
     if (loader) {
-        // Reset stili inline per override completo
-        loader.style.display = 'flex'; // Forza visibilità
-        loader.style.opacity = '1';    // Forza opacità immediata
-        loader.classList.remove('visible'); // Reset classe per ri-trigger transizione
-        // Forza reflow per applicare cambiamenti (trick per browser con cache issues)
+        loader.style.display = 'flex';
+        loader.style.opacity = '1';
+        loader.classList.remove('visible');
         void loader.offsetWidth;
-        loader.classList.add('visible'); // Ri-applica classe
+        loader.classList.add('visible');
     }
 }
 
-// Nasconde il loader
 function hideLoader() {
     const loader = document.getElementById('luxhaven-loader');
-    if (loader) {
-        loader.classList.remove('visible');
-        // Rimuovi dal DOM dopo la transizione per pulizia (opzionale)
-        setTimeout(() => {
-            // loader.remove(); // Decommenta se vuoi rimuoverlo completamente
-        }, 500);
-    }
+    if (loader) loader.classList.remove('visible');
 }
