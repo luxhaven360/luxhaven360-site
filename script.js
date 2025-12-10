@@ -147,92 +147,80 @@ function createProductCard(prod, defaultCta) {
 }
 
 // 🆕 Carica prodotti dal Google Sheet tramite API JSONP
-async function loadSection(section) {
-    const grid = document.getElementById(section.gridId);
-    if (!grid) return;
+async function loadSection(section) {function loadSection(section) {
+    return new Promise((resolve) => { // Wrapper Promise
+        const grid = document.getElementById(section.gridId);
+        if (!grid) { resolve(); return; }
 
-    // stato caricamento
-    grid.innerHTML = '<div class="loading">Caricamento...</div>';
+        grid.innerHTML = '<div class="loading">Caricamento...</div>';
 
-    try {
-        // Chiamata JSONP al Web App
         const callbackName = 'loadProducts_' + section.id + '_' + Date.now();
-        const category = section.id; // properties, supercars, stays, shop
+        const category = section.id;
         
+        // Aggiungi timestamp per evitare cache
         const scriptUrl = `${WEB_APP_URL}?action=get_products&category=${category}&callback=${callbackName}&t=${Date.now()}`;
         
-        const result = await new Promise((resolve, reject) => {
-            const timeout = setTimeout(() => {
-                cleanup();
-                reject(new Error('Timeout caricamento prodotti'));
-            }, 10000);
-            
-            window[callbackName] = function(response) {
-                clearTimeout(timeout);
-                cleanup();
-                resolve(response);
-            };
-            
-            const script = document.createElement('script');
-            script.src = scriptUrl;
-            script.onerror = () => {
-                clearTimeout(timeout);
-                cleanup();
-                reject(new Error('Errore rete durante il caricamento'));
-            };
-            
-            function cleanup() {
-                try { 
-                    if (script.parentNode) document.body.removeChild(script); 
-                } catch (e) {}
-                try { 
-                    delete window[callbackName]; 
-                } catch (e) {}
+        // Timeout di sicurezza (se l'API fallisce, risolvi comunque per non bloccare il sito)
+        const safetyTimeout = setTimeout(() => {
+            cleanup();
+            if(grid.innerHTML.includes('Caricamento')) {
+                 grid.innerHTML = '<div class="error">Timeout connessione.</div>';
             }
+            resolve();
+        }, 8000); // 8 secondi max per chiamata API
+
+        window[callbackName] = function(response) {
+            clearTimeout(safetyTimeout);
+            cleanup();
             
-            document.body.appendChild(script);
-        });
+            if (!response.success || response.error) {
+                console.error(`Errore API ${section.id}:`, response.error);
+                grid.innerHTML = '<div class="error">Errore caricamento.</div>';
+                resolve();
+                return;
+            }
 
-        // Elabora risposta
-        if (!result.success || result.error) {
-            throw new Error(result.error || 'Errore caricamento prodotti');
+            const items = response.products || [];
+            grid.innerHTML = '';
+            
+            if (items.length === 0) {
+                grid.innerHTML = `<div class="empty" style="grid-column: 1/-1; text-align: center; padding: 3rem; opacity: 0.5;">Nessun prodotto disponibile.</div>`;
+            } else {
+                items.forEach(prod => {
+                    prod.sectionName = section.id;
+                    const card = createProductCard(prod, section.defaultCta);
+                    grid.appendChild(card);
+                });
+            }
+            resolve(); // Segnala che questa sezione è pronta
+        };
+        
+        const script = document.createElement('script');
+        script.src = scriptUrl;
+        script.onerror = () => {
+            clearTimeout(safetyTimeout);
+            cleanup();
+            grid.innerHTML = '<div class="error">Errore rete.</div>';
+            resolve();
+        };
+        
+        function cleanup() {
+            try { if (script.parentNode) document.body.removeChild(script); } catch (e) {}
+            try { delete window[callbackName]; } catch (e) {}
         }
-
-        const items = result.products || [];
-
-        // svuota e popola
-        grid.innerHTML = '';
         
-        if (items.length === 0) {
-            grid.innerHTML = `<div class="empty" style="grid-column: 1/-1; text-align: center; padding: 3rem; color: rgba(245,245,245,0.5); font-size: 1.1rem;">Nessun prodotto disponibile in questa categoria.</div>`;
-            return;
-        }
-
-        items.forEach(prod => {
-            // aggiungi meta utile
-            prod.sectionName = section.id;
-            const card = createProductCard(prod, section.defaultCta);
-            grid.appendChild(card);
-        });
-        
-        console.log(`✅ Caricati ${items.length} prodotti per categoria "${section.id}"`);
-        
-    } catch (err) {
-        console.error('Errore caricamento sezione', section.id, err);
-        grid.innerHTML = `<div class="error" style="grid-column: 1/-1; text-align: center; padding: 3rem; color: #ef4444; font-size: 1.1rem;">Errore caricamento prodotti. Riprova più tardi. (${err.message})</div>`;
-    }
+        document.body.appendChild(script);
+    });
 }
 
-// bootstrap: carica tutte le sezioni
+// 🆕 Modificata per restituire Promise.all
 function initDynamicProducts() {
-    SECTIONS.forEach(s => loadSection(s));
+    // Lancia il caricamento di tutte le sezioni in parallelo
+    const promises = SECTIONS.map(s => loadSection(s));
+    // Ritorna una promise che si risolve quando TUTTE le sezioni hanno finito
+    return Promise.all(promises);
 }
-
-// init al load
-window.addEventListener('DOMContentLoaded', () => {
-    initDynamicProducts();
-});
-
+                                     
 // --- LOADER UTILITIES ---
 
 // Inietta l'HTML del loader se non esiste
@@ -310,3 +298,4 @@ function hideLoader() {
         }, 500);
     }
 }
+
