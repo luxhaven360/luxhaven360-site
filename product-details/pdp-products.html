@@ -1955,55 +1955,63 @@ function updateReviewsSummaryData(reviews) {
         /* ====== Caricamento Prodotto ====== */
         async function loadProduct() {
             const skuFromQs = qs('sku');
-            const sectionFromQs = qs('section');
-            const skuFromLS = localStorage.getItem('lh360_selected_sku') || '';
+            const skuFromLS = localStorage.getItem('lh360_selected_sku');
+            const sku = skuFromQs || skuFromLS;
+            
+            if (!sku) {
+                 document.querySelector('.container').innerHTML = '<div style="padding:4rem;color:#fca5a5;text-align:center;">SKU prodotto mancante.</div>';
+                 hideGlobalLoader();
+                 return;
+            }
 
-            const sku = skuFromQs || skuFromLS || '';
-            const section = sectionFromQs || 'shop';
             currentProductSku = sku;
+            
+            // Costruisci URL API
+            const callbackName = 'pdpCallback_' + Date.now();
+            const apiUrl = `${WEB_APP_URL}?action=get_product_details&sku=${encodeURIComponent(sku)}&callback=${callbackName}&t=${Date.now()}`;
 
-            const PRODUCTS_JSON = `../products/${section}.json`;
-            const DETAILS_JSON = `data/${sku}.json`;
-
-            try {
-                const respBase = await fetch(PRODUCTS_JSON, { cache: 'no-cache' });
-                if (!respBase.ok) throw new Error('Impossibile caricare prodotti base');
-                const items = await respBase.json();
-
-                let product = items.find(it => it.sku === sku) || items[0];
-                if (!product) {
-                    document.querySelector('.container').innerHTML = '<div style="padding:4rem;color:#fca5a5">Nessun prodotto trovato.</div>';
+            // Gestione JSONP manuale per compatibilità massima
+            window[callbackName] = function(response) {
+                cleanup();
+                
+                if (!response.success || !response.product) {
+                    console.error("Errore API:", response.error);
+                    document.querySelector('.container').innerHTML = `<div style="padding:4rem;color:#fca5a5;text-align:center;">Prodotto non trovato o errore server.<br><small>${response.error || ''}</small></div>`;
+                    hideGlobalLoader();
                     return;
                 }
 
-                let details = {};
-                try {
-                    const respDetails = await fetch(DETAILS_JSON, { cache: 'no-cache' });
-                    if (respDetails.ok) details = await respDetails.json();
-                } catch (e) {}
-
-                product = { ...product, ...details };
-                populateProduct(product);
-
+                const prod = response.product;
+                populateProduct(prod); // Usa la tua funzione esistente populateProduct
+                
                 productLoaded = true;
-                
-                if (currentProductSku) {
-                    loadReviews(currentProductSku);
-                } else {
-                    reviewsLoaded = true;
-                }
-                
+                // Carica recensioni dopo aver caricato il prodotto
+                loadReviews(sku);
                 completeLoader();
+            };
 
-            } catch (err) {
-                console.error(err);
-                productLoaded = true;
-                reviewsLoaded = true;
-                clearInterval(loaderInterval);
-                clearInterval(progressInterval);
-                document.getElementById('luxhaven-loader').style.display = 'none';
-                document.querySelector('.container').innerHTML = `<div style="padding:4rem;color:#fca5a5">Errore: ${err.message}</div>`;
+            const script = document.createElement('script');
+            script.src = apiUrl;
+            script.onerror = () => {
+                cleanup();
+                document.querySelector('.container').innerHTML = '<div style="padding:4rem;color:#fca5a5;text-align:center;">Errore di connessione al database prodotti.</div>';
+                hideGlobalLoader();
+            };
+
+            function cleanup() {
+                try { delete window[callbackName]; } catch(e){}
+                try { if(script.parentNode) script.parentNode.removeChild(script); } catch(e){}
             }
+
+            document.body.appendChild(script);
+        }
+
+        // Helper per nascondere il loader in caso di errore immediato
+        function hideGlobalLoader() {
+             const loader = document.getElementById('luxhaven-loader');
+             if(loader) loader.style.display = 'none';
+             clearInterval(loaderInterval);
+             clearInterval(progressInterval);
         }
 
         function populateProduct(prod) {
@@ -2166,6 +2174,7 @@ function updateReviewsSummaryData(reviews) {
     </script>
 </body>
 </html>
+
 
 
 
