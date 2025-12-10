@@ -86,21 +86,20 @@ function createProductCard(prod, defaultCta) {
     // image/icon
     const imageContainer = el('div', { class: 'card-image' });
     
-    // Controllo se abbiamo un link valido (ora Code.gs ci restituisce un link pulito)
-    if (prod.icon && prod.icon.includes('drive.google.com')) {
+    // Controlla che il link sia presente e sia un URL Drive valido
+    if (prod.icon && typeof prod.icon === 'string' && prod.icon.includes('drive.google.com')) {
         const img = el('img', { 
             src: prod.icon, 
             alt: prod.title, 
             style: 'width:100%; height:100%; object-fit:cover; transition: transform 0.5s ease;',
             loading: 'lazy',
-            referrerpolicy: 'no-referrer' // <--- FONDAMENTALE PER DRIVE
+            referrerpolicy: 'no-referrer' // <--- DEVE ESSERE QUI!
         });
         
-        // Fallback se l'immagine non carica
+        // Fallback se l'immagine non carica (dovrebbe essere solo il tuo "pacchetto" 📦)
         img.onerror = function() {
             this.style.display = 'none';
             imageContainer.textContent = '📦';
-            imageContainer.classList.add('fallback-icon'); // Aggiungi classe CSS per centrare se vuoi
             imageContainer.style.display = 'flex';
             imageContainer.style.alignItems = 'center';
             imageContainer.style.justifyContent = 'center';
@@ -109,6 +108,7 @@ function createProductCard(prod, defaultCta) {
         
         imageContainer.appendChild(img);
     } else {
+        // Se non c'è un URL drive valido (es. icona base "📦")
         imageContainer.textContent = prod.icon || '📦';
         imageContainer.style.display = 'flex';
         imageContainer.style.alignItems = 'center';
@@ -312,6 +312,7 @@ function hideLoader() {
         }, 500);
     }
 }
+
 
 
 
