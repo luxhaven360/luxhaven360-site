@@ -86,26 +86,34 @@ function createProductCard(prod, defaultCta) {
     // image/icon
     const imageContainer = el('div', { class: 'card-image' });
     
-    // LOGICA CORRETTA PER IMMAGINI DRIVE
-    // Se c'è un'icona e sembra un URL (inizia con http O contiene drive.google), crea il tag <img>
+    // --- MODIFICA QUI: Aggiunto referrerpolicy e migliorato il controllo URL ---
     if (prod.icon && (typeof prod.icon === 'string') && (prod.icon.startsWith('http') || prod.icon.includes('drive.google.com'))) {
         const img = el('img', { 
             src: prod.icon, 
             alt: prod.title, 
-            style: 'width:100%; height:100%; object-fit:cover;',
-            loading: 'lazy' // Performance boost
+            style: 'width:100%; height:100%; object-fit:cover; transition: transform 0.5s ease;', // Aggiunta transizione smooth
+            loading: 'lazy',
+            referrerpolicy: 'no-referrer' // <--- FONDAMENTALE: Risolve il problema delle immagini Drive
         });
         
-        // Gestione errore caricamento immagine
+        // Gestione errore: mostra icona solo se l'immagine fallisce davvero
         img.onerror = function() {
             this.style.display = 'none';
-            imageContainer.textContent = '📦'; // Fallback se il link è rotto
+            imageContainer.textContent = '📦';
+            imageContainer.style.display = 'flex';
+            imageContainer.style.alignItems = 'center';
+            imageContainer.style.justifyContent = 'center';
+            imageContainer.style.fontSize = '3rem';
         };
         
         imageContainer.appendChild(img);
     } else {
-        // Se non è un link immagine, mostra il testo/emoji (es. "Copertina" se il link non è stato estratto)
         imageContainer.textContent = prod.icon || '📦';
+        // Stile per centrare l'icona se non c'è immagine
+        imageContainer.style.display = 'flex';
+        imageContainer.style.alignItems = 'center';
+        imageContainer.style.justifyContent = 'center';
+        imageContainer.style.fontSize = '3rem';
     }
     
     card.appendChild(imageContainer);
@@ -304,6 +312,7 @@ function hideLoader() {
         }, 500);
     }
 }
+
 
 
 
