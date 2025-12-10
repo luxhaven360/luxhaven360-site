@@ -465,6 +465,50 @@
             text-align: center;
         }
 
+        /* --- AGGIUNTA: STILE CUORE ATTIVO --- */
+.heart-btn.active {
+    color: #ef4444; /* Rosso vivo */
+    background: rgba(255, 255, 255, 0.2);
+    transform: scale(1.1);
+    border: 1px solid rgba(239, 68, 68, 0.3);
+}
+
+/* --- AGGIUNTA: STILE PREMIUM "NESSUNA SPECIFICA" --- */
+.no-specs-container {
+    padding: 3rem 2rem;
+    text-align: center;
+    background: linear-gradient(135deg, rgba(212, 175, 55, 0.05) 0%, rgba(0, 0, 0, 0) 100%);
+    border: 1px solid rgba(212, 175, 55, 0.2);
+    border-radius: 1rem;
+    margin-top: 1rem;
+}
+
+.no-specs-icon {
+    font-size: 2rem;
+    color: #D4AF37;
+    margin-bottom: 1rem;
+    animation: pulseGold 3s infinite ease-in-out;
+}
+
+.no-specs-title {
+    font-family: serif; /* Font elegante */
+    font-size: 1.5rem;
+    color: #D4AF37;
+    margin-bottom: 0.5rem;
+    letter-spacing: 0.05em;
+}
+
+.no-specs-text {
+    font-size: 0.95rem;
+    color: #a1a1aa;
+    font-weight: 300;
+}
+
+@keyframes pulseGold {
+    0%, 100% { opacity: 0.5; transform: scale(1); }
+    50% { opacity: 1; transform: scale(1.1); }
+}
+
         /* ============================================
            RECENSIONI - STILI PREMIUM
            ============================================ */
@@ -1439,27 +1483,74 @@
             renderGallery();
         });
 
-        /* ====== Colori e Taglie ====== */
-        function renderColors(colors) {
-            const container = document.getElementById('colorOptions');
-            container.innerHTML = '';
-            if (!colors || colors.length === 0) {
-                document.getElementById('colorSection').style.display = 'none';
-                return;
-            }
-            document.getElementById('colorSection').style.display = 'block';
-            colors.forEach((color, i) => {
-                const btn = document.createElement('button');
-                btn.className = 'color-btn' + (i === 0 ? ' active' : '');
-                btn.style.background = color;
-                btn.dataset.color = color;
-                btn.setAttribute('aria-label', 'Colore ' + color);
-                if (color.toLowerCase() === '#ffffff' || color.toLowerCase() === 'white') {
-                    btn.style.boxShadow = 'inset 0 0 0 1px rgba(0,0,0,0.12)';
-                }
-                container.appendChild(btn);
-            });
+        /* ====== Colori e Taglie (AGGIORNATO) ====== */
+
+// Mappa colori Italiano/Inglese -> CSS Hex/Valido
+const COLOR_MAP = {
+    // Italiani
+    'Nero': '#000000',
+    'Bianco': '#FFFFFF',
+    'Grigio': '#808080',
+    'Blu': '#0000FF',
+    'Rosso': '#FF0000',
+    'Verde': '#008000',
+    'Giallo': '#FFFF00',
+    'Viola': '#800080',
+    'Arancione': '#FFA500',
+    'Marrone': '#A52A2A',
+    'Oro': '#FFD700',
+    'Argento': '#C0C0C0',
+    'Beige': '#F5F5DC',
+    'Rosa': '#FFC0CB',
+    'Celeste': '#87CEEB',
+    
+    // Inglesi (Fallback)
+    'Black': '#000000',
+    'White': '#FFFFFF',
+    'Grey': '#808080',
+    'Blue': '#0000FF',
+    'Red': '#FF0000'
+};
+
+function renderColors(colors) {
+    const container = document.getElementById('colorOptions');
+    container.innerHTML = '';
+    
+    if (!colors || colors.length === 0) {
+        document.getElementById('colorSection').style.display = 'none';
+        return;
+    }
+    document.getElementById('colorSection').style.display = 'block';
+    
+    colors.forEach((rawColor, i) => {
+        // Pulisce la stringa (es. " Nero " -> "Nero") e normalizza la prima lettera maiuscola
+        let colorName = rawColor.trim();
+        // Capitalize (Nero, bianco -> Nero, Bianco)
+        colorName = colorName.charAt(0).toUpperCase() + colorName.slice(1).toLowerCase();
+
+        // Cerca il codice colore nella mappa, altrimenti usa il nome originale
+        const cssColor = COLOR_MAP[colorName] || colorName;
+
+        const btn = document.createElement('button');
+        btn.className = 'color-btn' + (i === 0 ? ' active' : '');
+        
+        // Applica il colore reale
+        btn.style.background = cssColor;
+        
+        btn.dataset.color = colorName; // Mantiene il nome originale per logica immagini
+        btn.setAttribute('aria-label', 'Colore ' + colorName);
+        
+        // Se è bianco o molto chiaro, aggiunge un bordino per visibilità
+        if (cssColor.toLowerCase() === '#ffffff' || cssColor.toLowerCase() === 'white' || cssColor.toLowerCase() === '#f5f5dc') {
+            btn.style.boxShadow = 'inset 0 0 0 1px rgba(255,255,255,0.3)';
         }
+        
+        // Event listener per la selezione
+        btn.addEventListener('click', () => selectColor(btn));
+        
+        container.appendChild(btn);
+    });
+}
 
         function renderSizes(sizes) {
             const container = document.getElementById('sizeGrid');
@@ -1542,29 +1633,62 @@
         }
 
         /* ====== Specifiche ====== */
-        function renderSpecsGrid(specs) {
-            const specsGrid = document.getElementById('specsGrid');
-            if (!specsGrid) return;
-            specsGrid.innerHTML = '';
+        /* ====== Specifiche (AGGIORNATO) ====== */
+function renderSpecsGrid(specs) {
+    const specsGrid = document.getElementById('specsGrid');
+    const tabSpecs = document.getElementById('specs'); // Il container tab
+    if (!specsGrid) return;
+    
+    specsGrid.innerHTML = '';
+    
+    // Rimuovi eventuali messaggi "no-specs" precedenti
+    const existingMsg = document.querySelector('.no-specs-container');
+    if (existingMsg) existingMsg.remove();
 
-            if (!specs || Object.keys(specs).length === 0) {
-                specsGrid.style.display = 'none';
-                return;
-            }
-            specsGrid.style.display = 'grid';
+    // Check se l'oggetto specs è vuoto o null
+    if (!specs || Object.keys(specs).length === 0) {
+        specsGrid.style.display = 'none';
+        
+        // Creazione Messaggio Premium
+        const noSpecsHtml = `
+            <div class="no-specs-container">
+                <div class="no-specs-icon">✦</div>
+                <div class="no-specs-title">Eccellenza Artigianale</div>
+                <div class="no-specs-text">
+                    I dettagli di questo capolavoro sono riservati.<br>
+                    Per approfondimenti sulla manifattura e i materiali,<br>
+                    ti invitiamo a contattare il nostro Concierge dedicato.
+                </div>
+            </div>
+        `;
+        
+        // Inserisce il messaggio nel tab (dopo la griglia nascosta)
+        if (tabSpecs) tabSpecs.insertAdjacentHTML('beforeend', noSpecsHtml);
+        
+        // Nasconde anche la tabella taglie se non ci sono specs (spesso correlate)
+        const sizeTitle = document.getElementById('sizeGuideTitle');
+        const sizeTable = document.getElementById('sizeTable');
+        if (sizeTitle) sizeTitle.style.display = 'none';
+        if (sizeTable) sizeTable.style.display = 'none';
+        
+        return;
+    }
+    
+    // Se ci sono specifiche, mostra la griglia normalmente
+    specsGrid.style.display = 'grid';
 
-            const order = ['composition', 'weight', 'origin', 'fit'];
-            const labels = { composition: 'Composizione', weight: 'Peso', origin: 'Origine', fit: 'Vestibilità' };
+    const order = ['composition', 'weight', 'origin', 'fit'];
+    const labels = { composition: 'Composizione', weight: 'Peso', origin: 'Origine', fit: 'Vestibilità' };
 
-            order.forEach(key => {
-                if (specs[key]) {
-                    const div = document.createElement('div');
-                    div.className = 'spec-row';
-                    div.innerHTML = `<span class="spec-label">${labels[key] || key}</span><span>${safeText(specs[key])}</span>`;
-                    specsGrid.appendChild(div);
-                }
-            });
+    order.forEach(key => {
+        if (specs[key]) {
+            const div = document.createElement('div');
+            div.className = 'spec-row';
+            div.innerHTML = `<span class="spec-label">${labels[key] || key}</span><span>${safeText(specs[key])}</span>`;
+            specsGrid.appendChild(div);
         }
+    });
+}
 
         function renderSizeGuide(sizeGuide) {
             const title = document.getElementById('sizeGuideTitle');
@@ -2156,6 +2280,24 @@ function updateReviewsSummaryData(reviews) {
                     window.location.href = 'cart.html';
                 });
             }
+
+            // --- LOGICA CUORE / PREFERITI ---
+    const favBtn = document.getElementById('favBtn');
+    if (favBtn) {
+        favBtn.addEventListener('click', function() {
+            this.classList.toggle('active');
+            
+            // Cambia il simbolo (opzionale, CSS gestisce il colore)
+            if (this.classList.contains('active')) {
+                this.textContent = '♥'; // Cuore pieno
+                // Qui potresti salvare nei localStorage o inviare API
+                console.log('Aggiunto ai preferiti');
+            } else {
+                this.textContent = '♡'; // Cuore vuoto
+                console.log('Rimosso dai preferiti');
+            }
+        });
+    }
         });
 
         // FIX: Nasconde il loader quando si torna indietro con il browser
@@ -2176,3 +2318,4 @@ function updateReviewsSummaryData(reviews) {
     </script>
 </body>
 </html>
+
