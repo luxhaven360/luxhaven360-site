@@ -86,20 +86,21 @@ function createProductCard(prod, defaultCta) {
     // image/icon
     const imageContainer = el('div', { class: 'card-image' });
     
-    // --- MODIFICA QUI: Aggiunto referrerpolicy e migliorato il controllo URL ---
-    if (prod.icon && (typeof prod.icon === 'string') && (prod.icon.startsWith('http') || prod.icon.includes('drive.google.com'))) {
+    // Controllo se abbiamo un link valido (ora Code.gs ci restituisce un link pulito)
+    if (prod.icon && prod.icon.includes('drive.google.com')) {
         const img = el('img', { 
             src: prod.icon, 
             alt: prod.title, 
-            style: 'width:100%; height:100%; object-fit:cover; transition: transform 0.5s ease;', // Aggiunta transizione smooth
+            style: 'width:100%; height:100%; object-fit:cover; transition: transform 0.5s ease;',
             loading: 'lazy',
-            referrerpolicy: 'no-referrer' // <--- FONDAMENTALE: Risolve il problema delle immagini Drive
+            referrerpolicy: 'no-referrer' // <--- FONDAMENTALE PER DRIVE
         });
         
-        // Gestione errore: mostra icona solo se l'immagine fallisce davvero
+        // Fallback se l'immagine non carica
         img.onerror = function() {
             this.style.display = 'none';
             imageContainer.textContent = '📦';
+            imageContainer.classList.add('fallback-icon'); // Aggiungi classe CSS per centrare se vuoi
             imageContainer.style.display = 'flex';
             imageContainer.style.alignItems = 'center';
             imageContainer.style.justifyContent = 'center';
@@ -109,7 +110,6 @@ function createProductCard(prod, defaultCta) {
         imageContainer.appendChild(img);
     } else {
         imageContainer.textContent = prod.icon || '📦';
-        // Stile per centrare l'icona se non c'è immagine
         imageContainer.style.display = 'flex';
         imageContainer.style.alignItems = 'center';
         imageContainer.style.justifyContent = 'center';
@@ -312,6 +312,7 @@ function hideLoader() {
         }, 500);
     }
 }
+
 
 
 
