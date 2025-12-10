@@ -125,33 +125,59 @@
 
         window.onload = function() {
             const introLoader = document.getElementById('intro-loader');
-            // Blocca lo scroll durante il caricamento
+            const progressBar = document.querySelector('.intro-progress-fill');
+            
+            // Blocca lo scroll all'inizio
             document.body.style.overflow = 'hidden';
 
-            // 1. Promessa Timer: Aspetta almeno 5 secondi
-            const timerPromise = new Promise(resolve => setTimeout(resolve, 5000));
+            // --- 1. Animazione Fluida ---
+            // Fa avanzare la barra progressivamente fino al 90% mentre aspettiamo i dati
+            let progress = 0;
+            const fakeLoaderInterval = setInterval(() => {
+                if (progress < 90) {
+                    // Avanza veloce all'inizio, poi rallenta
+                    const increment = progress < 50 ? 5 : 1; 
+                    progress += increment;
+                    if (progressBar) progressBar.style.width = `${progress}%`;
+                }
+            }, 50); // Aggiorna ogni 50ms
 
-            // 2. Promessa Dati: Carica i prodotti (funzione in script.js)
-            // initDynamicProducts ora restituisce una Promise che si risolve quando TUTTI i prodotti sono pronti
+            // --- 2. Caricamento Dati Reali ---
+            // Avvia il caricamento prodotti
             const dataPromise = typeof initDynamicProducts === 'function' 
                 ? initDynamicProducts() 
-                : Promise.resolve(); // Fallback se script.js fallisce
+                : Promise.resolve();
 
-            // 3. Aspetta che ENTRAMBE le cose siano finite
-            Promise.all([timerPromise, dataPromise]).then(() => {
+            // --- 3. Sincronizzazione ---
+            // Aggiungiamo un ritardo MINIMO di 2 secondi solo per far vedere il logo e l'effetto "premium"
+            // Ma NON aspettiamo 5 secondi fissi se i dati sono pronti prima.
+            const minTimePromise = new Promise(resolve => setTimeout(resolve, 2000));
+
+            Promise.all([dataPromise, minTimePromise]).then(() => {
+                // APPENA FINITO (Dati + Minimo tempo tecnico):
                 
-                // Rimuovi loader
+                // 1. Ferma l'animazione finta
+                clearInterval(fakeLoaderInterval);
+                
+                // 2. Riempi la barra al 100% istantaneamente
+                if (progressBar) progressBar.style.width = '100%';
+
+                // 3. Nascondi il loader
                 if (introLoader) {
-                    introLoader.classList.add('fade-out');
-                    document.body.style.overflow = ''; // Riabilita scroll
-                    
-                    setTimeout(() => { 
-                        introLoader.style.display = 'none'; 
-                    }, 800); // Tempo per l'animazione fade-out CSS
+                    // Aspetta un istante piccolissimo (200ms) per far vedere la barra piena all'occhio umano
+                    setTimeout(() => {
+                        introLoader.classList.add('fade-out');
+                        document.body.style.overflow = ''; // Sblocca scroll
+                        
+                        // Rimuovi fisicamente dal display dopo la transizione CSS
+                        setTimeout(() => { 
+                            introLoader.style.display = 'none'; 
+                        }, 500); 
+                    }, 200);
                 }
             });
 
-            // Gestione Hash URL (navigazione diretta)
+            // Gestione Hash URL
             const hash = window.location.hash.substring(1);
             if (hash && typeof showSection === 'function') showSection(hash);
             
@@ -413,6 +439,7 @@
     </script>
 </body>
 </html>
+
 
 
 
