@@ -146,8 +146,8 @@ function createProductCard(prod, defaultCta) {
     return card;
 }
 
-// 🆕 Carica prodotti dal Google Sheet tramite API JSONP
-async function loadSection(section) {function loadSection(section) {
+// 🆕 Modificata per restituire una Promise
+function loadSection(section) {
     return new Promise((resolve) => { // Wrapper Promise
         const grid = document.getElementById(section.gridId);
         if (!grid) { resolve(); return; }
@@ -298,4 +298,5 @@ function hideLoader() {
         }, 500);
     }
 }
+
 
