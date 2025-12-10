@@ -85,17 +85,29 @@ function createProductCard(prod, defaultCta) {
 
     // image/icon
     const imageContainer = el('div', { class: 'card-image' });
-    if (prod.icon) {
-        // se è url img, crea <img>, altrimenti usa emoji/testo
-        if (typeof prod.icon === 'string' && (prod.icon.startsWith('http') || prod.icon.endsWith('.jpg') || prod.icon.endsWith('.png') || prod.icon.endsWith('.webp') || prod.icon.endsWith('.jpeg'))) {
-            const img = el('img', { src: prod.icon, alt: prod.title, style: 'width:100%; height:100%; object-fit:cover;' });
-            imageContainer.appendChild(img);
-        } else {
-            imageContainer.textContent = prod.icon;
-        }
+    
+    // LOGICA CORRETTA PER IMMAGINI DRIVE
+    // Se c'è un'icona e sembra un URL (inizia con http O contiene drive.google), crea il tag <img>
+    if (prod.icon && (typeof prod.icon === 'string') && (prod.icon.startsWith('http') || prod.icon.includes('drive.google.com'))) {
+        const img = el('img', { 
+            src: prod.icon, 
+            alt: prod.title, 
+            style: 'width:100%; height:100%; object-fit:cover;',
+            loading: 'lazy' // Performance boost
+        });
+        
+        // Gestione errore caricamento immagine
+        img.onerror = function() {
+            this.style.display = 'none';
+            imageContainer.textContent = '📦'; // Fallback se il link è rotto
+        };
+        
+        imageContainer.appendChild(img);
     } else {
-        imageContainer.textContent = '📦';
+        // Se non è un link immagine, mostra il testo/emoji (es. "Copertina" se il link non è stato estratto)
+        imageContainer.textContent = prod.icon || '📦';
     }
+    
     card.appendChild(imageContainer);
 
     // title
@@ -113,36 +125,30 @@ function createProductCard(prod, defaultCta) {
     // button area
     const btn = el('button', { class: 'btn', style: 'margin-top: 1.5rem; width: 100%;' }, [document.createTextNode(prod.cta || defaultCta || 'Scopri')]);
 
-    // attach product data as data- attributes for analytics / fallback
+    // attach product data as data- attributes
     btn.dataset.sku = prod.sku || '';
     btn.dataset.title = prod.title || '';
     if (prod.stripe_link) btn.dataset.stripeLink = prod.stripe_link;
     if (prod.action) btn.dataset.action = prod.action;
 
-    // on click behaviour:
+    // on click behaviour
     btn.addEventListener('click', (e) => {
-        e.preventDefault(); // Previene navigazione immediata
-        
-        // 1. Mostra Loader
+        e.preventDefault();
         showLoader();
-
-        // 2. Salva dati
         try {
             localStorage.setItem('lh360_last_product', JSON.stringify({ sku: btn.dataset.sku, title: btn.dataset.title, ts: Date.now() }));
             localStorage.setItem('lh360_selected_sku', btn.dataset.sku || '');
         } catch (e) {}
 
-        // 3. Naviga dopo un breve ritardo per far vedere l'animazione di start
         setTimeout(() => {
-            const base = 'product-details/pdp-products.html'; // Assicurati che il percorso sia corretto relativo alla pagina corrente
+            const base = 'product-details/pdp-products.html';
             const sku = encodeURIComponent(btn.dataset.sku || '');
             const section = encodeURIComponent(prod.sectionName || prod.category || 'shop');
             window.location.href = `${base}?sku=${sku}&section=${section}`;
-        }, 800); // 800ms di delay estetico
+        }, 500); 
     });
 
     card.appendChild(btn);
-
     return card;
 }
 
@@ -298,5 +304,6 @@ function hideLoader() {
         }, 500);
     }
 }
+
 
 
