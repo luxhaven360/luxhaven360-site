@@ -125,15 +125,33 @@
 
         window.onload = function() {
             const introLoader = document.getElementById('intro-loader');
-            if (introLoader) {
-                document.body.style.overflow = 'hidden';
-                setTimeout(() => {
-                    introLoader.classList.add('fade-out');
-                    document.body.style.overflow = '';
-                    setTimeout(() => { introLoader.style.display = 'none'; }, 800);
-                }, 4000);
-            }
+            // Blocca lo scroll durante il caricamento
+            document.body.style.overflow = 'hidden';
 
+            // 1. Promessa Timer: Aspetta almeno 5 secondi
+            const timerPromise = new Promise(resolve => setTimeout(resolve, 5000));
+
+            // 2. Promessa Dati: Carica i prodotti (funzione in script.js)
+            // initDynamicProducts ora restituisce una Promise che si risolve quando TUTTI i prodotti sono pronti
+            const dataPromise = typeof initDynamicProducts === 'function' 
+                ? initDynamicProducts() 
+                : Promise.resolve(); // Fallback se script.js fallisce
+
+            // 3. Aspetta che ENTRAMBE le cose siano finite
+            Promise.all([timerPromise, dataPromise]).then(() => {
+                
+                // Rimuovi loader
+                if (introLoader) {
+                    introLoader.classList.add('fade-out');
+                    document.body.style.overflow = ''; // Riabilita scroll
+                    
+                    setTimeout(() => { 
+                        introLoader.style.display = 'none'; 
+                    }, 800); // Tempo per l'animazione fade-out CSS
+                }
+            });
+
+            // Gestione Hash URL (navigazione diretta)
             const hash = window.location.hash.substring(1);
             if (hash && typeof showSection === 'function') showSection(hash);
             
@@ -395,6 +413,7 @@
     </script>
 </body>
 </html>
+
 
 
 
