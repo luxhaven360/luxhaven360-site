@@ -156,100 +156,121 @@ function createProductCard(prod, defaultCta) {
 }
 
 /**
- * NUOVA FUNZIONE UNIFICATA
- * Scarica TUTTI i prodotti in una sola volta e li distribuisce.
- * Risolve il problema "Errore di Rete" su mobile riducendo le richieste HTTP.
+ * NUOVA FUNZIONE UNIFICATA (Mobile-Friendly)
+ * Scarica TUTTI i prodotti con logica di retry e timeout esteso.
  */
-function initDynamicProducts() {
+function initDynamicProducts(retryCount = 0) {
     return new Promise((resolve, reject) => {
         
-        // 1. Imposta lo stato di caricamento su tutte le griglie
+        // 1. Imposta lo stato di caricamento su tutte le griglie (solo al primo tentativo)
         const grids = {};
         SECTIONS.forEach(section => {
             const gridEl = document.getElementById(section.gridId);
             if (gridEl) {
-                gridEl.innerHTML = '<div class="loading">Caricamento in corso...</div>';
+                if (retryCount === 0) {
+                    gridEl.innerHTML = '<div class="loading"><div class="lh-ring"></div><br>Caricamento prodotti...</div>';
+                }
                 grids[section.id] = gridEl;
             }
         });
 
         // 2. Prepara la chiamata API unica (category=all)
-        const callbackName = 'loadAllProductsCallback_' + Date.now();
-        // Aumentiamo il timeout a 15 secondi per reti mobile lente
-        const timeoutDuration = 15000; 
+        // Aggiungiamo un parametro 'retry' all'URL per evitare cache strane lato Google
+        const callbackName = 'loadAllProductsCallback_' + Date.now() + '_' + retryCount;
         
-        const scriptUrl = `${WEB_APP_URL}?action=get_products&category=all&callback=${callbackName}&t=${Date.now()}`;
+        // --- MODIFICA FONDAMENTALE: Timeout aumentato a 60 secondi per mobile ---
+        const timeoutDuration = 60000; 
+        
+        const scriptUrl = `${WEB_APP_URL}?action=get_products&category=all&callback=${callbackName}&t=${Date.now()}&r=${retryCount}`;
 
         // Timeout di sicurezza
         const safetyTimeout = setTimeout(() => {
-            cleanup();
-            showErrorInAllGrids('Timeout connessione. Riprova.');
-            resolve(); // Risolviamo comunque per nascondere il loader principale
+            handleError('Timeout connessione.');
         }, timeoutDuration);
 
-        // 3. Callback JSONP
+        // 3. Funzione per gestire successo
         window[callbackName] = function(response) {
             clearTimeout(safetyTimeout);
             cleanup();
 
             if (!response.success || !response.products) {
                 console.error("Errore API:", response.error);
-                showErrorInAllGrids('Errore nel caricamento dati.');
-                resolve();
+                handleError('Errore dati server.');
                 return;
             }
 
-            // Pulisci le griglie dal messaggio di caricamento
+            // Pulisci le griglie
             Object.values(grids).forEach(g => g.innerHTML = '');
 
             const allProducts = response.products || [];
             const countBySection = {};
 
-            // 4. Distribuisci i prodotti nelle sezioni corrette
+            // 4. Distribuisci i prodotti nelle sezioni
             allProducts.forEach(prod => {
-                // Trova la sezione corrispondente basandosi sulla categoria del prodotto
                 const targetSection = SECTIONS.find(s => s.id === prod.category);
                 
                 if (targetSection && grids[targetSection.id]) {
-                    // Aggiungi metadati
                     prod.sectionName = targetSection.id;
                     const card = createProductCard(prod, targetSection.defaultCta);
                     grids[targetSection.id].appendChild(card);
-                    
-                    // Conta i prodotti per gestire gli stati vuoti
                     countBySection[targetSection.id] = (countBySection[targetSection.id] || 0) + 1;
                 }
             });
 
-            // 5. Gestisci le sezioni rimaste vuote
+            // 5. Gestisci le sezioni vuote
             SECTIONS.forEach(section => {
                 if (!countBySection[section.id] && grids[section.id]) {
-                    grids[section.id].innerHTML = `<div class="empty" style="grid-column: 1/-1; text-align: center; padding: 3rem; opacity: 0.5;">Nessun prodotto disponibile al momento.</div>`;
+                    grids[section.id].innerHTML = `<div class="empty" style="grid-column: 1/-1; text-align: center; padding: 3rem; opacity: 0.5;">Nessun prodotto disponibile in questa categoria.</div>`;
                 }
             });
 
-            resolve();
+            resolve(); // Successo!
         };
 
-        // Gestione Errore Script (es. Blocco Rete)
+        // 4. Gestione Errori e Retry
         const script = document.createElement('script');
         script.src = scriptUrl;
+        
+        // Gestione errore caricamento script (es. blocco rete mobile)
         script.onerror = () => {
             clearTimeout(safetyTimeout);
-            cleanup();
-            showErrorInAllGrids('Errore di connessione. Verifica la rete.');
-            resolve();
+            handleError('Errore di rete.');
         };
+
+        function handleError(msg) {
+            cleanup();
+            console.warn(`Tentativo ${retryCount + 1} fallito: ${msg}`);
+
+            // --- LOGICA DI RETRY ---
+            // Se siamo sotto i 3 tentativi, riproviamo
+            if (retryCount < 2) {
+                const delay = 1000 * (retryCount + 1); // Attesa incrementale (1s, 2s...)
+                console.log(`Riprovo tra ${delay}ms...`);
+                setTimeout(() => {
+                    initDynamicProducts(retryCount + 1).then(resolve);
+                }, delay);
+            } else {
+                // Se abbiamo finito i tentativi, mostriamo l'errore all'utente
+                showErrorInAllGrids('Impossibile caricare i prodotti. Verifica la connessione e riprova.');
+                resolve(); // Risolviamo per nascondere il loader principale
+            }
+        }
 
         function cleanup() {
             try { if (script.parentNode) document.body.removeChild(script); } catch (e) {}
             try { delete window[callbackName]; } catch (e) {}
         }
 
-        // Funzione helper per mostrare errori ovunque
         function showErrorInAllGrids(msg) {
             Object.values(grids).forEach(g => {
-                g.innerHTML = `<div class="error" style="grid-column: 1/-1; text-align: center; color: #ff6b6b;">${msg}</div>`;
+                // Non sovrascriviamo se c'è già contenuto (caso raro parziale)
+                if (g.children.length === 0 || g.querySelector('.loading')) {
+                    g.innerHTML = `
+                        <div class="error-container" style="grid-column: 1/-1; text-align: center; padding: 2rem;">
+                            <div style="color: #ff6b6b; margin-bottom: 1rem;">${msg}</div>
+                            <button onclick="window.location.reload()" class="btn" style="padding: 0.5rem 1rem; font-size: 0.9rem;">Ricarica Pagina</button>
+                        </div>`;
+                }
             });
         }
 
@@ -334,6 +355,7 @@ function hideLoader() {
         }, 500);
     }
 }
+
 
 
 
