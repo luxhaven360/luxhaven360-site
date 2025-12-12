@@ -1341,9 +1341,9 @@
     <div class="modal-content">
         <div class="modal-icon">⚠️</div>
         <h3 class="modal-title">Attenzione</h3>
-        <p class="modal-message">Abbiamo notato che hai già inviato una recensione per questo prodotto.</p>
+        <p class="modal-message">Abbiamo notato che hai già inviato una recensione per questo prodotto di recente.</p>
         <p class="modal-submessage">Per garantire la qualità delle opinioni, è consentita una sola recensione per articolo.</p>
-        <button class="modal-btn" onclick="closeModal('duplicateReviewModal'); document.getElementById('reviewForm').reset(); selectedReviewRating=0; document.querySelectorAll('.rating-star').forEach(s => s.classList.remove('full'));">Ho capito</button>
+        <button class="modal-btn" onclick="closeModal('duplicateReviewModal')">Ho capito</button>
     </div>
 </div>
 
@@ -2018,8 +2018,8 @@ function updateReviewsSummaryData(reviews) {
             }
         }
 
-        // --- MODIFICA: setupReviewForm con controlli e ID ---
-function setupReviewForm() {
+        /* --- INVIO RECENSIONE (FETCH) & INPUT INTERO --- */
+        function setupReviewForm() {
     const container = document.getElementById('ratingSelector');
     const stars = container.querySelectorAll('.rating-star');
     
@@ -2043,41 +2043,22 @@ function setupReviewForm() {
     });
 
     const form = document.getElementById('reviewForm');
-    
     form.addEventListener('submit', async (e) => {
         e.preventDefault();
-        
-        // 1. Controllo Rating
-        if (selectedReviewRating === 0) { 
-            alert('Seleziona una valutazione'); 
-            return; 
-        }
-
-        const email = document.getElementById('reviewEmail').value;
-
-        // 2. Controllo Dominio Email
-        if (!isValidEmailDomain(email)) {
-            alert('Per favore utilizza un indirizzo email valido (es. Gmail, Outlook, Yahoo, Libero, ecc).');
-            return;
-        }
+        if (selectedReviewRating === 0) { alert('Seleziona una valutazione'); return; }
 
         const submitBtn = document.getElementById('submitReviewBtn');
         submitBtn.disabled = true;
         submitBtn.textContent = 'Invio in corso...';
 
-        // 3. Generazione Fingerprint
-        const deviceId = generateDeviceFingerprint();
-
         const formData = new URLSearchParams();
         formData.append('action', 'submit_review');
         formData.append('sku', currentProductSku);
         formData.append('name', document.getElementById('reviewName').value);
-        formData.append('email', email);
+        formData.append('email', document.getElementById('reviewEmail').value);
         formData.append('rating', selectedReviewRating);
         formData.append('title', document.getElementById('reviewTitle').value);
         formData.append('comment', document.getElementById('reviewComment').value);
-        // Aggiungi il Device ID
-        formData.append('deviceId', deviceId);
 
         try {
             const response = await fetch(REVIEWS_API_URL, {
@@ -2089,38 +2070,47 @@ function setupReviewForm() {
             const result = await response.json();
 
             if (result.success) {
-                const newReview = {
-                    name: document.getElementById('reviewName').value,
-                    dateTime: result.dateTime,
-                    rating: selectedReviewRating,
-                    title: document.getElementById('reviewTitle').value,
-                    comment: document.getElementById('reviewComment').value
-                };
+    // Usa la data+ora ritornata dal server
+    const newReview = {
+        name: document.getElementById('reviewName').value,
+        dateTime: result.dateTime, // Es: "07 December 2025 - 17:46"
+        rating: selectedReviewRating,
+        title: document.getElementById('reviewTitle').value,
+        comment: document.getElementById('reviewComment').value
+    };
 
-                currentReviewsData.unshift(newReview);
-                displayReviews(currentReviewsData, true);
+    // Inserimento in cima
+    currentReviewsData.unshift(newReview);
+    displayReviews(currentReviewsData, true);
 
-                form.reset();
-                selectedReviewRating = 0;
-                document.querySelectorAll('.rating-star').forEach(s => s.classList.remove('full')); 
-                submitBtn.textContent = 'Recensione Inviata!';
+    // Reset interfaccia
+    form.reset();
+    selectedReviewRating = 0;
+    document.querySelectorAll('.rating-star').forEach(s => s.classList.remove('full')); 
+    submitBtn.textContent = 'Recensione Inviata!';
 
-                setTimeout(() => {
-                    const listContainer = document.getElementById('reviewsList');
-                    if (listContainer && listContainer.firstElementChild) {
-                        const newElement = listContainer.firstElementChild;
-                        newElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                        newElement.classList.remove('review-highlight-premium');
-                        void newElement.offsetWidth;
-                        newElement.classList.add('review-highlight-premium');
-                    }
-                }, 100);
+    // Animazione scroll & evidenziazione
+    setTimeout(() => {
+        const listContainer = document.getElementById('reviewsList');
+        if (listContainer && listContainer.firstElementChild) {
+            const newElement = listContainer.firstElementChild;
+            
+            newElement.scrollIntoView({ 
+                behavior: 'smooth', 
+                block: 'center' 
+            });
 
-                setTimeout(() => {
-                    submitBtn.disabled = false;
-                    submitBtn.textContent = 'Pubblica Recensione';
-                }, 2000);
-            } else {
+            newElement.classList.remove('review-highlight-premium');
+            void newElement.offsetWidth;
+            newElement.classList.add('review-highlight-premium');
+        }
+    }, 100);
+
+    setTimeout(() => {
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Pubblica Recensione';
+    }, 2000);
+} else {
                 // Gestione Errori (Duplicato ecc.)
                 if (result.error === 'DUPLICATE_REVIEW' || (result.message && result.message.includes('già recensito'))) {
                     document.getElementById('duplicateReviewModal').classList.add('active');
@@ -2383,22 +2373,21 @@ renderColors(prod.colors);
     }
         });
 
-        // --- MODIFICA: Gestione Loader e Back-Forward Cache ---
-window.addEventListener('pageshow', function(event) {
-    // Nasconde immediatamente qualsiasi loader quando si torna alla pagina dalla cache
-    const loader = document.getElementById('luxhaven-loader');
-    if (loader) {
-        loader.style.opacity = '0';
-        loader.style.display = 'none';
-    }
-    
-    // Ripristina stato bottoni se necessario
-    const submitBtn = document.getElementById('submitReviewBtn');
-    if (submitBtn) {
-        submitBtn.disabled = false;
-        submitBtn.textContent = 'Pubblica Recensione';
-    }
-});
+        // FIX: Nasconde il loader quando si torna indietro con il browser
+  window.addEventListener('pageshow', function(event) {
+      // Se la pagina viene caricata dalla cache (tasto indietro)
+      if (event.persisted) {
+          const loader = document.getElementById('luxhaven-loader'); // Assicurati che l'ID sia corretto
+          const btn = document.querySelector('.btn-buy-now'); // O la classe del tuo bottone acquista
+          
+          if (loader) loader.style.display = 'none';
+          if (btn) {
+              btn.disabled = false;
+              btn.innerText = 'Acquista Ora'; // Ripristina testo originale
+              btn.style.opacity = '1';
+          }
+      }
+  });
 
         // --- FIX: Funzione per chiudere le modali (Risolve errore console) ---
 function closeModal(modalId) {
@@ -2406,58 +2395,6 @@ function closeModal(modalId) {
     if (modal) {
         modal.classList.remove('active');
     }
-}
-
-        // --- NUOVO: Validazione Dominio Email ---
-function isValidEmailDomain(email) {
-    const allowedDomains = [
-        'gmail.com', 'yahoo.com', 'yahoo.it', 'outlook.com', 'outlook.it',
-        'hotmail.com', 'hotmail.it', 'live.com', 'icloud.com', 'me.com',
-        'libero.it', 'virgilio.it', 'tiscali.it', 'alice.it', 'fastwebnet.it', 'protonmail.com'
-    ];
-    
-    try {
-        const domain = email.split('@')[1].toLowerCase();
-        return allowedDomains.includes(domain);
-    } catch (e) {
-        return false;
-    }
-}
-
-// --- NUOVO: Device Fingerprinting (LH360-<D8>-<Tipo>) ---
-function generateDeviceFingerprint() {
-    const ua = navigator.userAgent;
-    const screenRes = `${window.screen.width}x${window.screen.height}`;
-    const timezone = new Date().getTimezoneOffset();
-    const language = navigator.language;
-    const platform = navigator.platform;
-    
-    // 1. Determina Tipo Dispositivo (Lettera singola)
-    let deviceType = 'O'; // Other
-    if (/Mobi|Android/i.test(ua)) {
-        deviceType = 'M'; // Mobile
-    } else if (/Tablet|iPad/i.test(ua)) {
-        deviceType = 'T'; // Tablet
-    } else if (!/Mobi|Android/i.test(ua)) {
-        deviceType = 'D'; // Desktop
-    }
-
-    // 2. Crea stringa univoca base
-    const rawString = `${ua}-${screenRes}-${timezone}-${language}-${platform}`;
-
-    // 3. Funzione di Hash semplice (djb2 variant) per ottenere 8 caratteri
-    let hash = 0;
-    for (let i = 0; i < rawString.length; i++) {
-        const char = rawString.charCodeAt(i);
-        hash = ((hash << 5) - hash) + char;
-        hash = hash & hash; // Convert to 32bit integer
-    }
-    
-    // Converti in Hex assoluto e prendi primi 8 caratteri
-    const hexHash = Math.abs(hash).toString(16).toUpperCase().padStart(8, '0').substring(0, 8);
-
-    // 4. Formatta ID finale
-    return `LH360-${hexHash}-${deviceType}`;
 }
     </script>
 </body>
