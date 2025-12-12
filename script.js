@@ -44,11 +44,6 @@ document.addEventListener('click', (e) => {
 });
 
 // ---------------------- Dynamic products loading ----------------------
-// 🆕 Carica i prodotti dal Google Sheet "Prodotti" tramite API
-// Struttura del foglio (colonne dalla riga 7, dati dalla riga 8):
-// A: SKU, B: Nome Prodotto, C: Numero Prodotto, D: Categoria, E: Prezzo,
-// F: Consegna Prevista, G+H: Breve Descrizione, I: Colori, J: Taglie,
-// K: Descrizione Lunga, L-O: Immagini 1-4
 
 const SECTIONS = [
     { id: 'properties', gridId: 'propertiesGrid', defaultCta: 'Richiedi Visita' },
@@ -160,79 +155,106 @@ function createProductCard(prod, defaultCta) {
     return card;
 }
 
-// 🆕 Modificata per restituire una Promise
-function loadSection(section) {
-    return new Promise((resolve) => { // Wrapper Promise
-        const grid = document.getElementById(section.gridId);
-        if (!grid) { resolve(); return; }
-
-        grid.innerHTML = '<div class="loading">Caricamento...</div>';
-
-        const callbackName = 'loadProducts_' + section.id + '_' + Date.now();
-        const category = section.id;
+/**
+ * NUOVA FUNZIONE UNIFICATA
+ * Scarica TUTTI i prodotti in una sola volta e li distribuisce.
+ * Risolve il problema "Errore di Rete" su mobile riducendo le richieste HTTP.
+ */
+function initDynamicProducts() {
+    return new Promise((resolve, reject) => {
         
-        // Aggiungi timestamp per evitare cache
-        const scriptUrl = `${WEB_APP_URL}?action=get_products&category=${category}&callback=${callbackName}&t=${Date.now()}`;
+        // 1. Imposta lo stato di caricamento su tutte le griglie
+        const grids = {};
+        SECTIONS.forEach(section => {
+            const gridEl = document.getElementById(section.gridId);
+            if (gridEl) {
+                gridEl.innerHTML = '<div class="loading">Caricamento in corso...</div>';
+                grids[section.id] = gridEl;
+            }
+        });
+
+        // 2. Prepara la chiamata API unica (category=all)
+        const callbackName = 'loadAllProductsCallback_' + Date.now();
+        // Aumentiamo il timeout a 15 secondi per reti mobile lente
+        const timeoutDuration = 15000; 
         
-        // Timeout di sicurezza (se l'API fallisce, risolvi comunque per non bloccare il sito)
+        const scriptUrl = `${WEB_APP_URL}?action=get_products&category=all&callback=${callbackName}&t=${Date.now()}`;
+
+        // Timeout di sicurezza
         const safetyTimeout = setTimeout(() => {
             cleanup();
-            if(grid.innerHTML.includes('Caricamento')) {
-                 grid.innerHTML = '<div class="error">Timeout connessione.</div>';
-            }
-            resolve();
-        }, 8000); // 8 secondi max per chiamata API
+            showErrorInAllGrids('Timeout connessione. Riprova.');
+            resolve(); // Risolviamo comunque per nascondere il loader principale
+        }, timeoutDuration);
 
+        // 3. Callback JSONP
         window[callbackName] = function(response) {
             clearTimeout(safetyTimeout);
             cleanup();
-            
-            if (!response.success || response.error) {
-                console.error(`Errore API ${section.id}:`, response.error);
-                grid.innerHTML = '<div class="error">Errore caricamento.</div>';
+
+            if (!response.success || !response.products) {
+                console.error("Errore API:", response.error);
+                showErrorInAllGrids('Errore nel caricamento dati.');
                 resolve();
                 return;
             }
 
-            const items = response.products || [];
-            grid.innerHTML = '';
-            
-            if (items.length === 0) {
-                grid.innerHTML = `<div class="empty" style="grid-column: 1/-1; text-align: center; padding: 3rem; opacity: 0.5;">Nessun prodotto disponibile.</div>`;
-            } else {
-                items.forEach(prod => {
-                    prod.sectionName = section.id;
-                    const card = createProductCard(prod, section.defaultCta);
-                    grid.appendChild(card);
-                });
-            }
-            resolve(); // Segnala che questa sezione è pronta
+            // Pulisci le griglie dal messaggio di caricamento
+            Object.values(grids).forEach(g => g.innerHTML = '');
+
+            const allProducts = response.products || [];
+            const countBySection = {};
+
+            // 4. Distribuisci i prodotti nelle sezioni corrette
+            allProducts.forEach(prod => {
+                // Trova la sezione corrispondente basandosi sulla categoria del prodotto
+                const targetSection = SECTIONS.find(s => s.id === prod.category);
+                
+                if (targetSection && grids[targetSection.id]) {
+                    // Aggiungi metadati
+                    prod.sectionName = targetSection.id;
+                    const card = createProductCard(prod, targetSection.defaultCta);
+                    grids[targetSection.id].appendChild(card);
+                    
+                    // Conta i prodotti per gestire gli stati vuoti
+                    countBySection[targetSection.id] = (countBySection[targetSection.id] || 0) + 1;
+                }
+            });
+
+            // 5. Gestisci le sezioni rimaste vuote
+            SECTIONS.forEach(section => {
+                if (!countBySection[section.id] && grids[section.id]) {
+                    grids[section.id].innerHTML = `<div class="empty" style="grid-column: 1/-1; text-align: center; padding: 3rem; opacity: 0.5;">Nessun prodotto disponibile al momento.</div>`;
+                }
+            });
+
+            resolve();
         };
-        
+
+        // Gestione Errore Script (es. Blocco Rete)
         const script = document.createElement('script');
         script.src = scriptUrl;
         script.onerror = () => {
             clearTimeout(safetyTimeout);
             cleanup();
-            grid.innerHTML = '<div class="error">Errore rete.</div>';
+            showErrorInAllGrids('Errore di connessione. Verifica la rete.');
             resolve();
         };
-        
+
         function cleanup() {
             try { if (script.parentNode) document.body.removeChild(script); } catch (e) {}
             try { delete window[callbackName]; } catch (e) {}
         }
-        
+
+        // Funzione helper per mostrare errori ovunque
+        function showErrorInAllGrids(msg) {
+            Object.values(grids).forEach(g => {
+                g.innerHTML = `<div class="error" style="grid-column: 1/-1; text-align: center; color: #ff6b6b;">${msg}</div>`;
+            });
+        }
+
         document.body.appendChild(script);
     });
-}
-
-// 🆕 Modificata per restituire Promise.all
-function initDynamicProducts() {
-    // Lancia il caricamento di tutte le sezioni in parallelo
-    const promises = SECTIONS.map(s => loadSection(s));
-    // Ritorna una promise che si risolve quando TUTTE le sezioni hanno finito
-    return Promise.all(promises);
 }
                                      
 // --- LOADER UTILITIES ---
@@ -312,6 +334,7 @@ function hideLoader() {
         }, 500);
     }
 }
+
 
 
 
