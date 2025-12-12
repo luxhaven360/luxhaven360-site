@@ -2133,57 +2133,62 @@ function updateReviewsSummaryData(reviews) {
 
         /* ====== Caricamento Prodotto ====== */
         async function loadProduct() {
-            const skuFromQs = qs('sku');
-            const skuFromLS = localStorage.getItem('lh360_selected_sku');
-            const sku = skuFromQs || skuFromLS;
-            
-            if (!sku) {
-                 document.querySelector('.container').innerHTML = '<div style="padding:4rem;color:#fca5a5;text-align:center;">SKU prodotto mancante.</div>';
-                 hideGlobalLoader();
-                 return;
-            }
-
-            currentProductSku = sku;
-            
-            // Costruisci URL API
-            const callbackName = 'pdpCallback_' + Date.now();
-            const apiUrl = `${WEB_APP_URL}?action=get_product_details&sku=${encodeURIComponent(sku)}&callback=${callbackName}&t=${Date.now()}`;
-
-            // Gestione JSONP manuale per compatibilità massima
-            window[callbackName] = function(response) {
-                cleanup();
-                
-                if (!response.success || !response.product) {
-                    console.error("Errore API:", response.error);
-                    document.querySelector('.container').innerHTML = `<div style="padding:4rem;color:#fca5a5;text-align:center;">Prodotto non trovato o errore server.<br><small>${response.error || ''}</small></div>`;
-                    hideGlobalLoader();
-                    return;
-                }
-
-                const prod = response.product;
-                populateProduct(prod); // Usa la tua funzione esistente populateProduct
-                
-                productLoaded = true;
-                // Carica recensioni dopo aver caricato il prodotto
-                loadReviews(sku);
-                completeLoader();
-            };
-
-            const script = document.createElement('script');
-            script.src = apiUrl;
-            script.onerror = () => {
-                cleanup();
-                document.querySelector('.container').innerHTML = '<div style="padding:4rem;color:#fca5a5;text-align:center;">Errore di connessione al database prodotti.</div>';
-                hideGlobalLoader();
-            };
-
-            function cleanup() {
-                try { delete window[callbackName]; } catch(e){}
-                try { if(script.parentNode) script.parentNode.removeChild(script); } catch(e){}
-            }
-
-            document.body.appendChild(script);
+        const skuFromQs = qs('sku');
+        const skuFromLS = localStorage.getItem('lh360_selected_sku');
+        const sku = skuFromQs || skuFromLS;
+        
+        if (!sku) {
+             document.querySelector('.container').innerHTML = '<div style="padding:4rem;color:#fca5a5;text-align:center;">SKU prodotto mancante.</div>';
+             hideGlobalLoader();
+             return;
         }
+
+        currentProductSku = sku;
+        
+        // 1. URL API SENZA callback (per ricevere JSON puro, non script)
+        const apiUrl = `${WEB_APP_URL}?action=get_product_details&sku=${encodeURIComponent(sku)}&t=${Date.now()}`;
+
+        try {
+            // 2. Uso di FETCH invece di script tag
+            const response = await fetch(apiUrl, {
+                method: 'GET',
+                redirect: 'follow' // Importante per gestire il redirect di Google Apps Script
+            });
+
+            if (!response.ok) {
+                throw new Error(`Errore HTTP: ${response.status}`);
+            }
+
+            const data = await response.json();
+
+            // 3. Verifica successo logico
+            if (!data.success || !data.product) {
+                console.error("Errore API:", data.error);
+                document.querySelector('.container').innerHTML = `<div style="padding:4rem;color:#fca5a5;text-align:center;">Prodotto non trovato o errore server.<br><small>${data.error || ''}</small></div>`;
+                hideGlobalLoader();
+                return;
+            }
+
+            // 4. Popola il prodotto
+            const prod = data.product;
+            populateProduct(prod);
+            
+            productLoaded = true;
+            // Carica recensioni dopo aver caricato il prodotto
+            loadReviews(sku);
+            completeLoader();
+
+        } catch (error) {
+            console.error("Errore LoadProduct:", error);
+            document.querySelector('.container').innerHTML = `
+                <div style="padding:4rem;color:#fca5a5;text-align:center;">
+                    <h3 style="margin-bottom:1rem">Errore di connessione</h3>
+                    <p>Impossibile recuperare i dettagli del prodotto.</p>
+                    <button onclick="window.location.reload()" class="btn btn-secondary" style="margin-top:1rem; padding: 0.5rem 1rem;">Riprova</button>
+                </div>`;
+            hideGlobalLoader();
+        }
+    }
 
         // Helper per nascondere il loader in caso di errore immediato
         function hideGlobalLoader() {
@@ -2394,6 +2399,7 @@ function closeModal(modalId) {
     </script>
 </body>
 </html>
+
 
 
 
