@@ -1141,6 +1141,7 @@
         
     </style>
     <script src="https://unpkg.com/dompurify@2.4.0/dist/purify.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@fingerprintjs/fingerprintjs@3/dist/fp.min.js"></script>
     <script>
     document.write(`
     <div id="luxhaven-loader" class="visible" style="position:fixed;top:0;left:0;width:100%;height:100%;background:linear-gradient(135deg, #0a0a0a 0%, #18181b 50%, #0a0a0a 100%);z-index:99999;display:flex;align-items:center;justify-content:center;transition:opacity 0.5s ease;">
@@ -1358,8 +1359,10 @@
         const WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbwr79RkXIEocpuOKaM6uMJqE6VFs9wjlUPvrr__FvDbDDrD2ELB1NbfrWP3BCYpHj2u/exec';
         
         let currentProductSku = '';
-        let selectedColor = ''; // <--- AGGIUNGI QUESTO
-        let selectedSize = '';  // <--- AGGIUNGI QUESTO
+        let selectedColor = '';
+        let selectedSize = '';  
+        let deviceFingerprint = null;
+        let deviceType = 'O'; // Default: Other
         let selectedReviewRating = 0;
         let currentReviewsData = [];
         let productLoaded = false;
@@ -2044,8 +2047,29 @@ function updateReviewsSummaryData(reviews) {
 
     const form = document.getElementById('reviewForm');
     form.addEventListener('submit', async (e) => {
-        e.preventDefault();
-        if (selectedReviewRating === 0) { alert('Seleziona una valutazione'); return; }
+    e.preventDefault();
+    
+    if (selectedReviewRating === 0) { 
+        alert('Seleziona una valutazione'); 
+        return; 
+    }
+    
+    // Validazione dominio email
+    const emailInput = document.getElementById('reviewEmail').value.toLowerCase();
+    const validDomains = ['gmail.com', 'outlook.com', 'hotmail.com', 'yahoo.com', 'yahoo.it', 
+                          'libero.it', 'virgilio.it', 'icloud.com', 'protonmail.com', 'live.com',
+                          'msn.com', 'alice.it', 'tim.it', 'vodafone.it', 'fastwebnet.it'];
+    
+    const emailDomain = emailInput.split('@')[1];
+    if (!emailDomain || !validDomains.includes(emailDomain)) {
+        alert('⚠️ Utilizza un indirizzo email valido (Gmail, Outlook, Yahoo, ecc.)');
+        return;
+    }
+    
+    if (!deviceFingerprint) {
+        alert('⚠️ Errore di sicurezza. Ricarica la pagina e riprova.');
+        return;
+    }
 
         const submitBtn = document.getElementById('submitReviewBtn');
         submitBtn.disabled = true;
@@ -2059,6 +2083,7 @@ function updateReviewsSummaryData(reviews) {
         formData.append('rating', selectedReviewRating);
         formData.append('title', document.getElementById('reviewTitle').value);
         formData.append('comment', document.getElementById('reviewComment').value);
+        formData.append('device_id', deviceFingerprint || 'UNKNOWN');
 
         try {
             const response = await fetch(REVIEWS_API_URL, {
@@ -2113,9 +2138,15 @@ function updateReviewsSummaryData(reviews) {
 } else {
                 // Gestione Errori (Duplicato ecc.)
                 if (result.error === 'DUPLICATE_REVIEW' || (result.message && result.message.includes('già recensito'))) {
-                    document.getElementById('duplicateReviewModal').classList.add('active');
-                    submitBtn.disabled = false;
-                    submitBtn.textContent = 'Pubblica Recensione';
+                   document.getElementById('duplicateReviewModal').classList.add('active');
+    
+                   // Reset completo del form
+                   form.reset();
+                   selectedReviewRating = 0;
+                   document.querySelectorAll('.rating-star').forEach(s => s.classList.remove('full'));
+    
+                   submitBtn.disabled = false;
+                   submitBtn.textContent = 'Pubblica Recensione';
                 } else {
                     throw new Error(result.error || 'Errore sconosciuto');
                 }
@@ -2339,9 +2370,42 @@ renderColors(prod.colors);
             }
         }
 
+        // Genera Device Fingerprint Unificato
+async function generateDeviceFingerprint() {
+    try {
+        const fp = await FingerprintJS.load();
+        const result = await fp.get();
+        
+        // Estrae i primi 8 caratteri dell'hash
+        const hash8 = result.visitorId.substring(0, 8).toUpperCase();
+        
+        // Determina il tipo di dispositivo
+        const ua = navigator.userAgent.toLowerCase();
+        if (/(tablet|ipad|playbook|silk)|(android(?!.*mobi))/i.test(ua)) {
+            deviceType = 'T'; // Tablet
+        } else if (/mobile|iphone|ipod|android|blackberry|opera mini|iemobile/i.test(ua)) {
+            deviceType = 'M'; // Mobile
+        } else {
+            deviceType = 'D'; // Desktop
+        }
+        
+        // Formato: LH360-<8char>-<Tipo>
+        deviceFingerprint = `LH360-${hash8}-${deviceType}`;
+        
+        console.log('🔐 Device ID generato:', deviceFingerprint);
+    } catch (error) {
+        console.error('❌ Errore generazione fingerprint:', error);
+        // Fallback: usa timestamp + random
+        const fallback = Math.random().toString(36).substring(2, 10).toUpperCase();
+        deviceFingerprint = `LH360-${fallback}-${deviceType}`;
+    }
+}
+
         /* ====== Init ====== */
         document.addEventListener('DOMContentLoaded', () => {
             startDynamicLoader();
+            // Genera Device Fingerprint
+            generateDeviceFingerprint();
             renderGallery();
             loadProduct();
             setupReviewForm();
@@ -2399,3 +2463,4 @@ function closeModal(modalId) {
     </script>
 </body>
 </html>
+
