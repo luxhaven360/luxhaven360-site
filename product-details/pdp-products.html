@@ -1469,19 +1469,40 @@
         let currentImage = 0;
 
         function renderGallery() {
-            const mainImg = document.getElementById('mainImageImg');
-            mainImg.src = images[currentImage] || images[0];
+    const mainImg = document.getElementById('mainImageImg');
+    
+    // Check sicurezza: se non ci sono immagini, usa placeholder o esci
+    if (!images || images.length === 0) {
+        // Opzionale: imposta un placeholder se vuoi
+        // mainImg.src = 'assets/placeholder.jpg'; 
+        return;
+    }
 
-            const thumbs = document.getElementById('thumbnailsContainer');
-            thumbs.innerHTML = '';
-            images.forEach((src, i) => {
-                const div = document.createElement('div');
-                div.className = 'thumbnail' + (i === currentImage ? ' active' : '');
-                div.innerHTML = `<img src="${src}" alt="Vista ${i+1}" />`;
-                div.addEventListener('click', () => { selectImage(i); });
-                thumbs.appendChild(div);
-            });
-        }
+    // Assicurati che l'indice sia valido
+    if (currentImage < 0) currentImage = 0;
+    if (currentImage >= images.length) currentImage = 0;
+
+    // Prendi l'URL (con fallback sulla prima immagine se l'indice è strano)
+    const imgUrl = images[currentImage] || images[0];
+
+    // FIX 404: Se imgUrl è undefined o null, non assegnarlo a src
+    if (imgUrl) {
+        mainImg.src = imgUrl;
+    }
+
+    const thumbs = document.getElementById('thumbnailsContainer');
+    thumbs.innerHTML = '';
+    
+    // Genera miniature
+    images.forEach((src, i) => {
+        if (!src) return; // Salta url vuoti
+        const div = document.createElement('div');
+        div.className = 'thumbnail' + (i === currentImage ? ' active' : '');
+        div.innerHTML = `<img src="${src}" alt="Vista ${i+1}" />`;
+        div.addEventListener('click', () => { selectImage(i); });
+        thumbs.appendChild(div);
+    });
+}
 
         function selectImage(index) {
             currentImage = index;
@@ -2195,13 +2216,16 @@ function updateReviewsSummaryData(reviews) {
             renderSpecsGrid(prod.specs || {});
             currentProduct = prod;
 
-            if (prod.images_by_color && Object.keys(prod.images_by_color).length > 0) {
-                const initialColor = (prod.colors && prod.colors.length > 0) ? prod.colors[0] : Object.keys(prod.images_by_color)[0];
-                selectedColor = initialColor || null;
-                images = (selectedColor && prod.images_by_color[selectedColor]) ? prod.images_by_color[selectedColor].slice() : [];
-            } else if (Array.isArray(prod.images) && prod.images.length > 0) {
-                images = prod.images.slice(0, 4);
-            }
+            // Trova queste righe (circa riga 1120-1140):
+if (prod.images_by_color && Object.keys(prod.images_by_color).length > 0) {
+    const initialColor = (prod.colors && prod.colors.length > 0) ? prod.colors[0] : Object.keys(prod.images_by_color)[0];
+    selectedColor = initialColor || null;
+    // AGGIUNTO .filter(Boolean) per rimuovere null/undefined
+    images = (selectedColor && prod.images_by_color[selectedColor]) ? prod.images_by_color[selectedColor].filter(Boolean) : [];
+} else if (Array.isArray(prod.images) && prod.images.length > 0) {
+    // AGGIUNTO .filter(Boolean)
+    images = prod.images.filter(Boolean).slice(0, 4);
+}
 
             currentImage = 0;
             renderGallery();
@@ -2362,6 +2386,7 @@ function closeModal(modalId) {
     </script>
 </body>
 </html>
+
 
 
 
