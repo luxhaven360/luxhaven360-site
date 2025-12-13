@@ -2344,26 +2344,92 @@ renderColors(prod.colors);
             buyNowBtn.textContent = prod.cta || 'Acquista Ora';
             buyNowBtn.dataset.stripeLink = prod.stripe_link || '';
 
-            buyNowBtn.onclick = function () {
-                if (buyNowBtn.dataset.stripeLink) {
-                    const loader = document.getElementById('luxhaven-loader');
-                    if(loader) {
-                        loader.style.display = 'flex';
-                        setTimeout(() => loader.style.opacity = '1', 10);
+            // --- INIZIO NUOVA LOGICA ACQUISTA ORA ---
+            buyNowBtn.onclick = async function () {
+                // 1. Validazione Taglia (se il prodotto ha taglie)
+                if (currentProduct.sizes && currentProduct.sizes.length > 0 && !selectedSize) {
+                    alert('Per favore, seleziona una taglia prima di procedere.');
+                    const sizeSection = document.getElementById('sizeSection');
+                    if(sizeSection) sizeSection.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    // Effetto visivo di errore
+                    sizeSection.style.transition = '0.3s';
+                    sizeSection.style.transform = 'scale(1.02)';
+                    setTimeout(() => sizeSection.style.transform = 'scale(1)', 300);
+                    return;
+                }
+
+                // 2. Feedback UI (Loader)
+                const originalText = buyNowBtn.textContent;
+                buyNowBtn.disabled = true;
+                buyNowBtn.innerHTML = '<span class="loader-dot" style="display:inline-block;width:10px;height:10px;background:black;border-radius:50%;margin-right:5px;animation:pulse 1s infinite"></span> Elaborazione...';
+                
+                // Mostra loader a schermo intero per esperienza premium
+                const globalLoader = document.getElementById('luxhaven-loader');
+                if(globalLoader) {
+                    document.getElementById('loader-message').textContent = 'Preparazione Checkout Sicuro...';
+                    globalLoader.style.display = 'flex';
+                    globalLoader.style.opacity = '1';
+                }
+
+                try {
+                    // 3. Preparazione Dati Prodotto Singolo
+                    // Determina l'immagine corretta (variante colore o principale)
+                    let checkoutImage = images[0] || ''; 
+                    
+                    const singleItemCart = [{
+                        sku: currentProduct.sku,
+                        title: currentProduct.title,
+                        price: currentProduct.price,
+                        currency: currentProduct.currency || 'EUR',
+                        qty: 1,
+                        color: selectedColor || '',
+                        size: selectedSize || '',
+                        image: checkoutImage
+                    }];
+
+                    // 4. Costruzione Payload
+                    const payload = {
+                        action: 'create_checkout_session',
+                        data: JSON.stringify({
+                            cart: singleItemCart,
+                            shipping: 0, // Spedizione gratuita o calcolata
+                            // URL per tornare a QUESTA pagina in caso di annullamento
+                            cancel_url: window.location.href 
+                        })
+                    };
+
+                    // 5. Chiamata API Backend
+                    // Usiamo fetch GET con parametri URL per compatibilità Apps Script
+                    const queryParams = new URLSearchParams(payload).toString();
+                    const response = await fetch(`${WEB_APP_URL}?${queryParams}`, {
+                        method: 'GET',
+                        redirect: 'follow'
+                    });
+
+                    if (!response.ok) throw new Error('Errore di rete');
+                    const result = await response.json();
+
+                    if (result.success && result.url) {
+                        // 6. Redirect a Stripe (Funziona perfettamente su Mobile)
+                        window.location.href = result.url;
+                    } else {
+                        throw new Error(result.error || 'Impossibile creare la sessione');
                     }
 
-                    try {
-                        localStorage.setItem('lh360_last_product', JSON.stringify({ sku: prod.sku, title: prod.title, ts: Date.now() }));
-                    } catch (e) {}
-
-                    let link = buyNowBtn.dataset.stripeLink;
-                    setTimeout(() => {
-                        window.location.href = link;
-                    }, 1000);
-                } else {
-                    alert('Nessun link di pagamento configurato.');
+                } catch (error) {
+                    console.error('Errore Checkout:', error);
+                    alert('Si è verificato un errore durante l\'avvio del pagamento. Riprova.');
+                    
+                    // Ripristino UI
+                    buyNowBtn.disabled = false;
+                    buyNowBtn.textContent = originalText;
+                    if(globalLoader) {
+                        globalLoader.style.opacity = '0';
+                        setTimeout(() => globalLoader.style.display = 'none', 500);
+                    }
                 }
             };
+            // --- FINE NUOVA LOGICA ACQUISTA ORA ---
 
             addCartBtn.onclick = function () {
     const cartRaw = localStorage.getItem('lh360_cart');
@@ -2504,6 +2570,7 @@ function closeModal(modalId) {
     </script>
 </body>
 </html>
+
 
 
 
