@@ -2346,15 +2346,11 @@ renderColors(prod.colors);
 
             // --- INIZIO NUOVA LOGICA ACQUISTA ORA ---
             buyNowBtn.onclick = async function () {
-                // 1. Validazione Taglia (se il prodotto ha taglie)
+                // 1. Validazione Taglia
                 if (currentProduct.sizes && currentProduct.sizes.length > 0 && !selectedSize) {
                     alert('Per favore, seleziona una taglia prima di procedere.');
                     const sizeSection = document.getElementById('sizeSection');
                     if(sizeSection) sizeSection.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                    // Effetto visivo di errore
-                    sizeSection.style.transition = '0.3s';
-                    sizeSection.style.transform = 'scale(1.02)';
-                    setTimeout(() => sizeSection.style.transform = 'scale(1)', 300);
                     return;
                 }
 
@@ -2363,7 +2359,6 @@ renderColors(prod.colors);
                 buyNowBtn.disabled = true;
                 buyNowBtn.innerHTML = '<span class="loader-dot" style="display:inline-block;width:10px;height:10px;background:black;border-radius:50%;margin-right:5px;animation:pulse 1s infinite"></span> Elaborazione...';
                 
-                // Mostra loader a schermo intero per esperienza premium
                 const globalLoader = document.getElementById('luxhaven-loader');
                 if(globalLoader) {
                     document.getElementById('loader-message').textContent = 'Preparazione Checkout Sicuro...';
@@ -2372,14 +2367,18 @@ renderColors(prod.colors);
                 }
 
                 try {
-                    // 3. Preparazione Dati Prodotto Singolo
-                    // Determina l'immagine corretta (variante colore o principale)
+                    // 3. Preparazione Dati
                     let checkoutImage = images[0] || ''; 
                     
+                    // --- CALCOLO SPEDIZIONE ---
+                    // Se prezzo < 150€ aggiungi 15€, altrimenti 0
+                    const itemPrice = parseFloat(currentProduct.price) || 0;
+                    const shippingCost = itemPrice < 150 ? 15 : 0;
+
                     const singleItemCart = [{
                         sku: currentProduct.sku,
                         title: currentProduct.title,
-                        price: currentProduct.price,
+                        price: itemPrice,
                         currency: currentProduct.currency || 'EUR',
                         qty: 1,
                         color: selectedColor || '',
@@ -2392,14 +2391,13 @@ renderColors(prod.colors);
                         action: 'create_checkout_session',
                         data: JSON.stringify({
                             cart: singleItemCart,
-                            shipping: 0, // Spedizione gratuita o calcolata
-                            // URL per tornare a QUESTA pagina in caso di annullamento
-                            cancel_url: window.location.href 
+                            shipping: shippingCost, // Passiamo il costo calcolato
+                            cancel_url: window.location.href,
+                            is_buy_now: true // FLAG FONDAMENTALE per salvare su "Ordini" con prefisso LH
                         })
                     };
 
                     // 5. Chiamata API Backend
-                    // Usiamo fetch GET con parametri URL per compatibilità Apps Script
                     const queryParams = new URLSearchParams(payload).toString();
                     const response = await fetch(`${WEB_APP_URL}?${queryParams}`, {
                         method: 'GET',
@@ -2410,7 +2408,6 @@ renderColors(prod.colors);
                     const result = await response.json();
 
                     if (result.success && result.url) {
-                        // 6. Redirect a Stripe (Funziona perfettamente su Mobile)
                         window.location.href = result.url;
                     } else {
                         throw new Error(result.error || 'Impossibile creare la sessione');
@@ -2420,7 +2417,6 @@ renderColors(prod.colors);
                     console.error('Errore Checkout:', error);
                     alert('Si è verificato un errore durante l\'avvio del pagamento. Riprova.');
                     
-                    // Ripristino UI
                     buyNowBtn.disabled = false;
                     buyNowBtn.textContent = originalText;
                     if(globalLoader) {
@@ -2570,6 +2566,7 @@ function closeModal(modalId) {
     </script>
 </body>
 </html>
+
 
 
 
