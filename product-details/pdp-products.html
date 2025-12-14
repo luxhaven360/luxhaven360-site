@@ -2319,56 +2319,74 @@ if (!emailDomain || !validDomains.includes(emailDomain)) {
             }
 
             renderSpecsGrid(prod.specs || {});
-            // ⭐ Disponibilità dinamica con icona adattiva
+            // ⭐ Disponibilità dinamica con icona e preposizione adattive
 if (prod.delivery) {
     const availabilityContainer = document.getElementById('availabilityText');
     const availabilityInner = document.getElementById('availabilityInnerText');
     
     if (availabilityContainer && availabilityInner) {
-        // Determina icona in base al testo di consegna
-        const icon = getDeliveryIcon(prod.delivery);
+        const deliveryInfo = parseDeliveryText(prod.delivery);
         
         // Aggiorna icona (primo span)
         const iconSpan = availabilityContainer.querySelector('span:first-child');
-        if (iconSpan) iconSpan.textContent = icon;
+        if (iconSpan) iconSpan.textContent = deliveryInfo.icon;
         
-        // Aggiorna testo
-        availabilityInner.textContent = `Solo pochi pezzi - Consegna ${prod.delivery}`;
+        // Aggiorna testo completo
+        availabilityInner.textContent = `Quantità limitata - Consegna ${deliveryInfo.preposition} ${prod.delivery}`;
     }
 }
 
-// Funzione helper per determinare l'icona appropriata
-function getDeliveryIcon(deliveryText) {
-    const text = deliveryText.toLowerCase();
+/**
+ * Parser intelligente per determinare icona e preposizione corretta
+ * @param {string} deliveryText - Valore dalla colonna "Consegna Prevista"
+ * @returns {object} { icon: string, preposition: string }
+ */
+function parseDeliveryText(deliveryText) {
+    const text = deliveryText.toLowerCase().trim();
     
-    // Consegna express/immediata (24-48h)
-    if (text.includes('24') || text.includes('48') || text.includes('immediata') || text.includes('express')) {
-        return '⚡'; // Fulmine per velocità
+    // 1. Pattern: "24-48h" o "48h" (consegna express)
+    if (/^\d{1,2}(-\d{1,2})?h$/.test(text)) {
+        return { icon: '⚡', preposition: 'in' };
     }
     
-    // Consegna standard in giorni lavorativi (2-3, 3-5 giorni)
-    if (text.includes('giorni lavorativi') || /\d{1}-\d{1}\s*giorni/.test(text)) {
-        return '📦'; // Pacco per consegna standard
+    // 2. Pattern: "X-Y giorni lavorativi" o "X giorni lavorativi"
+    if (text.includes('giorni lavorativi') || text.includes('giorno lavorativo')) {
+        return { icon: '📦', preposition: 'in' };
     }
     
-    // Consegna con data specifica o range di date
-    if (text.includes('entro il') || text.includes('dicembre') || text.includes('gennaio') || 
-        /\d{1,2}\s*-\s*\d{1,2}/.test(text) || /\d{1,2}\s*(dicembre|gennaio|febbraio|marzo)/.test(text)) {
-        return '📅'; // Calendario per date specifiche
+    // 3. Pattern: "X-Y giorni" (senza "lavorativi")
+    if (/\d{1,2}(-\d{1,2})?\s*giorni?/.test(text) && !text.includes('lavorativi')) {
+        return { icon: '📦', preposition: 'in' };
     }
     
-    // Consegna programmata/stimata
-    if (text.includes('stimata') || text.includes('programmata') || text.includes('prevista')) {
-        return '🕐'; // Orologio per consegne programmate
+    // 4. Pattern: Date specifiche con mese (es: "20 dicembre", "20-25 dicembre", "5 gennaio")
+    const monthsPattern = /(gennaio|febbraio|marzo|aprile|maggio|giugno|luglio|agosto|settembre|ottobre|novembre|dicembre)/i;
+    if (monthsPattern.test(text)) {
+        // Se contiene range di giorni (20-25)
+        if (/\d{1,2}\s*-\s*\d{1,2}/.test(text)) {
+            return { icon: '📅', preposition: 'entro il' };
+        }
+        // Singola data
+        return { icon: '📅', preposition: 'entro il' };
     }
     
-    // Consegna in settimane
+    // 5. Pattern: "X settimane" o "X-Y settimane"
     if (text.includes('settimana') || text.includes('settimane')) {
-        return '📆'; // Calendario per periodi più lunghi
+        return { icon: '📆', preposition: 'in' };
     }
     
-    // Default: check mark per disponibilità generica
-    return '✓';
+    // 6. Pattern: Solo numero (es: "3", "5") - assume giorni
+    if (/^\d{1,2}$/.test(text)) {
+        return { icon: '📦', preposition: 'in' };
+    }
+    
+    // 7. Pattern: Range numerico generico (es: "2-3", "3-5")
+    if (/^\d{1,2}\s*-\s*\d{1,2}$/.test(text)) {
+        return { icon: '📦', preposition: 'in' };
+    }
+    
+    // Default: Icona check e preposizione neutra
+    return { icon: '✓', preposition: 'prevista' };
 }
             currentProduct = prod;
 
@@ -2655,6 +2673,7 @@ function closeModal(modalId) {
     </script>
 </body>
 </html>
+
 
 
 
