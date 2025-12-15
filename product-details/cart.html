@@ -360,6 +360,27 @@
             background: #f4f4f5;
         }
 
+        /* Feedback validazione coupon */
+.promo-message {
+    margin-top: 0.5rem;
+    font-size: 0.875rem;
+    padding: 0.5rem 0.75rem;
+    border-radius: 0.5rem;
+    display: none;
+}
+
+.promo-message.success {
+    background: rgba(52, 211, 153, 0.1);
+    color: #34d399;
+    border: 1px solid rgba(52, 211, 153, 0.3);
+}
+
+.promo-message.error {
+    background: rgba(239, 68, 68, 0.1);
+    color: #ef4444;
+    border: 1px solid rgba(239, 68, 68, 0.3);
+}
+
         /* Checkout Button */
         .checkout-btn {
             width: 100%;
@@ -470,6 +491,36 @@
                 grid-template-columns: repeat(2, 1fr);
             }
         }
+
+        /* Evidenziazione riga sconto attivo */
+.summary-row.discount-active .summary-value {
+    color: #34d399 !important;
+    font-weight: 600;
+    font-size: 1.125rem;
+}
+
+/* Badge combo applicata */
+.combo-badge {
+    display: inline-block;
+    background: rgba(52, 211, 153, 0.1);
+    border: 1px solid #34d399;
+    color: #34d399;
+    padding: 0.25rem 0.75rem;
+    border-radius: 1rem;
+    font-size: 0.75rem;
+    margin-left: 0.5rem;
+    font-weight: 500;
+}
+
+/* Animazione comparsa sconto */
+@keyframes discountPulse {
+    0%, 100% { transform: scale(1); }
+    50% { transform: scale(1.05); }
+}
+
+.discount-active {
+    animation: discountPulse 0.6s ease-in-out;
+}
     </style>
 </head>
 <body>
@@ -504,17 +555,21 @@
                     <span class="summary-label">Spedizione</span>
                     <span class="summary-value" id="shipping">€ 15,00</span>
                 </div>
-                <div class="summary-row">
-                    <span class="summary-label">Sconto</span>
-                    <span class="summary-value" id="discount" style="color: #34d399;">- € 0,00</span>
+                <div class="summary-row" id="discountRow">
+                    <span class="summary-label">
+                        Sconto
+                        <span class="combo-badge" id="comboBadge" style="display: none;">COMBO</span>
+                    </span>
+                    <span class="summary-value" id="discount">- € 0,00</span>
                 </div>
 
                 <div class="promo-code">
                     <label class="promo-label">Codice Promozionale</label>
                     <div class="promo-input-wrapper">
-                        <input type="text" class="promo-input" placeholder="Inserisci codice">
-                        <button class="promo-apply">Applica</button>
-                    </div>
+                       <input type="text" class="promo-input" id="couponInput" placeholder="Inserisci codice">
+                       <button class="promo-apply" id="applyCouponBtn">Applica</button>
+                     </div>
+                     <div class="promo-message" id="couponMessage"></div>
                 </div>
 
                 <div class="summary-row summary-total">
@@ -638,24 +693,59 @@
             }
         }
 
-        function updateSummary() {
-            let subtotal = 0;
-            let itemCount = 0;
-            cart.forEach(item => {
-                subtotal += item.price * (item.qty || 1);
-                itemCount += (item.qty || 1);
-            });
-            const shipping = subtotal >= 150 ? 0 : 15;
-            const total = subtotal + shipping;
+        async function updateSummary() {
+    let subtotal = 0;
+    let itemCount = 0;
+    
+    cart.forEach(item => {
+        subtotal += item.price * (item.qty || 1);
+        itemCount += (item.qty || 1);
+    });
 
-            document.getElementById('subtotal').textContent = `€ ${subtotal.toLocaleString('it-IT', { minimumFractionDigits: 2 })}`;
-            document.getElementById('shipping').textContent = shipping === 0 ? 'Gratuita' : `€ ${shipping.toFixed(2)}`;
-            document.getElementById('total').textContent = `€ ${total.toLocaleString('it-IT', { minimumFractionDigits: 2 })}`;
-            document.getElementById('itemCount').textContent = `${itemCount} Articoli`;
-            
-            const progress = Math.min(100, (subtotal / 150) * 100);
-            document.getElementById('progressFill').style.width = `${progress}%`;
+    const shipping = subtotal >= 150 ? 0 : 15;
+    let discount = 0;
+    let isComboDiscount = false;
+
+    // === VERIFICA COMBO SCONTO ===
+    try {
+        const skuList = cart.map(item => item.sku).join(',');
+        const response = await fetch(`${webAppUrl}?action=check_combo&skus=${encodeURIComponent(skuList)}&t=${Date.now()}`);
+        const result = await response.json();
+
+        if (result.success && result.comboDiscount > 0) {
+            discount = result.comboDiscount;
+            isComboDiscount = true;
         }
+    } catch (error) {
+        console.error('Errore verifica combo:', error);
+    }
+
+    const total = subtotal + shipping - discount;
+
+    // Aggiorna UI
+    document.getElementById('subtotal').textContent = `€ ${subtotal.toLocaleString('it-IT', { minimumFractionDigits: 2 })}`;
+    document.getElementById('shipping').textContent = shipping === 0 ? 'Gratuita' : `€ ${shipping.toFixed(2)}`;
+    
+    const discountEl = document.getElementById('discount');
+    const discountRow = document.getElementById('discountRow');
+    const comboBadge = document.getElementById('comboBadge');
+
+    if (discount > 0) {
+        discountEl.textContent = `- € ${discount.toLocaleString('it-IT', { minimumFractionDigits: 2 })}`;
+        discountRow.classList.add('discount-active');
+        if (isComboDiscount && comboBadge) comboBadge.style.display = 'inline-block';
+    } else {
+        discountEl.textContent = '- € 0,00';
+        discountRow.classList.remove('discount-active');
+        if (comboBadge) comboBadge.style.display = 'none';
+    }
+
+    document.getElementById('total').textContent = `€ ${total.toLocaleString('it-IT', { minimumFractionDigits: 2 })}`;
+    document.getElementById('itemCount').textContent = `${itemCount} Articoli`;
+
+    const progress = Math.min(100, (subtotal / 150) * 100);
+    document.getElementById('progressFill').style.width = `${progress}%`;
+}
 
         function checkEmptyCart() {
             document.querySelector('.cart-layout').style.gridTemplateColumns = '1fr';
@@ -765,20 +855,118 @@
             // Usiamo 'onclick' che è universalmente supportato
             checkoutBtn.onclick = initiateCheckout;
         }
+
+        // === GESTIONE COUPON ===
+let appliedCoupon = null;
+
+document.getElementById('applyCouponBtn').addEventListener('click', async function() {
+    const couponCode = document.getElementById('couponInput').value.trim().toUpperCase();
+    const messageEl = document.getElementById('couponMessage');
+    const btn = this;
+
+    if (!couponCode) {
+        showCouponMessage('Inserisci un codice promozionale', 'error');
+        return;
+    }
+
+    btn.disabled = true;
+    btn.textContent = 'Verifica...';
+
+    try {
+        const response = await fetch(`${webAppUrl}?action=validate_coupon&code=${encodeURIComponent(couponCode)}&t=${Date.now()}`);
+        const result = await response.json();
+
+        if (result.success && result.valid) {
+            appliedCoupon = {
+                code: couponCode,
+                discountPercent: result.discountPercent
+            };
+            showCouponMessage(`✓ Coupon "${couponCode}" applicato (${result.discountPercent}% di sconto)`, 'success');
+            await updateSummaryWithCoupon();
+        } else {
+            showCouponMessage(result.error || 'Codice non valido o scaduto', 'error');
+            appliedCoupon = null;
+        }
+    } catch (error) {
+        console.error('Errore validazione coupon:', error);
+        showCouponMessage('Errore di connessione. Riprova.', 'error');
+        appliedCoupon = null;
+    } finally {
+        btn.disabled = false;
+        btn.textContent = 'Applica';
+    }
+});
+
+function showCouponMessage(message, type) {
+    const messageEl = document.getElementById('couponMessage');
+    messageEl.textContent = message;
+    messageEl.className = `promo-message ${type}`;
+    messageEl.style.display = 'block';
+
+    if (type === 'error') {
+        setTimeout(() => { messageEl.style.display = 'none'; }, 5000);
+    }
+}
+
+async function updateSummaryWithCoupon() {
+    let subtotal = 0;
+    let itemCount = 0;
+    
+    cart.forEach(item => {
+        subtotal += item.price * (item.qty || 1);
+        itemCount += (item.qty || 1);
+    });
+
+    const shipping = subtotal >= 150 ? 0 : 15;
+    let discount = 0;
+    let isComboDiscount = false;
+
+    // Verifica combo
+    try {
+        const skuList = cart.map(item => item.sku).join(',');
+        const response = await fetch(`${webAppUrl}?action=check_combo&skus=${encodeURIComponent(skuList)}&t=${Date.now()}`);
+        const result = await response.json();
+
+        if (result.success && result.comboDiscount > 0) {
+            discount = result.comboDiscount;
+            isComboDiscount = true;
+        }
+    } catch (error) {
+        console.error('Errore verifica combo:', error);
+    }
+
+    // Applica coupon (se presente)
+    if (appliedCoupon) {
+        const couponDiscount = (subtotal * appliedCoupon.discountPercent) / 100;
+        discount += couponDiscount;
+    }
+
+    const total = subtotal + shipping - discount;
+
+    // Aggiorna UI (uguale a updateSummary)
+    document.getElementById('subtotal').textContent = `€ ${subtotal.toLocaleString('it-IT', { minimumFractionDigits: 2 })}`;
+    document.getElementById('shipping').textContent = shipping === 0 ? 'Gratuita' : `€ ${shipping.toFixed(2)}`;
+    
+    const discountEl = document.getElementById('discount');
+    const discountRow = document.getElementById('discountRow');
+    const comboBadge = document.getElementById('comboBadge');
+
+    if (discount > 0) {
+        discountEl.textContent = `- € ${discount.toLocaleString('it-IT', { minimumFractionDigits: 2 })}`;
+        discountRow.classList.add('discount-active');
+        if (isComboDiscount && comboBadge) comboBadge.style.display = 'inline-block';
+    } else {
+        discountEl.textContent = '- € 0,00';
+        discountRow.classList.remove('discount-active');
+        if (comboBadge) comboBadge.style.display = 'none';
+    }
+
+    document.getElementById('total').textContent = `€ ${total.toLocaleString('it-IT', { minimumFractionDigits: 2 })}`;
+    document.getElementById('itemCount').textContent = `${itemCount} Articoli`;
+
+    const progress = Math.min(100, (subtotal / 150) * 100);
+    document.getElementById('progressFill').style.width = `${progress}%`;
+}
     </script>
 </body>
 </html>
-
-
-
-
-
-
-
-
-
-
-
-
-
-
