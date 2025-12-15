@@ -254,6 +254,50 @@
             border-bottom: 1px solid rgba(39, 39, 42, 0.5);
         }
 
+        .summary-row.discount-active {
+    color: #34d399;
+}
+
+.summary-row.discount-active .summary-value {
+    font-weight: 600;
+    font-size: 1.125rem;
+}
+
+.discount-label {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+}
+
+.discount-type {
+    font-size: 0.75rem;
+    color: #71717a;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.promo-error {
+    margin-top: 0.5rem;
+    padding: 0.75rem;
+    background: rgba(239, 68, 68, 0.1);
+    border: 1px solid rgba(239, 68, 68, 0.3);
+    border-radius: 0.5rem;
+    color: #fca5a5;
+    font-size: 0.875rem;
+    display: none;
+}
+
+.promo-success {
+    margin-top: 0.5rem;
+    padding: 0.75rem;
+    background: rgba(52, 211, 153, 0.1);
+    border: 1px solid rgba(52, 211, 153, 0.3);
+    border-radius: 0.5rem;
+    color: #34d399;
+    font-size: 0.875rem;
+    display: none;
+}
+
         .summary-row:last-of-type {
             border-bottom: none;
         }
@@ -504,9 +548,12 @@
                     <span class="summary-label">Spedizione</span>
                     <span class="summary-value" id="shipping">€ 15,00</span>
                 </div>
-                <div class="summary-row">
-                    <span class="summary-label">Sconto</span>
-                    <span class="summary-value" id="discount" style="color: #34d399;">- € 0,00</span>
+                <div class="summary-row" id="discountRow">
+                   <div class="discount-label">
+                       <span class="summary-label">Sconto</span>
+                       <span class="discount-type" id="discountType"></span>
+                   </div>
+                   <span class="summary-value" id="discount" style="color: #34d399;">- € 0,00</span>
                 </div>
 
                 <div class="promo-code">
@@ -516,6 +563,9 @@
                         <button class="promo-apply">Applica</button>
                     </div>
                 </div>
+
+                <div class="promo-error" id="promoError"></div>
+                <div class="promo-success" id="promoSuccess"></div>
 
                 <div class="summary-row summary-total">
                     <span class="summary-label">Totale</span>
@@ -578,9 +628,94 @@
 
     <script>
         let cart = JSON.parse(localStorage.getItem('lh360_cart')) || [];
+        let appliedCombo = null;
+        let appliedCoupon = null;
+        let baseSubtotal = 0; // Subtotale senza sconti
 
         // URL della Web App Google
         const webAppUrl = 'https://script.google.com/macros/s/AKfycbwr79RkXIEocpuOKaM6uMJqE6VFs9wjlUPvrr__FvDbDDrD2ELB1NbfrWP3BCYpHj2u/exec';
+
+        /**
+ * Verifica se ci sono combo attive nel carrello
+ */
+async function checkCartCombo() {
+    if (!cart || cart.length < 2) return null;
+    
+    try {
+        const skus = cart.map(item => item.sku).join(',');
+        const url = `${webAppUrl}?action=check_combo_discount&skus=${encodeURIComponent(skus)}&t=${Date.now()}`;
+        
+        const response = await fetch(url);
+        if (!response.ok) throw new Error('Errore rete');
+        
+        const data = await response.json();
+        
+        if (data.success && data.combo && data.combo.hasCombo) {
+            return data.combo;
+        }
+        
+        return null;
+        
+    } catch (error) {
+        console.error('Errore verifica combo:', error);
+        return null;
+    }
+}
+
+/**
+ * Valida coupon inserito
+ */
+async function validateCouponCode(code) {
+    if (!code || code.trim() === '') {
+        return { valid: false, error: 'Codice vuoto' };
+    }
+    
+    try {
+        const url = `${webAppUrl}?action=validate_coupon&code=${encodeURIComponent(code)}&t=${Date.now()}`;
+        
+        const response = await fetch(url);
+        if (!response.ok) throw new Error('Errore rete');
+        
+        const data = await response.json();
+        
+        if (data.success && data.coupon) {
+            return data.coupon;
+        }
+        
+        return { valid: false, error: 'Coupon non trovato' };
+        
+    } catch (error) {
+        console.error('Errore validazione coupon:', error);
+        return { valid: false, error: error.toString() };
+    }
+}
+
+/**
+ * Calcola sconto da applicare (combo o coupon, priorità a quello maggiore)
+ */
+function calculateDiscount(subtotal) {
+    let discountAmount = 0;
+    let discountType = '';
+    
+    // 1. Verifica combo
+    if (appliedCombo && appliedCombo.hasCombo) {
+        discountAmount = appliedCombo.savings;
+        discountType = `Combo: ${appliedCombo.comboName}`;
+    }
+    
+    // 2. Verifica coupon
+    if (appliedCoupon && appliedCoupon.valid) {
+        const couponDiscount = (subtotal * appliedCoupon.discountPercent) / 100;
+        
+        // Applica lo sconto maggiore
+        if (couponDiscount > discountAmount) {
+            discountAmount = couponDiscount;
+            discountType = `Coupon: ${appliedCoupon.code} (-${appliedCoupon.discountPercent}%)`;
+        }
+    }
+    
+    return { amount: discountAmount, type: discountType };
+}
 
         // --- FUNZIONI DI RENDERING CARRELLO (Invariate) ---
         function renderCart() {
@@ -638,24 +773,57 @@
             }
         }
 
-        function updateSummary() {
-            let subtotal = 0;
-            let itemCount = 0;
-            cart.forEach(item => {
-                subtotal += item.price * (item.qty || 1);
-                itemCount += (item.qty || 1);
-            });
-            const shipping = subtotal >= 150 ? 0 : 15;
-            const total = subtotal + shipping;
-
-            document.getElementById('subtotal').textContent = `€ ${subtotal.toLocaleString('it-IT', { minimumFractionDigits: 2 })}`;
-            document.getElementById('shipping').textContent = shipping === 0 ? 'Gratuita' : `€ ${shipping.toFixed(2)}`;
-            document.getElementById('total').textContent = `€ ${total.toLocaleString('it-IT', { minimumFractionDigits: 2 })}`;
-            document.getElementById('itemCount').textContent = `${itemCount} Articoli`;
-            
-            const progress = Math.min(100, (subtotal / 150) * 100);
-            document.getElementById('progressFill').style.width = `${progress}%`;
-        }
+        async function updateSummary() {
+    // Calcola subtotale base
+    baseSubtotal = 0;
+    let itemCount = 0;
+    
+    cart.forEach(item => {
+        baseSubtotal += item.price * (item.qty || 1);
+        itemCount += (item.qty || 1);
+    });
+    
+    // Verifica combo automaticamente
+    appliedCombo = await checkCartCombo();
+    
+    // Calcola sconto effettivo
+    const discount = calculateDiscount(baseSubtotal);
+    const discountAmount = discount.amount;
+    
+    // Subtotale dopo sconto
+    const subtotalAfterDiscount = baseSubtotal - discountAmount;
+    
+    // Spedizione (su subtotale scontato)
+    const shipping = subtotalAfterDiscount >= 150 ? 0 : 15;
+    
+    // Totale finale
+    const total = subtotalAfterDiscount + shipping;
+    
+    // Aggiorna UI
+    document.getElementById('subtotal').textContent = `€ ${baseSubtotal.toLocaleString('it-IT', { minimumFractionDigits: 2 })}`;
+    document.getElementById('shipping').textContent = shipping === 0 ? 'Gratuita' : `€ ${shipping.toFixed(2)}`;
+    
+    const discountEl = document.getElementById('discount');
+    const discountRow = document.getElementById('discountRow');
+    const discountTypeEl = document.getElementById('discountType');
+    
+    if (discountAmount > 0) {
+        discountEl.textContent = `- € ${discountAmount.toLocaleString('it-IT', { minimumFractionDigits: 2 })}`;
+        discountRow.classList.add('discount-active');
+        if (discountTypeEl) discountTypeEl.textContent = discount.type;
+    } else {
+        discountEl.textContent = '- € 0,00';
+        discountRow.classList.remove('discount-active');
+        if (discountTypeEl) discountTypeEl.textContent = '';
+    }
+    
+    document.getElementById('total').textContent = `€ ${total.toLocaleString('it-IT', { minimumFractionDigits: 2 })}`;
+    document.getElementById('itemCount').textContent = `${itemCount} Articoli`;
+    
+    // Barra progresso spedizione gratuita
+    const progress = Math.min(100, (subtotalAfterDiscount / 150) * 100);
+    document.getElementById('progressFill').style.width = `${progress}%`;
+}
 
         function checkEmptyCart() {
             document.querySelector('.cart-layout').style.gridTemplateColumns = '1fr';
@@ -671,6 +839,68 @@
         }
 
         renderCart();
+
+        // Gestione applicazione coupon
+const promoApplyBtn = document.querySelector('.promo-apply');
+const promoInput = document.querySelector('.promo-input');
+
+if (promoApplyBtn && promoInput) {
+    promoApplyBtn.addEventListener('click', async () => {
+        const code = promoInput.value.trim();
+        const errorEl = document.getElementById('promoError');
+        const successEl = document.getElementById('promoSuccess');
+        
+        // Reset messaggi
+        if (errorEl) errorEl.style.display = 'none';
+        if (successEl) successEl.style.display = 'none';
+        
+        if (!code) {
+            if (errorEl) {
+                errorEl.textContent = '⚠️ Inserisci un codice promozionale';
+                errorEl.style.display = 'block';
+            }
+            return;
+        }
+        
+        // Disabilita bottone durante verifica
+        promoApplyBtn.disabled = true;
+        promoApplyBtn.textContent = 'Verifica...';
+        
+        // Valida coupon
+        const result = await validateCouponCode(code);
+        
+        if (result.valid) {
+            appliedCoupon = result;
+            await updateSummary();
+            
+            if (successEl) {
+                successEl.textContent = `✓ Coupon "${result.code}" applicato! Sconto: ${result.discountPercent}%`;
+                successEl.style.display = 'block';
+            }
+            
+            promoInput.value = '';
+            promoApplyBtn.textContent = 'Applicato ✓';
+            
+            setTimeout(() => {
+                promoApplyBtn.textContent = 'Applica';
+                promoApplyBtn.disabled = false;
+            }, 2000);
+            
+        } else {
+            if (errorEl) {
+                if (result.isExpired) {
+                    errorEl.textContent = `⚠️ Coupon scaduto il ${result.expiryDate}`;
+                } else {
+                    errorEl.textContent = `⚠️ ${result.error || 'Codice non valido'}`;
+                }
+                errorEl.style.display = 'block';
+            }
+            
+            promoApplyBtn.textContent = 'Applica';
+            promoApplyBtn.disabled = false;
+        }
+    });
+}
 
         /* --- NUOVA LOGICA CHECKOUT (MOBILE FIX FETCH) --- */
         
@@ -697,8 +927,14 @@
             btn.disabled = true; // Disabilita temporaneamente
 
             // 3. Preparazione Dati
-            const subtotal = validItems.reduce((sum, item) => sum + (item.price * (item.qty || 1)), 0);
-            const shipping = subtotal >= 150 ? 0 : 15;
+            const baseSubtotal = validItems.reduce((sum, item) => sum + (item.price * (item.qty || 1)), 0);
+
+            // Calcola sconto
+            const discount = calculateDiscount(baseSubtotal);
+            const subtotalAfterDiscount = baseSubtotal - discount.amount;
+
+            // Spedizione su importo scontato
+            const shipping = subtotalAfterDiscount >= 150 ? 0 : 15;
 
             const data = {
                 cart: validItems.map(item => ({
@@ -768,3 +1004,4 @@
     </script>
 </body>
 </html>
+
