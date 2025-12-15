@@ -400,33 +400,6 @@
             opacity: 0.8;
         }
 
-        .discount-active {
-    color: #34d399 !important;
-    font-weight: 600;
-}
-
-.promo-success {
-    margin-top: 0.5rem;
-    padding: 0.75rem;
-    background: rgba(52, 211, 153, 0.1);
-    border: 1px solid rgba(52, 211, 153, 0.3);
-    border-radius: 0.5rem;
-    color: #34d399;
-    font-size: 0.875rem;
-    display: none;
-}
-
-.promo-error {
-    margin-top: 0.5rem;
-    padding: 0.75rem;
-    background: rgba(239, 68, 68, 0.1);
-    border: 1px solid rgba(239, 68, 68, 0.3);
-    border-radius: 0.5rem;
-    color: #ef4444;
-    font-size: 0.875rem;
-    display: none;
-}
-
         /* Recommended Section */
         .recommended-section {
             margin-top: 6rem;
@@ -540,9 +513,7 @@
                     <label class="promo-label">Codice Promozionale</label>
                     <div class="promo-input-wrapper">
                         <input type="text" class="promo-input" placeholder="Inserisci codice">
-                        <button class="promo-apply" onclick="applyCoupon()">Applica</button>
-                        <div class="promo-success" id="promoSuccess"></div>
-                        <div class="promo-error" id="promoError"></div>
+                        <button class="promo-apply">Applica</button>
                     </div>
                 </div>
 
@@ -667,156 +638,24 @@
             }
         }
 
-        async function updateSummary() {
-    let subtotal = 0;
-    let itemCount = 0;
-    
-    cart.forEach(item => {
-        subtotal += item.price * (item.qty || 1);
-        itemCount += (item.qty || 1);
-    });
-    
-    const shipping = subtotal >= 150 ? 0 : 15;
-    
-    // Verifica sconti combo/coupon
-    let discount = 0;
-    const appliedPromo = localStorage.getItem('lh360_applied_promo');
-    
-    if (appliedPromo) {
-        try {
-            const promoData = JSON.parse(appliedPromo);
-            discount = await calculateCartDiscount(cart, promoData.code);
-        } catch (e) {
-            console.error('Errore calcolo sconto:', e);
-        }
-    } else {
-        // Controlla combo automatiche
-        discount = await checkComboDiscount(cart);
-    }
-    
-    const total = Math.max(0, subtotal - discount + shipping);
-    
-    // Aggiorna UI
-    document.getElementById('subtotal').textContent = `€ ${subtotal.toLocaleString('it-IT', { minimumFractionDigits: 2 })}`;
-    document.getElementById('shipping').textContent = shipping === 0 ? 'Gratuita' : `€ ${shipping.toFixed(2)}`;
-    
-    const discountEl = document.getElementById('discount');
-    if (discount > 0) {
-        discountEl.textContent = `- € ${discount.toFixed(2)}`;
-        discountEl.classList.add('discount-active');
-    } else {
-        discountEl.textContent = '- € 0,00';
-        discountEl.classList.remove('discount-active');
-    }
-    
-    document.getElementById('total').textContent = `€ ${total.toLocaleString('it-IT', { minimumFractionDigits: 2 })}`;
-    document.getElementById('itemCount').textContent = `${itemCount} Articoli`;
-    
-    const progress = Math.min(100, (subtotal / 150) * 100);
-    document.getElementById('progressFill').style.width = `${progress}%`;
-}
+        function updateSummary() {
+            let subtotal = 0;
+            let itemCount = 0;
+            cart.forEach(item => {
+                subtotal += item.price * (item.qty || 1);
+                itemCount += (item.qty || 1);
+            });
+            const shipping = subtotal >= 150 ? 0 : 15;
+            const total = subtotal + shipping;
 
-        /* ====== FUNZIONI GESTIONE SCONTI CARRELLO ====== */
-
-async function checkComboDiscount(cartItems) {
-    try {
-        const skus = cartItems.map(item => item.sku);
-        const url = `${webAppUrl}?action=check_combo&skus=${encodeURIComponent(JSON.stringify(skus))}&t=${Date.now()}`;
-        
-        const response = await fetch(url);
-        const result = await response.json();
-        
-        if (result.success && result.hasCombo) {
-            return result.discountAmount;
-        }
-        return 0;
-    } catch (e) {
-        console.error('Errore verifica combo:', e);
-        return 0;
-    }
-}
-
-async function calculateCartDiscount(cartItems, couponCode) {
-    try {
-        const subtotal = cartItems.reduce((sum, item) => sum + (item.price * (item.qty || 1)), 0);
-        const url = `${webAppUrl}?action=validate_coupon&code=${encodeURIComponent(couponCode)}&subtotal=${subtotal}&t=${Date.now()}`;
-        
-        const response = await fetch(url);
-        const result = await response.json();
-        
-        if (result.success && result.isValid) {
-            return result.discountAmount;
-        }
-        return 0;
-    } catch (e) {
-        console.error('Errore calcolo sconto:', e);
-        return 0;
-    }
-}
-
-function applyCoupon() {
-    const input = document.querySelector('.promo-input');
-    const code = input.value.trim().toUpperCase();
-    
-    if (!code) {
-        showPromoError('Inserisci un codice promozionale');
-        return;
-    }
-    
-    validateAndApplyCoupon(code);
-}
-
-async function validateAndApplyCoupon(code) {
-    const btn = document.querySelector('.promo-apply');
-    btn.disabled = true;
-    btn.textContent = 'Verifica...';
-    
-    try {
-        const subtotal = cart.reduce((sum, item) => sum + (item.price * (item.qty || 1)), 0);
-        const url = `${webAppUrl}?action=validate_coupon&code=${encodeURIComponent(code)}&subtotal=${subtotal}&t=${Date.now()}`;
-        
-        const response = await fetch(url);
-        const result = await response.json();
-        
-        if (result.success && result.isValid) {
-            // Salva coupon applicato
-            localStorage.setItem('lh360_applied_promo', JSON.stringify({
-                code: code,
-                discount: result.discountPercent,
-                amount: result.discountAmount
-            }));
+            document.getElementById('subtotal').textContent = `€ ${subtotal.toLocaleString('it-IT', { minimumFractionDigits: 2 })}`;
+            document.getElementById('shipping').textContent = shipping === 0 ? 'Gratuita' : `€ ${shipping.toFixed(2)}`;
+            document.getElementById('total').textContent = `€ ${total.toLocaleString('it-IT', { minimumFractionDigits: 2 })}`;
+            document.getElementById('itemCount').textContent = `${itemCount} Articoli`;
             
-            showPromoSuccess(`Codice "${code}" applicato! Sconto ${result.discountPercent}%`);
-            updateSummary();
-        } else {
-            showPromoError(result.message || 'Codice non valido o scaduto');
+            const progress = Math.min(100, (subtotal / 150) * 100);
+            document.getElementById('progressFill').style.width = `${progress}%`;
         }
-    } catch (e) {
-        showPromoError('Errore durante la verifica del codice');
-        console.error(e);
-    } finally {
-        btn.disabled = false;
-        btn.textContent = 'Applica';
-    }
-}
-
-function showPromoSuccess(message) {
-    const successEl = document.getElementById('promoSuccess');
-    const errorEl = document.getElementById('promoError');
-    
-    errorEl.style.display = 'none';
-    successEl.textContent = message;
-    successEl.style.display = 'block';
-}
-
-function showPromoError(message) {
-    const successEl = document.getElementById('promoSuccess');
-    const errorEl = document.getElementById('promoError');
-    
-    successEl.style.display = 'none';
-    errorEl.textContent = message;
-    errorEl.style.display = 'block';
-}
 
         function checkEmptyCart() {
             document.querySelector('.cart-layout').style.gridTemplateColumns = '1fr';
@@ -929,4 +768,3 @@ function showPromoError(message) {
     </script>
 </body>
 </html>
-
