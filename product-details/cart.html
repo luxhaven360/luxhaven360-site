@@ -400,6 +400,41 @@
             opacity: 0.8;
         }
 
+        /* Messaggio coupon */
+.coupon-message {
+    margin-top: 0.75rem;
+    padding: 0.75rem 1rem;
+    border-radius: 0.5rem;
+    font-size: 0.875rem;
+    font-weight: 500;
+    display: none;
+}
+
+.coupon-message.success {
+    background: rgba(52, 211, 153, 0.1);
+    border: 1px solid #34d399;
+    color: #34d399;
+    display: block;
+}
+
+.coupon-message.error {
+    background: rgba(239, 68, 68, 0.1);
+    border: 1px solid #ef4444;
+    color: #ef4444;
+    display: block;
+}
+
+/* Animazione applicazione sconto */
+@keyframes discountApplied {
+    0% { transform: scale(1); }
+    50% { transform: scale(1.05); color: #34d399; }
+    100% { transform: scale(1); }
+}
+
+.discount-animated {
+    animation: discountApplied 0.5s ease;
+}
+
         /* Recommended Section */
         .recommended-section {
             margin-top: 6rem;
@@ -510,12 +545,13 @@
                 </div>
 
                 <div class="promo-code">
-                    <label class="promo-label">Codice Promozionale</label>
-                    <div class="promo-input-wrapper">
-                        <input type="text" class="promo-input" placeholder="Inserisci codice">
-                        <button class="promo-apply">Applica</button>
-                    </div>
-                </div>
+    <label class="promo-label">Codice Promozionale</label>
+    <div class="promo-input-wrapper">
+        <input type="text" class="promo-input" id="promoInput" placeholder="Inserisci codice">
+        <button class="promo-apply" id="applyPromoBtn">Applica</button>
+    </div>
+    <div id="couponMessage" class="coupon-message"></div>
+</div>
 
                 <div class="summary-row summary-total">
                     <span class="summary-label">Totale</span>
@@ -638,24 +674,148 @@
             }
         }
 
-        function updateSummary() {
-            let subtotal = 0;
-            let itemCount = 0;
-            cart.forEach(item => {
-                subtotal += item.price * (item.qty || 1);
-                itemCount += (item.qty || 1);
-            });
-            const shipping = subtotal >= 150 ? 0 : 15;
-            const total = subtotal + shipping;
+        // --- VARIABILI GLOBALI SCONTI ---
+let appliedComboDiscount = 0;
+let appliedCouponPercent = 0;
+let appliedCouponCode = '';
 
-            document.getElementById('subtotal').textContent = `€ ${subtotal.toLocaleString('it-IT', { minimumFractionDigits: 2 })}`;
-            document.getElementById('shipping').textContent = shipping === 0 ? 'Gratuita' : `€ ${shipping.toFixed(2)}`;
-            document.getElementById('total').textContent = `€ ${total.toLocaleString('it-IT', { minimumFractionDigits: 2 })}`;
-            document.getElementById('itemCount').textContent = `${itemCount} Articoli`;
-            
-            const progress = Math.min(100, (subtotal / 150) * 100);
-            document.getElementById('progressFill').style.width = `${progress}%`;
+async function updateSummary() {
+    let subtotal = 0;
+    let itemCount = 0;
+    
+    cart.forEach(item => {
+        subtotal += item.price * (item.qty || 1);
+        itemCount += (item.qty || 1);
+    });
+
+    // 1. VERIFICA COMBO DISCOUNT
+    await checkAndApplyCombo(subtotal);
+
+    // 2. CALCOLA SCONTO COUPON (se applicato)
+    let couponDiscount = 0;
+    if (appliedCouponPercent > 0) {
+        couponDiscount = (subtotal * appliedCouponPercent) / 100;
+    }
+
+    // 3. SCONTO TOTALE
+    const totalDiscount = appliedComboDiscount + couponDiscount;
+
+    // 4. CALCOLA SUBTOTALE SCONTATO
+    const discountedSubtotal = subtotal - totalDiscount;
+
+    // 5. SPEDIZIONE
+    const shipping = discountedSubtotal >= 150 ? 0 : 15;
+
+    // 6. TOTALE FINALE
+    const total = discountedSubtotal + shipping;
+
+    // 7. AGGIORNA UI
+    document.getElementById('subtotal').textContent = `€ ${subtotal.toLocaleString('it-IT', { minimumFractionDigits: 2 })}`;
+    document.getElementById('shipping').textContent = shipping === 0 ? 'Gratuita' : `€ ${shipping.toFixed(2)}`;
+    
+    const discountEl = document.getElementById('discount');
+    if (totalDiscount > 0) {
+        discountEl.textContent = `- € ${totalDiscount.toFixed(2)}`;
+        discountEl.classList.add('discount-animated');
+        setTimeout(() => discountEl.classList.remove('discount-animated'), 500);
+    } else {
+        discountEl.textContent = '- € 0,00';
+    }
+
+    document.getElementById('total').textContent = `€ ${total.toLocaleString('it-IT', { minimumFractionDigits: 2 })}`;
+    document.getElementById('itemCount').textContent = `${itemCount} Articoli`;
+    
+    const progress = Math.min(100, (discountedSubtotal / 150) * 100);
+    document.getElementById('progressFill').style.width = `${progress}%`;
+}
+
+/**
+ * Verifica automaticamente se gli articoli nel carrello formano una combo
+ */
+async function checkAndApplyCombo(currentSubtotal) {
+    try {
+        // Estrai solo gli SKU unici dal carrello
+        const cartSkus = [...new Set(cart.map(item => item.sku))];
+
+        if (cartSkus.length < 2) {
+            appliedComboDiscount = 0;
+            return; // Serve almeno 2 prodotti diversi per una combo
         }
+
+        const comboUrl = `${webAppUrl}?action=check_combo&skus=${cartSkus.join(',')}&t=${Date.now()}`;
+        const response = await fetch(comboUrl);
+        const data = await response.json();
+
+        if (data.success && data.hasCombo) {
+            appliedComboDiscount = data.discount;
+            console.log(`✅ Combo applicata: ${data.comboName} - Sconto: € ${data.discount.toFixed(2)}`);
+        } else {
+            appliedComboDiscount = 0;
+        }
+
+    } catch (error) {
+        console.error('Errore verifica combo:', error);
+        appliedComboDiscount = 0;
+    }
+}
+
+/**
+ * Gestione applicazione coupon
+ */
+document.getElementById('applyPromoBtn').addEventListener('click', async function() {
+    const input = document.getElementById('promoInput');
+    const code = input.value.trim();
+    const messageEl = document.getElementById('couponMessage');
+
+    if (!code) {
+        showCouponMessage('Inserisci un codice valido', 'error');
+        return;
+    }
+
+    // Feedback visivo
+    this.disabled = true;
+    this.textContent = 'Verifica...';
+
+    try {
+        const couponUrl = `${webAppUrl}?action=validate_coupon&code=${encodeURIComponent(code)}&t=${Date.now()}`;
+        const response = await fetch(couponUrl);
+        const data = await response.json();
+
+        if (data.valid) {
+            appliedCouponPercent = data.discountPercent;
+            appliedCouponCode = data.code;
+
+            showCouponMessage(`✓ ${data.message}`, 'success');
+            input.disabled = true;
+            this.textContent = 'Applicato';
+
+            // Ricalcola totale
+            await updateSummary();
+
+        } else {
+            showCouponMessage(`✗ ${data.message}`, 'error');
+            this.disabled = false;
+            this.textContent = 'Applica';
+        }
+
+    } catch (error) {
+        console.error('Errore validazione coupon:', error);
+        showCouponMessage('Errore di connessione. Riprova.', 'error');
+        this.disabled = false;
+        this.textContent = 'Applica';
+    }
+});
+
+function showCouponMessage(text, type) {
+    const messageEl = document.getElementById('couponMessage');
+    messageEl.textContent = text;
+    messageEl.className = `coupon-message ${type}`;
+}
+
+// Inizializza al caricamento
+document.addEventListener('DOMContentLoaded', () => {
+    renderCart();
+});
 
         function checkEmptyCart() {
             document.querySelector('.cart-layout').style.gridTemplateColumns = '1fr';
@@ -697,8 +857,40 @@
             btn.disabled = true; // Disabilita temporaneamente
 
             // 3. Preparazione Dati
-            const subtotal = validItems.reduce((sum, item) => sum + (item.price * (item.qty || 1)), 0);
-            const shipping = subtotal >= 150 ? 0 : 15;
+            // Calcola subtotale
+let subtotal = validItems.reduce((sum, item) => sum + (item.price * (item.qty || 1)), 0);
+
+// Applica sconto combo (se presente)
+let totalDiscount = appliedComboDiscount;
+
+// Applica sconto coupon (se presente)
+if (appliedCouponPercent > 0) {
+    totalDiscount += (subtotal * appliedCouponPercent) / 100;
+}
+
+// Subtotale scontato
+const discountedSubtotal = subtotal - totalDiscount;
+
+// Spedizione
+const shipping = discountedSubtotal >= 150 ? 0 : 15;
+
+// MODIFICA anche la sezione del payload per includere gli sconti nei metadati:
+const data = {
+    cart: validItems.map(item => ({
+        title: item.title,
+        price: item.price,
+        qty: item.qty || 1,
+        color: item.color || '',
+        size: item.size || '',
+        currency: item.currency || 'EUR'
+    })),
+    shipping: shipping,
+    // ⭐ AGGIUNGI QUESTI METADATI:
+    discount_applied: totalDiscount > 0,
+    combo_discount: appliedComboDiscount,
+    coupon_code: appliedCouponCode,
+    coupon_discount: appliedCouponPercent > 0 ? (subtotal * appliedCouponPercent) / 100 : 0
+};
 
             const data = {
                 cart: validItems.map(item => ({
@@ -768,3 +960,4 @@
     </script>
 </body>
 </html>
+
