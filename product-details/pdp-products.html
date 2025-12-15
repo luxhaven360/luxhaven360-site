@@ -178,12 +178,58 @@
             color: #a1a1aa;
         }
 
-        .price {
-            font-size: 1.5rem;
-            font-weight: 300;
-            letter-spacing: 0.02em;
-            margin-bottom: 1rem;
-        }
+        /* Container prezzi con gestione sconto */
+.price-container {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    margin-bottom: 1rem;
+}
+
+.price {
+    font-size: 1.5rem;
+    font-weight: 300;
+    letter-spacing: 0.02em;
+}
+
+.price-original {
+    font-size: 1.125rem;
+    color: #71717a;
+    text-decoration: line-through;
+    font-weight: 300;
+    opacity: 0.7;
+}
+
+.price-discounted {
+    font-size: 2rem;
+    font-weight: 300;
+    color: #34d399;
+    letter-spacing: 0.02em;
+    text-shadow: 0 0 20px rgba(52, 211, 153, 0.3);
+}
+
+.discount-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem 1rem;
+    background: linear-gradient(135deg, rgba(52, 211, 153, 0.1), rgba(16, 185, 129, 0.05));
+    border: 1px solid rgba(52, 211, 153, 0.3);
+    border-radius: 0.75rem;
+    width: fit-content;
+}
+
+.discount-badge-icon {
+    font-size: 1.25rem;
+}
+
+.discount-badge-text {
+    font-size: 0.875rem;
+    color: #34d399;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+}
 
         .description {
             color: #a1a1aa;
@@ -1200,7 +1246,9 @@
                     <div class="stars" id="starsContainer"></div>
                     <span class="rating-text" id="ratingText"></span>
                 </div>
-                <div class="price" id="productPrice">€ 485,00</div>
+                <div class="price-container" id="priceContainer">
+    <div class="price" id="productPrice">€ 485,00</div>
+</div>
                 <p class="description" id="productDesc">Un capo senza tempo che ridefinisce l'eleganza contemporanea.</p>
                 <div class="availability" id="availabilityText">
                     <span>✓</span>
@@ -2302,11 +2350,69 @@ if (!emailDomain || !validDomains.includes(emailDomain)) {
              clearInterval(progressInterval);
         }
 
+        /* ====== GESTIONE SCONTI PRODOTTO ====== */
+async function checkProductDiscount(sku) {
+    try {
+        const url = `${WEB_APP_URL}?action=get_product_discount&sku=${encodeURIComponent(sku)}&t=${Date.now()}`;
+        const response = await fetch(url);
+        const result = await response.json();
+        
+        if (result.success && result.hasDiscount) {
+            return {
+                hasDiscount: true,
+                originalPrice: result.originalPrice,
+                discountedPrice: result.discountedPrice,
+                savingsPercent: result.savingsPercent
+            };
+        }
+        return { hasDiscount: false };
+    } catch (e) {
+        Logger.log('Errore verifica sconto:', e);
+        return { hasDiscount: false };
+    }
+}
+
+function renderDiscountedPrice(priceData) {
+    const container = document.getElementById('priceContainer');
+    if (!container) return;
+    
+    if (priceData.hasDiscount) {
+        container.innerHTML = `
+            <div class="price-original">€ ${priceData.originalPrice.toFixed(2)}</div>
+            <div class="price-discounted">€ ${priceData.discountedPrice.toFixed(2)}</div>
+            <div class="discount-badge">
+                <span class="discount-badge-icon">🏷️</span>
+                <span class="discount-badge-text">Risparmi ${priceData.savingsPercent}%</span>
+            </div>
+        `;
+    } else {
+        container.innerHTML = `<div class="price">€ ${priceData.originalPrice.toFixed(2)}</div>`;
+    }
+}
+
         function populateProduct(prod) {
             document.getElementById('productTitle').textContent = prod.title || 'Prodotto';
             document.getElementById('productDesc').textContent = prod.desc || '';
             if (prod.price != null) {
-                document.getElementById('productPrice').textContent = formatPrice(prod.price, prod.currency || 'EUR');
+                // Verifica sconto prima di mostrare il prezzo
+const discountData = await checkProductDiscount(prod.sku);
+
+if (discountData.hasDiscount) {
+    renderDiscountedPrice({
+        hasDiscount: true,
+        originalPrice: prod.price,
+        discountedPrice: discountData.discountedPrice,
+        savingsPercent: discountData.savingsPercent
+    });
+    
+    // Aggiorna variabile prezzo per checkout
+    prod.price = discountData.discountedPrice;
+} else {
+    renderDiscountedPrice({
+        hasDiscount: false,
+        originalPrice: prod.price
+    });
+}
             }
             document.title = `${prod.title || 'Prodotto'} — Dettaglio`;
 
@@ -2673,3 +2779,4 @@ function closeModal(modalId) {
     </script>
 </body>
 </html>
+
