@@ -509,13 +509,17 @@
                     <span class="summary-value" id="discount" style="color: #34d399;">- € 0,00</span>
                 </div>
 
-                <div class="promo-code">
-                    <label class="promo-label">Codice Promozionale</label>
-                    <div class="promo-input-wrapper">
-                        <input type="text" class="promo-input" placeholder="Inserisci codice">
-                        <button class="promo-apply">Applica</button>
-                    </div>
-                </div>
+                <div class="coupon-section" style="margin-top: 2rem; border-top: 1px solid #27272a; padding-top: 1.5rem;">
+    <div style="display: flex; gap: 10px;">
+        <input type="text" id="couponCode" placeholder="Codice Promozionale" 
+               style="flex: 1; background: #18181b; border: 1px solid #3f3f46; color: white; padding: 10px; border-radius: 4px;">
+        <button onclick="applyCoupon()" 
+                style="background: #d4af37; color: #000; border: none; padding: 0 20px; font-weight: 600; cursor: pointer; border-radius: 4px;">
+            APPLICA
+        </button>
+    </div>
+    <p id="couponMessage" style="font-size: 0.85rem; margin-top: 5px; min-height: 20px;"></p>
+</div>
 
                 <div class="summary-row summary-total">
                     <span class="summary-label">Totale</span>
@@ -766,5 +770,105 @@
             checkoutBtn.onclick = initiateCheckout;
         }
     </script>
+
+    <script>
+    let activeCoupon = null; // Memorizza percentuale sconto (es. 0.20)
+    let globalDiscountRules = null; // Memorizza regole dal backend
+
+    // 1. Inizializzazione: Carica regole e ricalcola
+    function initCartDiscounts() {
+        google.script.run.withSuccessHandler(function(jsonRules) {
+            globalDiscountRules = JSON.parse(jsonRules);
+            calculateTotalWithDiscounts(); // Calcola subito per verificare le Combo
+        }).getDiscountRules();
+    }
+
+    // 2. Funzione principale di calcolo
+    function calculateTotalWithDiscounts() {
+        if (!globalDiscountRules) return;
+
+        // Recupera gli SKU presenti nel carrello
+        // (Adatta questo selettore alla struttura del tuo carrello)
+        const cartItems = JSON.parse(localStorage.getItem('cart')) || []; 
+        const cartSkus = cartItems.map(item => item.sku); // Array di SKU nel carrello
+        
+        // Calcolo Totale Provvisorio (Somma prodotti)
+        let rawTotal = cartItems.reduce((acc, item) => acc + (item.price * item.quantity), 0);
+        
+        let totalDiscountAmount = 0;
+        let comboApplied = false;
+
+        // --- A. LOGICA COMBO ---
+        // Verifica se gli SKU nel carrello soddisfano una combo
+        globalDiscountRules.combos.forEach(comboRule => {
+            // Controlla se TUTTI gli SKU della combo sono presenti nel carrello
+            const hasAllSkus = comboRule.skus.every(s => cartSkus.includes(s));
+            
+            if (hasAllSkus) {
+                // Applica sconto combo
+                totalDiscountAmount += comboRule.deduction;
+                comboApplied = true;
+                console.log("Combo applicata:", comboRule.skus);
+            }
+        });
+
+        // --- B. LOGICA COUPON (Se non c'è già una combo o se cumulabile - qui assumo cumulabile o priorità) ---
+        // Se vuoi che il coupon si applichi al netto delle combo, usa (rawTotal - totalDiscountAmount)
+        // Qui calcoliamo il coupon sul totale lordo come da standard, o netto se preferisci.
+        
+        if (activeCoupon) {
+            const couponDiscount = rawTotal * activeCoupon;
+            totalDiscountAmount += couponDiscount;
+        }
+
+        // --- C. AGGIORNAMENTO DOM ---
+        const discountRow = document.querySelector('.summary-row.discount span:last-child'); // Selettore riga Sconto
+        const totalRow = document.querySelector('.summary-total span:last-child'); // Selettore riga Totale
+
+        if (discountRow) {
+            discountRow.innerText = '- € ' + totalDiscountAmount.toFixed(2).replace('.', ',');
+            // Evidenzia lo sconto se presente
+            discountRow.style.color = totalDiscountAmount > 0 ? '#d4af37' : 'inherit';
+        }
+
+        if (totalRow) {
+            const finalTotal = Math.max(0, rawTotal - totalDiscountAmount);
+            totalRow.innerText = '€ ' + finalTotal.toFixed(2).replace('.', ',');
+        }
+    }
+
+    // 3. Funzione Click "Applica Coupon"
+    function applyCoupon() {
+        const input = document.getElementById('couponCode');
+        const msg = document.getElementById('couponMessage');
+        const code = input.value.trim().toUpperCase();
+
+        if (!globalDiscountRules) {
+            msg.innerText = "Sistema sconti in caricamento...";
+            msg.style.color = "orange";
+            return;
+        }
+
+        const couponData = globalDiscountRules.coupons[code];
+
+        if (couponData) {
+            // Coupon Trovato: Successo
+            activeCoupon = couponData.percent;
+            msg.innerText = "Coupon applicato con successo!";
+            msg.style.color = "#4ade80"; // Verde
+            calculateTotalWithDiscounts();
+        } else {
+            // Coupon non valido o scaduto (il backend filtra già gli scaduti)
+            activeCoupon = null;
+            msg.innerText = "Codice non valido o scaduto.";
+            msg.style.color = "#ef4444"; // Rosso
+            calculateTotalWithDiscounts(); // Ricalcola per rimuovere eventuali vecchi coupon
+        }
+    }
+
+    // Avvia il sistema all'apertura del carrello
+    window.addEventListener('load', initCartDiscounts);
+</script>
 </body>
 </html>
+
