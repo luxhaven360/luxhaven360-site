@@ -178,12 +178,55 @@
             color: #a1a1aa;
         }
 
-        .price {
-            font-size: 1.5rem;
-            font-weight: 300;
-            letter-spacing: 0.02em;
-            margin-bottom: 1rem;
-        }
+        /* Prezzo con estetica sconto premium */
+.price-container {
+    display: flex;
+    align-items: baseline;
+    gap: 1rem;
+    margin-bottom: 1rem;
+}
+
+.price {
+    font-size: 1.5rem;
+    font-weight: 300;
+    letter-spacing: 0.02em;
+}
+
+.price-original {
+    font-size: 1.125rem;
+    color: #71717a;
+    text-decoration: line-through;
+    font-weight: 300;
+}
+
+.price-discounted {
+    font-size: 2rem;
+    font-weight: 400;
+    color: #34d399; /* Verde luxury */
+    letter-spacing: 0.02em;
+}
+
+.savings-badge {
+    display: inline-block;
+    background: linear-gradient(135deg, #34d399, #10b981);
+    color: #09090b;
+    padding: 0.375rem 0.875rem;
+    border-radius: 0.5rem;
+    font-size: 0.875rem;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    box-shadow: 0 4px 12px rgba(52, 211, 153, 0.3);
+    animation: pulseGlow 2s ease-in-out infinite;
+}
+
+@keyframes pulseGlow {
+    0%, 100% { 
+        box-shadow: 0 4px 12px rgba(52, 211, 153, 0.3);
+    }
+    50% { 
+        box-shadow: 0 6px 20px rgba(52, 211, 153, 0.5);
+    }
+}
 
         .description {
             color: #a1a1aa;
@@ -1200,7 +1243,9 @@
                     <div class="stars" id="starsContainer"></div>
                     <span class="rating-text" id="ratingText"></span>
                 </div>
-                <div class="price" id="productPrice">€ 485,00</div>
+                <div class="price-container" id="priceContainer">
+                    <div class="price" id="productPrice">€ 485,00</div>
+                </div>
                 <p class="description" id="productDesc">Un capo senza tempo che ridefinisce l'eleganza contemporanea.</p>
                 <div class="availability" id="availabilityText">
                     <span>✓</span>
@@ -2305,9 +2350,46 @@ if (!emailDomain || !validDomains.includes(emailDomain)) {
         function populateProduct(prod) {
             document.getElementById('productTitle').textContent = prod.title || 'Prodotto';
             document.getElementById('productDesc').textContent = prod.desc || '';
-            if (prod.price != null) {
-                document.getElementById('productPrice').textContent = formatPrice(prod.price, prod.currency || 'EUR');
-            }
+
+            async function renderPriceWithDiscount() {
+    try {
+        // Chiama API per verificare se esiste sconto
+        const discountUrl = `${WEB_APP_URL}?action=get_product_discount&sku=${encodeURIComponent(prod.sku)}&t=${Date.now()}`;
+        const response = await fetch(discountUrl);
+        const data = await response.json();
+        
+        const priceContainer = document.getElementById('priceContainer');
+        
+        if (data.success && data.hasDiscount) {
+            // Prodotto IN SCONTO
+            priceContainer.innerHTML = `
+                <div class="price-original">${formatPrice(data.originalPrice, prod.currency || 'EUR')}</div>
+                <div class="price-discounted">${formatPrice(data.discountedPrice, prod.currency || 'EUR')}</div>
+                <span class="savings-badge">-${data.savingsPercent}% RISPARMIO</span>
+            `;
+            
+            // Aggiorna anche il prezzo usato per il carrello
+            prod.price = data.discountedPrice;
+            
+        } else {
+            // Prezzo NORMALE (no sconto)
+            priceContainer.innerHTML = `
+                <div class="price">${formatPrice(prod.price, prod.currency || 'EUR')}</div>
+            `;
+        }
+        
+    } catch (error) {
+        console.error('Errore recupero sconto:', error);
+        // Fallback: mostra prezzo normale
+        document.getElementById('priceContainer').innerHTML = `
+            <div class="price">${formatPrice(prod.price, prod.currency || 'EUR')}</div>
+        `;
+    }
+}
+
+// Esegui rendering prezzo
+renderPriceWithDiscount();
+            
             document.title = `${prod.title || 'Prodotto'} — Dettaglio`;
 
             if (prod.longDescription) {
@@ -2673,3 +2755,4 @@ function closeModal(modalId) {
     </script>
 </body>
 </html>
+
