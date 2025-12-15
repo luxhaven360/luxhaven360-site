@@ -1147,6 +1147,41 @@
     color: #000000; /* Spunta nera su sfondo bianco */
     font-weight: bold;
 }
+        /* --- LUXURY DISCOUNT STYLING --- */
+.price-wrapper {
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+    font-family: 'Helvetica Neue', sans-serif;
+}
+
+.price-original {
+    text-decoration: line-through;
+    color: #a1a1aa; /* Grigio zinco elegante */
+    font-size: 1.1rem;
+    font-weight: 300;
+}
+
+.price-discounted {
+    color: #d4af37; /* Oro metallico premium */
+    font-size: 1.5rem;
+    font-weight: 600;
+    letter-spacing: -0.02em;
+    text-shadow: 0 0 20px rgba(212, 175, 55, 0.2);
+}
+
+/* Badge sconto opzionale (piccolo ed elegante) */
+.discount-badge {
+    background: rgba(212, 175, 55, 0.1);
+    color: #d4af37;
+    padding: 2px 8px;
+    font-size: 0.75rem;
+    border-radius: 2px;
+    border: 1px solid rgba(212, 175, 55, 0.3);
+    margin-left: 8px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
         
     </style>
     <script src="https://unpkg.com/dompurify@2.4.0/dist/purify.min.js"></script>
@@ -2671,5 +2706,53 @@ function closeModal(modalId) {
     }
 }
     </script>
+
+        <script>
+    // Funzione chiamata al caricamento della pagina prodotto
+    async function applyProductDiscount() {
+        // Recupera lo SKU dalla pagina (Assumiamo ci sia un elemento con id 'product-sku' o recuperalo dall'URL/Oggetto prodotto)
+        // Esempio: const currentSku = document.getElementById('sku-display').innerText; 
+        // Se non hai un ID specifico, devi adattare questa riga a come salvi lo SKU nel DOM.
+        // Simuliamo il recupero per l'esempio basandoci sulla selezione variante o URL
+        
+        // NOTA: Questa funzione deve essere chiamata dopo che il prodotto è stato renderizzato
+        const priceElement = document.getElementById('product-price'); // Assicurati che il prezzo abbia questo ID
+        const currentSku = window.currentProductSku; // Assicurati di salvare lo SKU in una var globale quando carichi il prodotto
+
+        if (!currentSku || !priceElement) return;
+
+        try {
+            // Chiama il backend
+            google.script.run.withSuccessHandler(function(jsonRules) {
+                const rules = JSON.parse(jsonRules);
+                
+                // Controlla se esiste uno sconto per questo SKU
+                if (rules.products[currentSku]) {
+                    const originalPriceText = priceElement.innerText; // es: "120,00 €"
+                    const discountedPrice = rules.products[currentSku];
+                    
+                    // Formatta il nuovo prezzo
+                    const formattedDiscount = new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR' }).format(discountedPrice);
+
+                    // Renderizza la nuova estetica
+                    priceElement.innerHTML = `
+                        <div class="price-wrapper">
+                            <span class="price-original">${originalPriceText}</span>
+                            <span class="price-discounted">${formattedDiscount}</span>
+                            <span class="discount-badge">Exclusive Offer</span>
+                        </div>
+                    `;
+                }
+            }).getDiscountRules();
+
+        } catch (e) {
+            console.error("Errore recupero sconti:", e);
+        }
+    }
+    
+    // Assicurati di chiamare applyProductDiscount() dopo che il DOM del prodotto è pronto
+    // window.addEventListener('load', applyProductDiscount);
+</script>
 </body>
 </html>
+
