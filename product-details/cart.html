@@ -444,43 +444,6 @@
             gap: 1rem;
         }
 
-        /* Badge "Consigliato" Premium */
-.featured-recommendation {
-    position: relative;
-    transform: scale(1.05);
-    box-shadow: 0 10px 30px rgba(212, 175, 55, 0.3);
-    border-radius: 1rem;
-    padding: 1rem;
-    background: linear-gradient(135deg, rgba(212, 175, 55, 0.05) 0%, rgba(0, 0, 0, 0) 100%);
-    border: 1px solid rgba(212, 175, 55, 0.3);
-}
-
-.rec-badge {
-    position: absolute;
-    top: 1rem;
-    right: 1rem;
-    background: linear-gradient(135deg, #D4AF37, #FFD700);
-    color: #09090b;
-    padding: 0.5rem 1rem;
-    border-radius: 2rem;
-    font-size: 0.75rem;
-    font-weight: 700;
-    letter-spacing: 0.05em;
-    text-transform: uppercase;
-    box-shadow: 0 4px 15px rgba(212, 175, 55, 0.4);
-    z-index: 10;
-    animation: pulse 2s infinite ease-in-out;
-}
-
-@keyframes pulse {
-    0%, 100% { transform: scale(1); }
-    50% { transform: scale(1.05); }
-}
-
-.featured-recommendation .recommended-image {
-    border: 2px solid rgba(212, 175, 55, 0.5);
-}
-
         .recommended-image {
             aspect-ratio: 3/4;
             border-radius: 1rem;
@@ -713,25 +676,6 @@ document.write(`
     const webAppUrl = 'https://script.google.com/macros/s/AKfycbwr79RkXIEocpuOKaM6uMJqE6VFs9wjlUPvrr__FvDbDDrD2ELB1NbfrWP3BCYpHj2u/exec';
     let appliedCoupon = null;
 
-    // Mappa colori per visualizzazione corretta
-const COLOR_MAP = {
-    'Nero': '#000000', 'Black': '#000000',
-    'Bianco': '#FFFFFF', 'White': '#FFFFFF',
-    'Grigio': '#808080', 'Grey': '#808080',
-    'Blu': '#0000FF', 'Blue': '#0000FF',
-    'Rosso': '#FF0000', 'Red': '#FF0000',
-    'Verde': '#008000', 'Green': '#008000',
-    'Giallo': '#FFFF00', 'Yellow': '#FFFF00',
-    'Viola': '#800080', 'Purple': '#800080',
-    'Arancione': '#FFA500', 'Orange': '#FFA500',
-    'Marrone': '#A52A2A', 'Brown': '#A52A2A',
-    'Rosa': '#FFC0CB', 'Pink': '#FFC0CB',
-    'Celeste': '#87CEEB',
-    'Beige': '#F5F5DC',
-    'Oro': '#FFD700', 'Gold': '#FFD700',
-    'Argento': '#C0C0C0', 'Silver': '#C0C0C0'
-};
-
     // === FUNZIONI TRACKING COUPON (invariate) ===
     function getUserId() {
         let userId = localStorage.getItem('lh360_user_id');
@@ -769,12 +713,8 @@ const COLOR_MAP = {
             cart.forEach((item, index) => {
                 let variantHTML = '';
                 if (item.color || item.size) {
-                   variantHTML = '<div class="item-variant">';
-                   if (item.color) {
-                   const colorHex = COLOR_MAP[item.color] || item.color;
-                   const colorLabel = item.color; // Mantieni il nome originale per il testo
-                   variantHTML += `<div class="variant-detail"><span class="color-dot" style="background-color: ${colorHex};"></span><span>${colorLabel}</span></div>`;
-                }
+                    variantHTML = '<div class="item-variant">';
+                    if (item.color) variantHTML += `<div class="variant-detail"><span class="color-dot" style="background-color: ${item.color};"></span><span>Colore</span></div>`;
                     if (item.size) variantHTML += `<div class="variant-detail"><span>Taglia ${item.size}</span></div>`;
                     variantHTML += '</div>';
                 }
@@ -806,76 +746,6 @@ const COLOR_MAP = {
         }
         updateSummary(); // ⭐ Aggiornamento immediato
     }
-
-    // === PRODOTTI CONSIGLIATI DINAMICI ===
-async function loadRecommendedProducts() {
-    try {
-        // 1. Determina categoria predominante nel carrello
-        const cartCategories = cart.map(item => {
-            const sku = item.sku || '';
-            const prefix = sku.split('-')[0];
-            const categoryMap = { 'PR': 'properties', 'SC': 'supercars', 'EX': 'stays', 'ME': 'shop' };
-            return categoryMap[prefix] || 'shop';
-        });
-        
-        const mainCategory = cartCategories.length > 0 ? cartCategories[0] : 'shop';
-        
-        // 2. Recupera prodotti dalla stessa categoria
-        const response = await fetch(`${webAppUrl}?action=get_products&category=${mainCategory}&t=${Date.now()}`);
-        const data = await response.json();
-        
-        if (!data.success || !data.products) {
-            console.log('⚠️ Nessun prodotto consigliato disponibile');
-            return;
-        }
-        
-        // 3. Filtra: escludi prodotti già nel carrello
-        const cartSkus = cart.map(item => item.sku);
-        let recommended = data.products.filter(p => !cartSkus.includes(p.sku));
-        
-        // 4. Se non ci sono prodotti diversi, mostra comunque quelli della categoria
-        if (recommended.length === 0) {
-            recommended = data.products;
-        }
-        
-        // 5. Limita a 4 prodotti
-        recommended = recommended.slice(0, 4);
-        
-        // 6. Renderizza
-        renderRecommendedProducts(recommended);
-        
-    } catch (error) {
-        console.error('Errore caricamento prodotti consigliati:', error);
-    }
-}
-
-function renderRecommendedProducts(products) {
-    const container = document.querySelector('.recommended-grid');
-    if (!container) return;
-    
-    container.innerHTML = '';
-    
-    products.forEach((product, index) => {
-        const isRecommended = index === 0; // Primo prodotto = Consigliato
-        
-        const itemDiv = document.createElement('div');
-        itemDiv.className = 'recommended-item';
-        if (isRecommended) itemDiv.classList.add('featured-recommendation');
-        
-        itemDiv.innerHTML = `
-            ${isRecommended ? '<div class="rec-badge">⭐ Consigliato</div>' : ''}
-            <a href="pdp-products.html?sku=${product.sku}" style="text-decoration: none; color: inherit;">
-                <div class="recommended-image">
-                    <img src="${product.icon}" alt="${product.title}" onerror="this.src='https://via.placeholder.com/300x400?text=Prodotto'">
-                </div>
-                <div class="recommended-name">${product.title}</div>
-                <div class="recommended-price">€ ${product.price.toFixed(2)}</div>
-            </a>
-        `;
-        
-        container.appendChild(itemDiv);
-    });
-}
 
     // ⭐ FIX PROBLEMA 2: Rimozione immediata senza setTimeout
     function removeItem(index) {
@@ -967,111 +837,75 @@ function renderRecommendedProducts(products) {
     }
 
     renderCart();
-    loadRecommendedProducts();
 
     /* --- CHECKOUT (invariato) --- */
     async function initiateCheckout(e) {
-    if (e) e.preventDefault();
-    
-    const btn = document.getElementById('checkoutBtn');
-    if (!btn || btn.disabled) return;
-    
-    // 1. Validazione carrello
-    const freshCart = JSON.parse(localStorage.getItem('lh360_cart')) || [];
-    const validItems = freshCart.filter(item => item && item.title && item.price);
-    
-    if (validItems.length === 0) {
-        alert('Il carrello è vuoto!');
-        return;
-    }
-    
-    // 2. Feedback UI
-    const originalText = btn.innerText;
-    btn.innerText = 'Connessione sicura...';
-    btn.style.opacity = '0.7';
-    btn.disabled = true;
-    
-    try {
-        // 3. Calcola subtotale
+        if (e) e.preventDefault();
+        const btn = document.getElementById('checkoutBtn');
+        if (!btn || btn.disabled) return;
+        
+        const freshCart = JSON.parse(localStorage.getItem('lh360_cart')) || [];
+        const validItems = freshCart.filter(item => item && item.title && item.price);
+        if (validItems.length === 0) { alert('Il carrello è vuoto!'); return; }
+
+        const originalText = btn.innerText;
+        btn.innerText = 'Connessione sicura...';
+        btn.style.opacity = '0.7';
+        btn.disabled = true;
+
         let subtotal = 0;
         validItems.forEach(item => {
             const finalPrice = (item.discountPrice && item.discountPrice < item.price) ? item.discountPrice : item.price;
             subtotal += finalPrice * (item.qty || 1);
         });
-        
-        // 4. Verifica sconti combo
+
         let discount = 0;
         try {
             const skuList = validItems.map(item => item.sku).join(',');
             const response = await fetch(`${webAppUrl}?action=check_combo&skus=${encodeURIComponent(skuList)}&t=${Date.now()}`);
             const result = await response.json();
-            if (result.success && result.comboDiscount > 0) {
-                discount = result.comboDiscount;
-            }
-        } catch (error) {
-            console.error('Errore verifica combo:', error);
-        }
-        
-        // 5. Calcola spedizione
+            if (result.success && result.comboDiscount > 0) discount = result.comboDiscount;
+        } catch (error) { console.error('Errore verifica combo:', error); }
+
         const totalAfterDiscounts = subtotal - discount;
         const shipping = totalAfterDiscounts >= 150 ? 0 : 15;
-        
-        // 6. Prepara payload carrello
-        const cartData = validItems.map(item => {
-            const finalPrice = (item.discountPrice && item.discountPrice < item.price) ? item.discountPrice : item.price;
-            return {
-                sku: item.sku,
-                title: item.title,
-                price: finalPrice,
-                qty: item.qty || 1,
-                color: item.color || '',
-                size: item.size || '',
-                currency: item.currency || 'EUR',
-                image: item.image || ''
-            };
-        });
-        
-        const payload = {
-            action: 'create_checkout_session',
-            data: JSON.stringify({
-                cart: cartData,
-                shipping: shipping,
-                cancel_url: window.location.href,
-                is_buy_now: false // ⭐ FONDAMENTALE: indica che è un ordine carrello
-            })
+
+        const data = {
+            cart: validItems.map(item => {
+                const finalPrice = (item.discountPrice && item.discountPrice < item.price) ? item.discountPrice : item.price;
+                return {
+                    title: item.title,
+                    price: finalPrice,
+                    qty: item.qty || 1,
+                    color: item.color || '',
+                    size: item.size || '',
+                    currency: item.currency || 'EUR',
+                    image: item.image || ''
+                };
+            }),
+            shipping: shipping
         };
-        
-        // 7. Chiamata API
-        const queryParams = new URLSearchParams(payload).toString();
-        const targetUrl = `${webAppUrl}?${queryParams}`;
-        
-        const response = await fetch(targetUrl, {
-            method: 'GET',
-            mode: 'cors'
-        });
-        
-        if (!response.ok) throw new Error('Errore di rete');
-        
-        const result = await response.json();
-        
-        if (result.success && result.url) {
-            btn.innerText = 'Reindirizzamento...';
-            // Svuota carrello prima del redirect
-            localStorage.removeItem('lh360_cart');
-            window.location.href = result.url;
-        } else {
-            throw new Error(result.error || 'Risposta non valida dal server');
+
+        try {
+            const dataStr = encodeURIComponent(JSON.stringify(data));
+            const callbackName = 'handleCheckoutResponse';
+            const targetUrl = `${webAppUrl}?data=${dataStr}&callback=${callbackName}&t=${Date.now()}`;
+            const response = await fetch(targetUrl, { method: 'GET', mode: 'cors', headers: { 'Content-Type': 'text/plain' }});
+            if (!response.ok) throw new Error('Errore di rete Google');
+            const textResponse = await response.text();
+            const jsonString = textResponse.substring(textResponse.indexOf('(') + 1, textResponse.lastIndexOf(')'));
+            const result = JSON.parse(jsonString);
+            if (result.error) throw new Error(result.error);
+            else if (result.url) { btn.innerText = 'Reindirizzamento...'; window.location.assign(result.url); }
+            else throw new Error('Risposta non valida dal server');
+        } catch (err) {
+            console.error(err);
+            alert("Impossibile avviare il pagamento: " + err.message);
+            btn.innerText = originalText;
+            btn.style.opacity = '1';
+            btn.disabled = false;
         }
-        
-    } catch (err) {
-        console.error('Errore checkout:', err);
-        alert("Impossibile avviare il pagamento: " + err.message);
-        
-        btn.innerText = originalText;
-        btn.style.opacity = '1';
-        btn.disabled = false;
     }
-}
 
     const checkoutBtn = document.getElementById('checkoutBtn');
     if (checkoutBtn) checkoutBtn.onclick = initiateCheckout;
@@ -1189,4 +1023,3 @@ function renderRecommendedProducts(products) {
 </script>
 </body>
 </html>
-
