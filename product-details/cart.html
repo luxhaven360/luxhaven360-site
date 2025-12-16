@@ -765,62 +765,78 @@ document.write(`
         }
     }
 
-    // ⭐ FIX PROBLEMA 1: updateSummary con calcolo corretto
-    async function updateSummary() {
-        let subtotal = 0;
-        let itemCount = 0;
+    async function checkCombo(cartItems) {
+        // Estrai solo gli SKU dal carrello per inviarli al backend
+        const skus = cartItems.map(item => item.id).join(','); // es: "ME-01-A,ME-02-A"
         
-        cart.forEach(item => {
-            const finalPrice = (item.discountPrice && item.discountPrice < item.price) ? item.discountPrice : item.price;
-            subtotal += finalPrice * (item.qty || 1);
-            itemCount += (item.qty || 1);
-        });
-
-        // Verifica sconti combo (backend corretto ritorna lo sconto, non il prezzo finale)
-        let discount = 0;
-        let isComboDiscount = false;
-
         try {
-            const skuList = cart.map(item => item.sku).join(',');
-            const response = await fetch(`${webAppUrl}?action=check_combo&skus=${encodeURIComponent(skuList)}&t=${Date.now()}`);
-            const result = await response.json();
-
-            if (result.success && result.comboDiscount > 0) {
-                discount = result.comboDiscount; // ⭐ Ora questo è lo sconto corretto
-                isComboDiscount = true;
+            // Assicurati che SCRIPT_URL sia definito nel tuo codice
+            const response = await fetch(`${SCRIPT_URL}?action=check_combo&skus=${encodeURIComponent(skus)}`);
+            const data = await response.json();
+            
+            if (data.success && data.comboDiscount > 0) {
+                // Applica lo sconto ricevuto (valore colonna D)
+                comboDiscountValue = parseFloat(data.comboDiscount);
+                isComboActive = true;
+                
+                // Aggiorna il riepilogo passando il valore dello sconto
+                updateCartSummary(comboDiscountValue, true);
+                
+                console.log(`Combo attiva! Sconto applicato: € ${comboDiscountValue}`);
+            } else {
+                // Nessuna combo, resetta
+                comboDiscountValue = 0;
+                isComboActive = false;
+                updateCartSummary(0, false);
             }
         } catch (error) {
-            console.error('Errore verifica combo:', error);
+            console.error("Errore controllo combo:", error);
+            updateCartSummary(0, false);
         }
+    }
 
-        // Calcola spedizione DOPO aver applicato gli sconti
-        const totalAfterDiscounts = subtotal - discount;
-        const shipping = totalAfterDiscounts >= 150 ? 0 : 15;
-        const total = subtotal + shipping - discount;
+    // ⭐ FIX PROBLEMA 1: updateSummary con calcolo corretto
+    function updateCartSummary(discount = 0, isCombo = false) {
+        const subtotal = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+        let total = subtotal;
 
-        // Aggiorna UI
-        document.getElementById('subtotal').textContent = `€ ${subtotal.toFixed(2).replace('.', ',')}`;
-        document.getElementById('shipping').textContent = shipping === 0 ? 'Gratuita' : `€ ${shipping.toFixed(2).replace('.', ',')}`;
-        
+        // Elementi DOM
+        const subtotalEl = document.getElementById('subtotal');
         const discountEl = document.getElementById('discount');
         const discountRow = document.getElementById('discountRow');
-        const comboBadge = document.getElementById('comboBadge');
+        const totalEl = document.getElementById('total');
+        const comboBadge = document.getElementById('comboBadge'); // Assicurati di avere questo elemento o rimuovi la riga
 
+        // Aggiorna Subtotale
+        if(subtotalEl) subtotalEl.textContent = `€ ${subtotal.toFixed(2).replace('.', ',')}`;
+
+        // Gestione Sconto
         if (discount > 0) {
-            discountEl.textContent = `- € ${discount.toFixed(2).replace('.', ',')}`;
-            discountRow.classList.add('discount-active');
-            if (isComboDiscount && comboBadge) comboBadge.style.display = 'inline-block';
+            // Sottrai lo sconto fisso (valore colonna D) dal totale
+            total = subtotal - discount;
+            
+            // Visualizza: "- € 123,00"
+            if(discountEl) discountEl.textContent = `- € ${discount.toFixed(2).replace('.', ',')}`;
+            
+            if(discountRow) discountRow.classList.add('discount-active');
+            
+            // Mostra badge combo se è una combo
+            if (isCombo && comboBadge) {
+                comboBadge.style.display = 'inline-block';
+                comboBadge.textContent = 'COMBO ATTIVA';
+            }
         } else {
-            discountEl.textContent = '- € 0,00';
-            discountRow.classList.remove('discount-active');
-            if (comboBadge) comboBadge.style.display = 'none';
+            // Nessuno sconto
+            if(discountEl) discountEl.textContent = '- € 0,00';
+            if(discountRow) discountRow.classList.remove('discount-active');
+            if(comboBadge) comboBadge.style.display = 'none';
         }
 
-        document.getElementById('total').textContent = `€ ${total.toFixed(2).replace('.', ',')}`;
-        document.getElementById('itemCount').textContent = `${itemCount} Articoli`;
+        // Evita totali negativi
+        if (total < 0) total = 0;
 
-        const progress = Math.min(100, (totalAfterDiscounts / 150) * 100);
-        document.getElementById('progressFill').style.width = `${progress}%`;
+        // Aggiorna Totale Finale
+        if(totalEl) totalEl.textContent = `€ ${total.toFixed(2).replace('.', ',')}`;
     }
 
     function checkEmptyCart() {
@@ -1023,3 +1039,4 @@ document.write(`
 </script>
 </body>
 </html>
+
