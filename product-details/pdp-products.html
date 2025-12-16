@@ -185,6 +185,53 @@
             margin-bottom: 1rem;
         }
 
+        /* === SISTEMA SCONTI PREMIUM === */
+.price-container {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    margin-bottom: 1rem;
+    flex-wrap: wrap;
+}
+
+.price-original {
+    font-size: 1.25rem;
+    color: #71717a;
+    text-decoration: line-through;
+    font-weight: 300;
+    opacity: 0.7;
+}
+
+.discount-badge {
+    background: linear-gradient(135deg, #ef4444, #dc2626);
+    color: white;
+    padding: 0.375rem 0.75rem;
+    border-radius: 0.5rem;
+    font-size: 0.875rem;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    box-shadow: 0 4px 12px rgba(239, 68, 68, 0.3);
+    animation: pulseDiscount 2s ease-in-out infinite;
+}
+
+@keyframes pulseDiscount {
+    0%, 100% { 
+        box-shadow: 0 4px 12px rgba(239, 68, 68, 0.3);
+        transform: scale(1);
+    }
+    50% { 
+        box-shadow: 0 6px 20px rgba(239, 68, 68, 0.5);
+        transform: scale(1.05);
+    }
+}
+
+.price.discounted {
+    color: #10b981;
+    font-size: 1.75rem;
+    font-weight: 500;
+    text-shadow: 0 0 20px rgba(16, 185, 129, 0.3);
+}
+
         .description {
             color: #a1a1aa;
             font-size: 1.125rem;
@@ -1200,7 +1247,11 @@
                     <div class="stars" id="starsContainer"></div>
                     <span class="rating-text" id="ratingText"></span>
                 </div>
-                <div class="price" id="productPrice">€ 485,00</div>
+                <div class="price-container">
+    <div class="price-original" id="productPriceOriginal" style="display: none;"></div>
+    <div class="price" id="productPrice">€ 485,00</div>
+    <div class="discount-badge" id="discountBadge" style="display: none;"></div>
+</div>
                 <p class="description" id="productDesc">Un capo senza tempo che ridefinisce l'eleganza contemporanea.</p>
                 <div class="availability" id="availabilityText">
                     <span>✓</span>
@@ -2305,9 +2356,32 @@ if (!emailDomain || !validDomains.includes(emailDomain)) {
         function populateProduct(prod) {
             document.getElementById('productTitle').textContent = prod.title || 'Prodotto';
             document.getElementById('productDesc').textContent = prod.desc || '';
-            if (prod.price != null) {
-                document.getElementById('productPrice').textContent = formatPrice(prod.price, prod.currency || 'EUR');
-            }
+            // === GESTIONE SCONTO PRODOTTO ===
+if (prod.price != null) {
+    const priceElement = document.getElementById('productPrice');
+    const priceOriginalElement = document.getElementById('productPriceOriginal');
+    const discountBadgeElement = document.getElementById('discountBadge');
+    
+    if (prod.discount_price && prod.discount_price < prod.price) {
+        // Prodotto in sconto
+        const discountPercent = Math.round(((prod.price - prod.discount_price) / prod.price) * 100);
+        
+        priceOriginalElement.textContent = formatPrice(prod.price, prod.currency || 'EUR');
+        priceOriginalElement.style.display = 'block';
+        
+        priceElement.textContent = formatPrice(prod.discount_price, prod.currency || 'EUR');
+        priceElement.classList.add('discounted');
+        
+        discountBadgeElement.textContent = `-${discountPercent}%`;
+        discountBadgeElement.style.display = 'block';
+        
+        // Aggiorna anche il prezzo effettivo per il carrello
+        prod.price = prod.discount_price;
+    } else {
+        // Prezzo normale
+        priceElement.textContent = formatPrice(prod.price, prod.currency || 'EUR');
+    }
+}
             document.title = `${prod.title || 'Prodotto'} — Dettaglio`;
 
             if (prod.longDescription) {
@@ -2673,3 +2747,4 @@ function closeModal(modalId) {
     </script>
 </body>
 </html>
+
