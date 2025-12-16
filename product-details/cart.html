@@ -470,6 +470,30 @@
                 grid-template-columns: repeat(2, 1fr);
             }
         }
+
+        /* === MESSAGGI COUPON === */
+#couponMessage {
+    padding: 0.5rem 0.75rem;
+    border-radius: 0.5rem;
+    font-weight: 500;
+}
+
+#couponMessage.success {
+    background: rgba(16, 185, 129, 0.1);
+    color: #10b981;
+    border: 1px solid rgba(16, 185, 129, 0.3);
+}
+
+#couponMessage.error {
+    background: rgba(239, 68, 68, 0.1);
+    color: #ef4444;
+    border: 1px solid rgba(239, 68, 68, 0.3);
+}
+
+.promo-apply:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
     </style>
 </head>
 <body>
@@ -512,9 +536,10 @@
                 <div class="promo-code">
                     <label class="promo-label">Codice Promozionale</label>
                     <div class="promo-input-wrapper">
-                        <input type="text" class="promo-input" placeholder="Inserisci codice">
-                        <button class="promo-apply">Applica</button>
-                    </div>
+    <input type="text" class="promo-input" id="couponInput" placeholder="Inserisci codice">
+    <button class="promo-apply" id="applyPromoBtn">Applica</button>
+</div>
+<div id="couponMessage" style="margin-top: 0.5rem; font-size: 0.875rem; display: none;"></div>
                 </div>
 
                 <div class="summary-row summary-total">
@@ -578,6 +603,9 @@
 
     <script>
         let cart = JSON.parse(localStorage.getItem('lh360_cart')) || [];
+        let appliedComboDiscount = 0;
+        let appliedCouponDiscount = 0;
+        let appliedCouponCode = null;
 
         // URL della Web App Google
         const webAppUrl = 'https://script.google.com/macros/s/AKfycbwr79RkXIEocpuOKaM6uMJqE6VFs9wjlUPvrr__FvDbDDrD2ELB1NbfrWP3BCYpHj2u/exec';
@@ -638,24 +666,133 @@
             }
         }
 
-        function updateSummary() {
-            let subtotal = 0;
-            let itemCount = 0;
-            cart.forEach(item => {
-                subtotal += item.price * (item.qty || 1);
-                itemCount += (item.qty || 1);
-            });
-            const shipping = subtotal >= 150 ? 0 : 15;
-            const total = subtotal + shipping;
+        async function updateSummary() {
+    let subtotal = 0;
+    let itemCount = 0;
+    
+    cart.forEach(item => {
+        subtotal += item.price * (item.qty || 1);
+        itemCount += (item.qty || 1);
+    });
+    
+    // Verifica combo automaticamente
+    await checkAndApplyComboDiscount();
+    
+    const shipping = subtotal >= 150 ? 0 : 15;
+    let totalDiscount = appliedComboDiscount + appliedCouponDiscount;
+    const total = subtotal + shipping - totalDiscount;
 
-            document.getElementById('subtotal').textContent = `€ ${subtotal.toLocaleString('it-IT', { minimumFractionDigits: 2 })}`;
-            document.getElementById('shipping').textContent = shipping === 0 ? 'Gratuita' : `€ ${shipping.toFixed(2)}`;
-            document.getElementById('total').textContent = `€ ${total.toLocaleString('it-IT', { minimumFractionDigits: 2 })}`;
-            document.getElementById('itemCount').textContent = `${itemCount} Articoli`;
-            
-            const progress = Math.min(100, (subtotal / 150) * 100);
-            document.getElementById('progressFill').style.width = `${progress}%`;
+    document.getElementById('subtotal').textContent = `€ ${subtotal.toLocaleString('it-IT', { minimumFractionDigits: 2 })}`;
+    document.getElementById('shipping').textContent = shipping === 0 ? 'Gratuita' : `€ ${shipping.toFixed(2)}`;
+    
+    const discountEl = document.getElementById('discount');
+    if (totalDiscount > 0) {
+        discountEl.textContent = `- € ${totalDiscount.toLocaleString('it-IT', { minimumFractionDigits: 2 })}`;
+        discountEl.style.color = '#34d399';
+    } else {
+        discountEl.textContent = '- € 0,00';
+        discountEl.style.color = '#34d399';
+    }
+    
+    document.getElementById('total').textContent = `€ ${total.toLocaleString('it-IT', { minimumFractionDigits: 2 })}`;
+    document.getElementById('itemCount').textContent = `${itemCount} Articoli`;
+    
+    const progress = Math.min(100, (subtotal / 150) * 100);
+    document.getElementById('progressFill').style.width = `${progress}%`;
+}
+
+        // === VERIFICA E APPLICA COMBO ===
+async function checkAndApplyComboDiscount() {
+    if (cart.length < 2) {
+        appliedComboDiscount = 0;
+        return;
+    }
+    
+    const cartSkus = cart.map(item => item.sku).sort().join(' + ');
+    
+    try {
+        const response = await fetch(`${webAppUrl}?action=check_combo&skus=${encodeURIComponent(cartSkus)}&t=${Date.now()}`);
+        const result = await response.json();
+        
+        if (result.success && result.combo_discount > 0) {
+            appliedComboDiscount = result.combo_discount;
+            console.log(`✅ Combo applicata: -€${appliedComboDiscount}`);
+        } else {
+            appliedComboDiscount = 0;
         }
+    } catch (error) {
+        console.error('Errore verifica combo:', error);
+        appliedComboDiscount = 0;
+    }
+}
+
+// === APPLICA COUPON ===
+async function applyCoupon() {
+    const input = document.getElementById('couponInput');
+    const btn = document.getElementById('applyPromoBtn');
+    const messageEl = document.getElementById('couponMessage');
+    const code = input.value.trim().toUpperCase();
+    
+    if (!code) {
+        showCouponMessage('Inserisci un codice', 'error');
+        return;
+    }
+    
+    btn.disabled = true;
+    btn.textContent = 'Verifica...';
+    
+    try {
+        const response = await fetch(`${webAppUrl}?action=validate_coupon&code=${encodeURIComponent(code)}&t=${Date.now()}`);
+        const result = await response.json();
+        
+        if (result.success && result.valid) {
+            // Calcola sconto in euro
+            let subtotal = 0;
+            cart.forEach(item => subtotal += item.price * (item.qty || 1));
+            
+            appliedCouponDiscount = (subtotal * result.discount_percent) / 100;
+            appliedCouponCode = code;
+            
+            showCouponMessage(`✅ Coupon "${code}" applicato: -${result.discount_percent}%`, 'success');
+            input.value = '';
+            input.disabled = true;
+            btn.textContent = 'Applicato';
+            
+            updateSummary();
+        } else {
+            showCouponMessage(result.message || '❌ Codice non valido o scaduto', 'error');
+            appliedCouponDiscount = 0;
+            appliedCouponCode = null;
+        }
+    } catch (error) {
+        console.error('Errore validazione coupon:', error);
+        showCouponMessage('Errore di connessione', 'error');
+    } finally {
+        if (!appliedCouponCode) {
+            btn.disabled = false;
+            btn.textContent = 'Applica';
+        }
+    }
+}
+
+function showCouponMessage(text, type) {
+    const messageEl = document.getElementById('couponMessage');
+    messageEl.textContent = text;
+    messageEl.className = type;
+    messageEl.style.display = 'block';
+    
+    if (type === 'error') {
+        setTimeout(() => {
+            messageEl.style.display = 'none';
+        }, 5000);
+    }
+}
+
+// Event listener bottone coupon
+document.getElementById('applyPromoBtn').addEventListener('click', applyCoupon);
+document.getElementById('couponInput').addEventListener('keypress', (e) => {
+    if (e.key === 'Enter') applyCoupon();
+});
 
         function checkEmptyCart() {
             document.querySelector('.cart-layout').style.gridTemplateColumns = '1fr';
@@ -768,3 +905,4 @@
     </script>
 </body>
 </html>
+
