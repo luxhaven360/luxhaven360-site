@@ -524,6 +524,34 @@
     </style>
 </head>
 <body>
+   <!-- Loader Premium 4 secondi -->
+<div id="cartLoader" style="position:fixed;top:0;left:0;width:100%;height:100%;background:linear-gradient(135deg, #09090b 0%, #18181b 50%, #09090b 100%);z-index:99999;display:flex;align-items:center;justify-content:center;transition:opacity 0.6s ease;">
+    <div style="text-align:center;max-width:400px;padding:2rem;">
+        <div style="font-size:2.5rem;margin-bottom:1.5rem;color:#fafafa;letter-spacing:0.1em;">ðŸ›'</div>
+        <div style="font-size:1.25rem;color:#d4d4d8;margin-bottom:2rem;font-weight:300;">Caricamento Carrello</div>
+        
+        <div style="position:relative;height:4px;background:rgba(212,175,55,0.1);border-radius:10px;overflow:hidden;margin-bottom:1rem;">
+            <div id="loaderBar" style="position:absolute;left:0;top:0;height:100%;width:0%;background:linear-gradient(90deg, #D4AF37, #FFD700);border-radius:10px;animation:fillBar 3.8s cubic-bezier(0.4, 0, 0.2, 1) forwards;"></div>
+        </div>
+        
+        <div style="display:flex;gap:0.5rem;justify-content:center;margin-top:1.5rem;">
+            <div style="width:8px;height:8px;background:#D4AF37;border-radius:50%;animation:pulse 1.5s ease-in-out infinite;"></div>
+            <div style="width:8px;height:8px;background:#D4AF37;border-radius:50%;animation:pulse 1.5s ease-in-out 0.3s infinite;"></div>
+            <div style="width:8px;height:8px;background:#D4AF37;border-radius:50%;animation:pulse 1.5s ease-in-out 0.6s infinite;"></div>
+        </div>
+    </div>
+</div>
+
+<style>
+@keyframes fillBar {
+    to { width: 100%; }
+}
+@keyframes pulse {
+    0%, 100% { opacity: 0.3; transform: scale(0.8); }
+    50% { opacity: 1; transform: scale(1.2); }
+}
+</style>
+    
     <div class="container">
         <div class="cart-header">
             <h1 class="cart-title">Il Tuo Carrello</h1>
@@ -632,341 +660,447 @@
     </div>
 
     <script>
-        let cart = JSON.parse(localStorage.getItem('lh360_cart')) || [];
+    let cart = JSON.parse(localStorage.getItem('lh360_cart')) || [];
 
-        // URL della Web App Google
-        const webAppUrl = 'https://script.google.com/macros/s/AKfycbwr79RkXIEocpuOKaM6uMJqE6VFs9wjlUPvrr__FvDbDDrD2ELB1NbfrWP3BCYpHj2u/exec';
+    // URL della Web App Google
+    const webAppUrl = 'https://script.google.com/macros/s/AKfycbwr79RkXIEocpuOKaM6uMJqE6VFs9wjlUPvrr__FvDbDDrD2ELB1NbfrWP3BCYpHj2u/exec';
 
-        // --- FUNZIONI DI RENDERING CARRELLO (Invariate) ---
-        function renderCart() {
-            const cartItemsContainer = document.getElementById('cartItems');
-            cartItemsContainer.innerHTML = '';
-            if (cart.length === 0) {
-                checkEmptyCart();
-            } else {
-                cart.forEach((item, index) => {
-                    let variantHTML = '';
-                    if (item.color || item.size) {
-                        variantHTML = '<div class="item-variant">';
-                        if (item.color) {
-                            variantHTML += `<div class="variant-detail"><span class="color-dot" style="background-color: ${item.color};"></span><span>Colore</span></div>`;
-                        }
-                        if (item.size) {
-                            variantHTML += `<div class="variant-detail"><span>Taglia ${item.size}</span></div>`;
-                        }
-                        variantHTML += '</div>';
-                    }
-                    const itemElement = document.createElement('div');
-                    itemElement.className = 'cart-item';
-                    itemElement.dataset.id = index;
-                    itemElement.innerHTML = `
-                        <div class="item-image">
-                            <img src="${item.image || 'https://via.placeholder.com/140x186?text=' + encodeURIComponent(item.title)}" alt="${item.title}">
-                        </div>
-                        <div class="item-details">
-                            <div class="item-name">${item.title}</div>
-                            ${variantHTML}
-                            <div class="item-actions">
-                                <button class="remove-btn" onclick="removeItem(${index})">Rimuovi</button>
-                            </div>
-                        </div>
-                        <div class="item-price-section">
-                            <div class="item-price">€ ${item.price.toFixed(2)}</div>
-                        </div>
-                    `;
-                    cartItemsContainer.appendChild(itemElement);
-                });
-            }
-            updateSummary();
-        }
+    // Variabile globale per il coupon applicato
+    let appliedCoupon = null;
 
-        function removeItem(index) {
-            const itemElement = document.querySelector(`[data-id="${index}"]`);
-            if (itemElement) {
-                itemElement.style.opacity = '0';
-                itemElement.style.transform = 'translateX(-2rem)';
-                setTimeout(() => {
-                    cart.splice(index, 1);
-                    localStorage.setItem('lh360_cart', JSON.stringify(cart));
-                    renderCart();
-                }, 300);
-            }
-        }
-
-        async function updateSummary() {
-    let subtotal = 0;
-    let itemCount = 0;
+    // === FUNZIONI TRACKING COUPON ===
     
-    cart.forEach(item => {
-        subtotal += item.price * (item.qty || 1);
-        itemCount += (item.qty || 1);
-    });
-
-    const shipping = subtotal >= 150 ? 0 : 15;
-    let discount = 0;
-    let isComboDiscount = false;
-
-    // === VERIFICA COMBO SCONTO ===
-    try {
-        const skuList = cart.map(item => item.sku).join(',');
-        const response = await fetch(`${webAppUrl}?action=check_combo&skus=${encodeURIComponent(skuList)}&t=${Date.now()}`);
-        const result = await response.json();
-
-        if (result.success && result.comboDiscount > 0) {
-            discount = result.comboDiscount;
-            isComboDiscount = true;
+    // Genera ID univoco per l'utente (fingerprint semplificato)
+    function getUserId() {
+        let userId = localStorage.getItem('lh360_user_id');
+        if (!userId) {
+            userId = 'USER_' + Date.now() + '_' + Math.random().toString(36).substring(2, 15);
+            localStorage.setItem('lh360_user_id', userId);
         }
-    } catch (error) {
-        console.error('Errore verifica combo:', error);
+        return userId;
     }
 
-    const total = subtotal + shipping - discount;
-
-    // Aggiorna UI
-    document.getElementById('subtotal').textContent = `€ ${subtotal.toLocaleString('it-IT', { minimumFractionDigits: 2 })}`;
-    document.getElementById('shipping').textContent = shipping === 0 ? 'Gratuita' : `€ ${shipping.toFixed(2)}`;
-    
-    const discountEl = document.getElementById('discount');
-    const discountRow = document.getElementById('discountRow');
-    const comboBadge = document.getElementById('comboBadge');
-
-    if (discount > 0) {
-        discountEl.textContent = `- € ${discount.toLocaleString('it-IT', { minimumFractionDigits: 2 })}`;
-        discountRow.classList.add('discount-active');
-        if (isComboDiscount && comboBadge) comboBadge.style.display = 'inline-block';
-    } else {
-        discountEl.textContent = '- € 0,00';
-        discountRow.classList.remove('discount-active');
-        if (comboBadge) comboBadge.style.display = 'none';
+    // Verifica se il coupon è già stato usato
+    function hasCouponBeenUsed(couponCode) {
+        const usedCoupons = JSON.parse(localStorage.getItem('lh360_used_coupons') || '{}');
+        const userId = getUserId();
+        return usedCoupons[userId]?.includes(couponCode.toUpperCase());
     }
 
-    document.getElementById('total').textContent = `€ ${total.toLocaleString('it-IT', { minimumFractionDigits: 2 })}`;
-    document.getElementById('itemCount').textContent = `${itemCount} Articoli`;
-
-    const progress = Math.min(100, (subtotal / 150) * 100);
-    document.getElementById('progressFill').style.width = `${progress}%`;
-}
-
-        function checkEmptyCart() {
-            document.querySelector('.cart-layout').style.gridTemplateColumns = '1fr';
-            document.getElementById('cartItems').innerHTML = `
-                <div class="empty-cart">
-                    <div class="empty-cart-icon">🛒</div>
-                    <h2>Il tuo carrello è vuoto</h2>
-                    <p>Scopri la nostra collezione e trova il capo perfetto per te</p>
-                    <a href="/luxhaven360-site/index.html#shop" class="btn-continue">Continua lo Shopping</a>
-                </div>
-            `;
-            document.querySelector('.cart-summary').style.display = 'none';
-        }
-
-        renderCart();
-
-        /* --- NUOVA LOGICA CHECKOUT (MOBILE FIX FETCH) --- */
+    // Salva coupon come usato
+    function markCouponAsUsed(couponCode) {
+        const usedCoupons = JSON.parse(localStorage.getItem('lh360_used_coupons') || '{}');
+        const userId = getUserId();
         
-        async function initiateCheckout(e) {
-            // Previene comportamenti di default su mobile
-            if (e) e.preventDefault();
+        if (!usedCoupons[userId]) {
+            usedCoupons[userId] = [];
+        }
+        
+        if (!usedCoupons[userId].includes(couponCode.toUpperCase())) {
+            usedCoupons[userId].push(couponCode.toUpperCase());
+            localStorage.setItem('lh360_used_coupons', JSON.stringify(usedCoupons));
+        }
+    }
 
-            const btn = document.getElementById('checkoutBtn');
-            if (!btn || btn.disabled) return;
+    // === FUNZIONI DI RENDERING CARRELLO ===
+    
+    function renderCart() {
+        const cartItemsContainer = document.getElementById('cartItems');
+        cartItemsContainer.innerHTML = '';
+        
+        if (cart.length === 0) {
+            checkEmptyCart();
+        } else {
+            cart.forEach((item, index) => {
+                let variantHTML = '';
+                if (item.color || item.size) {
+                    variantHTML = '<div class="item-variant">';
+                    if (item.color) {
+                        variantHTML += `<div class="variant-detail"><span class="color-dot" style="background-color: ${item.color};"></span><span>Colore</span></div>`;
+                    }
+                    if (item.size) {
+                        variantHTML += `<div class="variant-detail"><span>Taglia ${item.size}</span></div>`;
+                    }
+                    variantHTML += '</div>';
+                }
+                
+                // ← CALCOLA IL PREZZO FINALE (scontato o normale)
+                const finalPrice = (item.discountPrice && item.discountPrice < item.price) 
+                    ? item.discountPrice 
+                    : item.price;
+
+                const hasDiscount = item.discountPrice && item.discountPrice < item.price;
+                
+                const itemElement = document.createElement('div');
+                itemElement.className = 'cart-item';
+                itemElement.dataset.id = index;
+                itemElement.innerHTML = `
+                    <div class="item-image">
+                        <img src="${item.image || 'https://via.placeholder.com/140x186?text=' + encodeURIComponent(item.title)}" alt="${item.title}">
+                    </div>
+                    <div class="item-details">
+                        <div class="item-name">${item.title}</div>
+                        ${variantHTML}
+                        <div class="item-actions">
+                            <button class="remove-btn" onclick="removeItem(${index})">Rimuovi</button>
+                        </div>
+                    </div>
+                    <div class="item-price-section">
+                        ${hasDiscount ? `<div class="item-original-price">€ ${item.price.toFixed(2).replace('.', ',')}</div>` : ''}
+                        <div class="item-price">€ ${finalPrice.toFixed(2).replace('.', ',')}</div>
+                    </div>
+                `;
+                cartItemsContainer.appendChild(itemElement);
+            });
+        }
+        updateSummary();
+    }
+
+    function removeItem(index) {
+        const itemElement = document.querySelector(`[data-id="${index}"]`);
+        if (itemElement) {
+            itemElement.style.opacity = '0';
+            itemElement.style.transform = 'translateX(-2rem)';
+            setTimeout(() => {
+                cart.splice(index, 1);
+                localStorage.setItem('lh360_cart', JSON.stringify(cart));
+                renderCart();
+            }, 300);
+        }
+    }
+
+    async function updateSummary() {
+        let subtotal = 0;
+        let itemCount = 0;
+        
+        // Calcola subtotale con prezzi finali (scontati se presenti)
+        cart.forEach(item => {
+            const finalPrice = (item.discountPrice && item.discountPrice < item.price) 
+                ? item.discountPrice 
+                : item.price;
             
-            // 1. Controllo carrello
-            const freshCart = JSON.parse(localStorage.getItem('lh360_cart')) || [];
-            const validItems = freshCart.filter(item => item && item.title && item.price);
+            subtotal += finalPrice * (item.qty || 1);
+            itemCount += (item.qty || 1);
+        });
 
-            if (validItems.length === 0) {
-                alert('Il carrello è vuoto!');
-                return;
+        // 1. Verifica sconti combo
+        let discount = 0;
+        let isComboDiscount = false;
+
+        try {
+            const skuList = cart.map(item => item.sku).join(',');
+            const response = await fetch(`${webAppUrl}?action=check_combo&skus=${encodeURIComponent(skuList)}&t=${Date.now()}`);
+            const result = await response.json();
+
+            if (result.success && result.comboDiscount > 0) {
+                discount = result.comboDiscount;
+                isComboDiscount = true;
             }
+        } catch (error) {
+            console.error('Errore verifica combo:', error);
+        }
 
-            // 2. Feedback Visivo
-            const originalText = btn.innerText;
-            btn.innerText = 'Connessione sicura...';
-            btn.style.opacity = '0.7';
-            btn.disabled = true; // Disabilita temporaneamente
+        // 2. Calcola spedizione DOPO aver applicato gli sconti
+        const totalAfterDiscounts = subtotal - discount;
+        const shipping = totalAfterDiscounts >= 150 ? 0 : 15;
+        
+        const total = subtotal + shipping - discount;
 
-            // 3. Preparazione Dati
-            const subtotal = validItems.reduce((sum, item) => sum + (item.price * (item.qty || 1)), 0);
-            const shipping = subtotal >= 150 ? 0 : 15;
+        // Aggiorna UI
+        document.getElementById('subtotal').textContent = `€ ${subtotal.toFixed(2).replace('.', ',')}`;
+        document.getElementById('shipping').textContent = shipping === 0 ? 'Gratuita' : `€ ${shipping.toFixed(2).replace('.', ',')}`;
+        
+        const discountEl = document.getElementById('discount');
+        const discountRow = document.getElementById('discountRow');
+        const comboBadge = document.getElementById('comboBadge');
 
-            const data = {
-                cart: validItems.map(item => ({
+        if (discount > 0) {
+            discountEl.textContent = `- € ${discount.toFixed(2).replace('.', ',')}`;
+            discountRow.classList.add('discount-active');
+            if (isComboDiscount && comboBadge) comboBadge.style.display = 'inline-block';
+        } else {
+            discountEl.textContent = '- € 0,00';
+            discountRow.classList.remove('discount-active');
+            if (comboBadge) comboBadge.style.display = 'none';
+        }
+
+        document.getElementById('total').textContent = `€ ${total.toFixed(2).replace('.', ',')}`;
+        document.getElementById('itemCount').textContent = `${itemCount} Articoli`;
+
+        // Barra progresso spedizione gratuita (basata su totalAfterDiscounts)
+        const progress = Math.min(100, (totalAfterDiscounts / 150) * 100);
+        document.getElementById('progressFill').style.width = `${progress}%`;
+    }
+
+    function checkEmptyCart() {
+        document.querySelector('.cart-layout').style.gridTemplateColumns = '1fr';
+        document.getElementById('cartItems').innerHTML = `
+            <div class="empty-cart">
+                <div class="empty-cart-icon">🛒</div>
+                <h2>Il tuo carrello è vuoto</h2>
+                <p>Scopri la nostra collezione e trova il capo perfetto per te</p>
+                <a href="/luxhaven360-site/index.html#shop" class="btn-continue">Continua lo Shopping</a>
+            </div>
+        `;
+        document.querySelector('.cart-summary').style.display = 'none';
+    }
+
+    renderCart();
+
+    /* --- CHECKOUT --- */
+    
+    async function initiateCheckout(e) {
+        if (e) e.preventDefault();
+
+        const btn = document.getElementById('checkoutBtn');
+        if (!btn || btn.disabled) return;
+        
+        const freshCart = JSON.parse(localStorage.getItem('lh360_cart')) || [];
+        const validItems = freshCart.filter(item => item && item.title && item.price);
+
+        if (validItems.length === 0) {
+            alert('Il carrello è vuoto!');
+            return;
+        }
+
+        const originalText = btn.innerText;
+        btn.innerText = 'Connessione sicura...';
+        btn.style.opacity = '0.7';
+        btn.disabled = true;
+
+        // Calcola subtotale con prezzi finali
+        let subtotal = 0;
+        validItems.forEach(item => {
+            const finalPrice = (item.discountPrice && item.discountPrice < item.price) 
+                ? item.discountPrice 
+                : item.price;
+            subtotal += finalPrice * (item.qty || 1);
+        });
+
+        // Verifica sconti combo
+        let discount = 0;
+        try {
+            const skuList = validItems.map(item => item.sku).join(',');
+            const response = await fetch(`${webAppUrl}?action=check_combo&skus=${encodeURIComponent(skuList)}&t=${Date.now()}`);
+            const result = await response.json();
+            if (result.success && result.comboDiscount > 0) {
+                discount = result.comboDiscount;
+            }
+        } catch (error) {
+            console.error('Errore verifica combo:', error);
+        }
+
+        // Calcola spedizione sul totale dopo sconti
+        const totalAfterDiscounts = subtotal - discount;
+        const shipping = totalAfterDiscounts >= 150 ? 0 : 15;
+
+        const data = {
+            cart: validItems.map(item => {
+                const finalPrice = (item.discountPrice && item.discountPrice < item.price) 
+                    ? item.discountPrice 
+                    : item.price;
+                    
+                return {
                     title: item.title,
-                    price: item.price,
+                    price: finalPrice,
                     qty: item.qty || 1,
                     color: item.color || '',
                     size: item.size || '',
-                    currency: item.currency || 'EUR'
-                })),
-                shipping: shipping
-            };
+                    currency: item.currency || 'EUR',
+                    image: item.image || ''
+                };
+            }),
+            shipping: shipping
+        };
 
-            // 4. Esecuzione Fetch (Metodo Moderno)
-            try {
-                const dataStr = encodeURIComponent(JSON.stringify(data));
-                const callbackName = 'handleCheckoutResponse'; // Nome fittizio per il server
-                // Aggiungiamo un timestamp per evitare che il browser usi una risposta vecchia in cache
-                const targetUrl = `${webAppUrl}?data=${dataStr}&callback=${callbackName}&t=${Date.now()}`;
+        try {
+            const dataStr = encodeURIComponent(JSON.stringify(data));
+            const callbackName = 'handleCheckoutResponse';
+            const targetUrl = `${webAppUrl}?data=${dataStr}&callback=${callbackName}&t=${Date.now()}`;
 
-                const response = await fetch(targetUrl, {
-                    method: 'GET',
-                    mode: 'cors', // Importante per permettere la richiesta
-                    headers: {
-                        'Content-Type': 'text/plain'
-                    }
-                });
-
-                if (!response.ok) throw new Error('Errore di rete Google');
-
-                // 5. Parsing Manuale della Risposta
-                // Il server risponde con: handleCheckoutResponse({...})
-                // Noi prendiamo il testo e estraiamo il JSON interno
-                const textResponse = await response.text();
-                
-                // Estrae tutto ciò che c'è tra la prima parentesi aperta e l'ultima chiusa
-                const jsonString = textResponse.substring(textResponse.indexOf('(') + 1, textResponse.lastIndexOf(')'));
-                const result = JSON.parse(jsonString);
-
-                // 6. Gestione Risultato
-                if (result.error) {
-                    throw new Error(result.error);
-                } else if (result.url) {
-                    // Successo! Redirect
-                    btn.innerText = 'Reindirizzamento...';
-                    window.location.assign(result.url);
-                } else {
-                    throw new Error('Risposta non valida dal server');
+            const response = await fetch(targetUrl, {
+                method: 'GET',
+                mode: 'cors',
+                headers: {
+                    'Content-Type': 'text/plain'
                 }
+            });
 
-            } catch (err) {
-                console.error(err);
-                alert("Impossibile avviare il pagamento: " + err.message);
-                // Ripristina il bottone in caso di errore
-                btn.innerText = originalText;
-                btn.style.opacity = '1';
-                btn.disabled = false;
+            if (!response.ok) throw new Error('Errore di rete Google');
+
+            const textResponse = await response.text();
+            const jsonString = textResponse.substring(textResponse.indexOf('(') + 1, textResponse.lastIndexOf(')'));
+            const result = JSON.parse(jsonString);
+
+            if (result.error) {
+                throw new Error(result.error);
+            } else if (result.url) {
+                btn.innerText = 'Reindirizzamento...';
+                window.location.assign(result.url);
+            } else {
+                throw new Error('Risposta non valida dal server');
             }
+
+        } catch (err) {
+            console.error(err);
+            alert("Impossibile avviare il pagamento: " + err.message);
+            btn.innerText = originalText;
+            btn.style.opacity = '1';
+            btn.disabled = false;
         }
-
-        // Binding Eventi
-        const checkoutBtn = document.getElementById('checkoutBtn');
-        if (checkoutBtn) {
-            // Usiamo 'onclick' che è universalmente supportato
-            checkoutBtn.onclick = initiateCheckout;
-        }
-
-        // === GESTIONE COUPON ===
-let appliedCoupon = null;
-
-document.getElementById('applyCouponBtn').addEventListener('click', async function() {
-    const couponCode = document.getElementById('couponInput').value.trim().toUpperCase();
-    const messageEl = document.getElementById('couponMessage');
-    const btn = this;
-
-    if (!couponCode) {
-        showCouponMessage('Inserisci un codice promozionale', 'error');
-        return;
     }
 
-    btn.disabled = true;
-    btn.textContent = 'Verifica...';
-
-    try {
-        const response = await fetch(`${webAppUrl}?action=validate_coupon&code=${encodeURIComponent(couponCode)}&t=${Date.now()}`);
-        const result = await response.json();
-
-        if (result.success && result.valid) {
-            appliedCoupon = {
-                code: couponCode,
-                discountPercent: result.discountPercent
-            };
-            showCouponMessage(`✓ Coupon "${couponCode}" applicato (${result.discountPercent}% di sconto)`, 'success');
-            await updateSummaryWithCoupon();
-        } else {
-            showCouponMessage(result.error || 'Codice non valido o scaduto', 'error');
-            appliedCoupon = null;
-        }
-    } catch (error) {
-        console.error('Errore validazione coupon:', error);
-        showCouponMessage('Errore di connessione. Riprova.', 'error');
-        appliedCoupon = null;
-    } finally {
-        btn.disabled = false;
-        btn.textContent = 'Applica';
+    const checkoutBtn = document.getElementById('checkoutBtn');
+    if (checkoutBtn) {
+        checkoutBtn.onclick = initiateCheckout;
     }
-});
 
-function showCouponMessage(message, type) {
-    const messageEl = document.getElementById('couponMessage');
-    messageEl.textContent = message;
-    messageEl.className = `promo-message ${type}`;
-    messageEl.style.display = 'block';
-
-    if (type === 'error') {
-        setTimeout(() => { messageEl.style.display = 'none'; }, 5000);
-    }
-}
-
-async function updateSummaryWithCoupon() {
-    let subtotal = 0;
-    let itemCount = 0;
+    // === GESTIONE COUPON ===
     
-    cart.forEach(item => {
-        subtotal += item.price * (item.qty || 1);
-        itemCount += (item.qty || 1);
+    document.getElementById('applyCouponBtn').addEventListener('click', async function() {
+        const couponCode = document.getElementById('couponInput').value.trim().toUpperCase();
+        const messageEl = document.getElementById('couponMessage');
+        const btn = this;
+
+        if (!couponCode) {
+            showCouponMessage('Inserisci un codice promozionale', 'error');
+            return;
+        }
+
+        // CONTROLLO 1: Coupon già usato
+        if (hasCouponBeenUsed(couponCode)) {
+            showCouponMessage('Hai già utilizzato questo coupon in precedenza', 'error');
+            return;
+        }
+
+        // CONTROLLO 2: Sostituisci coupon esistente
+        if (appliedCoupon) {
+            showCouponMessage(`Coupon "${appliedCoupon.code}" rimosso. Applicando "${couponCode}"...`, 'success');
+            appliedCoupon = null;
+            await updateSummaryWithCoupon();
+        }
+
+        btn.disabled = true;
+        btn.textContent = 'Verifica...';
+
+        try {
+            const response = await fetch(`${webAppUrl}?action=validate_coupon&code=${encodeURIComponent(couponCode)}&t=${Date.now()}`);
+            const result = await response.json();
+
+            if (result.success && result.valid) {
+                appliedCoupon = {
+                    code: couponCode,
+                    discountPercent: result.discountPercent
+                };
+                
+                // SALVA UTILIZZO
+                markCouponAsUsed(couponCode);
+                
+                showCouponMessage(`✓ Coupon "${couponCode}" applicato (${result.discountPercent}% di sconto)`, 'success');
+                await updateSummaryWithCoupon();
+            } else {
+                showCouponMessage(result.error || 'Codice non valido o scaduto', 'error');
+                appliedCoupon = null;
+            }
+        } catch (error) {
+            console.error('Errore validazione coupon:', error);
+            showCouponMessage('Errore di connessione. Riprova.', 'error');
+            appliedCoupon = null;
+        } finally {
+            btn.disabled = false;
+            btn.textContent = 'Applica';
+        }
     });
 
-    const shipping = subtotal >= 150 ? 0 : 15;
-    let discount = 0;
-    let isComboDiscount = false;
+    function showCouponMessage(message, type) {
+        const messageEl = document.getElementById('couponMessage');
+        messageEl.textContent = message;
+        messageEl.className = `promo-message ${type}`;
+        messageEl.style.display = 'block';
 
-    // Verifica combo
-    try {
-        const skuList = cart.map(item => item.sku).join(',');
-        const response = await fetch(`${webAppUrl}?action=check_combo&skus=${encodeURIComponent(skuList)}&t=${Date.now()}`);
-        const result = await response.json();
-
-        if (result.success && result.comboDiscount > 0) {
-            discount = result.comboDiscount;
-            isComboDiscount = true;
+        if (type === 'error') {
+            setTimeout(() => { messageEl.style.display = 'none'; }, 5000);
         }
-    } catch (error) {
-        console.error('Errore verifica combo:', error);
     }
 
-    // Applica coupon (se presente)
-    if (appliedCoupon) {
-        const couponDiscount = (subtotal * appliedCoupon.discountPercent) / 100;
-        discount += couponDiscount;
+    async function updateSummaryWithCoupon() {
+        let subtotal = 0;
+        let itemCount = 0;
+        
+        cart.forEach(item => {
+            const finalPrice = (item.discountPrice && item.discountPrice < item.price) 
+                ? item.discountPrice 
+                : item.price;
+            
+            subtotal += finalPrice * (item.qty || 1);
+            itemCount += (item.qty || 1);
+        });
+
+        // Verifica combo
+        let discount = 0;
+        let isComboDiscount = false;
+
+        try {
+            const skuList = cart.map(item => item.sku).join(',');
+            const response = await fetch(`${webAppUrl}?action=check_combo&skus=${encodeURIComponent(skuList)}&t=${Date.now()}`);
+            const result = await response.json();
+
+            if (result.success && result.comboDiscount > 0) {
+                discount = result.comboDiscount;
+                isComboDiscount = true;
+            }
+        } catch (error) {
+            console.error('Errore verifica combo:', error);
+        }
+
+        // Applica coupon (se presente)
+        if (appliedCoupon) {
+            const couponDiscount = (subtotal * appliedCoupon.discountPercent) / 100;
+            discount += couponDiscount;
+        }
+
+        // Calcola spedizione sul totale dopo sconti
+        const totalAfterDiscounts = subtotal - discount;
+        const shipping = totalAfterDiscounts >= 150 ? 0 : 15;
+        
+        const total = subtotal + shipping - discount;
+
+        // Aggiorna UI
+        document.getElementById('subtotal').textContent = `€ ${subtotal.toFixed(2).replace('.', ',')}`;
+        document.getElementById('shipping').textContent = shipping === 0 ? 'Gratuita' : `€ ${shipping.toFixed(2).replace('.', ',')}`;
+        
+        const discountEl = document.getElementById('discount');
+        const discountRow = document.getElementById('discountRow');
+        const comboBadge = document.getElementById('comboBadge');
+
+        if (discount > 0) {
+            discountEl.textContent = `- € ${discount.toFixed(2).replace('.', ',')}`;
+            discountRow.classList.add('discount-active');
+            if (isComboDiscount && comboBadge) comboBadge.style.display = 'inline-block';
+        } else {
+            discountEl.textContent = '- € 0,00';
+            discountRow.classList.remove('discount-active');
+            if (comboBadge) comboBadge.style.display = 'none';
+        }
+
+        document.getElementById('total').textContent = `€ ${total.toFixed(2).replace('.', ',')}`;
+        document.getElementById('itemCount').textContent = `${itemCount} Articoli`;
+
+        const progress = Math.min(100, (totalAfterDiscounts / 150) * 100);
+        document.getElementById('progressFill').style.width = `${progress}%`;
     }
 
-    const total = subtotal + shipping - discount;
-
-    // Aggiorna UI (uguale a updateSummary)
-    document.getElementById('subtotal').textContent = `€ ${subtotal.toLocaleString('it-IT', { minimumFractionDigits: 2 })}`;
-    document.getElementById('shipping').textContent = shipping === 0 ? 'Gratuita' : `€ ${shipping.toFixed(2)}`;
+    // === NASCONDI LOADER DOPO 4 SECONDI ===
     
-    const discountEl = document.getElementById('discount');
-    const discountRow = document.getElementById('discountRow');
-    const comboBadge = document.getElementById('comboBadge');
-
-    if (discount > 0) {
-        discountEl.textContent = `- € ${discount.toLocaleString('it-IT', { minimumFractionDigits: 2 })}`;
-        discountRow.classList.add('discount-active');
-        if (isComboDiscount && comboBadge) comboBadge.style.display = 'inline-block';
-    } else {
-        discountEl.textContent = '- € 0,00';
-        discountRow.classList.remove('discount-active');
-        if (comboBadge) comboBadge.style.display = 'none';
-    }
-
-    document.getElementById('total').textContent = `€ ${total.toLocaleString('it-IT', { minimumFractionDigits: 2 })}`;
-    document.getElementById('itemCount').textContent = `${itemCount} Articoli`;
-
-    const progress = Math.min(100, (subtotal / 150) * 100);
-    document.getElementById('progressFill').style.width = `${progress}%`;
-}
-    </script>
+    window.addEventListener('DOMContentLoaded', () => {
+        setTimeout(() => {
+            const loader = document.getElementById('cartLoader');
+            if (loader) {
+                loader.style.opacity = '0';
+                setTimeout(() => loader.remove(), 600);
+            }
+        }, 4000);
+    });
+</script>
 </body>
 </html>
