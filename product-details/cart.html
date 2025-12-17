@@ -934,76 +934,126 @@ async function loadRecommendedProducts() {
 
     /* --- CHECKOUT (invariato) --- */
     async function initiateCheckout(e) {
-        if (e) e.preventDefault();
-        const btn = document.getElementById('checkoutBtn');
-        if (!btn || btn.disabled) return;
-        
-        const freshCart = JSON.parse(localStorage.getItem('lh360_cart')) || [];
-        const validItems = freshCart.filter(item => item && item.title && item.price);
-        if (validItems.length === 0) { alert('Il carrello è vuoto!'); return; }
+    if (e) e.preventDefault();
+    const btn = document.getElementById('checkoutBtn');
+    if (!btn || btn.disabled) return;
+    
+    const freshCart = JSON.parse(localStorage.getItem('lh360_cart')) || [];
+    const validItems = freshCart.filter(item => item && item.title && item.price);
+    if (validItems.length === 0) { 
+        alert('Il carrello è vuoto!'); 
+        return; 
+    }
 
-        const originalText = btn.innerText;
-        btn.innerText = 'Connessione sicura...';
-        btn.style.opacity = '0.7';
-        btn.disabled = true;
+    const originalText = btn.innerText;
+    btn.innerText = 'Connessione sicura...';
+    btn.style.opacity = '0.7';
+    btn.disabled = true;
 
+    try {
+        // 1. Calcola subtotale
         let subtotal = 0;
         validItems.forEach(item => {
-            const finalPrice = (item.discountPrice && item.discountPrice < item.price) ? item.discountPrice : item.price;
+            const finalPrice = (item.discountPrice && item.discountPrice < item.price) 
+                ? item.discountPrice 
+                : item.price;
             subtotal += finalPrice * (item.qty || 1);
         });
 
-        let discount = 0;
+        // 2. Verifica sconti combo
+        let comboDiscount = 0;
         try {
             const skuList = validItems.map(item => item.sku).join(',');
             const response = await fetch(`${webAppUrl}?action=check_combo&skus=${encodeURIComponent(skuList)}&t=${Date.now()}`);
             const result = await response.json();
-            if (result.success && result.comboDiscount > 0) discount = result.comboDiscount;
-        } catch (error) { console.error('Errore verifica combo:', error); }
+            if (result.success && result.comboDiscount > 0) {
+                comboDiscount = result.comboDiscount;
+            }
+        } catch (error) { 
+            console.error('Errore verifica combo:', error); 
+        }
 
-        const totalAfterDiscounts = subtotal - discount;
+        // 3. Aggiungi sconto coupon (se presente)
+        let couponDiscount = 0;
+        if (appliedCoupon && appliedCoupon.discountPercent) {
+            couponDiscount = (subtotal * appliedCoupon.discountPercent) / 100;
+        }
+
+        // 4. Totale sconti
+        const totalDiscount = comboDiscount + couponDiscount;
+
+        // 5. Calcola spedizione
+        const totalAfterDiscounts = subtotal - totalDiscount;
         const shipping = totalAfterDiscounts >= 150 ? 0 : 15;
 
-        const data = {
-            cart: validItems.map(item => {
-               const finalPrice = (item.discountPrice && item.discountPrice < item.price) ? item.discountPrice : item.price;
-               return {
-                   sku: item.sku || '',              // ← AGGIUNTO per lookup N. Prodotto
-                   title: item.title,
-                   price: finalPrice,
-                   qty: item.qty || 1,
-                   color: item.color || '',
-                   size: item.size || '',
-                   currency: item.currency || 'EUR',
-                   image: item.image || ''
-                 };
-            }),
-                 shipping: shipping,
-                 is_buy_now: false,                        // ← AGGIUNTO per distinguere da "Acquista Ora"
-                 cancel_url: window.location.href          // ← AGGIUNTO per tornare al carrello
+        // 6. Prepara line items per Stripe
+        const cartItems = validItems.map(item => {
+            const finalPrice = (item.discountPrice && item.discountPrice < item.price) 
+                ? item.discountPrice 
+                : item.price;
+            return {
+                sku: item.sku || '',
+                title: item.title,
+                price: finalPrice,
+                qty: item.qty || 1,
+                color: item.color || '',
+                size: item.size || '',
+                currency: item.currency || 'EUR',
+                image: item.image || ''
+            };
+        });
+
+        // ⭐ NUOVO: Aggiungi line item per lo sconto totale
+        if (totalDiscount > 0) {
+            cartItems.push({
+                title: appliedCoupon 
+                    ? `Sconto Coupon (${appliedCoupon.code}) + Combo` 
+                    : 'Sconto Combo',
+                price: -totalDiscount, // ⭐ Negativo = sconto
+                qty: 1,
+                currency: 'EUR'
+            });
+        }
+
+        const payload = {
+            action: 'create_checkout_session',
+            data: JSON.stringify({
+                cart: cartItems,
+                shipping: shipping,
+                is_buy_now: false,
+                cancel_url: window.location.href
+            })
         };
 
-        try {
-            const dataStr = encodeURIComponent(JSON.stringify(data));
-            const callbackName = 'handleCheckoutResponse';
-            const targetUrl = `${webAppUrl}?action=create_checkout_session&data=${dataStr}&callback=${callbackName}&t=${Date.now()}`;
-            
-            const response = await fetch(targetUrl, { method: 'GET', mode: 'cors', headers: { 'Content-Type': 'text/plain' }});
-            if (!response.ok) throw new Error('Errore di rete Google');
-            const textResponse = await response.text();
-            const jsonString = textResponse.substring(textResponse.indexOf('(') + 1, textResponse.lastIndexOf(')'));
-            const result = JSON.parse(jsonString);
-            if (result.error) throw new Error(result.error);
-            else if (result.url) { btn.innerText = 'Reindirizzamento...'; window.location.assign(result.url); }
-            else throw new Error('Risposta non valida dal server');
-        } catch (err) {
-            console.error(err);
-            alert("Impossibile avviare il pagamento: " + err.message);
-            btn.innerText = originalText;
-            btn.style.opacity = '1';
-            btn.disabled = false;
+        // 7. Chiamata API
+        const queryParams = new URLSearchParams(payload).toString();
+        const targetUrl = `${webAppUrl}?${queryParams}`;
+        
+        const response = await fetch(targetUrl, { 
+            method: 'GET', 
+            mode: 'cors' 
+        });
+        
+        if (!response.ok) throw new Error('Errore di rete');
+        
+        const result = await response.json();
+        
+        if (result.success && result.url) {
+            btn.innerText = 'Reindirizzamento...';
+            window.location.href = result.url;
+        } else {
+            throw new Error(result.error || 'Risposta non valida dal server');
         }
+        
+    } catch (err) {
+        console.error('Errore checkout:', err);
+        alert("Impossibile avviare il pagamento: " + err.message);
+        
+        btn.innerText = originalText;
+        btn.style.opacity = '1';
+        btn.disabled = false;
     }
+}
 
     const checkoutBtn = document.getElementById('checkoutBtn');
     if (checkoutBtn) checkoutBtn.onclick = initiateCheckout;
@@ -1136,3 +1186,4 @@ window.addEventListener('pageshow', function(event) {
 </script>
 </body>
 </html>
+
