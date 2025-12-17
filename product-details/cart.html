@@ -722,35 +722,26 @@ document.write(`
             cart.forEach((item, index) => {
                 let variantHTML = '';
                 if (item.color || item.size) {
-    variantHTML = '<div class="item-variant">';
-    
-    if (item.color) {
-        const colorMap = {
-            'Nero': '#000000', 'Bianco': '#FFFFFF', 'Grigio': '#808080',
-            'Blu': '#0000FF', 'Rosso': '#FF0000', 'Verde': '#008000',
-            'Giallo': '#FFFF00', 'Viola': '#800080', 'Arancione': '#FFA500',
-            'Marrone': '#A52A2A', 'Oro': '#FFD700', 'Argento': '#C0C0C0',
-            'Beige': '#F5F5DC', 'Rosa': '#FFC0CB', 'Celeste': '#87CEEB',
-            'Black': '#000000', 'White': '#FFFFFF', 'Grey': '#808080',
-            'Blue': '#0000FF', 'Red': '#FF0000'
-        };
-        const cssColor = colorMap[item.color] || item.color;
-        const isLight = ['#FFFFFF', 'white', '#F5F5DC', 'beige'].includes(cssColor.toLowerCase());
-        const borderStyle = isLight ? 'border: 1px solid rgba(255,255,255,0.3);' : '';
-        variantHTML += `<div class="variant-detail"><span class="color-dot" style="background-color: ${cssColor}; ${borderStyle}"></span><span>${item.color}</span></div>`;
-    }
-    
-    // ⭐ AGGIUNGI IL PUNTINO
-    if (item.color && item.size) {
-        variantHTML += '<span style="color: #71717a; margin: 0 0.5rem;">·</span>';
-    }
-    
-    if (item.size) {
-        variantHTML += `<div class="variant-detail"><span>Taglia ${item.size}</span></div>`;
-    }
-    
-    variantHTML += '</div>';
+                    variantHTML = '<div class="item-variant">';
+                    if (item.color) {
+    // Mappa colori Italiano → CSS Hex
+    const colorMap = {
+        'Nero': '#000000', 'Bianco': '#FFFFFF', 'Grigio': '#808080',
+        'Blu': '#0000FF', 'Rosso': '#FF0000', 'Verde': '#008000',
+        'Giallo': '#FFFF00', 'Viola': '#800080', 'Arancione': '#FFA500',
+        'Marrone': '#A52A2A', 'Oro': '#FFD700', 'Argento': '#C0C0C0',
+        'Beige': '#F5F5DC', 'Rosa': '#FFC0CB', 'Celeste': '#87CEEB',
+        'Black': '#000000', 'White': '#FFFFFF', 'Grey': '#808080',
+        'Blue': '#0000FF', 'Red': '#FF0000'
+    };
+    const cssColor = colorMap[item.color] || item.color;
+    const isLight = ['#FFFFFF', 'white', '#F5F5DC', 'beige'].includes(cssColor.toLowerCase());
+    const borderStyle = isLight ? 'border: 1px solid rgba(255,255,255,0.3);' : '';
+    variantHTML += `<div class="variant-detail"><span class="color-dot" style="background-color: ${cssColor}; ${borderStyle}"></span><span>${item.color}</span></div>`;
 }
+                    if (item.size) variantHTML += `<div class="variant-detail"><span>Taglia ${item.size}</span></div>`;
+                    variantHTML += '</div>';
+                }
                 
                 const finalPrice = (item.discountPrice && item.discountPrice < item.price) ? item.discountPrice : item.price;
                 const hasDiscount = item.discountPrice && item.discountPrice < item.price;
@@ -943,126 +934,76 @@ async function loadRecommendedProducts() {
 
     /* --- CHECKOUT (invariato) --- */
     async function initiateCheckout(e) {
-    if (e) e.preventDefault();
-    const btn = document.getElementById('checkoutBtn');
-    if (!btn || btn.disabled) return;
-    
-    const freshCart = JSON.parse(localStorage.getItem('lh360_cart')) || [];
-    const validItems = freshCart.filter(item => item && item.title && item.price);
-    if (validItems.length === 0) { 
-        alert('Il carrello è vuoto!'); 
-        return; 
-    }
+        if (e) e.preventDefault();
+        const btn = document.getElementById('checkoutBtn');
+        if (!btn || btn.disabled) return;
+        
+        const freshCart = JSON.parse(localStorage.getItem('lh360_cart')) || [];
+        const validItems = freshCart.filter(item => item && item.title && item.price);
+        if (validItems.length === 0) { alert('Il carrello è vuoto!'); return; }
 
-    const originalText = btn.innerText;
-    btn.innerText = 'Connessione sicura...';
-    btn.style.opacity = '0.7';
-    btn.disabled = true;
+        const originalText = btn.innerText;
+        btn.innerText = 'Connessione sicura...';
+        btn.style.opacity = '0.7';
+        btn.disabled = true;
 
-    try {
-        // 1. Calcola subtotale
         let subtotal = 0;
         validItems.forEach(item => {
-            const finalPrice = (item.discountPrice && item.discountPrice < item.price) 
-                ? item.discountPrice 
-                : item.price;
+            const finalPrice = (item.discountPrice && item.discountPrice < item.price) ? item.discountPrice : item.price;
             subtotal += finalPrice * (item.qty || 1);
         });
 
-        // 2. Verifica sconti combo
-        let comboDiscount = 0;
+        let discount = 0;
         try {
             const skuList = validItems.map(item => item.sku).join(',');
             const response = await fetch(`${webAppUrl}?action=check_combo&skus=${encodeURIComponent(skuList)}&t=${Date.now()}`);
             const result = await response.json();
-            if (result.success && result.comboDiscount > 0) {
-                comboDiscount = result.comboDiscount;
-            }
-        } catch (error) { 
-            console.error('Errore verifica combo:', error); 
-        }
+            if (result.success && result.comboDiscount > 0) discount = result.comboDiscount;
+        } catch (error) { console.error('Errore verifica combo:', error); }
 
-        // 3. Aggiungi sconto coupon (se presente)
-        let couponDiscount = 0;
-        if (appliedCoupon && appliedCoupon.discountPercent) {
-            couponDiscount = (subtotal * appliedCoupon.discountPercent) / 100;
-        }
-
-        // 4. Totale sconti
-        const totalDiscount = comboDiscount + couponDiscount;
-
-        // 5. Calcola spedizione
-        const totalAfterDiscounts = subtotal - totalDiscount;
+        const totalAfterDiscounts = subtotal - discount;
         const shipping = totalAfterDiscounts >= 150 ? 0 : 15;
 
-        // 6. Prepara line items per Stripe
-        const cartItems = validItems.map(item => {
-            const finalPrice = (item.discountPrice && item.discountPrice < item.price) 
-                ? item.discountPrice 
-                : item.price;
-            return {
-                sku: item.sku || '',
-                title: item.title,
-                price: finalPrice,
-                qty: item.qty || 1,
-                color: item.color || '',
-                size: item.size || '',
-                currency: item.currency || 'EUR',
-                image: item.image || ''
-            };
-        });
-
-        // ⭐ NUOVO: Aggiungi line item per lo sconto totale
-        if (totalDiscount > 0) {
-            cartItems.push({
-                title: appliedCoupon 
-                    ? `Sconto Coupon (${appliedCoupon.code}) + Combo` 
-                    : 'Sconto Combo',
-                price: -totalDiscount, // ⭐ Negativo = sconto
-                qty: 1,
-                currency: 'EUR'
-            });
-        }
-
-        const payload = {
-            action: 'create_checkout_session',
-            data: JSON.stringify({
-                cart: cartItems,
-                shipping: shipping,
-                is_buy_now: false,
-                cancel_url: window.location.href
-            })
+        const data = {
+            cart: validItems.map(item => {
+               const finalPrice = (item.discountPrice && item.discountPrice < item.price) ? item.discountPrice : item.price;
+               return {
+                   sku: item.sku || '',              // ← AGGIUNTO per lookup N. Prodotto
+                   title: item.title,
+                   price: finalPrice,
+                   qty: item.qty || 1,
+                   color: item.color || '',
+                   size: item.size || '',
+                   currency: item.currency || 'EUR',
+                   image: item.image || ''
+                 };
+            }),
+                 shipping: shipping,
+                 is_buy_now: false,                        // ← AGGIUNTO per distinguere da "Acquista Ora"
+                 cancel_url: window.location.href          // ← AGGIUNTO per tornare al carrello
         };
 
-        // 7. Chiamata API
-        const queryParams = new URLSearchParams(payload).toString();
-        const targetUrl = `${webAppUrl}?${queryParams}`;
-        
-        const response = await fetch(targetUrl, { 
-            method: 'GET', 
-            mode: 'cors' 
-        });
-        
-        if (!response.ok) throw new Error('Errore di rete');
-        
-        const result = await response.json();
-        
-        if (result.success && result.url) {
-            btn.innerText = 'Reindirizzamento...';
-            window.location.href = result.url;
-        } else {
-            throw new Error(result.error || 'Risposta non valida dal server');
+        try {
+            const dataStr = encodeURIComponent(JSON.stringify(data));
+            const callbackName = 'handleCheckoutResponse';
+            const targetUrl = `${webAppUrl}?action=create_checkout_session&data=${dataStr}&callback=${callbackName}&t=${Date.now()}`;
+            
+            const response = await fetch(targetUrl, { method: 'GET', mode: 'cors', headers: { 'Content-Type': 'text/plain' }});
+            if (!response.ok) throw new Error('Errore di rete Google');
+            const textResponse = await response.text();
+            const jsonString = textResponse.substring(textResponse.indexOf('(') + 1, textResponse.lastIndexOf(')'));
+            const result = JSON.parse(jsonString);
+            if (result.error) throw new Error(result.error);
+            else if (result.url) { btn.innerText = 'Reindirizzamento...'; window.location.assign(result.url); }
+            else throw new Error('Risposta non valida dal server');
+        } catch (err) {
+            console.error(err);
+            alert("Impossibile avviare il pagamento: " + err.message);
+            btn.innerText = originalText;
+            btn.style.opacity = '1';
+            btn.disabled = false;
         }
-        
-    } catch (err) {
-        console.error('Errore checkout:', err);
-        alert("Impossibile avviare il pagamento: " + err.message);
-        
-        btn.innerText = originalText;
-        btn.style.opacity = '1';
-        btn.disabled = false;
     }
-}
 
     const checkoutBtn = document.getElementById('checkoutBtn');
     if (checkoutBtn) checkoutBtn.onclick = initiateCheckout;
@@ -1175,25 +1116,8 @@ async function loadRecommendedProducts() {
                 loader.style.opacity = '0';
                 setTimeout(() => loader.remove(), 600);
             }
-        }, 3000); // ⭐ Ridotto per caricamento più veloce
+        }, 4200); // ⭐ Ridotto per caricamento più veloce
     });
-
-    // Fix: Ripristina pulsante checkout quando si torna indietro
-window.addEventListener('pageshow', function(event) {
-    if (event.persisted) {
-        const loader = document.getElementById('cartLoader');
-        const checkoutBtn = document.getElementById('checkoutBtn');
-        
-        if (loader) loader.remove();
-        if (checkoutBtn) {
-            checkoutBtn.disabled = false;
-            checkoutBtn.textContent = 'Procedi al Checkout';
-            checkoutBtn.style.opacity = '1';
-        }
-    }
-});
 </script>
 </body>
 </html>
-
-
