@@ -981,30 +981,40 @@ async function loadRecommendedProducts() {
 
     // 4. Costruisci payload per Stripe (con sconto applicato proporzionalmente ai prodotti)
     const data = {
-        cart: validItems.map(item => {
-           const finalPrice = (item.discountPrice && item.discountPrice < item.price) ? item.discountPrice : item.price;
-           
-           // Applica sconto proporzionale al prezzo del singolo item
-           let adjustedPrice = finalPrice;
-           if (totalDiscount > 0 && subtotal > 0) {
-               const itemSubtotal = finalPrice * (item.qty || 1);
-               const discountRatio = itemSubtotal / subtotal;
-               const itemDiscount = totalDiscount * discountRatio;
-               adjustedPrice = finalPrice - (itemDiscount / (item.qty || 1));
-               adjustedPrice = Math.max(0.50, adjustedPrice); // Stripe richiede minimo 0.50€
-           }
-           
-           return {
-               sku: item.sku || '',
-               title: item.title,
-               price: adjustedPrice,  // Prezzo già scontato
-               qty: item.qty || 1,
-               color: item.color || '',
-               size: item.size || '',
-               currency: item.currency || 'EUR',
-               image: item.image || ''
-             };
-        }),
+    cart: validItems.map(item => {
+       const finalPrice = (item.discountPrice && item.discountPrice < item.price) ? item.discountPrice : item.price;
+       
+       // Applica sconto proporzionale al prezzo del singolo item
+       let adjustedPrice = finalPrice;
+       if (totalDiscount > 0 && subtotal > 0) {
+           const itemSubtotal = finalPrice * (item.qty || 1);
+           const discountRatio = itemSubtotal / subtotal;
+           const itemDiscount = totalDiscount * discountRatio;
+           adjustedPrice = finalPrice - (itemDiscount / (item.qty || 1));
+           adjustedPrice = Math.max(0.50, adjustedPrice);
+       }
+       
+       // ⭐ COSTRUZIONE DESCRIZIONE STRUTTURATA
+       let structuredDesc = item.title;
+       const variantParts = [];
+       if (item.color) variantParts.push(item.color);
+       if (item.size) variantParts.push(item.size);
+       if (variantParts.length > 0) {
+           structuredDesc += ' | ' + variantParts.join(' - ');
+       }
+       
+       return {
+           sku: item.sku || '',
+           title: item.title,
+           description: structuredDesc,  // ⭐ AGGIUNTO
+           price: adjustedPrice,
+           qty: item.qty || 1,
+           color: item.color || '',
+           size: item.size || '',
+           currency: item.currency || 'EUR',
+           image: item.image || ''
+         };
+    }),
         shipping: shipping,
         is_buy_now: false,
         cancel_url: window.location.href
@@ -1160,3 +1170,4 @@ window.addEventListener('pageshow', function(event) {
 </script>
 </body>
 </html>
+
