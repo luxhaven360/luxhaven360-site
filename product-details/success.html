@@ -1263,142 +1263,114 @@ function setupButtons() {
     }
 }
 
-async function loadOrderDetails() {
-    const sessionId = getSessionIdFromUrl();
+// ---------- Robust JSONP loader with retries and fetch fallback ----------
+function loadOrderDetails(maxRetries = 3) {
+    const urlParams = new URLSearchParams(window.location.search);
+    const sessionId = urlParams.get('session_id');
+    const orderNumElem = document.getElementById('orderNumber');
+    const emailElem = document.getElementById('emailValue');
+    const paymentElem = document.getElementById('paymentValue');
+
+    // Visualizza subito ID se presente in URL
+    const orderIdParam = urlParams.get('id_ordine');
+    if (orderIdParam && orderNumElem) {
+        orderNumElem.textContent = `Ordine #${orderIdParam}`;
+    }
+
     if (!sessionId) {
-        showError('Session ID mancante');
+        completeLoadingSequence();
         return;
     }
 
-    try {
-        // 1. Recupera dettagli sessione Stripe ESPANSA (con line_items)
-        const response = await fetch(
-            `${webAppUrl}?action=get_session_details&session_id=${sessionId}&t=${Date.now()}`
-        );
-        
-        if (!response.ok) throw new Error('Errore rete');
-        const data = await response.json();
-        
-        if (!data.success) throw new Error(data.error || 'Errore sconosciuto');
-        
-        const session = data.session;
-        
-        // 2. Recupera line_items per calcolare prezzi corretti
-        const items = session.line_items || [];
-        
-        // 3. Filtra spedizione
-        const productItems = items.filter(item => {
-            const desc = (item.description || '').toLowerCase();
-            return !desc.includes('spedizione') && !desc.includes('shipping');
-        });
-        
-        // 4. Calcola subtotale DALLA SESSIONE (prezzi già scontati)
-        let subtotal = 0;
-        productItems.forEach(item => {
-            const unitPrice = (item.price.unit_amount || 0) / 100;
-            const qty = item.quantity || 1;
-            subtotal += unitPrice * qty;
-        });
-        
-        // 5. Recupera spedizione
-        const shippingItem = items.find(item => {
-            const desc = (item.description || '').toLowerCase();
-            return desc.includes('spedizione') || desc.includes('shipping');
-        });
-        const shipping = shippingItem ? (shippingItem.price.unit_amount / 100) : 0;
-        
-        // 6. Calcola sconto applicato
-        // Lo sconto è: (subtotale teorico senza sconti) - (subtotale pagato)
-        // Oppure usa metadata se hai salvato lo sconto nel backend
-        const totalPaid = (session.amount_total || 0) / 100;
-        const discount = Math.max(0, subtotal + shipping - totalPaid);
-        
-        // 7. Totale finale
-        const total = totalPaid;
-        
-        // 8. Popola UI
-        populateOrderSummary({
-            items: productItems,
-            subtotal: subtotal,
-            shipping: shipping,
-            discount: discount,
-            total: total,
-            orderId: session.metadata?.order_id || 'N/A',
-            customerEmail: session.customer_details?.email || ''
-        });
-        
-    } catch (error) {
-        console.error('Errore caricamento ordine:', error);
-        showError(error.message);
-    }
-}
+    let attempts = 0;
+    let finished = false;
 
-function populateOrderSummary(data) {
-    const { items, subtotal, shipping, discount, total, orderId, customerEmail } = data;
-    
-    // 1. Mostra ID Ordine e Email
-    document.getElementById('orderId').textContent = orderId;
-    document.getElementById('customerEmail').textContent = customerEmail;
-    
-    // 2. Rendering Prodotti con Prezzi Corretti
-    const itemsContainer = document.getElementById('orderItemsContainer');
-    itemsContainer.innerHTML = items.map(item => {
-        const unitPrice = (item.price.unit_amount || 0) / 100;
-        const qty = item.quantity || 1;
-        const itemTotal = unitPrice * qty;
+    function tryRequest() {
+        if (finished) return;
+        attempts++;
         
-        // Parsing variante (colore/taglia) dalla description
-        let variantInfo = '';
-        const desc = item.description || '';
-        if (desc.includes('|')) {
-            const parts = desc.split('|');
-            variantInfo = parts[1] ? parts[1].trim() : '';
+        // Genera nome callback unico
+        const callbackName = 'handleDetailsResponse_' + Date.now() + '_' + Math.floor(Math.random() * 10000);
+        
+        const script = document.createElement('script');
+        // Aggiungiamo parametro 't' per evitare cache browser
+        const src = `${webAppUrl}?get_details=1&session_id=${encodeURIComponent(sessionId)}&callback=${callbackName}&t=${Date.now()}`;
+        script.src = src;
+        script.async = true;
+
+        // FIX ERRORI CONSOLE: Non cancellare la funzione, rendila vuota
+        const cleanup = () => {
+            try { if (script.parentNode) script.parentNode.removeChild(script); } catch (e) {}
+            // Invece di delete, assegnamo una funzione vuota. 
+            // Se la risposta arriva tardi, chiamerà questa funzione e non succederà nulla (nessun errore rosso).
+            window[callbackName] = function() {}; 
+        };
+
+        window[callbackName] = function(response) {
+            if (finished) return;
+            finished = true;
+            // Qui possiamo pulire davvero se vogliamo, o lasciare la funzione vuota
+            cleanup(); 
+            handleDetailsResponse(response);
+        };
+
+        script.onerror = function() {
+            cleanup();
+            if (attempts <= maxRetries) {
+                console.warn('JSONP load error, retrying...', attempts);
+                setTimeout(tryRequest, 1500 + (attempts * 500)); // Backoff incrementale
+            } else {
+                tryFetchFallback();
+            }
+        };
+
+        document.body.appendChild(script);
+
+        // Timeout più lungo per connessioni lente
+        setTimeout(() => {
+            if (!finished) {
+                // Non segniamo finished = true qui, lasciamo che il retry faccia il suo corso
+                // Ma puliamo questo tentativo specifico
+                cleanup();
+                if (attempts <= maxRetries) {
+                    console.warn('JSONP timeout, retrying...', attempts);
+                    tryRequest();
+                } else {
+                    tryFetchFallback();
+                }
+            }
+        }, 8000); // 8 secondi di timeout per richiesta
+    }
+
+    async function tryFetchFallback() {
+        if (finished) return;
+        try {
+            // Tentativo fetch moderno come ultima spiaggia
+            const fetchUrl = `${webAppUrl}?get_details=1&session_id=${encodeURIComponent(sessionId)}&callback=__FALLBACK_CB&no_cache=${Date.now()}`;
+            const res = await fetch(fetchUrl);
+            if (!res.ok) throw new Error('Fetch failed');
+            
+            const text = await res.text();
+            const start = text.indexOf('(');
+            const end = text.lastIndexOf(')');
+            if (start > -1 && end > -1) {
+                const jsonStr = text.substring(start + 1, end);
+                const parsed = JSON.parse(jsonStr);
+                finished = true;
+                handleDetailsResponse(parsed);
+                return;
+            }
+        } catch (e) {
+            console.warn('Fallback fetch failed', e);
         }
-        
-        return `
-            <div class="order-item">
-                <div class="item-details">
-                    <div class="item-name">${item.description || item.price.product.name}</div>
-                    ${variantInfo ? `<div class="item-variant">${variantInfo}</div>` : ''}
-                </div>
-                <div class="item-price-section">
-                    <div class="item-quantity">Qtà: ${qty}</div>
-                    <div class="item-price">€ ${itemTotal.toFixed(2).replace('.', ',')}</div>
-                </div>
-            </div>
-        `;
-    }).join('');
-    
-    // 3. Subtotale
-    document.getElementById('subtotalAmount').textContent = 
-        `€ ${subtotal.toFixed(2).replace('.', ',')}`;
-    
-    // 4. Spedizione
-    const shippingEl = document.getElementById('shippingAmount');
-    if (shipping === 0) {
-        shippingEl.innerHTML = '<span style="color: #10b981; font-weight: 600;">Gratuita</span>';
-    } else {
-        shippingEl.textContent = `€ ${shipping.toFixed(2).replace('.', ',')}`;
+        // Se tutto fallisce
+        if (!finished) {
+            finished = true;
+            completeLoadingSequence();
+        }
     }
-    
-    // 5. Sconto (⭐ LOGICA FONDAMENTALE)
-    const discountRow = document.getElementById('discountRow');
-    const discountAmount = document.getElementById('discountAmount');
-    
-    if (discount > 0) {
-        discountRow.style.display = 'flex'; // Mostra riga
-        discountAmount.innerHTML = `
-            <span style="color: #34d399; font-weight: 600; font-size: 1.125rem;">
-                - € ${discount.toFixed(2).replace('.', ',')}
-            </span>
-        `;
-    } else {
-        discountRow.style.display = 'none'; // ⭐ NASCONDE riga se sconto = 0
-    }
-    
-    // 6. Totale Finale
-    document.getElementById('totalAmount').textContent = 
-        `€ ${total.toFixed(2).replace('.', ',')}`;
+
+    tryRequest();
 }
 
 // ---------- Handler globale con logica dinamica tracking ----------
@@ -1863,11 +1835,3 @@ function loadPurchasedItems() {
     </script>    
 </body>
 </html>
-
-
-
-
-
-
-
-
