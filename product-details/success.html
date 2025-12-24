@@ -975,22 +975,48 @@ const webAppUrl = 'https://script.google.com/macros/s/AKfycbwr79RkXIEocpuOKaM6uM
     // per sconfiggere la race condition con la pulizia del localStorage.
     let _persistentCart = [];
     let _persistentTotal = 0.00;
+    let _persistentDiscounts = { combo: 0, coupon: null };
     
     try {
         const cartRaw = localStorage.getItem('lh360_cart');
         if (cartRaw) {
             _persistentCart = JSON.parse(cartRaw);
             if (Array.isArray(_persistentCart) && _persistentCart.length > 0) {
-                // Calcola il totale corretto qui
-                const subtotal = _persistentCart.reduce((sum, item) => sum + (parseFloat(item.price) || 0) * (parseInt(item.qty) || 1), 0);
-                const shippingCost = subtotal >= 150 ? 0 : 15;
-                _persistentTotal = subtotal + shippingCost;
+                // Calcola il subtotale usando discountPrice se disponibile
+                const subtotal = _persistentCart.reduce((sum, item) => {
+                    const finalPrice = (item.discountPrice && item.discountPrice < item.price) ? 
+                        parseFloat(item.discountPrice) : parseFloat(item.price);
+                    return sum + (finalPrice || 0) * (parseInt(item.qty) || 1);
+                }, 0);
+                
+                // Recupera sconti applicati (se presenti e recenti)
+                try {
+                    const discountsRaw = localStorage.getItem('lh360_checkout_discounts');
+                    if (discountsRaw) {
+                        const discounts = JSON.parse(discountsRaw);
+                        // Valida solo se il timestamp è recente (ultimi 5 minuti)
+                        if (discounts.timestamp && (Date.now() - discounts.timestamp) < 300000) {
+                            _persistentDiscounts = {
+                                combo: discounts.combo || 0,
+                                coupon: discounts.coupon || null
+                            };
+                        }
+                    }
+                } catch (e) {
+                    console.error('Errore recupero sconti:', e);
+                }
+                
+                const totalDiscount = _persistentDiscounts.combo + (_persistentDiscounts.coupon?.amount || 0);
+                const totalAfterDiscounts = subtotal - totalDiscount;
+                const shippingCost = totalAfterDiscounts >= 150 ? 0 : 15;
+                _persistentTotal = subtotal + shippingCost - totalDiscount;
             }
         }
     } catch (e) {
         console.error('Errore nel parsing del carrello persistente:', e);
         _persistentCart = [];
         _persistentTotal = 0.00;
+        _persistentDiscounts = { combo: 0, coupon: null };
     }
     // *** 1. MODIFICA FINE ***
 
@@ -1835,3 +1861,4 @@ function loadPurchasedItems() {
     </script>    
 </body>
 </html>
+
