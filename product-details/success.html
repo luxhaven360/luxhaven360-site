@@ -517,10 +517,37 @@
             color: #a1a1aa;
         }
 
-        .summary-item-price {
-            font-size: 1.125rem;
-            font-weight: 500;
-        }
+        /* Stile prezzi scontati (coerente con cart.html) */
+.summary-item-price {
+    font-size: 1.125rem;
+    font-weight: 500;
+    text-align: right;
+    min-width: 120px; /* Larghezza minima per allineamento */
+}
+
+.summary-item-price > div {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 0.25rem;
+}
+
+/* Prezzo originale barrato */
+.summary-item-price [style*="line-through"] {
+    font-size: 0.875rem !important;
+    color: #71717a !important;
+    font-weight: 400 !important;
+}
+
+/* Prezzo finale dorato */
+.summary-item-price [style*="#D4AF37"] {
+    font-size: 1.125rem !important;
+    font-weight: 600 !important;
+    background: linear-gradient(135deg, #D4AF37, #FFD700);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+}
 
         .summary-totals {
             padding-top: 1.5rem;
@@ -551,6 +578,37 @@
             color: white;
             font-weight: 500;
         }
+
+        /* Badge combo (coerente con cart.html) */
+.combo-badge {
+    display: inline-block;
+    background: rgba(52, 211, 153, 0.1);
+    border: 1px solid #34d399;
+    color: #34d399;
+    padding: 0.25rem 0.75rem;
+    border-radius: 1rem;
+    font-size: 0.75rem;
+    margin-left: 0.5rem;
+    font-weight: 500;
+    vertical-align: middle;
+}
+
+/* Evidenziazione riga sconto attivo */
+.summary-row.discount-active .summary-value {
+    color: #34d399 !important;
+    font-weight: 600 !important;
+    font-size: 1.125rem !important;
+}
+
+/* Animazione comparsa sconto */
+@keyframes discountPulse {
+    0%, 100% { transform: scale(1); }
+    50% { transform: scale(1.05); }
+}
+
+.discount-active {
+    animation: discountPulse 0.6s ease-in-out;
+}
 
         /* Timeline */
         .timeline-section {
@@ -896,9 +954,12 @@
                     <span class="summary-label">Spedizione</span>
                     <span style="color: #34d399;">Gratuita</span>
                 </div>
-                <div class="summary-row">
-                    <span class="summary-label">Sconto</span>
-                    <span style="color: #34d399;">- € 0,00</span>
+                <div class="summary-row" id="discountRow" style="display: none;">
+                    <span class="summary-label">
+                         Sconto
+                         <span class="combo-badge" id="comboBadge" style="display: none;">COMBO</span>
+                    </span>
+                    <span class="summary-value" id="discountValue" style="color: #34d399;">- € 0,00</span>
                 </div>
                 <div class="summary-row summary-total">
                     <span class="summary-label">Totale Pagato</span>
@@ -982,7 +1043,13 @@ const webAppUrl = 'https://script.google.com/macros/s/AKfycbwr79RkXIEocpuOKaM6uM
             _persistentCart = JSON.parse(cartRaw);
             if (Array.isArray(_persistentCart) && _persistentCart.length > 0) {
                 // Calcola il totale corretto qui
-                const subtotal = _persistentCart.reduce((sum, item) => sum + (parseFloat(item.price) || 0) * (parseInt(item.qty) || 1), 0);
+                // ⭐ FIX: Usa discountPrice se presente, altrimenti price
+const subtotal = _persistentCart.reduce((sum, item) => {
+    const finalPrice = (item.discountPrice && item.discountPrice < item.price) 
+        ? parseFloat(item.discountPrice) 
+        : parseFloat(item.price) || 0;
+    return sum + finalPrice * (parseInt(item.qty) || 1);
+}, 0);
                 const shippingCost = subtotal >= 150 ? 0 : 15;
                 _persistentTotal = subtotal + shippingCost;
             }
@@ -1780,35 +1847,136 @@ function loadPurchasedItems() {
     };
 
     cart.forEach(item => {
-        const itemPrice = parseFloat(item.price) || 0;
-        const itemQty = parseInt(item.qty) || 1;
-        subtotal += itemPrice * itemQty; // Aggiorna subtotal per UI
+    // ⭐ FIX: Calcola prezzo finale considerando sconto di default
+    const hasDiscount = item.discountPrice && item.discountPrice < item.price;
+    const originalPrice = parseFloat(item.price) || 0;
+    const finalPrice = hasDiscount ? parseFloat(item.discountPrice) : originalPrice;
+    const itemQty = parseInt(item.qty) || 1;
+    
+    subtotal += finalPrice * itemQty; // Usa prezzo finale per subtotal
 
-        let displayColor = item.color || '';
-        if (displayColor.startsWith('#') && colorNames[displayColor]) {
-            displayColor = colorNames[displayColor];
-        }
-        
-        let variantText = '';
-        if(displayColor) variantText += displayColor;
-        if(displayColor && item.size) variantText += ' · ';
-        if(item.size) variantText += `Taglia ${item.size}`;
-        if(!variantText) variantText = 'Taglia Unica';
+    let displayColor = item.color || '';
+    if (displayColor.startsWith('#') && colorNames[displayColor]) {
+        displayColor = colorNames[displayColor];
+    }
+    
+    let variantText = '';
+    if(displayColor) variantText += displayColor;
+    if(displayColor && item.size) variantText += ' · ';
+    if(item.size) variantText += `Taglia ${item.size}`;
+    if(!variantText) variantText = 'Taglia Unica';
 
-        const div = document.createElement('div');
-        div.className = 'summary-item';
-        div.innerHTML = `
-            <div class="summary-item-image">
-                <img src="${item.image || 'https://via.placeholder.com/150'}" alt="${item.title}">
+    const div = document.createElement('div');
+    div.className = 'summary-item';
+    
+    // ⭐ FIX: Mostra prezzo barrato se c'è sconto (come in cart.html)
+    const priceHtml = hasDiscount 
+        ? `
+            <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 0.25rem;">
+                <div style="font-size: 0.875rem; color: #71717a; text-decoration: line-through;">
+                    € ${(originalPrice * itemQty).toLocaleString('it-IT', {minimumFractionDigits: 2})}
+                </div>
+                <div style="font-size: 1.125rem; font-weight: 600; color: #D4AF37;">
+                    € ${(finalPrice * itemQty).toLocaleString('it-IT', {minimumFractionDigits: 2})}
+                </div>
             </div>
-            <div class="summary-item-details">
-                <div class="summary-item-name">${item.title} <span style="font-size:0.8em; color:#71717a;">(x${itemQty})</span></div>
-                <div class="summary-item-variant">${variantText}</div>
-            </div>
-            <div class="summary-item-price">€ ${(itemPrice * itemQty).toLocaleString('it-IT', {minimumFractionDigits: 2})}</div>
-        `;
-        itemsContainer.appendChild(div);
+        `
+        : `€ ${(finalPrice * itemQty).toLocaleString('it-IT', {minimumFractionDigits: 2})}`;
+    
+    div.innerHTML = `
+        <div class="summary-item-image">
+            <img src="${item.image || 'https://via.placeholder.com/150'}" alt="${item.title}">
+        </div>
+        <div class="summary-item-details">
+            <div class="summary-item-name">${item.title} <span style="font-size:0.8em; color:#71717a;">(x${itemQty})</span></div>
+            <div class="summary-item-variant">${variantText}</div>
+        </div>
+        <div class="summary-item-price">${priceHtml}</div>
+    `;
+    itemsContainer.appendChild(div);
+});
+
+    /**
+ * Verifica e applica sconti combo/coupon al riepilogo ordine
+ */
+async function applyDiscountsToSummary() {
+    const cart = _persistentCart;
+    if (!cart || cart.length === 0) return;
+
+    // 1. Calcola subtotal con prezzi finali (già fatto in loadPurchasedItems)
+    let subtotal = 0;
+    cart.forEach(item => {
+        const finalPrice = (item.discountPrice && item.discountPrice < item.price) 
+            ? parseFloat(item.discountPrice) 
+            : parseFloat(item.price) || 0;
+        subtotal += finalPrice * (parseInt(item.qty) || 1);
     });
+
+    // 2. Verifica sconto combo
+    let comboDiscount = 0;
+    let isComboActive = false;
+    
+    try {
+        const skuList = cart.map(item => item.sku).join(',');
+        const response = await fetch(`${webAppUrl}?action=check_combo&skus=${encodeURIComponent(skuList)}&t=${Date.now()}`);
+        const result = await response.json();
+        
+        if (result.success && result.comboDiscount > 0) {
+            comboDiscount = result.comboDiscount;
+            isComboActive = true;
+            console.log('✅ Combo sconto rilevata:', comboDiscount);
+        }
+    } catch (error) {
+        console.error('Errore verifica combo:', error);
+    }
+
+    // 3. Calcola totali finali
+    const totalAfterCombo = subtotal - comboDiscount;
+    const shippingCost = totalAfterCombo >= 150 ? 0 : 15;
+    const finalTotal = subtotal + shippingCost - comboDiscount;
+
+    // 4. Aggiorna UI
+    const discountRow = document.getElementById('discountRow');
+    const discountValue = document.getElementById('discountValue');
+    const comboBadge = document.getElementById('comboBadge');
+    const shippingElem = document.getElementById('shipping');
+    const totalElem = document.getElementById('total');
+
+    // Mostra/nascondi riga sconto
+    if (comboDiscount > 0) {
+        discountRow.style.display = 'flex';
+        discountRow.classList.add('discount-active');
+        discountValue.textContent = `- € ${comboDiscount.toLocaleString('it-IT', {minimumFractionDigits: 2})}`;
+        
+        if (isComboActive && comboBadge) {
+            comboBadge.style.display = 'inline-block';
+        }
+    } else {
+        discountRow.style.display = 'none';
+    }
+
+    // Aggiorna spedizione e totale
+    if (shippingElem) {
+        if (shippingCost === 0) {
+            shippingElem.textContent = 'Gratuita';
+            shippingElem.style.color = '#34d399';
+        } else {
+            shippingElem.textContent = `€ ${shippingCost.toLocaleString('it-IT', {minimumFractionDigits: 2})}`;
+            shippingElem.style.color = '#fafafa';
+        }
+    }
+
+    if (totalElem) {
+        totalElem.textContent = `€ ${finalTotal.toLocaleString('it-IT', {minimumFractionDigits: 2})}`;
+    }
+
+    console.log('📊 Riepilogo finale:', {
+        subtotal: subtotal.toFixed(2),
+        comboDiscount: comboDiscount.toFixed(2),
+        shipping: shippingCost.toFixed(2),
+        total: finalTotal.toFixed(2)
+    });
+}
 
     // *** 3. MODIFICA INIZIO: USA DATI PERSISTENTI ***
     // const shippingCost = subtotal >= 150 ? 0 : 15; // VECCHIO
@@ -1831,7 +1999,10 @@ function loadPurchasedItems() {
     }
 
     if (totalElem) totalElem.textContent = `€ ${total.toLocaleString('it-IT', {minimumFractionDigits: 2})}`;
+    // ⭐ NUOVO: Applica sconti combo/coupon
+    applyDiscountsToSummary();
 }
     </script>    
 </body>
 </html>
+
