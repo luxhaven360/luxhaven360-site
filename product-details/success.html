@@ -1059,6 +1059,22 @@ const subtotal = _persistentCart.reduce((sum, item) => {
         _persistentCart = [];
         _persistentTotal = 0.00;
     }
+
+    // ⭐ NUOVO: Recupera sconti salvati da cart.html
+let _appliedDiscounts = { comboDiscount: 0, couponDiscount: 0, couponCode: null, isComboActive: false, totalDiscount: 0 };
+try {
+    const discountsRaw = localStorage.getItem('lh360_applied_discounts');
+    if (discountsRaw) {
+        const parsed = JSON.parse(discountsRaw);
+        // Verifica che i dati non siano troppo vecchi (max 1 ora)
+        if (parsed.timestamp && (Date.now() - parsed.timestamp < 3600000)) {
+            _appliedDiscounts = parsed;
+            console.log('✅ Sconti recuperati:', _appliedDiscounts);
+        }
+    }
+} catch (e) {
+    console.error('Errore recupero sconti:', e);
+}
     // *** 1. MODIFICA FINE ***
 
 let loadTimeout;
@@ -1313,8 +1329,9 @@ function finalizePageLoad() {
     
     // Pulizia localStorage dopo visualizzazione completa
     setTimeout(() => {
-        localStorage.removeItem('lh360_cart');
-        localStorage.removeItem('lh360_selected_variant_id');
+       localStorage.removeItem('lh360_cart');
+       localStorage.removeItem('lh360_selected_variant_id');
+       localStorage.removeItem('lh360_applied_discounts'); // ⭐ NUOVO
     }, 1500);
 }
 
@@ -1896,113 +1913,59 @@ function loadPurchasedItems() {
     itemsContainer.appendChild(div);
 });
 
-    /**
- * Verifica e applica sconti combo/coupon al riepilogo ordine
- */
-async function applyDiscountsToSummary() {
-    const cart = _persistentCart;
-    if (!cart || cart.length === 0) return;
+    // ⭐ FIX: Calcola totale corretto con sconti applicati
+const totalDiscount = _appliedDiscounts.totalDiscount || 0;
+const subtotalAfterDiscount = subtotal - totalDiscount;
+const shippingCost = subtotalAfterDiscount >= 150 ? 0 : 15;
+const finalTotal = subtotal + shippingCost - totalDiscount;
 
-    // 1. Calcola subtotal con prezzi finali (già fatto in loadPurchasedItems)
-    let subtotal = 0;
-    cart.forEach(item => {
-        const finalPrice = (item.discountPrice && item.discountPrice < item.price) 
-            ? parseFloat(item.discountPrice) 
-            : parseFloat(item.price) || 0;
-        subtotal += finalPrice * (parseInt(item.qty) || 1);
-    });
+// Aggiorna Subtotale
+if (subtotalElem) subtotalElem.textContent = `€ ${subtotal.toLocaleString('it-IT', {minimumFractionDigits: 2})}`;
 
-    // 2. Verifica sconto combo
-    let comboDiscount = 0;
-    let isComboActive = false;
-    
-    try {
-        const skuList = cart.map(item => item.sku).join(',');
-        const response = await fetch(`${webAppUrl}?action=check_combo&skus=${encodeURIComponent(skuList)}&t=${Date.now()}`);
-        const result = await response.json();
-        
-        if (result.success && result.comboDiscount > 0) {
-            comboDiscount = result.comboDiscount;
-            isComboActive = true;
-            console.log('✅ Combo sconto rilevata:', comboDiscount);
-        }
-    } catch (error) {
-        console.error('Errore verifica combo:', error);
-    }
-
-    // 3. Calcola totali finali
-    const totalAfterCombo = subtotal - comboDiscount;
-    const shippingCost = totalAfterCombo >= 150 ? 0 : 15;
-    const finalTotal = subtotal + shippingCost - comboDiscount;
-
-    // 4. Aggiorna UI
-    const discountRow = document.getElementById('discountRow');
-    const discountValue = document.getElementById('discountValue');
-    const comboBadge = document.getElementById('comboBadge');
-    const shippingElem = document.getElementById('shipping');
-    const totalElem = document.getElementById('total');
-
-    // Mostra/nascondi riga sconto
-    if (comboDiscount > 0) {
-        discountRow.style.display = 'flex';
-        discountRow.classList.add('discount-active');
-        discountValue.textContent = `- € ${comboDiscount.toLocaleString('it-IT', {minimumFractionDigits: 2})}`;
-        
-        if (isComboActive && comboBadge) {
-            comboBadge.style.display = 'inline-block';
-        }
+// Aggiorna Spedizione
+const shippingElem = document.querySelector('.summary-totals .summary-row:nth-child(2) span:last-child');
+if (shippingElem) {
+    if (shippingCost === 0) {
+        shippingElem.textContent = 'Gratuita';
+        shippingElem.style.color = '#34d399';
     } else {
-        discountRow.style.display = 'none';
+        shippingElem.textContent = `€ ${shippingCost.toLocaleString('it-IT', {minimumFractionDigits: 2})}`;
+        shippingElem.style.color = '#fafafa';
     }
-
-    // Aggiorna spedizione e totale
-    if (shippingElem) {
-        if (shippingCost === 0) {
-            shippingElem.textContent = 'Gratuita';
-            shippingElem.style.color = '#34d399';
-        } else {
-            shippingElem.textContent = `€ ${shippingCost.toLocaleString('it-IT', {minimumFractionDigits: 2})}`;
-            shippingElem.style.color = '#fafafa';
-        }
-    }
-
-    if (totalElem) {
-        totalElem.textContent = `€ ${finalTotal.toLocaleString('it-IT', {minimumFractionDigits: 2})}`;
-    }
-
-    console.log('📊 Riepilogo finale:', {
-        subtotal: subtotal.toFixed(2),
-        comboDiscount: comboDiscount.toFixed(2),
-        shipping: shippingCost.toFixed(2),
-        total: finalTotal.toFixed(2)
-    });
 }
 
-    // *** 3. MODIFICA INIZIO: USA DATI PERSISTENTI ***
-    // const shippingCost = subtotal >= 150 ? 0 : 15; // VECCHIO
-    // const total = subtotal + shippingCost; // VECCHIO
-    const total = _persistentTotal; // NUOVO
-    const shippingCost = total - subtotal; // Calcolo più sicuro
-    // *** 3. MODIFICA FINE ***
+// ⭐ NUOVO: Mostra/Nascondi riga Sconto
+const discountRow = document.getElementById('discountRow');
+const discountValue = document.getElementById('discountValue');
+const comboBadge = document.getElementById('comboBadge');
 
-
-    if (subtotalElem) subtotalElem.textContent = `€ ${subtotal.toLocaleString('it-IT', {minimumFractionDigits: 2})}`;
+if (totalDiscount > 0) {
+    discountRow.style.display = 'flex';
+    discountRow.classList.add('discount-active');
+    discountValue.textContent = `- € ${totalDiscount.toLocaleString('it-IT', {minimumFractionDigits: 2})}`;
     
-    if (shippingElem) {
-        if (shippingCost <= 0) { // Usiamo <= per sicurezza
-            shippingElem.textContent = 'Gratuita';
-            shippingElem.style.color = '#34d399';
-        } else {
-            shippingElem.textContent = `€ ${shippingCost.toLocaleString('it-IT', {minimumFractionDigits: 2})}`;
-            shippingElem.style.color = '#fafafa';
-        }
+    // Mostra badge COMBO se presente
+    if (_appliedDiscounts.isComboActive && comboBadge) {
+        comboBadge.style.display = 'inline-block';
+    } else if (comboBadge) {
+        comboBadge.style.display = 'none';
     }
+    
+    console.log('✅ Sconto visualizzato:', {
+        combo: _appliedDiscounts.comboDiscount,
+        coupon: _appliedDiscounts.couponDiscount,
+        totale: totalDiscount
+    });
+} else {
+    discountRow.style.display = 'none';
+}
 
-    if (totalElem) totalElem.textContent = `€ ${total.toLocaleString('it-IT', {minimumFractionDigits: 2})}`;
-    // ⭐ NUOVO: Applica sconti combo/coupon
-    applyDiscountsToSummary();
+// Aggiorna Totale Finale
+const totalElem = document.querySelector('.summary-total span:last-child');
+if (totalElem) totalElem.textContent = `€ ${finalTotal.toLocaleString('it-IT', {minimumFractionDigits: 2})}`;
 }
     </script>    
 </body>
 </html>
+
 
