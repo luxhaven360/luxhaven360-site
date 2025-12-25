@@ -473,18 +473,26 @@
         }
 
         /* Descrizione prodotti consigliati */
+        /* Descrizione prodotti consigliati */
 .recommended-desc {
     font-size: 0.875rem;
     color: #71717a;
     margin-top: 0.25rem;
     margin-bottom: 0.5rem;
     line-height: 1.3;
-    min-height: 2.6em; /* Due righe per allineamento */
+    min-height: 2.6em;
     overflow: hidden;
     text-overflow: ellipsis;
     display: -webkit-box;
     -webkit-line-clamp: 2;
     -webkit-box-orient: vertical;
+}
+
+/* ✅ NUOVO: Padding tra nome e immagine */
+.recommended-name {
+    font-size: 1rem;
+    font-weight: 500;
+    margin-top: 1rem; /* ← Aggiunto padding */
 }
 
 /* Hover effect migliorato */
@@ -498,11 +506,17 @@
     box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
 }
 
-.recommended-item:hover .recommended-name {
+/* ✅ RIMOSSO: Hover oro dal titolo normale */
+/* .recommended-item:hover .recommended-name {
     color: #D4AF37;
+} */
+
+/* ✅ NUOVO: Hover oro SOLO per prodotti featured */
+.recommended-item.featured:hover .recommended-name {
+    color: #FFD700;
 }
 
-        /* Badge "Consigliato" Premium */
+/* Badge "Consigliato" Premium (invariato) */
 .recommended-item.featured {
     position: relative;
     border: 2px solid #D4AF37;
@@ -948,10 +962,35 @@ async function loadRecommendedProducts() {
     const featuredClass = isFeatured ? ' featured' : '';
     const badgeHtml = isFeatured ? '<div class="recommended-badge">✦ Consigliato</div>' : '';
     
-    // ⭐ AGGIUNTO: Tronca descrizione a max 60 caratteri
+    // ✅ Tronca descrizione a max 60 caratteri
     const shortDesc = (product.desc || '').length > 60 
         ? product.desc.substring(0, 60) + '...' 
         : product.desc || '';
+    
+    // ✅ NUOVO: Logica Sconto
+    const hasDiscount = product.discountPrice && product.discountPrice < product.price;
+    const originalPrice = parseFloat(product.price) || 0;
+    const finalPrice = hasDiscount ? parseFloat(product.discountPrice) : originalPrice;
+    const discountPercent = hasDiscount ? Math.round(((originalPrice - finalPrice) / originalPrice) * 100) : 0;
+    
+    // ✅ HTML Prezzo con Sconto
+    const priceHtml = hasDiscount 
+        ? `
+            <div style="display: flex; flex-direction: column; gap: 0.35rem; align-items: flex-start;">
+                <div style="font-size: 0.75rem; color: #71717a; text-decoration: line-through; font-weight: 300;">
+                    € ${originalPrice.toLocaleString('it-IT', {minimumFractionDigits: 2})}
+                </div>
+                <div style="display: flex; align-items: center; gap: 0.5rem;">
+                    <span style="font-size: 1.125rem; font-weight: 700; background: linear-gradient(135deg, #D4AF37, #FFD700); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;">
+                        € ${finalPrice.toLocaleString('it-IT', {minimumFractionDigits: 2})}
+                    </span>
+                    <span style="display: inline-block; background: linear-gradient(135deg, #D4AF37, #FFD700); color: #09090b; padding: 0.2rem 0.5rem; border-radius: 1rem; font-size: 0.65rem; font-weight: 700; letter-spacing: 0.05em; box-shadow: 0 2px 8px rgba(212, 175, 55, 0.3);">
+                        -${discountPercent}%
+                    </span>
+                </div>
+            </div>
+        `
+        : `<div class="recommended-price">€ ${finalPrice.toLocaleString('it-IT', {minimumFractionDigits: 2})}</div>`;
     
     return `
         <a href="pdp-products.html?sku=${product.sku}" 
@@ -965,7 +1004,7 @@ async function loadRecommendedProducts() {
             </div>
             <div class="recommended-name">${product.title}</div>
             <div class="recommended-desc">${shortDesc}</div>
-            <div class="recommended-price">€ ${product.price.toFixed(2).replace('.', ',')}</div>
+            ${priceHtml}
         </a>
     `;
 }).join('');
@@ -1218,3 +1257,4 @@ window.addEventListener('pageshow', function(event) {
 </script>
 </body>
 </html>
+
