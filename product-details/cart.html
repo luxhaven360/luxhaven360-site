@@ -1027,6 +1027,35 @@ localStorage.setItem('lh360_applied_discounts', JSON.stringify({
     timestamp: Date.now()
 }));
 
+     // ⭐ Aggiunta: Prepara order_details per metadata
+    const orderDetails = {
+        items: cart.map(item => ({
+            sku: item.sku,
+            title: item.title,
+            original_price: item.price,  // Prezzo originale
+            final_price: (item.discountPrice && item.discountPrice < item.price) ? item.discountPrice : item.price,  // Prezzo dopo sconto individuale
+            qty: item.qty || 1,
+            color: item.color || '',
+            size: item.size || ''
+        })),
+        discounts: {
+            combo: isComboDiscount ? discount - (appliedCoupon ? (subtotal * appliedCoupon.discountPercent / 100) : 0) : 0,  // Sconto combo (flat)
+            coupon: appliedCoupon ? (subtotal * appliedCoupon.discountPercent / 100) : 0,  // Sconto coupon (%)
+            total: discount  // Totale sconti
+        },
+        subtotal_before_discount: subtotal,  // Subtotal prima di sconti combo/coupon
+        shipping: shipping,
+        grand_total: total
+    };
+    
+    const metadata = {
+        from_cart: 'true',
+        device_id: deviceFingerprint || '',
+        coupon_code: appliedCoupon ? appliedCoupon.code : '',
+        combo_active: isComboDiscount ? 'true' : 'false',
+        order_details: JSON.stringify(orderDetails)  // ⭐ Aggiunta: JSON dei dettagli prezzi
+    };   
+
     // 4. Costruisci payload per Stripe (con sconto applicato proporzionalmente ai prodotti)
     const data = {
     cart: validItems.map(item => {
@@ -1218,3 +1247,4 @@ window.addEventListener('pageshow', function(event) {
 </script>
 </body>
 </html>
+
