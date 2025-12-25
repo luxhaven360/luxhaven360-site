@@ -74,7 +74,6 @@ function formatPrice(p, currency = 'EUR') {
 }
 
 // funzione per creare una card prodotto
-// funzione per creare una card prodotto
 function createProductCard(prod, defaultCta) {
     // container
     const card = el('div', { class: 'card' });
@@ -123,7 +122,7 @@ function createProductCard(prod, defaultCta) {
     card.appendChild(desc);
 
     // ✅ PREZZO CON SCONTO (SE PRESENTE)
-    const hasDiscount = prod.discountPrice != null && prod.discountPrice < prod.price;
+    const hasDiscount = prod.discountPrice && prod.discountPrice < prod.price;
 
     if (hasDiscount) {
         // Container prezzi
@@ -142,7 +141,7 @@ function createProductCard(prod, defaultCta) {
             style: 'display: flex; align-items: center; gap: 0.75rem;' 
         });
         
-        // Prezzo scontato dorato (ora in grassetto)
+        // Prezzo scontato dorato — ora con font-weight 700 (grassetto)
         const discountedPrice = el('div', { 
             style: `font-size: 1.75rem; font-weight: 700; letter-spacing: 0.02em; 
                     background: linear-gradient(135deg, #D4AF37, #FFD700);
@@ -151,30 +150,20 @@ function createProductCard(prod, defaultCta) {
         }, [document.createTextNode(formatPrice(prod.discountPrice, prod.currency || 'EUR'))]);
         discountRow.appendChild(discountedPrice);
         
-        // Badge sconto percentuale (testo in grassetto usando innerHTML)
+        // Badge sconto percentuale — testo in grassetto usando 'html' con <strong>
         const discountPercent = Math.round(((prod.price - prod.discountPrice) / prod.price) * 100);
         const badge = el('span', { 
-            html: `<strong>- ${discountPercent}%</strong>`,
             style: `display: inline-block; background: linear-gradient(135deg, #D4AF37, #FFD700);
                     color: #09090b; padding: 0.375rem 0.875rem; border-radius: 2rem;
                     font-size: 0.875rem; font-weight: 700; letter-spacing: 0.05em;
-                    box-shadow: 0 4px 12px rgba(212, 175, 55, 0.3);` 
-        });
+                    box-shadow: 0 4px 12px rgba(212, 175, 55, 0.3);`,
+            html: `<strong>- ${discountPercent}%</strong>`,
+            role: 'status',
+            'aria-label': `Sconto ${discountPercent} percento`
+        }, []);
         discountRow.appendChild(badge);
         
         priceContainer.appendChild(discountRow);
-
-        // Risparmio assoluto (in grassetto) — ad esempio "Risparmi: €X,XX"
-        const savingsAmount = (typeof prod.price === 'number' && typeof prod.discountPrice === 'number')
-            ? Math.max(0, prod.price - prod.discountPrice)
-            : 0;
-        if (savingsAmount > 0) {
-            const savingsEl = el('div', { 
-                style: 'font-size: 0.95rem; font-weight: 700; margin-top: 0.25rem; color: #e6e6e6;' 
-            }, [document.createTextNode(`Risparmi: ${formatPrice(savingsAmount, prod.currency || 'EUR')}`)]);
-            priceContainer.appendChild(savingsEl);
-        }
-        
         card.appendChild(priceContainer);
     } else {
         // Prezzo normale (senza sconto)
@@ -415,5 +404,6 @@ function hideLoader() {
         }, 500);
     }
 }
+
 
 
