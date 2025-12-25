@@ -1035,38 +1035,8 @@ const webAppUrl = 'https://script.google.com/macros/s/AKfycbwr79RkXIEocpuOKaM6uM
     // Leggiamo il carrello e il totale UNA SOLA VOLTA all'avvio
     // per sconfiggere la race condition con la pulizia del localStorage.
     let _persistentCart = [];
-let _persistentTotal = 0.00;
-
-// 🆕 PRIORITÀ 1: Recupera ordine "Acquista Ora" se presente
-try {
-    const buyNowRaw = localStorage.getItem('lh360_buy_now_item');
-    if (buyNowRaw) {
-        const buyNowItem = JSON.parse(buyNowRaw);
-        
-        // Verifica validità temporale (max 5 minuti)
-        if (buyNowItem.timestamp && (Date.now() - buyNowItem.timestamp < 300000)) {
-            _persistentCart = [buyNowItem];
-            
-            // Calcola totale per Buy Now
-            const itemPrice = parseFloat(buyNowItem.price) || 0;
-            const shippingCost = itemPrice >= 150 ? 0 : 15;
-            _persistentTotal = itemPrice + shippingCost;
-            
-            console.log('✅ Ordine "Acquista Ora" recuperato:', buyNowItem);
-            
-            // Pulisci immediatamente
-            localStorage.removeItem('lh360_buy_now_item');
-        } else {
-            console.warn('⚠️ Buy Now data scaduto');
-            localStorage.removeItem('lh360_buy_now_item');
-        }
-    }
-} catch (e) {
-    console.error('Errore recupero Buy Now:', e);
-}
-
-// 🆕 PRIORITÀ 2: Se non c'è Buy Now, usa il carrello normale
-if (_persistentCart.length === 0) {
+    let _persistentTotal = 0.00;
+    
     try {
         const cartRaw = localStorage.getItem('lh360_cart');
         if (cartRaw) {
@@ -1206,48 +1176,22 @@ function sendInvoiceEmail() {
         return;
     }
     
-    // 🔄 USA DATI PERSISTENTI (già include Buy Now se presente)
-const cart = _persistentCart.length > 0 ? _persistentCart : JSON.parse(localStorage.getItem('lh360_cart') || '[]');
-
-// Calcola subtotale con prezzi finali (già scontati)
-const subtotal = cart.reduce((sum, item) => {
-    const finalPrice = (item.discountPrice && item.discountPrice < item.price) 
-        ? parseFloat(item.discountPrice) 
-        : parseFloat(item.price) || 0;
-    return sum + finalPrice * (parseInt(item.qty) || 1);
-}, 0);
-
-// Applica sconti aggiuntivi (combo/coupon)
-const totalDiscount = _appliedDiscounts.totalDiscount || 0;
-const subtotalAfterDiscount = subtotal - totalDiscount;
-const shipping = subtotalAfterDiscount >= 150 ? 0 : 15;
-const total = subtotal + shipping - totalDiscount;
-
-console.log('📧 Email data:', { subtotal, totalDiscount, shipping, total });
+    // Raccogli i dati dell'ordine da localStorage
+    const cart = JSON.parse(localStorage.getItem('lh360_cart') || '[]');
+    const subtotal = cart.reduce((sum, item) => sum + (item.price * (item.qty || 1)), 0);
+    const shipping = subtotal >= 150 ? 0 : 15;
+    const total = subtotal + shipping;
     
     // Prepara i dati da inviare
     const invoiceData = {
-        items: cart.map(item => {
-    const finalPrice = (item.discountPrice && item.discountPrice < item.price) 
-        ? parseFloat(item.discountPrice) 
-        : parseFloat(item.price) || 0;
-    
-    return {
-        title: item.title || 'Prodotto',
-        quantity: item.qty || 1,
-        price: finalPrice, // 💰 Prezzo finale (già scontato)
-        originalPrice: parseFloat(item.price) || 0, // 🆕 Per mostrare barrato
-        hasDiscount: item.discountPrice && item.discountPrice < item.price,
-        color: item.color || '',
-        size: item.size || '',
-        image: item.image || ''
-    };
-}),
-subtotal: subtotal.toFixed(2),
-discount: totalDiscount.toFixed(2), // 🆕 Sconto totale
-shipping: shipping.toFixed(2),
-total: total.toFixed(2),
-hasDiscount: totalDiscount > 0 // 🆕 Flag sconto attivo
+        items: cart.map(item => ({
+            title: item.title || 'Prodotto',
+            quantity: item.qty || 1,
+            price: item.price || 0,
+            color: item.color || '',
+            size: item.size || '',
+            image: item.image || ''
+        })),
         subtotal: subtotal.toFixed(2),
         shipping: shipping.toFixed(2),
         total: total.toFixed(2),
@@ -2021,4 +1965,3 @@ if (totalElem) totalElem.textContent = `€ ${finalTotal.toLocaleString('it-IT',
     </script>    
 </body>
 </html>
-
