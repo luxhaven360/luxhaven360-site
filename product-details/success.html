@@ -1478,8 +1478,6 @@ window.handleDetailsResponse = function(response) {
     if (response && !response.error) {
         if (response.email && emailElem) {
             emailElem.textContent = response.email;
-
-            // *** NUOVO: Salva email per tracking futuro ***
             localStorage.setItem('lh360_user_email', response.email);
             console.log('📧 Email salvata per tracking:', response.email);
         }
@@ -1493,6 +1491,11 @@ window.handleDetailsResponse = function(response) {
         if (response.order_id && orderNumElem) {
             orderNumElem.textContent = `Ordine #${response.order_id}`;
             currentOrderId = response.order_id;
+        }
+        
+        // ✅ NUOVO: Usa consegna prevista dal backend
+        if (response.consegna_prevista && deliveryElem) {
+            deliveryElem.textContent = response.consegna_prevista;
         }
     }
 
@@ -1521,16 +1524,8 @@ window.handleDetailsResponse = function(response) {
 
     // Salva ordine in localStorage per tracking
     if (currentOrderId) {
-        // *** 2. MODIFICA INIZIO: USA DATI PERSISTENTI ***
-        // const cart = JSON.parse(localStorage.getItem('lh360_cart') || '[]'); // VECCHIO - Racy
-        // const subtotal = cart.reduce((sum, item) => sum + (item.price * (item.qty || 1)), 0); // VECCHIO
-        // const shipping = subtotal >= 150 ? 0 : 15; // VECCHIO
-        // const total = subtotal + shipping; // VECCHIO
-
-        // NUOVO: Usiamo le variabili globali sicure definite all'inizio
         const cart = _persistentCart;
         const total = _persistentTotal;
-        // *** 2. MODIFICA FINE ***
         const today = new Date();
         const formattedDate = today.toLocaleDateString('it-IT', {
             day: 'numeric',
@@ -1541,9 +1536,9 @@ window.handleDetailsResponse = function(response) {
             id: currentOrderId,
             data: formattedDate,
             stato: 'In Preparazione',
-            totale: total.toFixed(2), // <-- Ora usa il totale corretto
-            consegna_prevista: calculateDeliveryDate(3),
-            products: cart.map(item => ({ // <-- Ora usa il carrello corretto
+            totale: total.toFixed(2),
+            consegna_prevista: response.consegna_prevista || 'Da definire', // ✅ USA VALORE BACKEND
+            products: cart.map(item => ({
                 name: item.title || 'Prodotto',
                 quantity: item.qty || 1,
                 price: item.price || 0,
@@ -1613,13 +1608,10 @@ function updateTimelineFromOrderData(order, confirmedTime, deliveryElem) {
     const stato = order.stato || 'In Preparazione';
     const consegnaPrevista = order.consegna_prevista || 'Da definire';
 
-    if (deliveryElem) {
+    // ✅ Aggiorna UI solo se il valore non è già presente
+    if (deliveryElem && (!deliveryElem.textContent || deliveryElem.textContent === 'Caricamento...')) {
         deliveryElem.textContent = consegnaPrevista;
     }
-
-    const shippingDate = calculateShippingDate(consegnaPrevista);
-    const deliveryDate = parseItalianDate(consegnaPrevista);
-    const deliveryFormatted = deliveryDate ? formatShortDate(deliveryDate, true) : 'Previsto: Da definire';
 
     const timelineData = {
         current_status: mapStatusToStep(stato),
@@ -1631,8 +1623,8 @@ function updateTimelineFromOrderData(order, confirmedTime, deliveryElem) {
         },
         estimated_dates: {
             preparing: 'In corso',
-            shipped: shippingDate,
-            delivered: deliveryFormatted
+            shipped: 'Da programmare',
+            delivered: consegnaPrevista  // ✅ USA VALORE DAL BACKEND
         }
     };
 
@@ -1640,15 +1632,9 @@ function updateTimelineFromOrderData(order, confirmedTime, deliveryElem) {
 }
 
 function updateTimelineWithDefaults(confirmedTime, deliveryElem) {
-    const deliveryDate = calculateDeliveryDate(3);
-    const shippingDate = calculateShippingDate(deliveryDate);
-    const parsedDelivery = parseItalianDate(deliveryDate);
-    const deliveryFormatted = parsedDelivery ? formatShortDate(parsedDelivery, true) : 'Previsto: Da definire';
-
-    if (deliveryElem) {
-        deliveryElem.textContent = deliveryDate;
-    }
-
+    // ✅ Non calcolare più la data, usa valore esistente o "Da definire"
+    const deliveryDate = deliveryElem ? deliveryElem.textContent : 'Da definire';
+    
     const timelineData = {
         current_status: 'preparing',
         status_dates: {
@@ -1659,8 +1645,8 @@ function updateTimelineWithDefaults(confirmedTime, deliveryElem) {
         },
         estimated_dates: {
             preparing: 'In corso',
-            shipped: shippingDate,
-            delivered: deliveryFormatted
+            shipped: 'Da programmare',
+            delivered: deliveryDate  // ✅ USA IL VALORE GIÀ IMPOSTATO
         }
     };
 
@@ -1676,43 +1662,7 @@ function mapStatusToStep(stato) {
     };
     return map[stato] || 'preparing';
 }
-
-function calculateDeliveryDate(daysFromNow) {
-    const date = new Date();
-    date.setDate(date.getDate() + daysFromNow);
-    return date.toLocaleDateString('it-IT', { day: 'numeric', month: 'long', year: 'numeric' });
-}
-
-function calculateShippingDate(deliveryDateStr) {
-    if (!deliveryDateStr || deliveryDateStr === 'Da definire') {
-        const shippingDate = new Date();
-        shippingDate.setDate(shippingDate.getDate() + 1);
-        return formatShortDate(shippingDate, true);
-    }
-
-    try {
-        const deliveryDate = parseItalianDate(deliveryDateStr);
-        if (deliveryDate) {
-            const shippingDate = new Date(deliveryDate);
-            shippingDate.setDate(shippingDate.getDate() - 1);
-            
-            const now = new Date();
-            if (shippingDate < now) {
-                shippingDate.setTime(now.getTime());
-                shippingDate.setDate(shippingDate.getDate() + 1);
-            }
-            
-            return formatShortDate(shippingDate, true);
-        }
-    } catch (e) {
-        console.warn('Errore calcolo data spedizione:', e);
-    }
-
-    const shippingDate = new Date();
-    shippingDate.setDate(shippingDate.getDate() + 1);
-    return formatShortDate(shippingDate, true);
-}
-
+        
 function parseItalianDate(dateStr) {
     if (!dateStr) return null;
     
@@ -1974,3 +1924,4 @@ if (totalElem) totalElem.textContent = `€ ${finalTotal.toLocaleString('it-IT',
     </script>    
 </body>
 </html>
+
