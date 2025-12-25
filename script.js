@@ -121,9 +121,35 @@ function createProductCard(prod, defaultCta) {
     const desc = el('p', { class: 'card-desc' }, [document.createTextNode(prod.desc || '')]);
     card.appendChild(desc);
 
-    // price
-    const priceText = el('div', { class: 'card-price' }, [document.createTextNode(prod.price != null && prod.price > 0 ? formatPrice(prod.price, prod.currency || 'EUR') : (prod.price_text || 'Contattaci'))]);
-    card.appendChild(priceText);
+    // === GESTIONE PREZZI CON SCONTO ===
+let priceHtml = '';
+
+if (prod.discountPrice && prod.discountPrice < prod.price) {
+    // PRODOTTO IN SCONTO
+    const discountPercent = Math.round(((prod.price - prod.discountPrice) / prod.price) * 100);
+    
+    priceHtml = `
+        <div style="display: flex; flex-direction: column; gap: 0.5rem; margin-bottom: 1rem;">
+            <div style="display: flex; align-items: center; gap: 0.75rem;">
+                <div style="font-size: 0.95rem; color: #71717a; text-decoration: line-through;">
+                    ${formatPrice(prod.price, prod.currency || 'EUR')}
+                </div>
+                <div style="background: linear-gradient(135deg, #D4AF37, #FFD700); color: #000; padding: 0.25rem 0.75rem; border-radius: 2rem; font-size: 0.75rem; font-weight: 700; letter-spacing: 0.05em;">
+                    -${discountPercent}%
+                </div>
+            </div>
+            <div class="card-price" style="font-size: 2rem; color: #D4AF37; font-weight: bold; letter-spacing: 1px;">
+                ${formatPrice(prod.discountPrice, prod.currency || 'EUR')}
+            </div>
+        </div>
+    `;
+} else {
+    // PREZZO NORMALE
+    priceHtml = `<div class="card-price">${formatPrice(prod.price, prod.currency || 'EUR')}</div>`;
+}
+
+// Inserisci priceHtml PRIMA del bottone
+card.insertAdjacentHTML('beforeend', priceHtml);
 
     // button area
     const btn = el('button', { class: 'btn', style: 'margin-top: 1.5rem; width: 100%;' }, [document.createTextNode(prod.cta || defaultCta || 'Scopri')]);
@@ -354,3 +380,4 @@ function hideLoader() {
         }, 500);
     }
 }
+
