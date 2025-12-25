@@ -1176,26 +1176,54 @@ function sendInvoiceEmail() {
         return;
     }
     
-    // Raccogli i dati dell'ordine da localStorage
-    const cart = JSON.parse(localStorage.getItem('lh360_cart') || '[]');
-    const subtotal = cart.reduce((sum, item) => sum + (item.price * (item.qty || 1)), 0);
-    const shipping = subtotal >= 150 ? 0 : 15;
-    const total = subtotal + shipping;
-    
-    // Prepara i dati da inviare
-    const invoiceData = {
-        items: cart.map(item => ({
-            title: item.title || 'Prodotto',
-            quantity: item.qty || 1,
-            price: item.price || 0,
-            color: item.color || '',
-            size: item.size || '',
-            image: item.image || ''
-        })),
-        subtotal: subtotal.toFixed(2),
-        shipping: shipping.toFixed(2),
-        total: total.toFixed(2),
-    };
+    // Raccogli i dati dell'ordine
+let cart = [];
+let subtotal = 0;
+let discount = 0;
+
+// Prova prima i dati temporanei (per "Acquista Ora")
+const tempOrder = localStorage.getItem('lh360_temp_order');
+if (tempOrder) {
+    try {
+        cart = JSON.parse(tempOrder);
+        localStorage.removeItem('lh360_temp_order'); // Pulisci
+    } catch(e) {}
+}
+
+// Fallback a carrello normale
+if (cart.length === 0) {
+    cart = JSON.parse(localStorage.getItem('lh360_cart') || '[]');
+}
+
+// Calcola subtotale
+cart.forEach(item => {
+    const finalPrice = (item.discountPrice && item.discountPrice < item.price) ? item.discountPrice : item.price;
+    subtotal += finalPrice * (item.qty || 1);
+});
+
+// Recupera sconti salvati
+const discountsData = JSON.parse(localStorage.getItem('lh360_applied_discounts') || '{}');
+discount = discountsData.totalDiscount || 0;
+
+const totalAfterDiscount = subtotal - discount;
+const shipping = totalAfterDiscount >= 150 ? 0 : 15;
+const total = subtotal + shipping - discount;
+
+// Prepara i dati da inviare
+const invoiceData = {
+    items: cart.map(item => ({
+        title: item.title || 'Prodotto',
+        quantity: item.qty || 1,
+        price: (item.discountPrice && item.discountPrice < item.price) ? item.discountPrice : item.price,
+        color: item.color || '',
+        size: item.size || '',
+        image: item.image || ''
+    })),
+    subtotal: subtotal.toFixed(2),
+    shipping: shipping.toFixed(2),
+    discount: discount.toFixed(2),
+    total: total.toFixed(2),
+};
     
     // Costruisci URL con parametri
     const params = new URLSearchParams({
@@ -2057,4 +2085,5 @@ function renderOrderItems(items, subtotal, shipping, total, discount, container,
     </script>    
 </body>
 </html>
+
 
