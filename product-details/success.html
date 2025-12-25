@@ -1571,59 +1571,109 @@ window.handleDetailsResponse = function(response) {
     completeLoadingSequence();
 };
 
-function fetchOrderTrackingData(orderId, confirmedTime, deliveryElem, maxRetries = 6, delayMs = 1000) {
+/**
+ * Robust fetchOrderTrackingData:
+ * - Chiama prima action=trigger_poll per stimolare il populate lato server
+ * - Effettua retries con backoff fino a maxRetries
+ * - Logga la risposta per debug
+ * - Prova abbinamenti "smart" (trim/uppercase/startsWith)
+ */
+function fetchOrderTrackingData(orderId, confirmedTime, deliveryElem, maxRetries = 12, baseDelayMs = 1000) {
   if (!orderId) {
+    console.warn('fetchOrderTrackingData: orderId mancante');
     updateTimelineWithDefaults(confirmedTime, deliveryElem);
     return;
   }
 
-  let attempts = 0;
+  const webAppUrl = window.LH360_WEBAPP_URL || '/exec?action=get_orders'; // adatta se necessario
+  const triggerUrl = (window.LH360_WEBAPP_URL || '/exec') + '?action=trigger_poll&t=' + Date.now();
+
+  // 1) Trigger populate lato server (non bloccante)
+  (function triggerPopulate() {
+    const s = document.createElement('script');
+    s.src = triggerUrl;
+    s.onload = () => { try { if (s.parentNode) s.parentNode.removeChild(s); } catch(e){} };
+    s.onerror = () => { try { if (s.parentNode) s.parentNode.removeChild(s); } catch(e){} };
+    document.body.appendChild(s);
+    console.log('fetchOrderTrackingData: trigger_poll inviato');
+  })();
+
+  let attempt = 0;
+
+  function normalizeId(id) {
+    if (!id && id !== 0) return '';
+    return String(id).toString().trim().toUpperCase();
+  }
 
   function tryFetch() {
-    attempts++;
-    const callbackName = 'handleOrderTracking_' + Date.now() + '_' + attempts;
-    const script = document.createElement('script');
-    script.src = `${webAppUrl}?action=get_orders&callback=${callbackName}&t=${Date.now()}`;
+    attempt++;
+    const callbackName = 'handleOrderTracking_' + Date.now() + '_' + attempt;
+    const url = (window.LH360_WEBAPP_URL || '/exec') + '?action=get_orders&callback=' + callbackName + '&t=' + Date.now();
 
     window[callbackName] = function(response) {
-      try { if (script.parentNode) document.body.removeChild(script); } catch(e){}
       try { delete window[callbackName]; } catch(e){}
-      if (response && response.orders && Array.isArray(response.orders)) {
-        const order = response.orders.find(o => o.id === orderId);
-        if (order) {
-          console.log('Ordine trovato (fetchOrderTrackingData):', order);
-          updateTimelineFromOrderData(order, confirmedTime, deliveryElem);
+      // pulizia script tag (se esiste)
+      const scr = document.querySelector('script[src*="' + callbackName + '"]');
+      if (scr && scr.parentNode) scr.parentNode.removeChild(scr);
+
+      console.log('fetchOrderTrackingData: response ricevuta (attempt', attempt, ')', response);
+
+      // safety: guarda struttura
+      if (!response || !Array.isArray(response.orders)) {
+        console.warn('fetchOrderTrackingData: response.orders mancante o non array');
+      } else {
+        // prova varie strategie di matching
+        const normalizedWanted = normalizeId(orderId);
+
+        // 1) match esatto trimmed
+        let found = response.orders.find(o => normalizeId(o.id) === normalizedWanted);
+
+        // 2) match startsWith (per prefissi o variazioni)
+        if (!found) {
+          found = response.orders.find(o => normalizeId(o.id).startsWith(normalizedWanted) || normalizedWanted.startsWith(normalizeId(o.id)));
+        }
+
+        // 3) match contains (ultimo tentativo)
+        if (!found) {
+          found = response.orders.find(o => normalizeId(o.id).includes(normalizedWanted) || normalizedWanted.includes(normalizeId(o.id)));
+        }
+
+        if (found) {
+          console.log('fetchOrderTrackingData: ordine trovato', found);
+          updateTimelineFromOrderData(found, confirmedTime, deliveryElem);
           return;
         }
       }
-      // non trovato: retry o fallback
-      if (attempts < maxRetries) {
-        setTimeout(tryFetch, delayMs);
+
+      // se qui, non trovato
+      if (attempt < maxRetries) {
+        const delay = baseDelayMs * Math.min(attempt, 6); // backoff lineare limitato
+        console.log(`fetchOrderTrackingData: ordine non trovato, ritento in ${delay}ms (tentativo ${attempt}/${maxRetries})`);
+        setTimeout(tryFetch, delay);
       } else {
-        console.warn('fetchOrderTrackingData: ordine non trovato dopo tentativi, uso default');
+        console.error('fetchOrderTrackingData: ordine non trovato dopo tentativi, uso default');
         updateTimelineWithDefaults(confirmedTime, deliveryElem);
       }
     };
 
+    // JSONP fallback: aggiunge script
+    const script = document.createElement('script');
+    script.src = url;
     script.onerror = function() {
-      try { if (script.parentNode) document.body.removeChild(script); } catch(e){}
       try { delete window[callbackName]; } catch(e){}
-      if (attempts < maxRetries) {
-        setTimeout(tryFetch, delayMs);
-      } else {
-        updateTimelineWithDefaults(confirmedTime, deliveryElem);
-      }
+      if (attempt < maxRetries) setTimeout(tryFetch, baseDelayMs * attempt);
+      else updateTimelineWithDefaults(confirmedTime, deliveryElem);
     };
-
     document.body.appendChild(script);
   }
 
-  // show placeholder
+  // placeholder UI
   if (deliveryElem && (!deliveryElem.textContent || deliveryElem.textContent.trim() === '')) {
     deliveryElem.textContent = 'In definizione...';
   }
 
-  tryFetch();
+  // avvia primo fetch
+  setTimeout(tryFetch, 400); // piccolo delay per dare tempo al trigger_poll
 }
 
 function updateTimelineFromOrderData(order, confirmedTime, deliveryElem) {
@@ -1991,5 +2041,6 @@ if (totalElem) totalElem.textContent = `€ ${finalTotal.toLocaleString('it-IT',
     </script>    
 </body>
 </html>
+
 
 
