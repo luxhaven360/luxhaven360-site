@@ -1542,7 +1542,7 @@ window.handleDetailsResponse = function(response) {
             data: formattedDate,
             stato: 'In Preparazione',
             totale: total.toFixed(2), // <-- Ora usa il totale corretto
-            consegna_prevista: '', // verrà sostituita dal valore preso da Order Tracking / Prodotti
+            consegna_prevista: calculateDeliveryDate(3),
             products: cart.map(item => ({ // <-- Ora usa il carrello corretto
                 name: item.title || 'Prodotto',
                 quantity: item.qty || 1,
@@ -1571,133 +1571,42 @@ window.handleDetailsResponse = function(response) {
     completeLoadingSequence();
 };
 
-/**
- * Robust fetchOrderTrackingData con fallback URL
- * - Imposta window.LH360_WEBAPP_URL da server/template (consigliato)
- * - Se non disponibile, inserisci manualmente l'Apps Script webapp URL nel array fallbackApps
- * - Prova ogni url in sequenza, poi retry con backoff
- */
-function fetchOrderTrackingData(orderId, confirmedTime, deliveryElem, maxRetries = 12, baseDelayMs = 1000) {
-  if (!orderId) {
-    console.warn('fetchOrderTrackingData: orderId mancante');
-    updateTimelineWithDefaults(confirmedTime, deliveryElem);
-    return;
-  }
+function fetchOrderTrackingData(orderId, confirmedTime, deliveryElem) {
+    if (!orderId) {
+        console.warn('Nessun orderId disponibile per recupero dati tracking');
+        updateTimelineWithDefaults(confirmedTime, deliveryElem);
+        return;
+    }
 
-  // --- CONFIG: imposta qui l'Apps Script WebApp URL se non passi window.LH360_WEBAPP_URL dal server ---
-  const fallbackAppsScriptUrl = 'https://script.google.com/macros/s/AKfycbwr79RkXIEocpuOKaM6uMJqE6VFs9wjlUPvrr__FvDbDDrD2ELB1NbfrWP3BCYpHj2u/exec'; // <<-- REPLACE
-  // Ordine di tentativi: prima la variabile (se definita), poi il fallback
-  const candidateUrls = [];
-  if (window.LH360_WEBAPP_URL) candidateUrls.push(window.LH360_WEBAPP_URL.replace(/\/+$/, ''));
-  candidateUrls.push(fallbackAppsScriptUrl.replace(/\/+$/, ''));
-  // Nota: NON lasciare mai un valore che risolva su github.io/exec
-
-  console.log('fetchOrderTrackingData: candidate webapp URLs:', candidateUrls);
-
-  // Trigger non bloccante per chiedere al server di popolare OT
-  (function triggerPopulate(url) {
-    const tUrl = (window.LH360_WEBAPP_URL || fallbackAppsScriptUrl) + '?action=trigger_poll&t=' + Date.now();
-    const s = document.createElement('script');
-    s.src = tUrl;
-    s.onload = () => { try { if (s.parentNode) s.parentNode.removeChild(s); } catch(e){} };
-    s.onerror = () => { try { if (s.parentNode) s.parentNode.removeChild(s); } catch(e){} };
-    document.body.appendChild(s);
-    console.log('fetchOrderTrackingData: trigger_poll inviato a', tUrl);
-  })();
-
-  let attempt = 0;
-  let urlIndex = 0; // indice in candidateUrls per fallback
-
-  function normalizeId(id) {
-    if (!id && id !== 0) return '';
-    return String(id).trim().toUpperCase();
-  }
-
-  function tryFetchOnce(currentUrl) {
-    attempt++;
-    const callbackName = 'handleOrderTracking_' + Date.now() + '_' + attempt;
-    const url = `${currentUrl}?action=get_orders&callback=${callbackName}&t=${Date.now()}`;
-
-    console.log(`fetchOrderTrackingData: tentativo ${attempt}, usando URL:`, url);
+    const callbackName = 'handleOrderTracking_' + Date.now();
+    const script = document.createElement('script');
+    script.src = `${webAppUrl}?action=get_orders&callback=${callbackName}&t=${Date.now()}`;
 
     window[callbackName] = function(response) {
-      try { delete window[callbackName]; } catch(e){}
-      // rimuovi eventuale script tag corrispondente
-      const scr = document.querySelector('script[src*="' + callbackName + '"]');
-      if (scr && scr.parentNode) scr.parentNode.removeChild(scr);
+        try { if (script.parentNode) document.body.removeChild(script); } catch(e){}
+        try { delete window[callbackName]; } catch(e){}
 
-      console.log('fetchOrderTrackingData: risposta ricevuta (attempt', attempt, '):', response);
-
-      if (response && Array.isArray(response.orders)) {
-        const normalizedWanted = normalizeId(orderId);
-
-        // vari metodi di matching
-        let found = response.orders.find(o => normalizeId(o.id) === normalizedWanted)
-          || response.orders.find(o => normalizeId(o.id).startsWith(normalizedWanted) || normalizedWanted.startsWith(normalizeId(o.id)))
-          || response.orders.find(o => normalizeId(o.id).includes(normalizedWanted) || normalizedWanted.includes(normalizeId(o.id)));
-
-        if (found) {
-          console.log('fetchOrderTrackingData: ordine trovato', found);
-          updateTimelineFromOrderData(found, confirmedTime, deliveryElem);
-          return;
+        if (response && response.orders && Array.isArray(response.orders)) {
+            const order = response.orders.find(o => o.id === orderId);
+            if (order) {
+                console.log('✅ Dati ordine recuperati da Order Tracking:', order);
+                updateTimelineFromOrderData(order, confirmedTime, deliveryElem);
+                return;
+            }
         }
-      } else {
-        console.warn('fetchOrderTrackingData: response.orders mancante o non array =>', response);
-      }
-
-      // se non trovato e non ho superato maxRetries
-      if (attempt < maxRetries) {
-        const delay = baseDelayMs * Math.min(attempt, 6);
-        console.log(`fetchOrderTrackingData: ordine non trovato, ritento in ${delay}ms (tentativo ${attempt}/${maxRetries})`);
-        setTimeout(() => {
-          // se abbiamo finito i tentativi su questo URL, prova il prossimo candidato
-          if (attempt % 3 === 0 && urlIndex < candidateUrls.length - 1) {
-            urlIndex++;
-            console.log('fetchOrderTrackingData: cambio URL verso fallback', candidateUrls[urlIndex]);
-          }
-          tryFetch();
-        }, delay);
-      } else {
-        console.error('fetchOrderTrackingData: ordine non trovato dopo tentativi, uso default');
+        
+        console.warn('Ordine non trovato in Order Tracking, uso dati predefiniti');
         updateTimelineWithDefaults(confirmedTime, deliveryElem);
-      }
     };
 
-    // JSONP
-    const script = document.createElement('script');
-    script.src = url;
-    script.onerror = function(e) {
-      try { delete window[callbackName]; } catch(e){}
-      // rimuovi il tag
-      if (script.parentNode) script.parentNode.removeChild(script);
-      console.warn('fetchOrderTrackingData: script.onerror per URL', currentUrl, '→ possibile 404 o network error');
-
-      // prova fallback immediato se disponibile
-      if (urlIndex < candidateUrls.length - 1) {
-        urlIndex++;
-        console.log('fetchOrderTrackingData: passando al fallback URL:', candidateUrls[urlIndex]);
-        tryFetch(); // re-invoke using new urlIndex
-      } else {
-        // ultima risorsa: retry sullo stesso URL finché maxRetries
-        if (attempt < maxRetries) setTimeout(tryFetch, baseDelayMs * attempt);
-        else updateTimelineWithDefaults(confirmedTime, deliveryElem);
-      }
+    script.onerror = () => {
+        try { if (script.parentNode) document.body.removeChild(script); } catch(e){}
+        try { delete window[callbackName]; } catch(e){}
+        console.warn('Errore caricamento dati tracking, uso dati predefiniti');
+        updateTimelineWithDefaults(confirmedTime, deliveryElem);
     };
+
     document.body.appendChild(script);
-  }
-
-  function tryFetch() {
-    const currentUrl = candidateUrls[urlIndex];
-    tryFetchOnce(currentUrl);
-  }
-
-  // placeholder UI
-  if (deliveryElem && (!deliveryElem.textContent || deliveryElem.textContent.trim() === '')) {
-    deliveryElem.textContent = 'In definizione...';
-  }
-
-  // piccolo delay per lasciare al trigger_poll di iniziare
-  setTimeout(tryFetch, 400);
 }
 
 function updateTimelineFromOrderData(order, confirmedTime, deliveryElem) {
@@ -2065,8 +1974,3 @@ if (totalElem) totalElem.textContent = `€ ${finalTotal.toLocaleString('it-IT',
     </script>    
 </body>
 </html>
-
-
-
-
-
