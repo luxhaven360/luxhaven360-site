@@ -121,50 +121,9 @@ function createProductCard(prod, defaultCta) {
     const desc = el('p', { class: 'card-desc' }, [document.createTextNode(prod.desc || '')]);
     card.appendChild(desc);
 
-    // === GESTIONE PREZZO CON SCONTO ===
-const hasDiscount = prod.discountPrice && prod.discountPrice < prod.price;
-
-if (hasDiscount) {
-    // Container prezzi
-    const priceContainer = el('div', { class: 'price-container', style: 'display: flex; flex-direction: column; gap: 0.5rem; margin-bottom: 1rem;' });
-    
-    // Prezzo originale barrato
-    const originalPrice = el('div', { 
-        class: 'price-original',
-        style: 'font-size: 1rem; color: #71717a; text-decoration: line-through; font-weight: 300;'
-    }, [document.createTextNode(formatPrice(prod.price, prod.currency || 'EUR'))]);
-    
-    // Row con prezzo scontato + badge
-    const priceRow = el('div', { style: 'display: flex; align-items: center; gap: 0.75rem;' });
-    
-    const discountedPrice = el('div', {
-        class: 'price-discounted',
-        style: 'font-size: 1.5rem; font-weight: 600; background: linear-gradient(135deg, #D4AF37, #FFD700); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;'
-    }, [document.createTextNode(formatPrice(prod.discountPrice, prod.currency || 'EUR'))]);
-    
-    // Badge percentuale sconto
-    const discountPercent = Math.round(((prod.price - prod.discountPrice) / prod.price) * 100);
-    const badge = el('span', {
-        class: 'discount-badge',
-        style: 'display: inline-block; background: linear-gradient(135deg, #D4AF37, #FFD700); color: #09090b; padding: 0.25rem 0.625rem; border-radius: 1rem; font-size: 0.75rem; font-weight: 700; letter-spacing: 0.05em; box-shadow: 0 2px 8px rgba(212, 175, 55, 0.4);'
-    }, [document.createTextNode(`-${discountPercent}%`)]);
-    
-    priceRow.appendChild(discountedPrice);
-    priceRow.appendChild(badge);
-    
-    priceContainer.appendChild(originalPrice);
-    priceContainer.appendChild(priceRow);
-    
-    card.appendChild(priceContainer);
-} else {
-    // Prezzo normale (senza sconto)
-    const priceText = el('div', { class: 'card-price' }, [
-        document.createTextNode(prod.price != null && prod.price > 0 ? 
-            formatPrice(prod.price, prod.currency || 'EUR') : 
-            (prod.price_text || 'Contattaci'))
-    ]);
+    // price
+    const priceText = el('div', { class: 'card-price' }, [document.createTextNode(prod.price != null && prod.price > 0 ? formatPrice(prod.price, prod.currency || 'EUR') : (prod.price_text || 'Contattaci'))]);
     card.appendChild(priceText);
-}
 
     // button area
     const btn = el('button', { class: 'btn', style: 'margin-top: 1.5rem; width: 100%;' }, [document.createTextNode(prod.cta || defaultCta || 'Scopri')]);
@@ -395,4 +354,3 @@ function hideLoader() {
         }, 500);
     }
 }
-
