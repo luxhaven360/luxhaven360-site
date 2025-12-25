@@ -894,69 +894,68 @@ function calcolaProgressoRealistico(dataOrdine, dataConsegna, statoCorrente) {
         // ==================================================================
 
         function createOrderCard(order, index) {
-    const articoli = order.articoli != null ? Number(order.articoli) : 
-                    (order.products ? order.products.reduce((sum, p) => sum + (p.quantity || 1), 0) : 0);
-    const plural = articoli === 1 ? 'articolo' : 'articoli';
-    
-    // ⭐ USA CATEGORIA REALE DAL BACKEND
-    const orderCategory = order.realCategory || 'Prodotto';
-    
-    // ⭐ FORMATTAZIONE DATE
-    const dataOrdineFormatted = formatDataItaliana(order.data);
-    const dataConsegnaFormatted = formatDataItaliana(order.consegna_prevista);
-    
-    // ⭐ CALCOLO PROGRESSO
-    const progress = calcolaProgressoRealistico(order.data, order.consegna_prevista, order.stato);
-    const progressDesktop = progress;
-    const progressMobileRow1 = Math.min(100, progress * 2);
-    const progressMobileRow2 = Math.max(0, (progress - 50) * 2);
-    
-    const steps = ['Confermato', 'In Preparazione', 'In Transito', 'Consegnato'];
-    const currentStepIndex = steps.indexOf(order.stato);
-    const isDelivered = order.stato === 'Consegnato';
-    
-    return `
-    <div class="order-card" style="animation-delay: ${index * 0.15}s">
-        <div class="order-header">
-            <div class="order-info">
-                <div class="order-title-wrapper">
-                    <span class="order-title-text">Ordine</span>
-                    <span class="order-title-number">#${order.id}</span>
+            const articoli = order.articoli != null ? Number(order.articoli) :
+                            (order.products ? order.products.reduce((sum, p) => sum + (p.quantity || 1), 0) : 0);
+            const plural = articoli === 1 ? 'articolo' : 'articoli';
+            
+            const orderCategory = getCategoryFromOrderId(order.id);
+            
+            // === FORMATTAZIONE DATE UNIFORMI ===
+            const dataOrdineFormatted = formatDataItaliana(order.data);
+            const dataConsegnaFormatted = formatDataItaliana(order.consegna_prevista);
+            
+            // === CALCOLO PROGRESSO (Logica ibrida Desktop/Mobile) ===
+            const progress = calcolaProgressoRealistico(order.data, order.consegna_prevista, order.stato);
+
+            // 1. Progresso Desktop (Unica linea 0-100%)
+            const progressDesktop = progress;
+
+            // 2. Progresso Mobile Riga 1 (Copre step 1 e 2, cioè 0-50% del totale)
+            // Se progress è 25%, riga 1 deve essere al 50%. Se progress è >50%, riga 1 è piena.
+            const progressMobileRow1 = Math.min(100, progress * 2);
+
+            // 3. Progresso Mobile Riga 2 (Copre step 3 e 4, cioè 50-100% del totale)
+            // Se progress è <50%, riga 2 è vuota. Se progress è 75%, riga 2 è al 50%.
+            const progressMobileRow2 = Math.max(0, (progress - 50) * 2);
+            
+            // === DETERMINA STATO STEP ===
+            const steps = ['Confermato', 'In Preparazione', 'In Transito', 'Consegnato'];
+            const currentStepIndex = steps.indexOf(order.stato);
+            const isDelivered = order.stato === 'Consegnato';
+            
+            return `
+            <div class="order-card" style="animation-delay: ${index * 0.15}s">
+                <div class="order-header">
+                    <div class="order-info">
+                        <div class="order-title-wrapper">
+                        <span class="order-title-text">Ordine</span>
+                        <span class="order-title-number">#${order.id}</span>
+                        </div>
+                        <div class="order-date">${dataOrdineFormatted}</div>
+                    </div>
+                    <div class="status-badge ${order.stato.toLowerCase().replace(/\s+/g, '-')}">
+                        ${order.stato}
+                    </div>
                 </div>
-                <div class="order-date">${dataOrdineFormatted}</div>
-            </div>
-            <div class="status-badge ${order.stato.toLowerCase().replace(/\s+/g, '-')}">
-                ${order.stato}
-            </div>
-        </div>
-        
-        <!-- ⭐ SEZIONE IMMAGINE PRODOTTO (AGGIUNTA) -->
-        ${order.productImage ? `
-        <div style="margin: 1.5rem 0; text-align: center;">
-            <img src="${order.productImage}" 
-                 alt="Prodotto" 
-                 style="max-width: 200px; height: auto; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.3);" />
-        </div>
-        ` : ''}
-        
-        <div class="order-summary">
-            <div class="summary-row">
-                <span class="summary-label">Categoria</span>
-                <span class="summary-value">${orderCategory}</span>
-            </div>
-            <div class="summary-row">
-                <span class="summary-label">Totale ordine</span>
-                <span class="summary-value">€ ${formatPrice(order.totale)}</span>
-            </div>
-            <div class="summary-row">
-                <span class="summary-label">Articoli</span>
-                <span class="summary-value">${articoli} ${plural}</span>
-            </div>
-            <div class="summary-row">
-                <span class="summary-label">Consegna prevista</span>
-                <span class="summary-value">${dataConsegnaFormatted}</span>
-            </div>
-        </div>
+                
+                <div class="order-summary">
+                    <div class="summary-row">
+                        <span class="summary-label">Categoria</span>
+                        <span class="summary-value">${orderCategory}</span>
+                    </div>
+                    <div class="summary-row">
+                        <span class="summary-label">Totale ordine</span>
+                        <span class="summary-value">€ ${formatPrice(order.totale)}</span>
+                    </div>
+                    <div class="summary-row">
+                        <span class="summary-label">Articoli</span>
+                        <span class="summary-value">${articoli} ${plural}</span>
+                    </div>
+                    <div class="summary-row">
+                        <span class="summary-label">Consegna prevista</span>
+                        <span class="summary-value">${dataConsegnaFormatted}</span>
+                    </div>
+                </div>
                 
                     <div class="progress-section">
                     <div class="progress-steps">
@@ -1035,27 +1034,6 @@ function getCategoryFromOrderId(orderId) {
         return CATEGORY_MAP[match[1]] || 'Prodotto';
     }
     return 'Prodotto';
-}
-
-/**
- * Converte link Drive in URL visualizzabile
- */
-function convertDriveLink(cellContent) {
-  if (!cellContent) return '';
-  const str = String(cellContent).trim();
-  
-  const idRegex = /(?:id=|file\/d\/|open\?id=|d\/)([a-zA-Z0-9_-]{28,33})/;
-  const match = str.match(idRegex);
-  
-  if (match && match[1]) {
-    return `https://drive.google.com/thumbnail?id=${match[1]}&sz=w1000`;
-  }
-  
-  if (str.startsWith('http')) {
-    return str;
-  }
-  
-  return '';
 }
 
 // ================================
@@ -1494,9 +1472,3 @@ loadOrders();
     </script>
 </body>
 </html>
-
-
-
-
-
-
