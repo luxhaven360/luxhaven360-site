@@ -354,14 +354,3 @@ function hideLoader() {
         }, 500);
     }
 }
-
-
-
-
-
-
-
-
-
-
-
