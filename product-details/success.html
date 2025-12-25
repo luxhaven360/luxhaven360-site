@@ -1832,24 +1832,31 @@ function updateTimeline(data) {
 }
 
 function loadPurchasedItems() {
-    // *** 3. MODIFICA INIZIO: USA DATI PERSISTENTI ***
-    // const cartRaw = localStorage.getItem('lh360_cart'); // VECCHIO
-    // const cart = cartRaw ? JSON.parse(cartRaw) : []; // VECCHIO
-    const cart = _persistentCart; // NUOVO
-    // *** 3. MODIFICA FINE ***
-    
     const itemsContainer = document.querySelector('.summary-items');
     const subtotalElem = document.querySelector('.summary-totals .summary-row:nth-child(1) span:last-child');
     const shippingElem = document.querySelector('.summary-totals .summary-row:nth-child(2) span:last-child');
     const totalElem = document.querySelector('.summary-total span:last-child');
 
     if (!itemsContainer) return;
-
     itemsContainer.innerHTML = '';
 
+    // 🆕 STRATEGIA 1: Prova a recuperare da session_id (per "Acquista Ora")
+    const urlParams = new URLSearchParams(window.location.search);
+    const sessionId = urlParams.get('session_id');
+    
+    if (!_persistentCart || _persistentCart.length === 0) {
+        if (sessionId) {
+            // Recupera dati ordine dal backend
+            fetchOrderDetailsFromSession(sessionId, itemsContainer, subtotalElem, shippingElem, totalElem);
+            return;
+        }
+    }
+
+    // STRATEGIA 2: Usa dati persistenti (carrello salvato all'avvio)
+    const cart = _persistentCart;
+    
     if (cart.length === 0) {
         itemsContainer.innerHTML = '<div style="padding:1rem; color:#a1a1aa; text-align:center;">Dettagli articoli non disponibili (Sessione scaduta)</div>';
-        // Non calcoliamo i totali se il carrello è vuoto
         if (subtotalElem) subtotalElem.textContent = `€ 0,00`;
         if (shippingElem) shippingElem.textContent = `€ 0,00`;
         if (totalElem) totalElem.textContent = `€ 0,00`;
@@ -1962,6 +1969,92 @@ if (totalDiscount > 0) {
 // Aggiorna Totale Finale
 if (totalElem) totalElem.textContent = `€ ${finalTotal.toLocaleString('it-IT', {minimumFractionDigits: 2})}`;
 }
+
+        // 🆕 NUOVA FUNZIONE: Recupera dettagli ordine dal backend
+async function fetchOrderDetailsFromSession(sessionId, container, subtotalElem, shippingElem, totalElem) {
+    try {
+        const response = await fetch(`${webAppUrl}?action=get_session_items&session_id=${sessionId}&t=${Date.now()}`);
+        const data = await response.json();
+        
+        if (data.success && data.items) {
+            renderOrderItems(data.items, data.subtotal, data.shipping, data.total, data.discount, container, subtotalElem, shippingElem, totalElem);
+        } else {
+            container.innerHTML = '<div style="padding:1rem; color:#a1a1aa; text-align:center;">Impossibile recuperare dettagli ordine</div>';
+        }
+    } catch (e) {
+        console.error('Errore fetch ordine:', e);
+        container.innerHTML = '<div style="padding:1rem; color:#ef4444; text-align:center;">Errore di connessione</div>';
+    }
+}
+
+// 🆕 FUNZIONE DI RENDERING UNIFICATA
+function renderOrderItems(items, subtotal, shipping, total, discount, container, subtotalElem, shippingElem, totalElem) {
+    container.innerHTML = '';
+    
+    items.forEach(item => {
+        const hasDiscount = item.discountPrice && item.discountPrice < item.price;
+        const finalPrice = hasDiscount ? parseFloat(item.discountPrice) : parseFloat(item.price);
+        const itemQty = parseInt(item.qty) || 1;
+        
+        let displayColor = item.color || '';
+        let variantText = '';
+        if(displayColor) variantText += displayColor;
+        if(displayColor && item.size) variantText += ' · ';
+        if(item.size) variantText += `Taglia ${item.size}`;
+        if(!variantText) variantText = 'Taglia Unica';
+
+        const div = document.createElement('div');
+        div.className = 'summary-item';
+        
+        const priceHtml = hasDiscount 
+            ? `
+                <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 0.25rem;">
+                    <div style="font-size: 0.875rem; color: #71717a; text-decoration: line-through;">
+                        € ${(item.price * itemQty).toLocaleString('it-IT', {minimumFractionDigits: 2})}
+                    </div>
+                    <div style="font-size: 1.125rem; font-weight: 600; color: #D4AF37;">
+                        € ${(finalPrice * itemQty).toLocaleString('it-IT', {minimumFractionDigits: 2})}
+                    </div>
+                </div>
+            `
+            : `€ ${(finalPrice * itemQty).toLocaleString('it-IT', {minimumFractionDigits: 2})}`;
+        
+        div.innerHTML = `
+            <div class="summary-item-image">
+                <img src="${item.image || 'https://via.placeholder.com/150'}" alt="${item.title}">
+            </div>
+            <div class="summary-item-details">
+                <div class="summary-item-name">${item.title} <span style="font-size:0.8em; color:#71717a;">(x${itemQty})</span></div>
+                <div class="summary-item-variant">${variantText}</div>
+            </div>
+            <div class="summary-item-price">${priceHtml}</div>
+        `;
+        container.appendChild(div);
+    });
+
+    // Aggiorna totali
+    if (subtotalElem) subtotalElem.textContent = `€ ${subtotal.toLocaleString('it-IT', {minimumFractionDigits: 2})}`;
+    
+    if (shippingElem) {
+        if (shipping === 0) {
+            shippingElem.textContent = 'Gratuita';
+            shippingElem.style.color = '#34d399';
+        } else {
+            shippingElem.textContent = `€ ${shipping.toLocaleString('it-IT', {minimumFractionDigits: 2})}`;
+        }
+    }
+
+    // Mostra riga sconto se presente
+    const discountRow = document.getElementById('discountRow');
+    const discountValue = document.getElementById('discountValue');
+    if (discount > 0) {
+        discountRow.style.display = 'flex';
+        discountValue.textContent = `- € ${discount.toLocaleString('it-IT', {minimumFractionDigits: 2})}`;
+    }
+
+    if (totalElem) totalElem.textContent = `€ ${total.toLocaleString('it-IT', {minimumFractionDigits: 2})}`;
+}
     </script>    
 </body>
 </html>
+
