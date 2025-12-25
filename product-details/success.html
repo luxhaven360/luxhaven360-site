@@ -1542,7 +1542,7 @@ window.handleDetailsResponse = function(response) {
             data: formattedDate,
             stato: 'In Preparazione',
             totale: total.toFixed(2), // <-- Ora usa il totale corretto
-            consegna_prevista: calculateDeliveryDate(3),
+            consegna_prevista: '', // verrà sostituita dal valore preso da Order Tracking / Prodotti
             products: cart.map(item => ({ // <-- Ora usa il carrello corretto
                 name: item.title || 'Prodotto',
                 quantity: item.qty || 1,
@@ -1571,42 +1571,59 @@ window.handleDetailsResponse = function(response) {
     completeLoadingSequence();
 };
 
-function fetchOrderTrackingData(orderId, confirmedTime, deliveryElem) {
-    if (!orderId) {
-        console.warn('Nessun orderId disponibile per recupero dati tracking');
-        updateTimelineWithDefaults(confirmedTime, deliveryElem);
-        return;
-    }
+function fetchOrderTrackingData(orderId, confirmedTime, deliveryElem, maxRetries = 6, delayMs = 1000) {
+  if (!orderId) {
+    updateTimelineWithDefaults(confirmedTime, deliveryElem);
+    return;
+  }
 
-    const callbackName = 'handleOrderTracking_' + Date.now();
+  let attempts = 0;
+
+  function tryFetch() {
+    attempts++;
+    const callbackName = 'handleOrderTracking_' + Date.now() + '_' + attempts;
     const script = document.createElement('script');
     script.src = `${webAppUrl}?action=get_orders&callback=${callbackName}&t=${Date.now()}`;
 
     window[callbackName] = function(response) {
-        try { if (script.parentNode) document.body.removeChild(script); } catch(e){}
-        try { delete window[callbackName]; } catch(e){}
-
-        if (response && response.orders && Array.isArray(response.orders)) {
-            const order = response.orders.find(o => o.id === orderId);
-            if (order) {
-                console.log('✅ Dati ordine recuperati da Order Tracking:', order);
-                updateTimelineFromOrderData(order, confirmedTime, deliveryElem);
-                return;
-            }
+      try { if (script.parentNode) document.body.removeChild(script); } catch(e){}
+      try { delete window[callbackName]; } catch(e){}
+      if (response && response.orders && Array.isArray(response.orders)) {
+        const order = response.orders.find(o => o.id === orderId);
+        if (order) {
+          console.log('Ordine trovato (fetchOrderTrackingData):', order);
+          updateTimelineFromOrderData(order, confirmedTime, deliveryElem);
+          return;
         }
-        
-        console.warn('Ordine non trovato in Order Tracking, uso dati predefiniti');
+      }
+      // non trovato: retry o fallback
+      if (attempts < maxRetries) {
+        setTimeout(tryFetch, delayMs);
+      } else {
+        console.warn('fetchOrderTrackingData: ordine non trovato dopo tentativi, uso default');
         updateTimelineWithDefaults(confirmedTime, deliveryElem);
+      }
     };
 
-    script.onerror = () => {
-        try { if (script.parentNode) document.body.removeChild(script); } catch(e){}
-        try { delete window[callbackName]; } catch(e){}
-        console.warn('Errore caricamento dati tracking, uso dati predefiniti');
+    script.onerror = function() {
+      try { if (script.parentNode) document.body.removeChild(script); } catch(e){}
+      try { delete window[callbackName]; } catch(e){}
+      if (attempts < maxRetries) {
+        setTimeout(tryFetch, delayMs);
+      } else {
         updateTimelineWithDefaults(confirmedTime, deliveryElem);
+      }
     };
 
     document.body.appendChild(script);
+  }
+
+  // show placeholder
+  if (deliveryElem && (!deliveryElem.textContent || deliveryElem.textContent.trim() === '')) {
+    deliveryElem.textContent = 'In definizione...';
+  }
+
+  tryFetch();
 }
 
 function updateTimelineFromOrderData(order, confirmedTime, deliveryElem) {
@@ -1974,4 +1991,5 @@ if (totalElem) totalElem.textContent = `€ ${finalTotal.toLocaleString('it-IT',
     </script>    
 </body>
 </html>
+
 
