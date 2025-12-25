@@ -2515,83 +2515,68 @@ renderColors(prod.colors);
 
             // --- INIZIO NUOVA LOGICA ACQUISTA ORA ---
             buyNowBtn.onclick = async function () {
-    // 1. Validazione Taglia
-    if (currentProduct.sizes && currentProduct.sizes.length > 0 && !selectedSize) {
-        alert('Per favore, seleziona una taglia');
-        const sizeSection = document.getElementById('sizeSection');
-        if(sizeSection) sizeSection.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        return;
-    }
-    // 2. Feedback UI (Loader)
-    const originalText = buyNowBtn.textContent;
-    buyNowBtn.disabled = true;
-    buyNowBtn.innerHTML = '<span class="loader-dot" style="display:inline-block;width:10px;height:10px;background:black;border-radius:50%;margin-right:5px;animation:pulse 1s infinite"></span> Elaborazione...';
-   
-    const globalLoader = document.getElementById('luxhaven-loader');
-    if(globalLoader) {
-        document.getElementById('loader-message').textContent = 'Preparazione Checkout Sicuro...';
-        globalLoader.style.display = 'flex';
-        globalLoader.style.opacity = '1';
-    }
-    try {
-        // 3. Preparazione Dati
-        let checkoutImage = images[0] || '';
+                // 1. Validazione Taglia
+                if (currentProduct.sizes && currentProduct.sizes.length > 0 && !selectedSize) {
+                    alert('Per favore, seleziona una taglia prima di procedere.');
+                    const sizeSection = document.getElementById('sizeSection');
+                    if(sizeSection) sizeSection.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    return;
+                }
 
-        // --- CALCOLO PREZZO FINALE (con sconto se presente) ---
-        const itemPrice = (currentProduct.discountPrice && currentProduct.discountPrice < currentProduct.price)
-        ? parseFloat(currentProduct.discountPrice)
-        : parseFloat(currentProduct.price) || 0;
+                // 2. Feedback UI (Loader)
+                const originalText = buyNowBtn.textContent;
+                buyNowBtn.disabled = true;
+                buyNowBtn.innerHTML = '<span class="loader-dot" style="display:inline-block;width:10px;height:10px;background:black;border-radius:50%;margin-right:5px;animation:pulse 1s infinite"></span> Elaborazione...';
+                
+                const globalLoader = document.getElementById('luxhaven-loader');
+                if(globalLoader) {
+                    document.getElementById('loader-message').textContent = 'Preparazione Checkout Sicuro...';
+                    globalLoader.style.display = 'flex';
+                    globalLoader.style.opacity = '1';
+                }
 
-        // --- CALCOLO SPEDIZIONE ---
-        // Se prezzo < 150€ aggiungi 15€, altrimenti 0
-        const shippingCost = itemPrice < 150 ? 15 : 0;
-        const singleItemCart = [{
-            sku: currentProduct.sku,
-            title: currentProduct.title,
-            price: itemPrice,
-            currency: currentProduct.currency || 'EUR',
-            qty: 1,
-            color: selectedColor || '',
-            size: selectedSize || '',
-            image: checkoutImage
-        }];
-        // ⭐ Aggiunta: Prepara order_details per metadata (simile a cart, ma per singolo item)
-        const orderDetails = {
-            items: [{
-                sku: currentProduct.sku,
-                title: currentProduct.title,
-                original_price: currentProduct.price,  // Prezzo originale
-                final_price: itemPrice,  // Prezzo dopo sconto individuale
-                qty: 1,
-                color: selectedColor || '',
-                size: selectedSize || ''
-            }],
-            discounts: {
-                combo: 0,  // No combo per acquisto singolo
-                coupon: 0,  // No coupon per acquisto singolo (se non implementato)
-                total: currentProduct.price - itemPrice  // Solo sconto individuale
-            },
-            subtotal_before_discount: currentProduct.price,
-            shipping: shippingCost,
-            grand_total: itemPrice + shippingCost
-        };
-        // 4. Costruzione Payload
-        const payload = {
-action: 'create_checkout_session',
-data: JSON.stringify({
-    cart: singleItemCart,
-    shipping: shippingCost,
-    cancel_url: window.location.href,
-    is_buy_now: true,
-    // ⭐ AGGIUNGI QUESTI METADATI
-    checkout_metadata: {
-        product_sku: currentProduct.sku,
-        selected_color: selectedColor || '',
-        selected_size: selectedSize || ''
-    }
-})
-        };
-        // 6. SALVA IN LOCALSTORAGE PER SUCCESS.HTML
+                try {
+                    // 3. Preparazione Dati
+                    let checkoutImage = images[0] || ''; 
+    
+                    // --- CALCOLO PREZZO FINALE (con sconto se presente) ---
+                    const itemPrice = (currentProduct.discountPrice && currentProduct.discountPrice < currentProduct.price) 
+                    ? parseFloat(currentProduct.discountPrice) 
+                    : parseFloat(currentProduct.price) || 0;
+    
+                    // --- CALCOLO SPEDIZIONE ---
+                    // Se prezzo < 150€ aggiungi 15€, altrimenti 0
+                    const shippingCost = itemPrice < 150 ? 15 : 0;
+
+                    const singleItemCart = [{
+                        sku: currentProduct.sku,
+                        title: currentProduct.title,
+                        price: itemPrice,
+                        currency: currentProduct.currency || 'EUR',
+                        qty: 1,
+                        color: selectedColor || '',
+                        size: selectedSize || '',
+                        image: checkoutImage
+                    }];
+
+                    // 4. Costruzione Payload
+                    const payload = {
+    action: 'create_checkout_session',
+    data: JSON.stringify({
+        cart: singleItemCart,
+        shipping: shippingCost,
+        cancel_url: window.location.href,
+        is_buy_now: true,
+        // ⭐ AGGIUNGI QUESTI METADATI
+        checkout_metadata: {
+            product_sku: currentProduct.sku,
+            selected_color: selectedColor || '',
+            selected_size: selectedSize || ''
+        }
+    })
+};
+
+                    // 6. SALVA IN LOCALSTORAGE PER SUCCESS.HTML
 const tempCart = [{
     sku: currentProduct.sku,
     title: currentProduct.title,
@@ -2603,6 +2588,7 @@ const tempCart = [{
     size: selectedSize || '',
     image: checkoutImage
 }];
+
 localStorage.setItem('lh360_cart', JSON.stringify(tempCart));
 localStorage.setItem('lh360_applied_discounts', JSON.stringify({
     comboDiscount: 0,
@@ -2612,32 +2598,35 @@ localStorage.setItem('lh360_applied_discounts', JSON.stringify({
     totalDiscount: 0,
     timestamp: Date.now()
 }));
-   
-        // 5. Chiamata API Backend
-        const queryParams = new URLSearchParams(payload).toString();
-        const response = await fetch(`${WEB_APP_URL}?${queryParams}`, {
-            method: 'GET',
-            redirect: 'follow'
-        });
-        if (!response.ok) throw new Error('Errore di rete');
-        const result = await response.json();
-        if (result.success && result.url) {
-            window.location.href = result.url;
-        } else {
-            throw new Error(result.error || 'Impossibile creare la sessione');
-        }
-    } catch (error) {
-        console.error('Errore Checkout:', error);
-        alert('Si è verificato un errore durante l\'avvio del pagamento. Riprova.');
-   
-        buyNowBtn.disabled = false;
-        buyNowBtn.textContent = originalText;
-        if(globalLoader) {
-            globalLoader.style.opacity = '0';
-            setTimeout(() => globalLoader.style.display = 'none', 500);
-        }
-    }
-};
+                    
+                    // 5. Chiamata API Backend
+                    const queryParams = new URLSearchParams(payload).toString();
+                    const response = await fetch(`${WEB_APP_URL}?${queryParams}`, {
+                        method: 'GET',
+                        redirect: 'follow'
+                    });
+
+                    if (!response.ok) throw new Error('Errore di rete');
+                    const result = await response.json();
+
+                    if (result.success && result.url) {
+                        window.location.href = result.url;
+                    } else {
+                        throw new Error(result.error || 'Impossibile creare la sessione');
+                    }
+
+                } catch (error) {
+                    console.error('Errore Checkout:', error);
+                    alert('Si è verificato un errore durante l\'avvio del pagamento. Riprova.');
+                    
+                    buyNowBtn.disabled = false;
+                    buyNowBtn.textContent = originalText;
+                    if(globalLoader) {
+                        globalLoader.style.opacity = '0';
+                        setTimeout(() => globalLoader.style.display = 'none', 500);
+                    }
+                }
+            };
             // --- FINE NUOVA LOGICA ACQUISTA ORA ---
 
             addCartBtn.onclick = function () {
@@ -2778,3 +2767,4 @@ function closeModal(modalId) {
     </script>
 </body>
 </html>
+
