@@ -1706,6 +1706,53 @@ function formatShortDate(date, withPrefix = false) {
     return withPrefix ? `Previsto: ${formatted}` : formatted;
 }
 
+/**
+ * Formatta la data di consegna in versione sintetica con prefisso "previsto:"
+ * Esempi: "previsto: 27–31 dic", "previsto: 24–48h", "previsto: 2–3 giorni"
+ */
+function formatShortDelivery(dateStr) {
+    if (!dateStr || dateStr === 'Da definire') return 'da definire';
+    
+    const str = dateStr.toLowerCase().trim();
+    
+    // CASO 1: Ore (24h, 24-48h)
+    if (/^\d{1,2}(-\d{1,2})?h$/.test(str)) {
+        return `previsto: ${str}`;
+    }
+    
+    // CASO 2: Giorni (2-3 giorni, 5 giorni lavorativi)
+    if (str.includes('giorn')) {
+        return `previsto: ${str}`;
+    }
+    
+    // CASO 3: Range di date (27–31 Dicembre, 5 Gennaio)
+    const monthsShort = {
+        'gennaio': 'gen', 'febbraio': 'feb', 'marzo': 'mar', 'aprile': 'apr',
+        'maggio': 'mag', 'giugno': 'giu', 'luglio': 'lug', 'agosto': 'ago',
+        'settembre': 'set', 'ottobre': 'ott', 'novembre': 'nov', 'dicembre': 'dic'
+    };
+    
+    // Range con trattino lungo (27–31 Dicembre)
+    const rangeMatch = str.match(/(\d+)[–—-](\d+)\s+(gennaio|febbraio|marzo|aprile|maggio|giugno|luglio|agosto|settembre|ottobre|novembre|dicembre)/);
+    if (rangeMatch) {
+        const day1 = rangeMatch[1];
+        const day2 = rangeMatch[2];
+        const month = monthsShort[rangeMatch[3]];
+        return `previsto: ${day1}–${day2} ${month}`;
+    }
+    
+    // Singola data (5 Gennaio)
+    const singleMatch = str.match(/(\d+)\s+(gennaio|febbraio|marzo|aprile|maggio|giugno|luglio|agosto|settembre|ottobre|novembre|dicembre)/);
+    if (singleMatch) {
+        const day = singleMatch[1];
+        const month = monthsShort[singleMatch[2]];
+        return `previsto: ${day} ${month}`;
+    }
+    
+    // Fallback: mantieni il valore originale con prefisso
+    return `previsto: ${str}`;
+}
+
 function updateTimeline(data) {
     const steps = {
         confirmed: document.getElementById('step-confirmed'),
@@ -1732,56 +1779,67 @@ function updateTimeline(data) {
     const currentIndex = stepOrder.indexOf(data.current_status);
 
     stepOrder.forEach((step, index) => {
-        const elem = steps[step];
-        if (!elem) return;
+    const elem = steps[step];
+    if (!elem) return;
 
-        elem.classList.remove('completed', 'active', 'pending');
+    elem.classList.remove('completed', 'active', 'pending');
 
+    if (index < currentIndex) {
+        elem.classList.add('completed');
+    } else if (index === currentIndex) {
+        elem.classList.add('active');
+    } else {
+        elem.classList.add('pending');
+    }
+
+    const dot = elem.querySelector('.timeline-dot');
+    if (dot) {
         if (index < currentIndex) {
-            elem.classList.add('completed');
-        } else if (index === currentIndex) {
-            elem.classList.add('active');
+            dot.innerHTML = '✓';
         } else {
-            elem.classList.add('pending');
+            dot.innerHTML = icons[step];
         }
+    }
 
-        const dot = elem.querySelector('.timeline-dot');
-        if (dot) {
+    const dateElem = dateElems[step];
+    if (dateElem) {
+        const actualDate = data.status_dates[step];
+        
+        // ✅ CASO SPECIALE: "In Preparazione"
+        if (step === 'preparing') {
             if (index < currentIndex) {
-                dot.innerHTML = '✓';
+                dateElem.textContent = 'preparazione completata';
+            } else if (index === currentIndex) {
+                dateElem.textContent = 'in corso';
             } else {
-                dot.innerHTML = icons[step];
+                dateElem.textContent = data.estimated_dates[step] || 'da definire';
+            }
+            return;
+        }
+        
+        // ✅ Per le altre fasi (confirmed, shipped, delivered)
+        if (actualDate) {
+            // Se c'è una data effettiva, formattala (minuscolo)
+            const date = new Date(actualDate);
+            const day = date.getDate();
+            const monthNames = ['gen', 'feb', 'mar', 'apr', 'mag', 'giu', 
+                                'lug', 'ago', 'set', 'ott', 'nov', 'dic'];
+            const month = monthNames[date.getMonth()];
+            const time = date.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
+            dateElem.textContent = `${day} ${month}, ${time}`;
+        } else {
+            // ✅ FASE DELIVERED: Formato sintetico con prefisso "previsto:"
+            if (step === 'delivered') {
+                const estimatedDate = data.estimated_dates[step] || 'da definire';
+                dateElem.textContent = formatShortDelivery(estimatedDate);
+            } else {
+                // ✅ Altre fasi non completate: minuscolo
+                const estimated = data.estimated_dates[step] || 'da definire';
+                dateElem.textContent = estimated.toLowerCase();
             }
         }
-
-        const dateElem = dateElems[step];
-        if (dateElem) {
-            const actualDate = data.status_dates[step];
-            
-            if (step === 'preparing') {
-                if (index < currentIndex) {
-                    dateElem.textContent = 'Preparazione completata';
-                } else if (index === currentIndex) {
-                    dateElem.textContent = 'In corso';
-                } else {
-                    dateElem.textContent = data.estimated_dates[step] || 'Da definire';
-                }
-                return;
-            }
-            
-            if (actualDate) {
-                const date = new Date(actualDate);
-                const day = date.getDate();
-                const monthNames = ['Gen', 'Feb', 'Mar', 'Apr', 'Mag', 'Giu', 
-                                    'Lug', 'Ago', 'Set', 'Ott', 'Nov', 'Dic'];
-                const month = monthNames[date.getMonth()];
-                const time = date.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
-                dateElem.textContent = `${day} ${month}, ${time}`;
-            } else {
-                dateElem.textContent = data.estimated_dates[step] || 'Da definire';
-            }
-        }
-    });
+    }
+});
 
     const timelineElem = document.querySelector('.timeline');
     if (timelineElem) {
@@ -1924,4 +1982,5 @@ if (totalElem) totalElem.textContent = `€ ${finalTotal.toLocaleString('it-IT',
     </script>    
 </body>
 </html>
+
 
