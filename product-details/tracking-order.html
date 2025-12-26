@@ -754,30 +754,83 @@ let ordersRendered = false;
 // ==================================================================
 
 /**
- * Converte una data in formato "dd MMMM yyyy" italiano
+ * Formatta una data in italiano gestendo tutti i formati possibili
  * @param {Date|string} input - Data da formattare
- * @returns {string} Data formattata (es. "27 novembre 2025")
+ * @returns {string} Data formattata correttamente
  */
 function formatDataItaliana(input) {
-    let date;
+    if (!input) return 'Data non disponibile';
     
+    const str = input.toString().trim();
+    
+    // CASO 1: Formati testuali (ore, giorni lavorativi) → restituisci così com'è
+    if (str.includes('h') || str.includes('giorn')) {
+        return str;
+    }
+    
+    // CASO 2: Range con trattino e un solo mese (es: "28-30 Dicembre")
+    const rangeOnlyMatch = str.match(/^(\d+)\s*[-–—]\s*(\d+)\s+(gennaio|febbraio|marzo|aprile|maggio|giugno|luglio|agosto|settembre|ottobre|novembre|dicembre)$/i);
+    if (rangeOnlyMatch) {
+        const day1 = rangeOnlyMatch[1];
+        const day2 = rangeOnlyMatch[2];
+        const month = rangeOnlyMatch[3];
+        
+        // Aggiungi anno corrente
+        return `${day1}-${day2} ${month.charAt(0).toUpperCase() + month.slice(1).toLowerCase()} ${new Date().getFullYear()}`;
+    }
+    
+    // CASO 3: Range con trattino e mese + anno (es: "28-30 Dicembre 2025")
+    const rangeWithYearMatch = str.match(/^(\d+)\s*[-–—]\s*(\d+)\s+(gennaio|febbraio|marzo|aprile|maggio|giugno|luglio|agosto|settembre|ottobre|novembre|dicembre)\s+(\d{4})$/i);
+    if (rangeWithYearMatch) {
+        // Già formattato correttamente, normalizza solo le maiuscole
+        const day1 = rangeWithYearMatch[1];
+        const day2 = rangeWithYearMatch[2];
+        const month = rangeWithYearMatch[3];
+        const year = rangeWithYearMatch[4];
+        return `${day1}-${day2} ${month.charAt(0).toUpperCase() + month.slice(1).toLowerCase()} ${year}`;
+    }
+    
+    // CASO 4: Range con due mesi diversi (es: "31 Dicembre - 4 Gennaio")
+    const crossMonthMatch = str.match(/(\d+)\s+(gennaio|febbraio|marzo|aprile|maggio|giugno|luglio|agosto|settembre|ottobre|novembre|dicembre)\s*[-–—]\s*(\d+)\s+(gennaio|febbraio|marzo|aprile|maggio|giugno|luglio|agosto|settembre|ottobre|novembre|dicembre)/i);
+    if (crossMonthMatch) {
+        // Restituisci così com'è (normalizza solo maiuscole)
+        return str.replace(/\b\w/g, l => l.toUpperCase());
+    }
+    
+    // CASO 5: Singola data senza anno (es: "2 gennaio")
+    const singleNoYearMatch = str.match(/^(\d+)\s+(gennaio|febbraio|marzo|aprile|maggio|giugno|luglio|agosto|settembre|ottobre|novembre|dicembre)$/i);
+    if (singleNoYearMatch) {
+        const day = singleNoYearMatch[1];
+        const month = singleNoYearMatch[2];
+        return `${day} ${month.toLowerCase()} ${new Date().getFullYear()}`;
+    }
+    
+    // CASO 6: Singola data con anno (es: "2 gennaio 2025")
+    const singleWithYearMatch = str.match(/^(\d+)\s+(gennaio|febbraio|marzo|aprile|maggio|giugno|luglio|agosto|settembre|ottobre|novembre|dicembre)\s+(\d{4})$/i);
+    if (singleWithYearMatch) {
+        const day = singleWithYearMatch[1];
+        const month = singleWithYearMatch[2];
+        const year = singleWithYearMatch[3];
+        return `${day} ${month.toLowerCase()} ${year}`;
+    }
+    
+    // CASO 7: Prova a parsare come oggetto Date
+    let date;
     if (input instanceof Date) {
         date = input;
-    } else if (typeof input === 'string') {
-        date = parseAnyDateFormat(input);
     } else {
-        return 'Data non disponibile';
+        date = parseAnyDateFormat(input);
     }
     
-    if (!date || isNaN(date.getTime())) {
-        return 'Data non disponibile';
+    if (date && !isNaN(date.getTime())) {
+        const giorno = date.getDate();
+        const mese = MESI_NOMI[date.getMonth()];
+        const anno = date.getFullYear();
+        return `${giorno} ${mese} ${anno}`;
     }
     
-    const giorno = date.getDate();
-    const mese = MESI_NOMI[date.getMonth()];
-    const anno = date.getFullYear();
-    
-    return `${giorno} ${mese} ${anno}`;
+    // Fallback: restituisci il valore originale se non riconosciuto
+    return str;
 }
 
 /**
@@ -898,7 +951,7 @@ function calcolaProgressoRealistico(dataOrdine, dataConsegna, statoCorrente) {
                             (order.products ? order.products.reduce((sum, p) => sum + (p.quantity || 1), 0) : 0);
             const plural = articoli === 1 ? 'articolo' : 'articoli';
             
-            const orderCategory = getCategoryFromOrderId(order.id);
+            const orderCategory = getCategoryForOrder(order); // ⭐ USA NUOVA FUNZIONE
             
             // === FORMATTAZIONE DATE UNIFORMI ===
             const dataOrdineFormatted = formatDataItaliana(order.data);
@@ -985,30 +1038,30 @@ function calcolaProgressoRealistico(dataOrdine, dataConsegna, statoCorrente) {
                 </summary>
                 <div class="products-list">
                     ${order.products.map(p => {
-                        let cleanName = p.name || 'Prodotto';
-                        let imageUrl = p.image || '';
+    let cleanName = p.name || 'Prodotto';
+    let imageUrl = p.image || ''; // ⭐ Ora contiene l'immagine da Prodotti
 
-                        // Rimuovi varianti dal nome
-                        if (cleanName.includes(' - ')) {
-                            cleanName = cleanName.split(' - ')[0].trim();
-                        }
+    // Rimuovi varianti dal nome
+    if (cleanName.includes(' - ')) {
+        cleanName = cleanName.split(' - ')[0].trim();
+    }
 
-                        return `
-                        <div class="product-item" style="display:flex; align-items:center; gap:16px; padding:16px; background:rgba(9,9,11,0.4); border-radius:12px; margin-bottom:8px;">
-                            ${imageUrl ? `
-                            <div style="width:64px; height:80px; border-radius:8px; overflow:hidden; flex-shrink:0; background:#18181b;">
-                                <img src="${imageUrl}" alt="${cleanName}" style="width:100%; height:100%; object-fit:cover;">
-                            </div>` : ''}
-                            <div style="flex:1;">
-                                <div class="product-name" style="font-weight:500; margin-bottom:6px;">${cleanName}</div>
-                                <div class="product-category" style="font-size:0.9rem; color:#10b981; font-weight:500;">
-                                    📂 ${orderCategory}
-                                </div>
-                            </div>
-                            <div style="font-weight:bold; color:#34d399; margin:0 12px;">× ${p.quantity || 1}</div>
-                            <div style="font-weight:600;">€ ${formatPrice(p.price)}</div>
-                        </div>`;
-                    }).join('')}
+    return `
+    <div class="product-item" style="display:flex; align-items:center; gap:16px; padding:16px; background:rgba(9,9,11,0.4); border-radius:12px; margin-bottom:8px;">
+        ${imageUrl ? `
+        <div style="width:64px; height:80px; border-radius:8px; overflow:hidden; flex-shrink:0; background:#18181b;">
+            <img src="${imageUrl}" alt="${cleanName}" style="width:100%; height:100%; object-fit:cover;">
+        </div>` : ''}
+        <div style="flex:1;">
+            <div class="product-name" style="font-weight:500; margin-bottom:6px;">${cleanName}</div>
+            <div class="product-category" style="font-size:0.9rem; color:#10b981; font-weight:500;">
+                📂 ${orderCategory}
+            </div>
+        </div>
+        <div style="font-weight:bold; color:#34d399; margin:0 12px;">× ${p.quantity || 1}</div>
+        <div style="font-weight:600;">€ ${formatPrice(p.price)}</div>
+    </div>`;
+}).join('')}
                 </div>
             </details>
         </div>
@@ -1034,6 +1087,53 @@ function getCategoryFromOrderId(orderId) {
         return CATEGORY_MAP[match[1]] || 'Prodotto';
     }
     return 'Prodotto';
+}
+
+/**
+ * Determina la categoria corretta per un ordine
+ * - Ordini singoli: categoria dal SKU del prodotto
+ * - Ordini multipli con stessa categoria: quella categoria
+ * - Ordini multipli con categorie diverse: "Lifestyle Collections"
+ */
+function getCategoryForOrder(order) {
+    // Se non ci sono prodotti, usa il fallback
+    if (!order.products || order.products.length === 0) {
+        return getCategoryFromOrderId(order.id);
+    }
+    
+    const categories = new Set();
+    
+    // Analizza ogni prodotto
+    order.products.forEach(product => {
+        if (product.sku) {
+            // Estrai prefisso dallo SKU (es: ME-001 → ME)
+            const prefix = product.sku.split('-')[0];
+            
+            // Mappa prefisso a categoria
+            const categoryMap = {
+                'PR': 'Immobili',
+                'SC': 'Supercar',
+                'EX': 'Esperienze',
+                'ME': 'Abbigliamento'
+            };
+            
+            const category = categoryMap[prefix] || 'Prodotto';
+            categories.add(category);
+        }
+    });
+    
+    // Se nessuna categoria trovata, fallback
+    if (categories.size === 0) {
+        return getCategoryFromOrderId(order.id);
+    }
+    
+    // Se tutte hanno la stessa categoria, restituiscila
+    if (categories.size === 1) {
+        return Array.from(categories)[0];
+    }
+    
+    // Se categorie diverse, restituisci "Lifestyle Collections"
+    return 'Lifestyle Collections';
 }
 
 // ================================
@@ -1472,3 +1572,4 @@ loadOrders();
     </script>
 </body>
 </html>
+
