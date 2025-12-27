@@ -649,109 +649,6 @@
     from { opacity: 0; transform: translateX(20px); }
     to { opacity: 1; transform: translateX(0); }
 }
-
-/* === NAVIGAZIONE ORDINI PREMIUM === */
-.orders-nav-container {
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    gap: 2rem;
-    margin-top: 3rem;
-    padding: 2rem 0;
-}
-
-.order-nav-btn {
-    width: 3.5rem;
-    height: 3.5rem;
-    border-radius: 50%;
-    border: 1px solid rgba(212, 175, 55, 0.3);
-    background: linear-gradient(135deg, rgba(212, 175, 55, 0.1), rgba(0, 0, 0, 0.3));
-    color: #D4AF37;
-    font-size: 1.75rem;
-    font-weight: 300;
-    cursor: pointer;
-    transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
-    position: relative;
-    overflow: hidden;
-}
-
-.order-nav-btn::before {
-    content: '';
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    background: linear-gradient(135deg, #D4AF37, #FFD700);
-    opacity: 0;
-    transition: opacity 0.4s;
-    z-index: -1;
-}
-
-.order-nav-btn:hover:not(:disabled)::before {
-    opacity: 0.15;
-}
-
-.order-nav-btn:hover:not(:disabled) {
-    border-color: #D4AF37;
-    transform: scale(1.1) translateY(-2px);
-    box-shadow: 0 8px 25px rgba(212, 175, 55, 0.4);
-}
-
-.order-nav-btn:active:not(:disabled) {
-    transform: scale(1.05) translateY(0);
-}
-
-.order-nav-btn:disabled {
-    opacity: 0.3;
-    cursor: not-allowed;
-    border-color: #27272a;
-    color: #52525b;
-    background: rgba(39, 39, 42, 0.3);
-    box-shadow: none;
-}
-
-.page-indicator {
-    font-size: 0.9rem;
-    color: #a1a1aa;
-    font-weight: 500;
-    letter-spacing: 0.05em;
-    min-width: 80px;
-    text-align: center;
-}
-
-/* Animazione smooth cambio pagina */
-@keyframes fadeSlideIn {
-    from {
-        opacity: 0;
-        transform: translateY(1rem);
-    }
-    to {
-        opacity: 1;
-        transform: translateY(0);
-    }
-}
-
-.order-card {
-    animation: fadeSlideIn 0.5s ease-out backwards;
-}
-
-/* Mobile responsive */
-@media (max-width: 768px) {
-    .orders-nav-container {
-        gap: 1.5rem;
-    }
-    
-    .order-nav-btn {
-        width: 3rem;
-        height: 3rem;
-        font-size: 1.5rem;
-    }
-}
 </style>
 </head>
 <body>
@@ -766,11 +663,6 @@
             <p>Caricamento ordini in corso...</p>
         </div>
         <div class="orders-list" id="ordersList" style="display: none;"></div>
-        <div id="ordersPagination" class="orders-nav-container" style="display: none;">
-           <button id="prevOrderPage" class="order-nav-btn" aria-label="Ordini precedenti">←</button>
-           <span id="orderPageIndicator" class="page-indicator"></span>
-           <button id="nextOrderPage" class="order-nav-btn" aria-label="Ordini successivi">→</button>
-        </div>
         <div class="empty-state" id="emptyState" style="display: none;">
             <div class="empty-icon">📦</div>
             <h2 class="empty-title">Nessun ordine recente</h2>
@@ -856,9 +748,6 @@ const STEP_LABELS = ['Confermato', 'In Preparazione', 'In Transito', 'Consegnato
 const STEP_ICONS = ['✓', '📦', '🚚', '🏠'];
 
 let ordersRendered = false;
-let currentOrdersPage = 0;
-const ORDERS_PER_PAGE = 4;
-let allOrdersCache = [];
 
 // ==================================================================
 // FUNZIONI DI FORMATTAZIONE DATE
@@ -1419,16 +1308,14 @@ try {
         }
 
         if (allOrders.length === 0) {
-    if (ordersListEl) ordersListEl.style.display = 'none';
-    if (document.getElementById('ordersPagination')) {
-        document.getElementById('ordersPagination').style.display = 'none';
-    }
-    showEmptyState();
-} else {
-    if (emptyEl) emptyEl.style.display = 'none';
-    renderOrders(allOrders, true); // true = reset page to 0
-    console.log(`✅ Ordini caricati (API + Merge): ${allOrders.length} totali`);
-}
+            if (ordersListEl) ordersListEl.style.display = 'none';
+            showEmptyState();
+        } else {
+            // Nascondi stato vuoto (se visibile) e mostra lista
+            if (emptyEl) emptyEl.style.display = 'none';
+            renderOrders(allOrders);
+            console.log(`✅ Ordini caricati (API + Merge): ${allOrders.length} totali`);
+        }
 
         ordersRendered = true;
 
@@ -1488,102 +1375,24 @@ function getPendingOrdersFromLocalStorage() {
 }
 
 /**
- * Renderizza la lista di ordini con paginazione
+ * Renderizza la lista di ordini
  */
-function renderOrders(orders, resetPage = true) {
-    allOrdersCache = orders || [];
-    if (resetPage) currentOrdersPage = 0;
+function renderOrders(orders) {
+    const ordersList = document.getElementById('ordersList');
+    ordersList.innerHTML = '';
     
     // Ordina per data (il più recente prima)
-    allOrdersCache.sort((a, b) => {
+    orders.sort((a, b) => {
         const dateA = parseAnyDateFormat(a.data) || new Date(a.timestamp);
         const dateB = parseAnyDateFormat(b.data) || new Date(b.timestamp);
         return dateB - dateA;
     });
     
-    renderOrdersPage();
-}
-
-/**
- * Renderizza la pagina corrente degli ordini
- */
-function renderOrdersPage() {
-    const ordersList = document.getElementById('ordersList');
-    const navContainer = document.getElementById('ordersPagination');
-    
-    if (!ordersList) return;
-    
-    ordersList.innerHTML = '';
-    
-    if (allOrdersCache.length === 0) {
-        ordersList.style.display = 'none';
-        if (navContainer) navContainer.style.display = 'none';
-        return;
-    }
-    
-    // Calcola range pagina corrente
-    const start = currentOrdersPage * ORDERS_PER_PAGE;
-    const end = start + ORDERS_PER_PAGE;
-    const pageOrders = allOrdersCache.slice(start, end);
-    
-    // Renderizza ordini della pagina
-    pageOrders.forEach((order, index) => {
-        const globalIndex = start + index;
-        ordersList.innerHTML += createOrderCard(order, globalIndex);
+    orders.forEach((order, index) => {
+        ordersList.innerHTML += createOrderCard(order, index);
     });
     
     ordersList.style.display = 'flex';
-    
-    // Gestione controlli navigazione
-    if (allOrdersCache.length > ORDERS_PER_PAGE) {
-        if (navContainer) {
-            navContainer.style.display = 'flex';
-            
-            const prevBtn = document.getElementById('prevOrderPage');
-            const nextBtn = document.getElementById('nextOrderPage');
-            const indicator = document.getElementById('orderPageIndicator');
-            
-            const totalPages = Math.ceil(allOrdersCache.length / ORDERS_PER_PAGE);
-            
-            if (prevBtn) {
-                prevBtn.disabled = currentOrdersPage === 0;
-                prevBtn.onclick = () => {
-                    if (currentOrdersPage > 0) {
-                        currentOrdersPage--;
-                        renderOrdersPage();
-                        smoothScrollToTop();
-                    }
-                };
-            }
-            
-            if (nextBtn) {
-                nextBtn.disabled = end >= allOrdersCache.length;
-                nextBtn.onclick = () => {
-                    if (end < allOrdersCache.length) {
-                        currentOrdersPage++;
-                        renderOrdersPage();
-                        smoothScrollToTop();
-                    }
-                };
-            }
-            
-            if (indicator) {
-                indicator.textContent = `${currentOrdersPage + 1} / ${totalPages}`;
-            }
-        }
-    } else {
-        if (navContainer) navContainer.style.display = 'none';
-    }
-}
-
-/**
- * Scroll smooth verso l'inizio degli ordini
- */
-function smoothScrollToTop() {
-    const ordersSection = document.getElementById('ordersList');
-    if (ordersSection) {
-        ordersSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    }
 }
 
 /**
@@ -1759,5 +1568,3 @@ loadOrders();
     </script>
 </body>
 </html>
-
-
