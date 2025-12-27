@@ -1149,15 +1149,21 @@ async function loadOrders() {
         console.log('Nessuna email salvata. Controllo se esistono ordini attivi nel sistema...');
         
         // Chiamata per verificare se ci sono ordini attivi in generale
-        try {
-            const checkUrl = `${WEB_APP_URL}?get_active_count=1&callback=cb_ignore&t=${Date.now()}`;
-            
-            // Usiamo fetch con credentials: 'omit' per coerenza
-            const checkResp = await fetch(checkUrl, { 
-                method: 'GET', 
-                credentials: 'omit', 
-                redirect: 'follow' 
-            });
+try {
+    const checkUrl = `${WEB_APP_URL}?get_active_count=1&callback=cb_ignore&t=${Date.now()}`;
+    
+    // Aggiungi timeout anche qui
+    const checkController = new AbortController();
+    const checkTimeoutId = setTimeout(() => checkController.abort(), 20000); // 20s
+    
+    const checkResp = await fetch(checkUrl, { 
+        method: 'GET', 
+        credentials: 'omit', 
+        redirect: 'follow',
+        signal: checkController.signal // AGGIUNTO
+    });
+    
+    clearTimeout(checkTimeoutId); // AGGIUNTO
 
             if (checkResp.ok) {
                 const text = await checkResp.text();
@@ -1188,11 +1194,17 @@ async function loadOrders() {
                  throw new Error('Network response was not ok during check');
             }
         } catch (e) {
-            // Errore check: mostra recupero per non bloccare l'utente in caso di problemi di rete
-            console.error('Errore durante check ordini attivi:', e);
-            if (loadingEl) loadingEl.style.display = 'none';
-            if (recoverySection) recoverySection.style.display = 'block';
-        }
+    clearTimeout(checkTimeoutId); // AGGIUNTO: pulisci timeout anche qui
+    
+    if (e.name === 'AbortError') {
+        console.warn('⚠️ Timeout check ordini attivi (>20s)');
+    } else {
+        console.error('❌ Errore durante check ordini attivi:', e);
+    }
+    
+    if (loadingEl) loadingEl.style.display = 'none';
+    if (recoverySection) recoverySection.style.display = 'block';
+}
         
         ordersRendered = true;
         return; 
@@ -1204,7 +1216,7 @@ async function loadOrders() {
     const pendingOrders = getPendingOrdersFromLocalStorage();
 
     // timeout / abort controller
-    const TIMEOUT_MS = 15000; // 15s
+    const TIMEOUT_MS = 30000; // 30s (aumentato per connessioni lente)
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), TIMEOUT_MS);
 
@@ -1299,16 +1311,26 @@ async function loadOrders() {
         ordersRendered = true;
 
     } catch (err) {
-        clearTimeout(timeoutId);
-        console.error('Errore fetch diagnostico:', err);
+    clearTimeout(timeoutId);
+    
+    // Gestione specifica per AbortError
+    if (err.name === 'AbortError') {
+        console.warn('⚠️ Timeout caricamento ordini (>30s). Possibile problema di rete o server lento.');
         if (ordersListEl) ordersListEl.style.display = 'none';
-        if (err.name === 'AbortError') {
-            showEmptyState('Timeout caricamento', 'La richiesta ha impiegato troppo tempo. Riprovare più tardi.');
-        } else {
-            showEmptyState('Impossibile caricare gli ordini', 'Controlla la connessione o le impostazioni del Web App (deploy).');
-        }
-        ordersRendered = true;
-    } finally {
+        showEmptyState(
+            '⏱️ Caricamento rallentato', 
+            'La richiesta sta impiegando più tempo del previsto. Controlla la connessione internet e riprova.'
+        );
+    } else {
+        console.error('❌ Errore fetch diagnostico:', err);
+        if (ordersListEl) ordersListEl.style.display = 'none';
+        showEmptyState(
+            'Impossibile caricare gli ordini', 
+            'Verifica la connessione internet. Se il problema persiste, contatta il supporto.'
+        );
+    }
+    ordersRendered = true;
+} finally {
         // IMPORTANTE: nascondi sempre lo stato di caricamento
         try { if (loadingEl) loadingEl.style.display = 'none'; } catch (e) {}
     }
@@ -1537,4 +1559,5 @@ loadOrders();
     </script>
 </body>
 </html>
+
 
