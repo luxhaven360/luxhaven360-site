@@ -761,9 +761,171 @@
     from { opacity: 0; transform: translateX(20px); }
     to { opacity: 1; transform: translateX(0); }
 }
+
+        /* Banner Sessione Scaduta */
+.session-expired-banner {
+    position: sticky;
+    top: 0;
+    z-index: 1000;
+    background: linear-gradient(135deg, rgba(212, 175, 55, 0.15), rgba(255, 215, 0, 0.1));
+    border-bottom: 2px solid #D4AF37;
+    padding: 1.25rem 1.5rem;
+    display: none;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    flex-wrap: wrap;
+    backdrop-filter: blur(20px);
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+}
+
+.session-expired-banner.show {
+    display: flex;
+}
+
+.banner-message {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    flex: 1;
+    min-width: 250px;
+}
+
+.banner-icon {
+    font-size: 2rem;
+    color: #fbbf24;
+}
+
+.banner-text-wrapper {
+    flex: 1;
+}
+
+.banner-title {
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: #D4AF37;
+    margin-bottom: 0.25rem;
+}
+
+.banner-subtitle {
+    font-size: 0.9rem;
+    color: #a1a1aa;
+}
+
+.banner-btn {
+    background: linear-gradient(135deg, #D4AF37, #FFD700);
+    color: #09090b;
+    padding: 0.75rem 1.75rem;
+    border-radius: 10px;
+    border: none;
+    font-size: 0.95rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.3s;
+    text-decoration: none;
+    display: inline-block;
+    white-space: nowrap;
+}
+
+.banner-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 20px rgba(212, 175, 55, 0.3);
+}
+
+@media (max-width: 640px) {
+    .session-expired-banner {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+    
+    .banner-btn {
+        width: 100%;
+        text-align: center;
+    }
+}
+
+        /* Pulsante Disconnessione -->
+.logout-container {
+    position: fixed;
+    top: 1.5rem;
+    right: 1.5rem;
+    z-index: 999;
+    display: none;
+}
+
+.logout-container.show {
+    display: block;
+    animation: fadeInSlide 0.5s ease;
+}
+
+@keyframes fadeInSlide {
+    from { opacity: 0; transform: translateX(20px); }
+    to { opacity: 1; transform: translateX(0); }
+}
+
+.logout-btn {
+    background: rgba(24, 24, 27, 0.8);
+    border: 1px solid rgba(212, 175, 55, 0.3);
+    color: #D4AF37;
+    padding: 0.75rem 1.5rem;
+    border-radius: 12px;
+    font-size: 0.9rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.3s;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    backdrop-filter: blur(20px);
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
+}
+
+.logout-btn:hover {
+    background: rgba(212, 175, 55, 0.15);
+    border-color: #D4AF37;
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px rgba(212, 175, 55, 0.2);
+}
+
+.logout-icon {
+    font-size: 1.1rem;
+}
+
+@media (max-width: 768px) {
+    .logout-container {
+        top: 1rem;
+        right: 1rem;
+    }
+    
+    .logout-btn {
+        padding: 0.6rem 1.25rem;
+        font-size: 0.85rem;
+    }
+}
 </style>
 </head>
 <body>
+
+    <!-- Banner Sessione Scaduta -->
+<div id="sessionExpiredBanner" class="session-expired-banner">
+    <div class="banner-message">
+        <div class="banner-icon">⏱️</div>
+        <div class="banner-text-wrapper">
+            <div class="banner-title">Sessione di Tracciamento Scaduta</div>
+            <div class="banner-subtitle">Inserisci la tua email per visualizzare gli ordini</div>
+        </div>
+    </div>
+    <a href="../index.html#shop" class="banner-btn">← Torna allo Shop</a>
+</div>
+
+    <!-- Pulsante Disconnessione -->
+<div id="logoutContainer" class="logout-container">
+    <button class="logout-btn" onclick="handleLogout()">
+        <span class="logout-icon">🚪</span>
+        <span>Cambia Account</span>
+    </button>
+</div>
+    
     <div class="container">
         <div class="header">
             <div class="brand">LuxHaven360</div>
@@ -1273,6 +1435,15 @@ async function loadOrders() {
     // --- MODIFICA RICHIESTA: Controllo preliminare Email ---
     const userEmail = localStorage.getItem('lh360_user_email');
 
+    // ===== GESTIONE SESSIONE SCADUTA =====
+const urlParams = new URLSearchParams(window.location.search);
+const sessionExpired = urlParams.get('session_expired') === 'true';
+
+if (sessionExpired) {
+    const banner = document.getElementById('sessionExpiredBanner');
+    if (banner) banner.classList.add('show');
+}
+
     if (!userEmail) {
         console.log('Nessuna email salvata. Controllo se esistono ordini attivi nel sistema...');
         
@@ -1770,6 +1941,40 @@ function resetRecoveryFlow(e) {
 
 // Avvio
 loadOrders();
+
+        // ===== GESTIONE DISCONNESSIONE =====
+function handleLogout() {
+    if (!confirm('Vuoi davvero uscire? Dovrai reinserire l\'email per visualizzare i tuoi ordini.')) {
+        return;
+    }
+    
+    // Rimuovi email e dati sessione
+    localStorage.removeItem('lh360_user_email');
+    
+    // Ricarica la pagina per mostrare il form di recupero
+    window.location.href = 'tracking-order.html?view=all';
+}
+
+// Mostra il pulsante logout solo quando appropriato
+function updateLogoutButtonVisibility() {
+    const urlParams = new URLSearchParams(window.location.search);
+    const viewMode = urlParams.get('view');
+    const sessionExpired = urlParams.get('session_expired') === 'true';
+    const userEmail = localStorage.getItem('lh360_user_email');
+    
+    const logoutContainer = document.getElementById('logoutContainer');
+    
+    // Mostra SOLO se:
+    // - NON è view=latest
+    // - NON è session_expired
+    // - C'è un'email salvata
+    if (viewMode !== 'latest' && !sessionExpired && userEmail && logoutContainer) {
+        logoutContainer.classList.add('show');
+    }
+}
+
+// Chiama al caricamento
+window.addEventListener('DOMContentLoaded', updateLogoutButtonVisibility);
     </script>
 </body>
 </html>
