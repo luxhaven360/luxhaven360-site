@@ -951,7 +951,7 @@ function calcolaProgressoRealistico(dataOrdine, dataConsegna, statoCorrente) {
                             (order.products ? order.products.reduce((sum, p) => sum + (p.quantity || 1), 0) : 0);
             const plural = articoli === 1 ? 'articolo' : 'articoli';
             
-            const orderCategory = getCategoryForOrder(order); // ⭐ USA NUOVA FUNZIONE
+            const orderCategory = getCategoryForOrder(order); // ✅ USA NUOVA FUNZIONE
             
             // === FORMATTAZIONE DATE UNIFORMI ===
             const dataOrdineFormatted = formatDataItaliana(order.data);
@@ -1080,15 +1080,6 @@ function formatPrice(value) {
     return num.toLocaleString('it-IT', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
-function getCategoryFromOrderId(orderId) {
-    if (!orderId) return 'Prodotto';
-    const match = orderId.match(/^LH-([MBSE])/);
-    if (match && match[1]) {
-        return CATEGORY_MAP[match[1]] || 'Prodotto';
-    }
-    return 'Prodotto';
-}
-
 /**
  * Determina la categoria corretta per un ordine
  * - Ordini singoli: categoria dal SKU del prodotto
@@ -1096,44 +1087,53 @@ function getCategoryFromOrderId(orderId) {
  * - Ordini multipli con categorie diverse: "Lifestyle Collections"
  */
 function getCategoryForOrder(order) {
-    // Se non ci sono prodotti, usa il fallback
-    if (!order.products || order.products.length === 0) {
-        return getCategoryFromOrderId(order.id);
+  // Se non ci sono prodotti, usa il fallback
+  if (!order.products || order.products.length === 0) {
+    return getCategoryFromOrderId(order.id);
+  }
+  
+  const categories = new Set();
+  
+  // Analizza ogni prodotto
+  order.products.forEach(product => {
+    if (product.sku) {
+      // Estrai prefisso dallo SKU (es: ME-001 → ME)
+      const prefix = product.sku.split('-')[0];
+      
+      // Mappa prefisso a categoria
+      const categoryMap = {
+        'PR': 'Immobili',
+        'SC': 'Supercar',
+        'EX': 'Esperienze',
+        'ME': 'Abbigliamento'
+      };
+      
+      const category = categoryMap[prefix] || 'Prodotto';
+      categories.add(category);
     }
-    
-    const categories = new Set();
-    
-    // Analizza ogni prodotto
-    order.products.forEach(product => {
-        if (product.sku) {
-            // Estrai prefisso dallo SKU (es: ME-001 → ME)
-            const prefix = product.sku.split('-')[0];
-            
-            // Mappa prefisso a categoria
-            const categoryMap = {
-                'PR': 'Immobili',
-                'SC': 'Supercar',
-                'EX': 'Esperienze',
-                'ME': 'Abbigliamento'
-            };
-            
-            const category = categoryMap[prefix] || 'Prodotto';
-            categories.add(category);
-        }
-    });
-    
-    // Se nessuna categoria trovata, fallback
-    if (categories.size === 0) {
-        return getCategoryFromOrderId(order.id);
+  });
+  
+  // Se nessuna categoria trovata, fallback
+  if (categories.size === 0) {
+    return getCategoryFromOrderId(order.id);
+  }
+  
+  // Se tutte hanno la stessa categoria, restituiscila
+  if (categories.size === 1) {
+    return Array.from(categories)[0];
+  }
+  
+  // Se categorie diverse, restituisci "Lifestyle Collections"
+  return 'Lifestyle Collections';
+}
+
+function getCategoryFromOrderId(orderId) {
+    if (!orderId) return 'Prodotto';
+    const match = orderId.match(/^LH-([MBSE])/);
+    if (match && match[1]) {
+        return CATEGORY_MAP[match[1]] || 'Prodotto';
     }
-    
-    // Se tutte hanno la stessa categoria, restituiscila
-    if (categories.size === 1) {
-        return Array.from(categories)[0];
-    }
-    
-    // Se categorie diverse, restituisci "Lifestyle Collections"
-    return 'Lifestyle Collections';
+    return 'Prodotto';
 }
 
 // ================================
@@ -1572,4 +1572,5 @@ loadOrders();
     </script>
 </body>
 </html>
+
 
