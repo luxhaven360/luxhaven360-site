@@ -1532,21 +1532,62 @@ window.handleDetailsResponse = function(response) {
             month: 'long',
             year: 'numeric'
         });
-        const orderDetails = {
-            id: currentOrderId,
-            data: formattedDate,
-            stato: 'In Preparazione',
-            totale: total.toFixed(2),
-            consegna_prevista: response.consegna_prevista || 'Da definire', // ✅ USA VALORE BACKEND
-            products: cart.map(item => ({
-                name: item.title || 'Prodotto',
-                quantity: item.qty || 1,
-                price: item.price || 0,
-                image: item.image || ''
-            })),
-            email: response?.email || '',
-            timestamp: confirmedTime
+        // ✅ Calcola il totale finale corretto con tutti gli sconti
+const subtotal = _persistentCart.reduce((sum, item) => {
+    const finalPrice = (item.discountPrice && item.discountPrice < item.price) 
+        ? parseFloat(item.discountPrice) 
+        : parseFloat(item.price) || 0;
+    return sum + finalPrice * (parseInt(item.qty) || 1);
+}, 0);
+
+const totalDiscount = _appliedDiscounts.totalDiscount || 0;
+const subtotalAfterDiscount = subtotal - totalDiscount;
+const shippingCost = subtotalAfterDiscount >= 150 ? 0 : 15;
+const finalTotal = subtotal + shippingCost - totalDiscount;
+
+// ✅ Determina categoria ordine (come in tracking-order.html)
+let orderCategory = 'Prodotto';
+if (_persistentCart.length > 0) {
+    const categories = _persistentCart.map(item => {
+        if (!item.sku) return null;
+        const skuPrefix = item.sku.split('-')[0];
+        const categoryMap = {
+            'ME': 'Abbigliamento',
+            'PR': 'Immobili', 
+            'SC': 'Supercar',
+            'EX': 'Esperienze'
         };
+        return categoryMap[skuPrefix] || 'Prodotto';
+    }).filter(Boolean);
+    
+    const uniqueCategories = [...new Set(categories)];
+    
+    if (uniqueCategories.length === 1) {
+        orderCategory = uniqueCategories[0];
+    } else if (uniqueCategories.length > 1) {
+        orderCategory = 'Lifestyle Collections';
+    }
+}
+
+const orderDetails = {
+    id: currentOrderId,
+    data: formattedDate,
+    stato: 'In Preparazione',
+    totale: finalTotal.toFixed(2), // ✅ Totale finale corretto
+    consegna_prevista: response.consegna_prevista || 'Da definire',
+    category: orderCategory, // ✅ Categoria corretta
+    products: _persistentCart.map(item => ({
+        name: item.title || 'Prodotto',
+        quantity: item.qty || 1,
+        price: (item.discountPrice && item.discountPrice < item.price) 
+            ? item.discountPrice 
+            : item.price || 0, // ✅ Prezzo finale corretto
+        image: item.image || '',
+        sku: item.sku || '' // ✅ SKU per riferimento
+    })),
+    email: response?.email || '',
+    timestamp: confirmedTime
+};
         localStorage.setItem('lh360_pending_order', JSON.stringify(orderDetails));
         console.log('✅ Ordine salvato in localStorage (con dati persistenti):', orderDetails);
     }
@@ -1992,6 +2033,7 @@ if (totalElem) totalElem.textContent = `€ ${finalTotal.toLocaleString('it-IT',
     </script>    
 </body>
 </html>
+
 
 
 
