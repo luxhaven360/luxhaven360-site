@@ -1564,22 +1564,43 @@ if (_persistentCart.length > 0) {
     }
 }
 
+// ✅ Calcola prezzi adjusted (con sconto combo/coupon distribuito)
+const adjustedProducts = _persistentCart.map(item => {
+    const finalPrice = (item.discountPrice && item.discountPrice < item.price) 
+        ? parseFloat(item.discountPrice) 
+        : parseFloat(item.price) || 0;
+    
+    const itemQty = parseInt(item.qty) || 1;
+    
+    // Calcola prezzo adjusted (con sconto distribuito proporzionalmente)
+    let adjustedPrice = finalPrice;
+    
+    if (totalDiscount > 0 && subtotal > 0) {
+        const itemSubtotal = finalPrice * itemQty;
+        const discountRatio = itemSubtotal / subtotal; // Proporzione di questo prodotto sul subtotale
+        const itemDiscount = totalDiscount * discountRatio; // Sconto per questo prodotto
+        adjustedPrice = finalPrice - (itemDiscount / itemQty); // Distribuzione per unità
+        adjustedPrice = Math.max(0.50, adjustedPrice); // Minimo 0.50€
+    }
+    
+    return {
+        name: item.title || 'Prodotto',
+        quantity: itemQty,
+        price: parseFloat(adjustedPrice.toFixed(2)), // ✅ Prezzo finale adjusted
+        originalPrice: finalPrice, // ✅ Prezzo originale (opzionale, per confronto)
+        image: item.image || '',
+        sku: item.sku || ''
+    };
+});
+
 const orderDetails = {
     id: currentOrderId,
     data: formattedDate,
     stato: 'In Preparazione',
-    totale: finalTotal.toFixed(2), // ✅ Totale finale corretto
+    totale: finalTotal.toFixed(2),
     consegna_prevista: response.consegna_prevista || 'Da definire',
-    category: orderCategory, // ✅ Categoria corretta
-    products: _persistentCart.map(item => ({
-        name: item.title || 'Prodotto',
-        quantity: item.qty || 1,
-        price: (item.discountPrice && item.discountPrice < item.price) 
-            ? item.discountPrice 
-            : item.price || 0, // ✅ Prezzo finale corretto
-        image: item.image || '',
-        sku: item.sku || '' // ✅ SKU per riferimento
-    })),
+    category: orderCategory,
+    products: adjustedProducts, // ✅ Usa i prodotti con prezzi adjusted
     email: response?.email || '',
     timestamp: confirmedTime
 };
@@ -2028,4 +2049,5 @@ if (totalElem) totalElem.textContent = `€ ${finalTotal.toLocaleString('it-IT',
     </script>    
 </body>
 </html>
+
 
