@@ -1134,42 +1134,57 @@ localStorage.setItem('lh360_applied_discounts', JSON.stringify({
 
     /* --- GESTIONE COUPON (invariata) --- */
     document.getElementById('applyCouponBtn').addEventListener('click', async function() {
-        const couponCode = document.getElementById('couponInput').value.trim().toUpperCase();
-        const messageEl = document.getElementById('couponMessage');
-        const btn = this;
+    const couponCode = document.getElementById('couponInput').value.trim().toUpperCase();
+    const messageEl = document.getElementById('couponMessage');
+    const btn = this;
 
-        if (!couponCode) { showCouponMessage('Inserisci un codice promozionale', 'error'); return; }
-        if (hasCouponBeenUsed(couponCode)) { showCouponMessage('Hai già utilizzato questo coupon in precedenza', 'error'); return; }
-        if (appliedCoupon) {
-            showCouponMessage(`Coupon "${appliedCoupon.code}" rimosso. Applicando "${couponCode}"...`, 'success');
-            appliedCoupon = null;
+    if (!couponCode) { showCouponMessage('Inserisci un codice promozionale', 'error'); return; }
+    if (hasCouponBeenUsed(couponCode)) { showCouponMessage('Hai già utilizzato questo coupon in precedenza', 'error'); return; }
+    
+    // Rimuovi coupon precedente se presente
+    if (appliedCoupon) {
+        appliedCoupon = null;
+        await updateSummaryWithCoupon();
+    }
+
+    // FASE 1: VERIFICA
+    btn.disabled = true;
+    btn.textContent = 'Verifica in corso...';
+
+    try {
+        const response = await fetch(`${webAppUrl}?action=validate_coupon&code=${encodeURIComponent(couponCode)}&t=${Date.now()}`);
+        const result = await response.json();
+        
+        if (result.success && result.valid) {
+            // FASE 2: APPLICAZIONE IN CORSO
+            btn.textContent = 'Applicazione in corso...';
+            
+            // Salva il coupon
+            appliedCoupon = { code: couponCode, discountPercent: result.discountPercent };
+            markCouponAsUsed(couponCode);
+            
+            // Aggiorna TUTTA la pagina (calcoli, UI, totali)
             await updateSummaryWithCoupon();
-        }
-
-        btn.disabled = true;
-        btn.textContent = 'Verifica...';
-
-        try {
-            const response = await fetch(`${webAppUrl}?action=validate_coupon&code=${encodeURIComponent(couponCode)}&t=${Date.now()}`);
-            const result = await response.json();
-            if (result.success && result.valid) {
-                appliedCoupon = { code: couponCode, discountPercent: result.discountPercent };
-                markCouponAsUsed(couponCode);
-                showCouponMessage(`✓ Coupon "${couponCode}" applicato (${result.discountPercent}% di sconto)`, 'success');
-                await updateSummaryWithCoupon();
-            } else {
-                showCouponMessage(result.error || 'Codice non valido o scaduto', 'error');
-                appliedCoupon = null;
-            }
-        } catch (error) {
-            console.error('Errore validazione coupon:', error);
-            showCouponMessage('Errore di connessione. Riprova.', 'error');
+            
+            // Piccola pausa per garantire rendering completo
+            await new Promise(resolve => setTimeout(resolve, 300));
+            
+            // FASE 3: CONFERMA FINALE (solo dopo aggiornamento completo)
+            showCouponMessage(`✓ Coupon "${couponCode}" applicato con successo (${result.discountPercent}% di sconto)`, 'success');
+            
+        } else {
+            showCouponMessage(result.error || 'Codice non valido o scaduto', 'error');
             appliedCoupon = null;
-        } finally {
-            btn.disabled = false;
-            btn.textContent = 'Applica';
         }
-    });
+    } catch (error) {
+        console.error('Errore validazione coupon:', error);
+        showCouponMessage('Errore di connessione. Riprova.', 'error');
+        appliedCoupon = null;
+    } finally {
+        btn.disabled = false;
+        btn.textContent = 'Applica';
+    }
+});
 
     function showCouponMessage(message, type) {
         const messageEl = document.getElementById('couponMessage');
@@ -1257,3 +1272,4 @@ window.addEventListener('pageshow', function(event) {
 </script>
 </body>
 </html>
+
