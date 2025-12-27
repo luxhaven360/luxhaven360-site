@@ -1081,15 +1081,28 @@ let loadTimeout;
 let startTime;
 let emailSent = false; // Flag per evitare invii duplicati
 
+// ✅ NUOVO: Controllo se è un refresh
+const isPageRefresh = sessionStorage.getItem('lh360_success_loaded') === 'true';
+if (!isPageRefresh) {
+  sessionStorage.setItem('lh360_success_loaded', 'true');
+}
+
 // Status messages che appaiono in sequenza durante il caricamento
-const statusMessages = [
-    { icon: '🔒', text: 'Verifica del pagamento...', duration: 1500 },
-    { icon: '✓', text: 'Pagamento confermato con successo', duration: 1500 },
-    { icon: '📝', text: 'Registrazione del tuo ordine...', duration: 1800 },
-    { icon: '✓', text: 'Ordine registrato correttamente', duration: 1200 },
-    { icon: '📧', text: 'Invio conferma via email...', duration: 1500, triggerEmail: true }, // Aggiungiamo flag
-    { icon: '✓', text: 'Conferma inviata al tuo indirizzo', duration: 1200 },
-    { icon: '🎉', text: 'Tutto pronto! Preparazione dettagli...', duration: 1000 }
+const statusMessages = isPageRefresh ? [
+  // ✅ Messaggi per REFRESH (senza email)
+  { icon: '🔒', text: 'Verifica del pagamento...', duration: 1500 },
+  { icon: '✓', text: 'Pagamento confermato con successo', duration: 1500 },
+  { icon: '📝', text: 'Caricamento dettagli ordine...', duration: 1800 },
+  { icon: '🎉', text: 'Tutto pronto!', duration: 1000 }
+] : [
+  // ✅ Messaggi per PRIMO CARICAMENTO (con email)
+  { icon: '🔒', text: 'Verifica del pagamento...', duration: 1500 },
+  { icon: '✓', text: 'Pagamento confermato con successo', duration: 1500 },
+  { icon: '📝', text: 'Registrazione del tuo ordine...', duration: 1800 },
+  { icon: '✓', text: 'Ordine registrato correttamente', duration: 1200 },
+  { icon: '📧', text: 'Invio conferma via email...', duration: 1500, triggerEmail: true },
+  { icon: '✓', text: 'Conferma inviata al tuo indirizzo', duration: 1200 },
+  { icon: '🎉', text: 'Tutto pronto! Preparazione dettagli...', duration: 1000 }
 ];
 
 let currentStatusIndex = 0;
@@ -1160,6 +1173,12 @@ function updateStatusMessage() {
 
 // 🆕 FUNZIONE PER INVIARE LA FATTURA VIA EMAIL (con fallback fetch)
 function sendInvoiceEmail() {
+  // ✅ NUOVO: Non inviare email se è un refresh
+  if (isPageRefresh) {
+    console.log('⏭️ Invio email skippato (pagina ricaricata)');
+    return;
+  }
+  
     const urlParams = new URLSearchParams(window.location.search);
     const sessionId = urlParams.get('session_id');
     const orderIdParam = urlParams.get('id_ordine');
@@ -1375,11 +1394,19 @@ function finalizePageLoad() {
 }
 
 function setupButtons() {
-    const trackBtn = document.querySelector('.btn-primary');
-    if (trackBtn) {
-        // Aggiunge il parametro per mostrare solo l'ultimo ordine
-        trackBtn.href = 'https://luxhaven360.github.io/luxhaven360-site/product-details/tracking-order.html?view=latest';
+  const trackBtn = document.querySelector('.btn-primary');
+  if (trackBtn) {
+    // ✅ NUOVO: Controllo refresh per pulsante tracciamento
+    if (isPageRefresh) {
+      trackBtn.href = '#';
+      trackBtn.addEventListener('click', function(e) {
+        e.preventDefault();
+        showSessionExpiredModal();
+      });
+    } else {
+      trackBtn.href = 'https://luxhaven360.github.io/luxhaven360-site/product-details/tracking-order.html?view=latest';
     }
+  }
     const shopBtn = document.querySelector('.btn-secondary');
     if (shopBtn) {
         shopBtn.href = 'https://luxhaven360.github.io/luxhaven360-site/index.html#shop';
@@ -2076,7 +2103,34 @@ if (totalDiscount > 0) {
 // Aggiorna Totale Finale
 if (totalElem) totalElem.textContent = `€ ${finalTotal.toLocaleString('it-IT', {minimumFractionDigits: 2})}`;
 }
+
+    // ✅ NUOVA FUNZIONE: Modale sessione scaduta
+function showSessionExpiredModal() {
+  const modalHtml = `
+    <div id="sessionExpiredModal" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.85); backdrop-filter: blur(8px); z-index: 99999; display: flex; align-items: center; justify-content: center; animation: fadeIn 0.3s ease;">
+      <div style="background: linear-gradient(135deg, #1a1a1a 0%, #0f0f0f 100%); border: 2px solid #D4AF37; padding: 3rem; border-radius: 20px; max-width: 500px; width: 90%; text-align: center; box-shadow: 0 30px 60px rgba(0,0,0,0.7), 0 0 40px rgba(212, 175, 55, 0.2); animation: scaleIn 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);">
+        <div style="font-size: 3.5rem; margin-bottom: 1.5rem; color: #D4AF37; animation: pulse 2s infinite;">⏳</div>
+        <h3 style="color: #D4AF37; font-size: 1.75rem; margin-bottom: 1rem; font-weight: 300; letter-spacing: 1px;">Sessione Scaduta</h3>
+        <p style="color: #fafafa; font-size: 1.1rem; line-height: 1.7; margin-bottom: 0.5rem;">
+          La sessione di conferma ordine è scaduta.
+        </p>
+        <p style="color: #a1a1aa; font-size: 0.95rem; line-height: 1.6; margin-bottom: 2rem;">
+          Per monitorare lo stato e la spedizione del tuo ordine, accedi alla sezione <strong style="color: #D4AF37;">I tuoi ordini</strong>, dove troverai tutti i dettagli aggiornati.
+        </p>
+        <button onclick="window.location.href='https://luxhaven360.github.io/luxhaven360-site/product-details/tracking-order.html'" style="background: linear-gradient(135deg, #D4AF37, #FFD700); color: #000; border: none; padding: 1rem 2.5rem; border-radius: 12px; font-size: 1rem; font-weight: 700; cursor: pointer; text-transform: uppercase; letter-spacing: 1px; transition: all 0.3s; box-shadow: 0 8px 20px rgba(212, 175, 55, 0.3);" onmouseover="this.style.transform='scale(1.05)'; this.style.boxShadow='0 12px 30px rgba(212, 175, 55, 0.5)';" onmouseout="this.style.transform='scale(1)'; this.style.boxShadow='0 8px 20px rgba(212, 175, 55, 0.3)';">
+          Vai ai Tuoi Ordini
+        </button>
+      </div>
+    </div>
+    <style>
+      @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+      @keyframes scaleIn { from { transform: scale(0.8); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+      @keyframes pulse { 0%, 100% { opacity: 0.8; transform: scale(1); } 50% { opacity: 1; transform: scale(1.1); } }
+    </style>
+  `;
+  
+  document.body.insertAdjacentHTML('beforeend', modalHtml);
+}
     </script>    
 </body>
 </html>
-
