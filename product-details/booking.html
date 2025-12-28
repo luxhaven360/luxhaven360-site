@@ -117,11 +117,13 @@
             color: #d4af37;
         }
         
+        /* increased left padding to avoid placeholder sticking to the border */
         input, select, textarea {
             background: rgba(10, 10, 10, 0.9);
             border: 1px solid rgba(80, 80, 80, 0.4);
             color: #f5f5f5;
-            padding: 18px 20px;
+            padding: 18px 22px; /* vertical / horizontal */
+            padding-left: 22px; /* more left spacing */
             border-radius: 12px;
             width: 100%;
             transition: all 0.3s ease;
@@ -180,8 +182,16 @@
             }
         }
         
+        /* initial state for animated elements */
         .animate-fade-in {
-            animation: fadeInUp 0.6s ease forwards;
+            opacity: 0;
+            transform: translateY(30px);
+            transition: all 0.6s ease;
+            will-change: opacity, transform;
+        }
+        .animate-fade-in.visible {
+            opacity: 1;
+            transform: translateY(0);
         }
         
         .checkbox-container {
@@ -213,6 +223,13 @@
             top: 20px;
         }
         
+        /* ensure policies card is static and never sticky/moving */
+        #policies {
+            position: static !important;
+            top: auto !important;
+            transform: none !important;
+        }
+        
         /* Custom Date Picker */
         .date-input-wrapper {
             position: relative;
@@ -235,10 +252,8 @@
         }
         
         .custom-datepicker {
-            position: absolute;
-            top: calc(100% + 8px);
-            left: 0;
-            z-index: 1000;
+            position: absolute; /* will be moved to body and positioned via JS */
+            z-index: 10000;
             background: rgba(10, 10, 10, 0.98);
             border: 1px solid rgba(201, 169, 97, 0.3);
             border-radius: 16px;
@@ -663,7 +678,8 @@
                 </div>
 
                 <!-- Policies -->
-                <div class="glass-card p-6 mt-6 animate-fade-in">
+                <!-- REMOVED animate-fade-in from this card to avoid unexpected movement while scrolling -->
+                <div class="glass-card p-6 mt-6" id="policies">
                     <h4 class="font-semibold mb-4 gradient-text">Politiche</h4>
                     <div class="space-y-3 text-sm" style="color: rgba(245, 245, 245, 0.8);">
                         <div>
@@ -690,10 +706,11 @@
             total: 890
         };
 
-        // Custom Date Picker
+        // Custom Date Picker - now appended to document.body to avoid stacking-context issues
         class CustomDatePicker {
             constructor(inputElement, pickerElement) {
                 this.input = inputElement;
+                this.originalPicker = pickerElement; // keep reference
                 this.picker = pickerElement;
                 this.currentDate = new Date();
                 this.selectedDate = null;
@@ -702,6 +719,7 @@
                 this.maxDate = new Date();
                 this.maxDate.setMonth(this.maxDate.getMonth() + 6);
                 
+                this.isAppendedToBody = false;
                 this.init();
             }
             
@@ -716,17 +734,35 @@
                         this.hide();
                     }
                 });
+
+                window.addEventListener('resize', () => this.positionPicker());
+                window.addEventListener('scroll', () => this.positionPicker());
                 
                 this.render();
             }
             
             show() {
                 this.picker.classList.remove('hidden');
+                if (!this.isAppendedToBody) {
+                    document.body.appendChild(this.picker);
+                    this.isAppendedToBody = true;
+                }
+                this.positionPicker();
                 this.render();
             }
             
             hide() {
                 this.picker.classList.add('hidden');
+            }
+            
+            positionPicker() {
+                if (!this.isAppendedToBody) return;
+                const rect = this.input.getBoundingClientRect();
+                const top = rect.bottom + window.scrollY + 8; // 8px gap
+                const left = rect.left + window.scrollX;
+                this.picker.style.top = top + 'px';
+                this.picker.style.left = left + 'px';
+                this.picker.style.minWidth = Math.max(320, rect.width) + 'px';
             }
             
             render() {
@@ -919,25 +955,23 @@
             alert(`Prenotazione confermata!\n\nRiepilogo:\n- Percorso: ${bookingData.distance} km\n- Data: ${date} alle ${time}\n- Totale: €${bookingData.total.toLocaleString()}\n\nRiceverai una conferma via email.`);
         }
 
-        // Animation on scroll
+        // Improved Animation on scroll - add 'visible' class once and unobserve to avoid flicker / disappearing
         const observerOptions = {
-            threshold: 0.1,
-            rootMargin: '0px 0px -50px 0px'
+            threshold: 0.15,
+            rootMargin: '0px'
         };
 
         const observer = new IntersectionObserver((entries) => {
             entries.forEach(entry => {
                 if (entry.isIntersecting) {
-                    entry.target.style.opacity = '1';
-                    entry.target.style.transform = 'translateY(0)';
+                    entry.target.classList.add('visible');
+                    observer.unobserve(entry.target); // stop observing to prevent toggling
                 }
             });
         }, observerOptions);
 
         document.querySelectorAll('.animate-fade-in').forEach(el => {
-            el.style.opacity = '0';
-            el.style.transform = 'translateY(30px)';
-            el.style.transition = 'all 0.6s ease';
+            // initial state set via CSS class - observer will add .visible
             observer.observe(el);
         });
     </script>
