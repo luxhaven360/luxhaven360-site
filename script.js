@@ -566,31 +566,3 @@ async function checkProductCategory(sku) {
     
     return null;
 }
-
-/**
- * Inizializza filtro categorie quando si entra nella sezione SHOP
- */
-function initShopCategoryFilter() {
-    const shopSection = document.getElementById('shop');
-    if (!shopSection) return;
-    
-    // Observer per rilevare quando la sezione diventa visibile
-    const observer = new IntersectionObserver((entries) => {
-        entries.forEach(entry => {
-            if (entry.isIntersecting && entry.target.classList.contains('active')) {
-                // Carica categorie solo una volta
-                if (!document.querySelector('.category-pill')) {
-                    loadShopCategories();
-                }
-            }
-        });
-    }, { threshold: 0.1 });
-    
-    observer.observe(shopSection);
-}
-
-// Inizializza il filtro quando il DOM è pronto
-document.addEventListener('DOMContentLoaded', () => {
-    initShopCategoryFilter();
-});
-
