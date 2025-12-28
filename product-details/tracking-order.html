@@ -1027,6 +1027,23 @@
     <a href="../index.html#shop" class="banner-btn">← Torna allo Shop</a>
 </div>
 
+    <!-- Modal per email non valida (recupero ordini) -->
+<div id="invalidRecoveryEmailModal" class="logout-modal">
+    <div class="logout-modal-content">
+        <div class="logout-modal-icon">✉️</div>
+        <h2 class="logout-modal-title">Email Non Consentita</h2>
+        <p class="logout-modal-text">
+            L'indirizzo email inserito non è valido o non appartiene a un provider riconosciuto.<br>
+            Utilizza un indirizzo email personale verificato (Gmail, Outlook, Yahoo, ecc.).
+        </p>
+        <div class="logout-modal-actions">
+            <button class="logout-modal-btn logout-modal-btn-confirm" onclick="closeInvalidRecoveryEmailModal()">
+                Ho capito
+            </button>
+        </div>
+    </div>
+</div>
+
     <!-- Pulsante Disconnessione -->
 <div id="logoutContainer" class="logout-container">
     <button class="logout-btn" onclick="handleLogout()">
@@ -1111,6 +1128,23 @@
         </div>
     </div>
 </div>
+
+    <!-- Modal per codice recupero non valido -->
+<div id="invalidRecoveryCodeModal" class="logout-modal">
+    <div class="logout-modal-content">
+        <div class="logout-modal-icon">🔑</div>
+        <h2 class="logout-modal-title">Codice Non Valido</h2>
+        <p class="logout-modal-text">
+            Il codice inserito non è corretto o è scaduto.<br>
+            Verifica di aver inserito correttamente gli 8 caratteri oppure richiedi un nuovo codice.
+        </p>
+        <div class="logout-modal-actions">
+            <button class="logout-modal-btn logout-modal-btn-confirm" onclick="closeInvalidCodeModal()">
+                Ho capito
+            </button>
+        </div>
+    </div>
+</div>
     <script>
         const WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbwr79RkXIEocpuOKaM6uMJqE6VFs9wjlUPvrr__FvDbDDrD2ELB1NbfrWP3BCYpHj2u/exec';
 const CATEGORY_MAP = {
@@ -1162,6 +1196,21 @@ const ORDERS_PER_PAGE = 4;
 // ==================================================================
 
 /**
+ * Helper: Converte i mesi in minuscolo mantenendo il resto del formato
+ */
+function lowercaseMonthsInTracking(text) {
+    if (!text) return text;
+    const months = ['Gennaio', 'Febbraio', 'Marzo', 'Aprile', 'Maggio', 'Giugno', 
+                    'Luglio', 'Agosto', 'Settembre', 'Ottobre', 'Novembre', 'Dicembre'];
+    let result = text;
+    months.forEach(month => {
+        const regex = new RegExp(`\\b${month}\\b`, 'gi');
+        result = result.replace(regex, month.toLowerCase());
+    });
+    return result;
+}
+        
+/**
  * Formatta una data in italiano gestendo tutti i formati possibili
  * @param {Date|string} input - Data da formattare
  * @returns {string} Data formattata correttamente
@@ -1184,7 +1233,7 @@ function formatDataItaliana(input) {
         const month = rangeOnlyMatch[3];
         
         // Aggiungi anno corrente
-        return `${day1}-${day2} ${month.charAt(0).toUpperCase() + month.slice(1).toLowerCase()} ${new Date().getFullYear()}`;
+        return `${day1}-${day2} ${month.toLowerCase()} ${new Date().getFullYear()}`;
     }
     
     // CASO 3: Range con trattino e mese + anno (es: "28-30 Dicembre 2025")
@@ -1195,14 +1244,14 @@ function formatDataItaliana(input) {
         const day2 = rangeWithYearMatch[2];
         const month = rangeWithYearMatch[3];
         const year = rangeWithYearMatch[4];
-        return `${day1}-${day2} ${month.charAt(0).toUpperCase() + month.slice(1).toLowerCase()} ${year}`;
+        return `${day1}-${day2} ${month.toLowerCase()} ${year}`;
     }
     
     // CASO 4: Range con due mesi diversi (es: "31 Dicembre - 4 Gennaio")
     const crossMonthMatch = str.match(/(\d+)\s+(gennaio|febbraio|marzo|aprile|maggio|giugno|luglio|agosto|settembre|ottobre|novembre|dicembre)\s*[-–—]\s*(\d+)\s+(gennaio|febbraio|marzo|aprile|maggio|giugno|luglio|agosto|settembre|ottobre|novembre|dicembre)/i);
     if (crossMonthMatch) {
-        // Restituisci così com'è (normalizza solo maiuscole)
-        return str.replace(/\b\w/g, l => l.toUpperCase());
+        // Normalizza i mesi in minuscolo
+        return lowercaseMonthsInTracking(str);
     }
     
     // CASO 5: Singola data senza anno (es: "2 gennaio")
@@ -1887,9 +1936,27 @@ async function handleSendCode(e) {
     e.preventDefault();
     const emailInput = document.getElementById('recoveryEmail');
     const btn = document.getElementById('btnSendCode');
-    const email = emailInput.value.trim();
+    const email = emailInput.value.trim().toLowerCase();
     
     if (!email) return;
+    
+    // ✅ CONTROLLO PROVIDER EMAIL
+    const validDomains = [
+        'gmail.com', 'outlook.com', 'hotmail.com', 'yahoo.com', 'yahoo.it', 
+        'libero.it', 'virgilio.it', 'icloud.com', 'protonmail.com', 'live.com',
+        'msn.com', 'alice.it', 'tim.it', 'vodafone.it', 'fastwebnet.it',
+        'tiscali.it', 'tin.it', 'email.it', 'pec.it', 'aruba.it'
+    ];
+    
+    const emailDomain = email.split('@')[1];
+    
+    if (!emailDomain || !validDomains.includes(emailDomain)) {
+        const modal = document.getElementById('invalidRecoveryEmailModal');
+        if (modal) {
+            modal.classList.add('active');
+        }
+        return; // Blocca l'operazione
+    }
     
     // UI Loading
     const originalText = "Invia Codice di Sicurezza";
@@ -2009,8 +2076,12 @@ async function handleVerifyCode(e) {
         }
 
     } catch (error) {
-        alert('Errore: ' + error.message);
-    } finally {
+    console.error('Errore verifica codice:', error);
+    const modal = document.getElementById('invalidRecoveryCodeModal');
+    if (modal) {
+        modal.classList.add('active');
+    }
+} finally {
         btn.innerText = originalText;
         btn.disabled = false;
     }
@@ -2087,8 +2158,36 @@ function updateLogoutButtonVisibility() {
 
 // Chiama al caricamento
 window.addEventListener('DOMContentLoaded', updateLogoutButtonVisibility);
+
+        function closeInvalidCodeModal() {
+    const modal = document.getElementById('invalidRecoveryCodeModal');
+    if (modal) {
+        modal.classList.remove('active');
+    }
+    // Reset del campo input
+    const codeInput = document.getElementById('otpCode');
+    if (codeInput) {
+        codeInput.value = '';
+        codeInput.focus();
+    }
+}
+
+    /**
+ * Chiude il modal di email non valida e resetta il form
+ */
+function closeInvalidRecoveryEmailModal() {
+    const modal = document.getElementById('invalidRecoveryEmailModal');
+    if (modal) {
+        modal.classList.remove('active');
+    }
+    
+    // Reset e focus sull'input email
+    const emailInput = document.getElementById('recoveryEmail');
+    if (emailInput) {
+        emailInput.value = '';
+        emailInput.focus();
+    }
+}    
     </script>
 </body>
 </html>
-
-
