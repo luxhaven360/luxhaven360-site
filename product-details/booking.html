@@ -117,18 +117,20 @@
             color: #d4af37;
         }
         
-        /* increased left padding to avoid placeholder sticking to the border */
+        /* Inputs: ensure left padding for placeholders and values */
         input, select, textarea {
             background: rgba(10, 10, 10, 0.9);
             border: 1px solid rgba(80, 80, 80, 0.4);
             color: #f5f5f5;
-            padding: 18px 22px; /* vertical / horizontal */
-            padding-left: 22px; /* more left spacing */
+            padding: 14px 20px;
+            padding-left: 20px; /* explicit left padding */
             border-radius: 12px;
             width: 100%;
             transition: all 0.3s ease;
             font-family: 'Inter', sans-serif;
             font-size: 15px;
+            box-sizing: border-box;
+            line-height: 1.2;
         }
         
         input::placeholder, textarea::placeholder {
@@ -181,15 +183,14 @@
                 transform: translateY(0);
             }
         }
-        
-        /* initial state for animated elements */
-        .animate-fade-in {
+
+        /* Use classes for intersection animations to avoid inline style thrashing */
+        .fade-hidden {
             opacity: 0;
             transform: translateY(30px);
             transition: all 0.6s ease;
-            will-change: opacity, transform;
         }
-        .animate-fade-in.visible {
+        .fade-in {
             opacity: 1;
             transform: translateY(0);
         }
@@ -223,13 +224,6 @@
             top: 20px;
         }
         
-        /* ensure policies card is static and never sticky/moving */
-        #policies {
-            position: static !important;
-            top: auto !important;
-            transform: none !important;
-        }
-        
         /* Custom Date Picker */
         .date-input-wrapper {
             position: relative;
@@ -252,7 +246,7 @@
         }
         
         .custom-datepicker {
-            position: absolute; /* will be moved to body and positioned via JS */
+            /* We'll position this dynamically (moved to body) */
             z-index: 10000;
             background: rgba(10, 10, 10, 0.98);
             border: 1px solid rgba(201, 169, 97, 0.3);
@@ -261,6 +255,11 @@
             box-shadow: 0 20px 60px rgba(0, 0, 0, 0.8);
             backdrop-filter: blur(20px);
             min-width: 320px;
+            display: none; /* hide by default; JS toggles */
+        }
+        
+        .custom-datepicker.visible {
+            display: block;
         }
         
         .datepicker-header {
@@ -372,7 +371,7 @@
 
         <div class="grid lg:grid-cols-3 gap-8">
             <!-- Main Content -->
-            <div class="lg:col-span-2 space-y-8">
+            <div id="mainContent" class="lg:col-span-2 space-y-8">
                 <!-- Car Hero Section -->
                 <div class="glass-card p-8 animate-fade-in">
                     <img src="https://images.unsplash.com/photo-1605559424843-9e4c228bf1c2?w=1200&h=500&fit=crop" alt="Ferrari SF90" class="hero-image mb-6">
@@ -558,7 +557,7 @@
                                 <svg class="date-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/>
                                 </svg>
-                                <div id="customDatepicker" class="custom-datepicker hidden"></div>
+                                <div id="customDatepicker" class="custom-datepicker"></div>
                             </div>
                             <p class="text-xs mt-2" style="color: rgba(180, 180, 180, 0.6);">Prenotazione da 48-72 ore prima, fino a 6 mesi</p>
                         </div>
@@ -678,8 +677,7 @@
                 </div>
 
                 <!-- Policies -->
-                <!-- REMOVED animate-fade-in from this card to avoid unexpected movement while scrolling -->
-                <div class="glass-card p-6 mt-6" id="policies">
+                <div class="glass-card p-6 mt-6">
                     <h4 class="font-semibold mb-4 gradient-text">Politiche</h4>
                     <div class="space-y-3 text-sm" style="color: rgba(245, 245, 245, 0.8);">
                         <div>
@@ -706,11 +704,10 @@
             total: 890
         };
 
-        // Custom Date Picker - now appended to document.body to avoid stacking-context issues
+        // Custom Date Picker
         class CustomDatePicker {
             constructor(inputElement, pickerElement) {
                 this.input = inputElement;
-                this.originalPicker = pickerElement; // keep reference
                 this.picker = pickerElement;
                 this.currentDate = new Date();
                 this.selectedDate = null;
@@ -718,51 +715,60 @@
                 this.minDate.setDate(this.minDate.getDate() + 3);
                 this.maxDate = new Date();
                 this.maxDate.setMonth(this.maxDate.getMonth() + 6);
+                this.appendedToBody = false;
                 
-                this.isAppendedToBody = false;
                 this.init();
             }
             
             init() {
+                // Move picker to body to avoid stacking/overflow issues and control exact position
+                if (this.picker && this.picker.parentElement !== document.body) {
+                    document.body.appendChild(this.picker);
+                    this.picker.style.position = 'absolute';
+                    this.picker.style.left = '0px';
+                    this.picker.style.top = '0px';
+                    this.picker.style.zIndex = '10000';
+                    this.picker.classList.remove('hidden');
+                    this.picker.style.display = 'none';
+                    this.appendedToBody = true;
+                }
+
                 this.input.addEventListener('click', (e) => {
                     e.stopPropagation();
                     this.show();
                 });
                 
                 document.addEventListener('click', (e) => {
+                    // if click outside picker and input -> hide
                     if (!this.picker.contains(e.target) && e.target !== this.input) {
                         this.hide();
                     }
                 });
-
-                window.addEventListener('resize', () => this.positionPicker());
-                window.addEventListener('scroll', () => this.positionPicker());
                 
                 this.render();
             }
             
             show() {
-                this.picker.classList.remove('hidden');
-                if (!this.isAppendedToBody) {
-                    document.body.appendChild(this.picker);
-                    this.isAppendedToBody = true;
-                }
-                this.positionPicker();
+                // position relative to input
+                const rect = this.input.getBoundingClientRect();
+                const top = rect.bottom + window.scrollY + 8; // 8px gap
+                let left = rect.left + window.scrollX;
+
+                // ensure picker doesn't overflow viewport horizontally
+                const pickerWidth = Math.max(320, rect.width);
+                const maxLeft = window.scrollX + document.documentElement.clientWidth - pickerWidth - 12; // 12px margin
+                if (left > maxLeft) left = maxLeft;
+
+                this.picker.style.left = `${left}px`;
+                this.picker.style.top = `${top}px`;
+                this.picker.style.display = 'block';
+                this.picker.classList.add('visible');
                 this.render();
             }
             
             hide() {
-                this.picker.classList.add('hidden');
-            }
-            
-            positionPicker() {
-                if (!this.isAppendedToBody) return;
-                const rect = this.input.getBoundingClientRect();
-                const top = rect.bottom + window.scrollY + 8; // 8px gap
-                const left = rect.left + window.scrollX;
-                this.picker.style.top = top + 'px';
-                this.picker.style.left = left + 'px';
-                this.picker.style.minWidth = Math.max(320, rect.width) + 'px';
+                this.picker.style.display = 'none';
+                this.picker.classList.remove('visible');
             }
             
             render() {
@@ -955,24 +961,31 @@
             alert(`Prenotazione confermata!\n\nRiepilogo:\n- Percorso: ${bookingData.distance} km\n- Data: ${date} alle ${time}\n- Totale: €${bookingData.total.toLocaleString()}\n\nRiceverai una conferma via email.`);
         }
 
-        // Improved Animation on scroll - add 'visible' class once and unobserve to avoid flicker / disappearing
+        // Animation on scroll - observe only main content elements to avoid sidebar/policies movement
         const observerOptions = {
-            threshold: 0.15,
-            rootMargin: '0px'
+            threshold: 0.12,
+            rootMargin: '0px 0px -20px 0px'
         };
 
         const observer = new IntersectionObserver((entries) => {
             entries.forEach(entry => {
                 if (entry.isIntersecting) {
-                    entry.target.classList.add('visible');
-                    observer.unobserve(entry.target); // stop observing to prevent toggling
+                    entry.target.classList.add('fade-in');
                 }
             });
         }, observerOptions);
 
-        document.querySelectorAll('.animate-fade-in').forEach(el => {
-            // initial state set via CSS class - observer will add .visible
+        // Observe only animate-fade-in elements INSIDE #mainContent to prevent sidebar/policies from "moving" during scroll
+        document.querySelectorAll('#mainContent .animate-fade-in').forEach(el => {
+            el.classList.add('fade-hidden');
             observer.observe(el);
+        });
+
+        // Keep sidebar static (remove animation class there) to avoid perceived movement
+        document.querySelectorAll('.price-summary.animate-fade-in').forEach(el => {
+            el.classList.remove('animate-fade-in');
+            // ensure visible
+            el.classList.add('fade-in');
         });
     </script>
 </body>
