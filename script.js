@@ -11,14 +11,13 @@ function showSection(sectionId) {
         const el = document.getElementById(sectionId);
         if (el) el.classList.add('active');
         
-        // ✨ NUOVO: Carica categorie quando si apre SHOP
-        if (sectionId === 'shop') {
-            setTimeout(() => {
-                if (!document.querySelector('.category-pill')) {
-                    loadShopCategories();
-                }
-            }, 300);
-        }
+        // Mostra filtro categorie se già caricate
+if (sectionId === 'shop') {
+    const filterContainer = document.getElementById('categoryFilterContainer');
+    if (filterContainer && document.querySelector('.category-pill')) {
+        filterContainer.style.display = 'block';
+    }
+}
     }
     
     // Close mobile menu
@@ -594,3 +593,4 @@ function initShopCategoryFilter() {
 document.addEventListener('DOMContentLoaded', () => {
     initShopCategoryFilter();
 });
+
