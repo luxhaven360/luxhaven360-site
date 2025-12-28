@@ -55,6 +55,8 @@
             border-radius: 24px;
             transition: all 0.4s ease;
             box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+            /* ensure children can overflow (useful for calendar popups) */
+            overflow: visible;
         }
         
         .glass-card:hover {
@@ -133,20 +135,22 @@
             color: #86efac;
         }
         
+        /* increased left padding so placeholders are not glued to the left edge */
         input, select, textarea {
             background: rgba(10, 10, 10, 0.9);
             border: 1.5px solid rgba(80, 60, 45, 0.4);
             color: #f5f5f0;
-            padding: 16px 20px;
+            padding: 16px 24px; /* moved placeholder slightly to the right */
             border-radius: 12px;
             width: 100%;
             transition: all 0.3s ease;
             font-family: 'Inter', sans-serif;
         }
         
+        /* slightly smaller placeholder font-size for better aesthetics */
         input::placeholder, textarea::placeholder {
             color: rgba(165, 145, 115, 0.5);
-            font-size: 14px;
+            font-size: 13px;
         }
         
         input:focus, select:focus, textarea:focus {
@@ -214,9 +218,10 @@
             accent-color: #d4af37;
         }
         
+        /* Sidebar sticky handled by wrapper */
         .price-summary {
-            position: sticky;
-            top: 20px;
+            /* removed sticky from here; wrapper will be sticky */
+            /* kept for styling only */
         }
         
         .policies-card {
@@ -226,6 +231,7 @@
         /* Custom Date Picker Styles */
         .date-picker-container {
             position: relative;
+            z-index: 3000; /* ensure clickable above normal content while calculating */
         }
         
         .date-picker-input {
@@ -235,7 +241,7 @@
         
         .date-icon {
             position: absolute;
-            right: 16px;
+            right: 18px;
             top: 50%;
             transform: translateY(-50%);
             color: #f5f5f0;
@@ -243,18 +249,15 @@
         }
         
         .custom-calendar {
-            position: absolute;
-            top: 100%;
-            left: 0;
-            right: 0;
-            margin-top: 8px;
+            position: fixed; /* fixed so it sits above other cards and won't be clipped */
             background: linear-gradient(135deg, rgba(20, 15, 12, 0.98), rgba(30, 20, 15, 0.98));
             border: 2px solid rgba(212, 175, 55, 0.3);
             border-radius: 16px;
             padding: 20px;
-            z-index: 1000;
+            z-index: 99999; /* very high to ensure visibility */
             box-shadow: 0 20px 60px rgba(0, 0, 0, 0.8);
             backdrop-filter: blur(20px);
+            display: none;
         }
         
         .calendar-header {
@@ -332,6 +335,15 @@
             background-repeat: no-repeat;
             background-position: right 16px center;
             padding-right: 45px;
+        }
+
+        /* sticky wrapper for sidebar (keeps both summary + policies visible in intended position) */
+        .sticky-sidebar {
+            position: sticky;
+            top: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
         }
     </style>
 </head>
@@ -540,7 +552,8 @@
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/>
                                 </svg>
                             </div>
-                            <div id="customCalendar" class="custom-calendar" style="display: none;"></div>
+                            <!-- calendar element remains in DOM but is positioned fixed via CSS/JS on open -->
+                            <div id="customCalendar" class="custom-calendar" aria-hidden="true"></div>
                             <p class="text-xs mt-2" style="color: #a59173;">Prenotazione da 48-72 ore prima, fino a 6 mesi</p>
                         </div>
                         <div>
@@ -600,76 +613,79 @@
 
             <!-- Sidebar - Price Summary -->
             <div class="lg:col-span-1">
-                <div class="glass-card p-8 price-summary animate-fade-in">
-                    <h3 class="text-2xl font-bold mb-6 gradient-text">Riepilogo</h3>
-                    
-                    <div class="space-y-4 mb-6 pb-6 border-b" style="border-color: rgba(80, 60, 45, 0.3);">
-                        <div class="flex justify-between">
-                            <span style="color: #c9a891;">Ferrari SF90 Stradale</span>
-                            <span class="font-semibold" id="basePrice">€0</span>
+                <!-- sticky wrapper keeps both summary and policies in place -->
+                <div class="sticky-sidebar">
+                    <div class="glass-card p-8 price-summary animate-fade-in">
+                        <h3 class="text-2xl font-bold mb-6 gradient-text">Riepilogo</h3>
+                        
+                        <div class="space-y-4 mb-6 pb-6 border-b" style="border-color: rgba(80, 60, 45, 0.3);">
+                            <div class="flex justify-between">
+                                <span style="color: #c9a891;">Ferrari SF90 Stradale</span>
+                                <span class="font-semibold" id="basePrice">€0</span>
+                            </div>
+                            <div class="flex justify-between hidden" id="secondCarPrice">
+                                <span style="color: #c9a891;">Lamborghini Huracán</span>
+                                <span class="font-semibold">€1.490</span>
+                            </div>
+                            <div id="extraServicesPrice" class="space-y-2"></div>
                         </div>
-                        <div class="flex justify-between hidden" id="secondCarPrice">
-                            <span style="color: #c9a891;">Lamborghini Huracán</span>
-                            <span class="font-semibold">€1.490</span>
+
+                        <div class="space-y-3 mb-6">
+                            <div class="flex items-center gap-2 text-sm" style="color: #c9a891;">
+                                <svg class="w-5 h-5 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                                </svg>
+                                Assicurazione completa
+                            </div>
+                            <div class="flex items-center gap-2 text-sm" style="color: #c9a891;">
+                                <svg class="w-5 h-5 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                                </svg>
+                                Nessuna cauzione richiesta
+                            </div>
+                            <div class="flex items-center gap-2 text-sm" style="color: #c9a891;">
+                                <svg class="w-5 h-5 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                                </svg>
+                                Cambio data gratuito
+                            </div>
+                            <div class="flex items-center gap-2 text-sm" style="color: #c9a891;">
+                                <svg class="w-5 h-5 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                                </svg>
+                                Rimborso fino a 48h prima
+                            </div>
                         </div>
-                        <div id="extraServicesPrice" class="space-y-2"></div>
+
+                        <div class="p-4 rounded-lg mb-6" style="background: linear-gradient(to right, rgba(212, 175, 55, 0.12), transparent);">
+                            <div class="flex justify-between items-center">
+                                <span class="text-lg font-semibold">Totale</span>
+                                <span class="text-3xl font-bold gradient-text" id="totalPrice">€0</span>
+                            </div>
+                        </div>
+
+                        <button class="btn-primary w-full" onclick="confirmBooking()">
+                            Conferma Prenotazione
+                        </button>
+
+                        <p class="text-xs text-center mt-4" style="color: #a59173;">
+                            Prenotazione sicura e protetta
+                        </p>
                     </div>
 
-                    <div class="space-y-3 mb-6">
-                        <div class="flex items-center gap-2 text-sm" style="color: #c9a891;">
-                            <svg class="w-5 h-5 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
-                            </svg>
-                            Assicurazione completa
-                        </div>
-                        <div class="flex items-center gap-2 text-sm" style="color: #c9a891;">
-                            <svg class="w-5 h-5 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
-                            </svg>
-                            Nessuna cauzione richiesta
-                        </div>
-                        <div class="flex items-center gap-2 text-sm" style="color: #c9a891;">
-                            <svg class="w-5 h-5 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
-                            </svg>
-                            Cambio data gratuito
-                        </div>
-                        <div class="flex items-center gap-2 text-sm" style="color: #c9a891;">
-                            <svg class="w-5 h-5 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
-                            </svg>
-                            Rimborso fino a 48h prima
-                        </div>
-                    </div>
-
-                    <div class="p-4 rounded-lg mb-6" style="background: linear-gradient(to right, rgba(212, 175, 55, 0.12), transparent);">
-                        <div class="flex justify-between items-center">
-                            <span class="text-lg font-semibold">Totale</span>
-                            <span class="text-3xl font-bold gradient-text" id="totalPrice">€0</span>
-                        </div>
-                    </div>
-
-                    <button class="btn-primary w-full" onclick="confirmBooking()">
-                        Conferma Prenotazione
-                    </button>
-
-                    <p class="text-xs text-center mt-4" style="color: #a59173;">
-                        Prenotazione sicura e protetta
-                    </p>
-                </div>
-
-                <!-- Policies -->
-                <div class="glass-card p-6 mt-6 animate-fade-in policies-card">
-                    <h4 class="font-semibold mb-4 gradient-text">Politiche</h4>
-                    <div class="space-y-3 text-sm" style="color: #c9a891;">
-                        <div>
-                            <strong style="color: #f5f5f0;">Rimborso:</strong> Rimborso completo fino a 48 ore prima della prenotazione.
-                        </div>
-                        <div>
-                            <strong style="color: #f5f5f0;">Annullamento:</strong> Annullamento gratuito fino a 24 ore prima. Oltre tale termine, verrà trattenuto il 50% dell'importo.
-                        </div>
-                        <div>
-                            <strong style="color: #f5f5f0;">Cambio Data:</strong> Modifica gratuita della data fino a 72 ore prima dell'esperienza.
+                    <!-- Policies -->
+                    <div class="glass-card p-6 mt-6 animate-fade-in policies-card">
+                        <h4 class="font-semibold mb-4 gradient-text">Politiche</h4>
+                        <div class="space-y-3 text-sm" style="color: #c9a891;">
+                            <div>
+                                <strong style="color: #f5f5f0;">Rimborso:</strong> Rimborso completo fino a 48 ore prima della prenotazione.
+                            </div>
+                            <div>
+                                <strong style="color: #f5f5f0;">Annullamento:</strong> Annullamento gratuito fino a 24 ore prima. Oltre tale termine, verrà trattenuto il 50% dell'importo.
+                            </div>
+                            <div>
+                                <strong style="color: #f5f5f0;">Cambio Data:</strong> Modifica gratuita della data fino a 72 ore prima dell'esperienza.
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -699,17 +715,46 @@
         const dateInput = document.getElementById('bookingDate');
         const calendar = document.getElementById('customCalendar');
 
+        // Helper to position calendar under input using viewport coords (position: fixed)
+        function positionCalendar() {
+            const rect = dateInput.getBoundingClientRect();
+            const left = rect.left;
+            // place calendar slightly below the input
+            const top = rect.bottom + 8;
+            calendar.style.left = `${Math.max(8, left)}px`;
+            calendar.style.top = `${top}px`;
+            calendar.style.width = `${rect.width}px`;
+        }
+
         dateInput.addEventListener('click', function(e) {
             e.stopPropagation();
-            calendar.style.display = calendar.style.display === 'none' ? 'block' : 'none';
-            renderCalendar();
-        });
-
-        document.addEventListener('click', function(e) {
-            if (!calendar.contains(e.target) && e.target !== dateInput) {
+            const isHidden = calendar.style.display === 'none' || calendar.style.display === '';
+            if (isHidden) {
+                renderCalendar();
+                calendar.style.display = 'block';
+                calendar.setAttribute('aria-hidden', 'false');
+                positionCalendar();
+            } else {
                 calendar.style.display = 'none';
+                calendar.setAttribute('aria-hidden', 'true');
             }
         });
+
+        // close calendar when clicking outside
+        document.addEventListener('click', function(e) {
+            if (calendar.style.display === 'block' && !calendar.contains(e.target) && e.target !== dateInput) {
+                calendar.style.display = 'none';
+                calendar.setAttribute('aria-hidden', 'true');
+            }
+        });
+
+        // reposition calendar on resize/scroll (if visible)
+        window.addEventListener('resize', () => {
+            if (calendar.style.display === 'block') positionCalendar();
+        });
+        window.addEventListener('scroll', () => {
+            if (calendar.style.display === 'block') positionCalendar();
+        }, true);
 
         function renderCalendar() {
             const year = currentMonth.getFullYear();
@@ -755,12 +800,15 @@
                 if (isDisabled) classes.push('disabled');
                 if (isSelected) classes.push('selected');
 
+                // use onclick attr to call selectDate
                 html += `<div class="${classes.join(' ')}" 
                              onclick="selectDate(${year}, ${month}, ${day}, ${isDisabled})">${day}</div>`;
             }
 
             html += '</div>';
             calendar.innerHTML = html;
+            // ensure calendar positioned correctly after render
+            positionCalendar();
         }
 
         function previousMonth(e) {
@@ -788,6 +836,7 @@
             });
             dateInput.value = formatted;
             calendar.style.display = 'none';
+            calendar.setAttribute('aria-hidden', 'true');
             renderCalendar();
         }
 
@@ -834,9 +883,9 @@
         });
 
         function updatePriceSummary() {
-            let total = bookingData.basePrice;
+            let total = bookingData.basePrice || 0;
             
-            document.getElementById('basePrice').textContent = `€${bookingData.basePrice.toLocaleString()}`;
+            document.getElementById('basePrice').textContent = `€${(bookingData.basePrice || 0).toLocaleString()}`;
             
             if (bookingData.secondCar) {
                 total += 1490;
@@ -863,7 +912,7 @@
             });
             
             bookingData.total = total;
-            document.getElementById('totalPrice').textContent = `€${total.toLocaleString()}`;
+            document.getElementById('totalPrice').textContent = `€${(total || 0).toLocaleString()}`;
         }
 
         function confirmBooking() {
@@ -916,6 +965,17 @@
             el.style.transition = 'all 0.6s ease';
             observer.observe(el);
         });
+
+        // Initialize: select first distance option so price is shown immediately
+        (function initializeDefaultSelection() {
+            const firstOption = document.querySelector('.distance-option');
+            if (firstOption) {
+                firstOption.classList.add('selected');
+                bookingData.distance = firstOption.dataset.km;
+                bookingData.basePrice = parseInt(firstOption.dataset.price);
+                updatePriceSummary();
+            }
+        })();
     </script>
 </body>
 </html>
