@@ -10,6 +10,15 @@ function showSection(sectionId) {
         document.querySelector('.hero').style.display = 'none';
         const el = document.getElementById(sectionId);
         if (el) el.classList.add('active');
+        
+        // ✨ NUOVO: Carica categorie quando si apre SHOP
+        if (sectionId === 'shop') {
+            setTimeout(() => {
+                if (!document.querySelector('.category-pill')) {
+                    loadShopCategories();
+                }
+            }, 300);
+        }
     }
     
     // Close mobile menu
@@ -401,3 +410,187 @@ function hideLoader() {
         }, 500);
     }
 }
+
+// =============================
+// FILTRO CATEGORIE SHOP
+// =============================
+
+let currentShopCategory = null; // Categoria attualmente selezionata
+
+/**
+ * Carica le categorie dal backend e popola il filtro
+ */
+async function loadShopCategories() {
+    try {
+        const response = await fetch(`${WEB_APP_URL}?action=get_shop_categories&t=${Date.now()}`);
+        const data = await response.json();
+        
+        if (!data.success || !data.categories || data.categories.length === 0) {
+            console.log('Nessuna categoria trovata o errore:', data);
+            return;
+        }
+        
+        renderCategoryFilter(data.categories);
+        
+    } catch (error) {
+        console.error('Errore caricamento categorie:', error);
+    }
+}
+
+/**
+ * Renderizza i pulsanti del filtro categorie
+ */
+function renderCategoryFilter(categories) {
+    const container = document.getElementById('categoryFilterContainer');
+    const pillsContainer = document.getElementById('categoryPills');
+    const resetBtn = document.getElementById('filterResetBtn');
+    
+    if (!container || !pillsContainer) return;
+    
+    // Pulisci container
+    pillsContainer.innerHTML = '';
+    
+    // Crea pulsante per ogni categoria
+    categories.forEach(cat => {
+        const pill = document.createElement('button');
+        pill.className = 'category-pill';
+        pill.dataset.category = cat.name;
+        pill.innerHTML = `
+            ${cat.name}
+            <span class="count">${cat.count}</span>
+        `;
+        
+        pill.addEventListener('click', () => {
+            filterShopByCategory(cat.name, pill);
+        });
+        
+        pillsContainer.appendChild(pill);
+    });
+    
+    // Mostra il container con animazione
+    container.style.display = 'block';
+    
+    // Event listener per reset
+    if (resetBtn) {
+        resetBtn.addEventListener('click', resetCategoryFilter);
+    }
+}
+
+/**
+ * Filtra i prodotti dello shop per categoria
+ */
+function filterShopByCategory(categoryName, pillElement) {
+    const shopGrid = document.getElementById('shopGrid');
+    if (!shopGrid) return;
+    
+    // Aggiorna stato categoria
+    currentShopCategory = categoryName;
+    
+    // Aggiorna UI pills
+    document.querySelectorAll('.category-pill').forEach(p => p.classList.remove('active'));
+    if (pillElement) pillElement.classList.add('active');
+    
+    // Mostra pulsante reset
+    const resetBtn = document.getElementById('filterResetBtn');
+    if (resetBtn) resetBtn.style.display = 'inline-flex';
+    
+    // Filtra cards
+    const cards = shopGrid.querySelectorAll('.card');
+    cards.forEach(card => {
+        const btn = card.querySelector('button[data-sku]');
+        if (!btn) return;
+        
+        const sku = btn.dataset.sku || '';
+        const skuPrefix = sku.split('-')[0];
+        
+        // Verifica se il prodotto appartiene alla categoria (usa cache o richiedi)
+        checkProductCategory(sku).then(prodCategory => {
+            if (prodCategory === categoryName) {
+                card.style.display = 'block';
+                card.style.animation = 'fadeIn 0.5s ease';
+            } else {
+                card.style.display = 'none';
+            }
+        });
+    });
+    
+    // Scroll smooth al grid
+    shopGrid.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+/**
+ * Reset filtro - mostra tutti i prodotti
+ */
+function resetCategoryFilter() {
+    currentShopCategory = null;
+    
+    // Rimuovi active da pills
+    document.querySelectorAll('.category-pill').forEach(p => p.classList.remove('active'));
+    
+    // Nascondi pulsante reset
+    const resetBtn = document.getElementById('filterResetBtn');
+    if (resetBtn) resetBtn.style.display = 'none';
+    
+    // Mostra tutte le cards
+    const shopGrid = document.getElementById('shopGrid');
+    if (shopGrid) {
+        const cards = shopGrid.querySelectorAll('.card');
+        cards.forEach(card => {
+            card.style.display = 'block';
+            card.style.animation = 'fadeIn 0.5s ease';
+        });
+    }
+}
+
+/**
+ * Verifica la categoria di un prodotto tramite SKU
+ * (usa cache localStorage per evitare troppe chiamate)
+ */
+async function checkProductCategory(sku) {
+    // Cache semplice
+    const cacheKey = `cat_${sku}`;
+    const cached = sessionStorage.getItem(cacheKey);
+    if (cached) return cached;
+    
+    try {
+        const response = await fetch(`${WEB_APP_URL}?action=get_product_details&sku=${encodeURIComponent(sku)}&t=${Date.now()}`);
+        const data = await response.json();
+        
+        if (data.success && data.product && data.product.category) {
+            const category = data.product.category;
+            sessionStorage.setItem(cacheKey, category);
+            return category;
+        }
+    } catch (error) {
+        console.error('Errore recupero categoria per SKU:', sku, error);
+    }
+    
+    return null;
+}
+
+/**
+ * Inizializza filtro categorie quando si entra nella sezione SHOP
+ */
+function initShopCategoryFilter() {
+    const shopSection = document.getElementById('shop');
+    if (!shopSection) return;
+    
+    // Observer per rilevare quando la sezione diventa visibile
+    const observer = new IntersectionObserver((entries) => {
+        entries.forEach(entry => {
+            if (entry.isIntersecting && entry.target.classList.contains('active')) {
+                // Carica categorie solo una volta
+                if (!document.querySelector('.category-pill')) {
+                    loadShopCategories();
+                }
+            }
+        });
+    }, { threshold: 0.1 });
+    
+    observer.observe(shopSection);
+}
+
+// Inizializza il filtro quando il DOM è pronto
+document.addEventListener('DOMContentLoaded', () => {
+    initShopCategoryFilter();
+});
