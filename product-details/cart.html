@@ -820,6 +820,45 @@ if (item.color || item.size) {
         updateSummary(); // ⭐ Aggiornamento immediato
     }
 
+    /**
+ * ✅ RECUPERA COUPON SALVATO E VERIFICA VALIDITÀ
+ */
+async function restoreAppliedCoupon() {
+  const savedCoupon = localStorage.getItem('lh360_applied_coupon');
+  if (!savedCoupon) return;
+
+  try {
+    const couponData = JSON.parse(savedCoupon);
+    const { code, discountPercent, appliedAt } = couponData;
+
+    if (!code || !discountPercent) {
+      localStorage.removeItem('lh360_applied_coupon');
+      return;
+    }
+
+    // ✅ Ri-valida il coupon con il backend
+    const response = await fetch(`${webAppUrl}?action=validate_coupon&code=${encodeURIComponent(code)}&t=${Date.now()}`);
+    const result = await response.json();
+
+    if (result.success && result.valid) {
+      // ✅ Coupon ancora valido, ripristina
+      appliedCoupon = couponData;
+      document.getElementById('couponInput').value = code;
+      showCouponMessage(`✓ Coupon "${code}" ripristinato (${discountPercent}% di sconto)`, 'success');
+      await updateSummaryWithCoupon();
+    } else {
+      // ✅ Coupon scaduto o non più valido
+      localStorage.removeItem('lh360_applied_coupon');
+      appliedCoupon = null;
+      showCouponMessage(`Il coupon "${code}" è scaduto o non è più valido`, 'error');
+      await updateSummaryWithCoupon();
+    }
+  } catch (error) {
+    console.error('Errore recupero coupon salvato:', error);
+    localStorage.removeItem('lh360_applied_coupon');
+  }
+}
+
     // ⭐ FIX PROBLEMA 2: Rimozione immediata senza setTimeout
     function removeItem(index) {
         const itemElement = document.querySelector(`[data-id="${index}"]`);
@@ -910,8 +949,8 @@ if (item.color || item.size) {
     }
 
     renderCart();
-    // Carica prodotti consigliati
-loadRecommendedProducts();
+    restoreAppliedCoupon(); // ✅ RIPRISTINA COUPON SALVATO
+    loadRecommendedProducts();
 
 /**
  * Carica prodotti consigliati basati sulla categoria del carrello
@@ -1118,7 +1157,13 @@ localStorage.setItem('lh360_applied_discounts', JSON.stringify({
         const jsonString = textResponse.substring(textResponse.indexOf('(') + 1, textResponse.lastIndexOf(')'));
         const result = JSON.parse(jsonString);
         if (result.error) throw new Error(result.error);
-        else if (result.url) { btn.innerText = 'Reindirizzamento...'; window.location.assign(result.url); }
+else if (result.url) { 
+  // ✅ PULISCI COUPON APPLICATO (ORDINE COMPLETATO)
+  localStorage.removeItem('lh360_applied_coupon');
+  
+  btn.innerText = 'Reindirizzamento...'; 
+  window.location.assign(result.url); 
+}
         else throw new Error('Risposta non valida dal server');
     } catch (err) {
         console.error(err);
@@ -1134,56 +1179,59 @@ localStorage.setItem('lh360_applied_discounts', JSON.stringify({
 
     /* --- GESTIONE COUPON (invariata) --- */
     document.getElementById('applyCouponBtn').addEventListener('click', async function() {
-    const couponCode = document.getElementById('couponInput').value.trim().toUpperCase();
-    const messageEl = document.getElementById('couponMessage');
-    const btn = this;
+  const couponCode = document.getElementById('couponInput').value.trim().toUpperCase();
+  const messageEl = document.getElementById('couponMessage');
+  const btn = this;
 
-    if (!couponCode) { showCouponMessage('Inserisci un codice promozionale', 'error'); return; }
-    if (hasCouponBeenUsed(couponCode)) { showCouponMessage('Hai già utilizzato questo coupon in precedenza', 'error'); return; }
+  if (!couponCode) { showCouponMessage('Inserisci un codice promozionale', 'error'); return; }
+  if (hasCouponBeenUsed(couponCode)) { showCouponMessage('Hai già utilizzato questo coupon in precedenza', 'error'); return; }
+  
+  // ✅ Rimuovi coupon precedente se presente
+  if (appliedCoupon) {
+    appliedCoupon = null;
+    localStorage.removeItem('lh360_applied_coupon'); // ✅ Pulisci storage
+    await updateSummaryWithCoupon();
+  }
+
+  btn.disabled = true;
+  btn.textContent = 'Verifica...';
+
+  try {
+    const response = await fetch(`${webAppUrl}?action=validate_coupon&code=${encodeURIComponent(couponCode)}&t=${Date.now()}`);
+    const result = await response.json();
     
-    // Rimuovi coupon precedente se presente
-    if (appliedCoupon) {
-        appliedCoupon = null;
-        await updateSummaryWithCoupon();
+    if (result.success && result.valid) {
+      btn.textContent = 'Applicazione...';
+      
+      // ✅ SALVA COUPON IN LOCALSTORAGE CON TIMESTAMP
+      appliedCoupon = { 
+        code: couponCode, 
+        discountPercent: result.discountPercent,
+        appliedAt: Date.now()
+      };
+      
+      localStorage.setItem('lh360_applied_coupon', JSON.stringify(appliedCoupon));
+      markCouponAsUsed(couponCode);
+      
+      await updateSummaryWithCoupon();
+      await new Promise(resolve => setTimeout(resolve, 300));
+      
+      showCouponMessage(`✓ Coupon "${couponCode}" applicato con successo (${result.discountPercent}% di sconto)`, 'success');
+      
+    } else {
+      showCouponMessage(result.error || 'Codice non valido o scaduto', 'error');
+      appliedCoupon = null;
+      localStorage.removeItem('lh360_applied_coupon'); // ✅ Pulisci storage
     }
-
-    // FASE 1: VERIFICA
-    btn.disabled = true;
-    btn.textContent = 'Verifica in corso...';
-
-    try {
-        const response = await fetch(`${webAppUrl}?action=validate_coupon&code=${encodeURIComponent(couponCode)}&t=${Date.now()}`);
-        const result = await response.json();
-        
-        if (result.success && result.valid) {
-            // FASE 2: APPLICAZIONE IN CORSO
-            btn.textContent = 'Applicazione in corso...';
-            
-            // Salva il coupon
-            appliedCoupon = { code: couponCode, discountPercent: result.discountPercent };
-            markCouponAsUsed(couponCode);
-            
-            // Aggiorna TUTTA la pagina (calcoli, UI, totali)
-            await updateSummaryWithCoupon();
-            
-            // Piccola pausa per garantire rendering completo
-            await new Promise(resolve => setTimeout(resolve, 300));
-            
-            // FASE 3: CONFERMA FINALE (solo dopo aggiornamento completo)
-            showCouponMessage(`✓ Coupon "${couponCode}" applicato con successo (${result.discountPercent}% di sconto)`, 'success');
-            
-        } else {
-            showCouponMessage(result.error || 'Codice non valido o scaduto', 'error');
-            appliedCoupon = null;
-        }
-    } catch (error) {
-        console.error('Errore validazione coupon:', error);
-        showCouponMessage('Errore di connessione. Riprova.', 'error');
-        appliedCoupon = null;
-    } finally {
-        btn.disabled = false;
-        btn.textContent = 'Applica';
-    }
+  } catch (error) {
+    console.error('Errore validazione coupon:', error);
+    showCouponMessage('Errore di connessione. Riprova.', 'error');
+    appliedCoupon = null;
+    localStorage.removeItem('lh360_applied_coupon'); // ✅ Pulisci storage
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Applica';
+  }
 });
 
     function showCouponMessage(message, type) {
@@ -1272,3 +1320,4 @@ window.addEventListener('pageshow', function(event) {
 </script>
 </body>
 </html>
+
