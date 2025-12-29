@@ -563,3 +563,29 @@ function resetCategoryFilter() {
         if (emptyMsg) emptyMsg.style.display = 'none';
     }
 }
+
+/**
+ * Verifica la categoria di un prodotto tramite SKU
+ * (usa cache localStorage per evitare troppe chiamate)
+ */
+async function checkProductCategory(sku) {
+    // Cache semplice
+    const cacheKey = `cat_${sku}`;
+    const cached = sessionStorage.getItem(cacheKey);
+    if (cached) return cached;
+    
+    try {
+        const response = await fetch(`${WEB_APP_URL}?action=get_product_details&sku=${encodeURIComponent(sku)}&t=${Date.now()}`);
+        const data = await response.json();
+        
+        if (data.success && data.product && data.product.category) {
+            const category = data.product.category;
+            sessionStorage.setItem(cacheKey, category);
+            return category;
+        }
+    } catch (error) {
+        console.error('Errore recupero categoria per SKU:', sku, error);
+    }
+    
+    return null;
+}
