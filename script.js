@@ -539,9 +539,6 @@ function filterShopByCategory(categoryName, pillElement) {
     shopGrid.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
-/**
- * Reset filtro - mostra tutti i prodotti
- */
 function resetCategoryFilter() {
     currentShopCategory = null;
     
@@ -558,12 +555,9 @@ function resetCategoryFilter() {
             card.style.animation = 'fadeIn 0.5s ease';
         });
         
-        // ✅ AGGIUNGI: Nascondi messaggio vuoto
         const emptyMsg = shopGrid.querySelector('.filter-empty-message');
         if (emptyMsg) emptyMsg.style.display = 'none';
     }
 }
 
-    
-    return null;
-}
+// ✅ FINE DEL FILE - Nessun codice dopo questa riga!
