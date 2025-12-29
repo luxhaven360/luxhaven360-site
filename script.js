@@ -121,6 +121,11 @@ function createProductCard(prod, defaultCta) {
     
     card.appendChild(imageContainer);
 
+    // ✅ AGGIUNGI CATEGORIA COME DATA ATTRIBUTE PER FILTRO IMMEDIATO
+if (prod.shopCategory) {
+  card.dataset.shopCategory = prod.shopCategory;
+}
+
     // title
     const title = el('h3', { class: 'card-title' }, [document.createTextNode(prod.title || 'Untitled')]);
     card.appendChild(title);
@@ -479,42 +484,34 @@ function renderCategoryFilter(categories) {
  * Filtra i prodotti dello shop per categoria
  */
 function filterShopByCategory(categoryName, pillElement) {
-    const shopGrid = document.getElementById('shopGrid');
-    if (!shopGrid) return;
+  const shopGrid = document.getElementById('shopGrid');
+  if (!shopGrid) return;
+  
+  currentShopCategory = categoryName;
+  
+  // Aggiorna UI pills
+  document.querySelectorAll('.category-pill').forEach(p => p.classList.remove('active'));
+  if (pillElement) pillElement.classList.add('active');
+  
+  // Mostra pulsante reset
+  const resetBtn = document.getElementById('filterResetBtn');
+  if (resetBtn) resetBtn.style.display = 'inline-flex';
+  
+  // ✅ FILTRO IMMEDIATO USANDO DATA ATTRIBUTE (no chiamate async)
+  const cards = shopGrid.querySelectorAll('.card');
+  cards.forEach(card => {
+    const cardCategory = card.dataset.shopCategory || '';
     
-    // Aggiorna stato categoria
-    currentShopCategory = categoryName;
-    
-    // Aggiorna UI pills
-    document.querySelectorAll('.category-pill').forEach(p => p.classList.remove('active'));
-    if (pillElement) pillElement.classList.add('active');
-    
-    // Mostra pulsante reset
-    const resetBtn = document.getElementById('filterResetBtn');
-    if (resetBtn) resetBtn.style.display = 'inline-flex';
-    
-    // Filtra cards
-    const cards = shopGrid.querySelectorAll('.card');
-    cards.forEach(card => {
-        const btn = card.querySelector('button[data-sku]');
-        if (!btn) return;
-        
-        const sku = btn.dataset.sku || '';
-        const skuPrefix = sku.split('-')[0];
-        
-        // Verifica se il prodotto appartiene alla categoria (usa cache o richiedi)
-        checkProductCategory(sku).then(prodCategory => {
-            if (prodCategory === categoryName) {
-                card.style.display = 'block';
-                card.style.animation = 'fadeIn 0.5s ease';
-            } else {
-                card.style.display = 'none';
-            }
-        });
-    });
-    
-    // Scroll smooth al grid
-    shopGrid.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    if (cardCategory === categoryName) {
+      card.style.display = 'block';
+      card.style.animation = 'fadeIn 0.5s ease';
+    } else {
+      card.style.display = 'none';
+    }
+  });
+  
+  // Scroll smooth al grid
+  shopGrid.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
 /**
@@ -540,30 +537,3 @@ function resetCategoryFilter() {
         });
     }
 }
-
-/**
- * Verifica la categoria di un prodotto tramite SKU
- * (usa cache localStorage per evitare troppe chiamate)
- */
-async function checkProductCategory(sku) {
-    // Cache semplice
-    const cacheKey = `cat_${sku}`;
-    const cached = sessionStorage.getItem(cacheKey);
-    if (cached) return cached;
-    
-    try {
-        const response = await fetch(`${WEB_APP_URL}?action=get_product_details&sku=${encodeURIComponent(sku)}&t=${Date.now()}`);
-        const data = await response.json();
-        
-        if (data.success && data.product && data.product.category) {
-            const category = data.product.category;
-            sessionStorage.setItem(cacheKey, category);
-            return category;
-        }
-    } catch (error) {
-        console.error('Errore recupero categoria per SKU:', sku, error);
-    }
-    
-    return null;
-}
-
