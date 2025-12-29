@@ -924,50 +924,56 @@ async function restoreAppliedCoupon() {
    // ⏱️ Questa funzione è ASYNC e verifica combo dal server
 // updateSummaryImmediate() garantisce aggiornamento immediato UI
 async function updateSummary() {
-        let subtotal = 0;
-        let itemCount = 0;
-        
-        cart.forEach(item => {
-            const finalPrice = (item.discountPrice && item.discountPrice < item.price) ? item.discountPrice : item.price;
-            subtotal += finalPrice * (item.qty || 1);
-            itemCount += (item.qty || 1);
-        });
+    let subtotal = 0;
+    let itemCount = 0;
+    
+    cart.forEach(item => {
+        const finalPrice = (item.discountPrice && item.discountPrice < item.price) ? item.discountPrice : item.price;
+        subtotal += finalPrice * (item.qty || 1);
+        itemCount += (item.qty || 1);
+    });
 
-        // Verifica sconti combo (backend corretto ritorna lo sconto, non il prezzo finale)
-        let discount = 0;
-        let isComboDiscount = false;
+    // Verifica sconti combo (backend corretto ritorna lo sconto, non il prezzo finale)
+    let discount = 0;
+    let isComboDiscount = false;
 
-        try {
-            const skuList = cart.map(item => item.sku).join(',');
-            const response = await fetch(`${webAppUrl}?action=check_combo&skus=${encodeURIComponent(skuList)}&t=${Date.now()}`);
-            const result = await response.json();
+    try {
+        const skuList = cart.map(item => item.sku).join(',');
+        const response = await fetch(`${webAppUrl}?action=check_combo&skus=${encodeURIComponent(skuList)}&t=${Date.now()}`);
+        const result = await response.json();
 
-            if (result.success && result.comboDiscount > 0) {
-                discount = result.comboDiscount; // ⭐ Ora questo è lo sconto corretto
-                isComboDiscount = true;
-            }
-        } catch (error) {
-            console.error('Errore verifica combo:', error);
+        if (result.success && result.comboDiscount > 0) {
+            discount = result.comboDiscount;
+            isComboDiscount = true;
         }
-
-        // Calcola spedizione DOPO aver applicato gli sconti
-        const totalAfterDiscounts = subtotal - discount;
-        const shipping = totalAfterDiscounts >= 150 ? 0 : 15;
-        const total = subtotal + shipping - discount;
-
-        // Aggiorna UI
-        document.getElementById('subtotal').textContent = `€ ${subtotal.toFixed(2).replace('.', ',')}`;
-        document.getElementById('shipping').textContent = shipping === 0 ? 'Gratuita' : `€ ${shipping.toFixed(2).replace('.', ',')}`;
-        
-        // ✅ Mostra valore finale (nasconde indicatore)
-        showDiscountValue(discount, isComboDiscount);
-
-        document.getElementById('total').textContent = `€ ${total.toFixed(2).replace('.', ',')}`;
-        document.getElementById('itemCount').textContent = `${itemCount} Articoli`;
-
-        const progress = Math.min(100, (totalAfterDiscounts / 150) * 100);
-        document.getElementById('progressFill').style.width = `${progress}%`;
+    } catch (error) {
+        console.error('Errore verifica combo:', error);
     }
+
+    // ✅ AGGIUNTO: Considera SEMPRE il coupon se applicato
+    if (appliedCoupon) {
+        const couponDiscount = (subtotal * appliedCoupon.discountPercent) / 100;
+        discount += couponDiscount;
+    }
+
+    // Calcola spedizione DOPO aver applicato gli sconti
+    const totalAfterDiscounts = subtotal - discount;
+    const shipping = totalAfterDiscounts >= 150 ? 0 : 15;
+    const total = subtotal + shipping - discount;
+
+    // Aggiorna UI
+    document.getElementById('subtotal').textContent = `€ ${subtotal.toFixed(2).replace('.', ',')}`;
+    document.getElementById('shipping').textContent = shipping === 0 ? 'Gratuita' : `€ ${shipping.toFixed(2).replace('.', ',')}`;
+    
+    // ✅ Mostra valore sconto finale (nasconde indicatore)
+    showDiscountValue(discount, isComboDiscount);
+
+    document.getElementById('total').textContent = `€ ${total.toFixed(2).replace('.', ',')}`;
+    document.getElementById('itemCount').textContent = `${itemCount} Articoli`;
+
+    const progress = Math.min(100, (totalAfterDiscounts / 150) * 100);
+    document.getElementById('progressFill').style.width = `${progress}%`;
+}
 
     /**
  * ✅ AGGIORNAMENTO IMMEDIATO UI (senza chiamate async)
@@ -1443,6 +1449,7 @@ window.addEventListener('pageshow', function(event) {
 </script>
 </body>
 </html>
+
 
 
 
