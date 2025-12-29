@@ -817,7 +817,8 @@ if (item.color || item.size) {
                 cartItemsContainer.appendChild(itemElement);
             });
         }
-        updateSummary(); // ⭐ Aggiornamento immediato
+        updateSummaryImmediate(); // ✅ Update immediato UI
+        updateSummary();          // Update async con verifica combo
     }
 
     /**
@@ -861,24 +862,30 @@ async function restoreAppliedCoupon() {
 
     // ⭐ FIX PROBLEMA 2: Rimozione immediata senza setTimeout
     function removeItem(index) {
-        const itemElement = document.querySelector(`[data-id="${index}"]`);
-        if (itemElement) {
-            // Animazione visiva (opzionale, molto breve)
-            itemElement.style.transition = 'opacity 0.2s, transform 0.2s';
-            itemElement.style.opacity = '0';
-            itemElement.style.transform = 'translateX(-1rem)';
-            
-            // ⭐ Rimozione IMMEDIATA dal carrello
-            cart.splice(index, 1);
-            localStorage.setItem('lh360_cart', JSON.stringify(cart));
-            
-            // Re-render immediato dopo 200ms (solo per animazione smooth)
-            setTimeout(() => renderCart(), 200);
-        }
-    }
+    const itemElement = document.querySelector(`[data-id="${index}"]`);
+    if (!itemElement) return;
+    
+    // ✅ RIMOZIONE IMMEDIATA dal carrello
+    cart.splice(index, 1);
+    localStorage.setItem('lh360_cart', JSON.stringify(cart));
+    
+    // ✅ AGGIORNAMENTO IMMEDIATO UI
+    updateSummaryImmediate();
+    
+    // ✅ Animazione fade out PARALLELA (non blocca aggiornamento)
+    itemElement.style.transition = 'opacity 0.2s, transform 0.2s';
+    itemElement.style.opacity = '0';
+    itemElement.style.transform = 'translateX(-1rem)';
+    
+    // Rimuovi elemento DOM e ri-renderizza dopo animazione
+    setTimeout(() => {
+        renderCart(); // Questo chiamà anche updateSummary() async per verificare combo
+    }, 200);
+}
 
-    // ⭐ FIX PROBLEMA 1: updateSummary con calcolo corretto
-    async function updateSummary() {
+   // ⏱️ Questa funzione è ASYNC e verifica combo dal server
+// updateSummaryImmediate() garantisce aggiornamento immediato UI
+async function updateSummary() {
         let subtotal = 0;
         let itemCount = 0;
         
@@ -934,6 +941,51 @@ async function restoreAppliedCoupon() {
         const progress = Math.min(100, (totalAfterDiscounts / 150) * 100);
         document.getElementById('progressFill').style.width = `${progress}%`;
     }
+
+    /**
+ * ✅ AGGIORNAMENTO IMMEDIATO UI (senza chiamate async)
+ * Calcola e mostra istantaneamente: subtotale, articoli, barra progresso
+ */
+function updateSummaryImmediate() {
+    let subtotal = 0;
+    let itemCount = 0;
+    
+    cart.forEach(item => {
+        const finalPrice = (item.discountPrice && item.discountPrice < item.price) 
+            ? item.discountPrice 
+            : item.price;
+        subtotal += finalPrice * (item.qty || 1);
+        itemCount += (item.qty || 1);
+    });
+
+    // Aggiorna UI immediatamente (senza sconti combo - quelli arrivano dopo)
+    const shipping = subtotal >= 150 ? 0 : 15;
+    
+    // ✅ Mantieni lo sconto coupon se applicato
+    let couponDiscount = 0;
+    if (appliedCoupon) {
+        couponDiscount = (subtotal * appliedCoupon.discountPercent) / 100;
+    }
+    
+    const total = subtotal + shipping - couponDiscount;
+
+    // Aggiorna valori visualizzati
+    document.getElementById('subtotal').textContent = `€ ${subtotal.toFixed(2).replace('.', ',')}`;
+    document.getElementById('shipping').textContent = shipping === 0 ? 'Gratuita' : `€ ${shipping.toFixed(2).replace('.', ',')}`;
+    document.getElementById('total').textContent = `€ ${total.toFixed(2).replace('.', ',')}`;
+    document.getElementById('itemCount').textContent = `${itemCount} Articoli`;
+
+    // Aggiorna barra progresso
+    const progress = Math.min(100, (subtotal / 150) * 100);
+    document.getElementById('progressFill').style.width = `${progress}%`;
+    
+    // ✅ Aggiorna sconto coupon se presente
+    if (couponDiscount > 0) {
+        const discountEl = document.getElementById('discount');
+        discountEl.textContent = `- € ${couponDiscount.toFixed(2).replace('.', ',')}`;
+        document.getElementById('discountRow').classList.add('discount-active');
+    }
+}
 
     function checkEmptyCart() {
         document.querySelector('.cart-layout').style.gridTemplateColumns = '1fr';
@@ -1190,6 +1242,7 @@ else if (result.url) {
   if (appliedCoupon) {
     appliedCoupon = null;
     localStorage.removeItem('lh360_applied_coupon'); // ✅ Pulisci storage
+    updateSummaryImmediate(); // ✅ Feedback immediato
     await updateSummaryWithCoupon();
   }
 
@@ -1320,4 +1373,5 @@ window.addEventListener('pageshow', function(event) {
 </script>
 </body>
 </html>
+
 
