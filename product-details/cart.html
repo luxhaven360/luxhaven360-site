@@ -729,83 +729,6 @@ document.write(`
     const webAppUrl = 'https://script.google.com/macros/s/AKfycbwr79RkXIEocpuOKaM6uMJqE6VFs9wjlUPvrr__FvDbDDrD2ELB1NbfrWP3BCYpHj2u/exec';
     let appliedCoupon = null;
 
-    // ✅ NUOVO: Nascondi riga sconto durante calcolo
-function showCalculatingDiscount() {
-    const discountEl = document.getElementById('discount');
-    const discountRow = document.getElementById('discountRow');
-    
-    if (discountEl) {
-        discountEl.textContent = 'Calcolo...';
-        discountEl.style.opacity = '0.5';
-    }
-    if (discountRow) {
-        discountRow.classList.remove('discount-active');
-    }
-}
-
-// ✅ NUOVO: Salva coupon in localStorage
-function saveCouponToStorage(couponData) {
-    if (!couponData) {
-        localStorage.removeItem('lh360_applied_coupon');
-        return;
-    }
-    
-    const dataToSave = {
-        code: couponData.code,
-        discountPercent: couponData.discountPercent,
-        appliedAt: Date.now(), // Timestamp applicazione
-        expiryDate: couponData.expiryDate || null // Data scadenza (se disponibile)
-    };
-    
-    localStorage.setItem('lh360_applied_coupon', JSON.stringify(dataToSave));
-}
-
-// ✅ NUOVO: Carica coupon da localStorage
-function loadCouponFromStorage() {
-    try {
-        const saved = localStorage.getItem('lh360_applied_coupon');
-        if (!saved) return null;
-        
-        const couponData = JSON.parse(saved);
-        
-        // Controlla scadenza
-        if (couponData.expiryDate) {
-            const now = new Date();
-            const expiry = new Date(couponData.expiryDate);
-            
-            if (now > expiry) {
-                // Coupon scaduto
-                const expDateStr = expiry.toLocaleDateString('it-IT');
-                showCouponExpiredMessage(couponData.code, expDateStr);
-                localStorage.removeItem('lh360_applied_coupon');
-                return null;
-            }
-        }
-        
-        return {
-            code: couponData.code,
-            discountPercent: couponData.discountPercent
-        };
-        
-    } catch (e) {
-        console.error('Errore caricamento coupon:', e);
-        localStorage.removeItem('lh360_applied_coupon');
-        return null;
-    }
-}
-
-// ✅ NUOVO: Mostra messaggio coupon scaduto
-function showCouponExpiredMessage(code, expiryDate) {
-    const messageEl = document.getElementById('couponMessage');
-    messageEl.textContent = `Il coupon "${code}" è scaduto il ${expiryDate}`;
-    messageEl.className = 'promo-message error';
-    messageEl.style.display = 'block';
-    
-    setTimeout(() => {
-        messageEl.style.display = 'none';
-    }, 8000);
-}
-
     // === FUNZIONI TRACKING COUPON (invariate) ===
     function getUserId() {
         let userId = localStorage.getItem('lh360_user_id');
@@ -834,27 +757,8 @@ function showCouponExpiredMessage(code, expiryDate) {
 
     // === RENDERING CARRELLO ===
     function renderCart() {
-    const cartItemsContainer = document.getElementById('cartItems');
-    cartItemsContainer.innerHTML = '';
-    
-    // ✅ AGGIUNGI ALL'INIZIO: Carica coupon salvato
-    if (!appliedCoupon) {
-        appliedCoupon = loadCouponFromStorage();
-        if (appliedCoupon) {
-            // Pre-compila l'input
-            const couponInput = document.getElementById('couponInput');
-            if (couponInput) {
-                couponInput.value = appliedCoupon.code;
-                couponInput.disabled = true; // Blocca modifica
-            }
-            
-            // Mostra messaggio successo
-            showCouponMessage(
-                `✓ Coupon "${appliedCoupon.code}" già applicato (${appliedCoupon.discountPercent}% di sconto)`, 
-                'success'
-            );
-        }
-    }
+        const cartItemsContainer = document.getElementById('cartItems');
+        cartItemsContainer.innerHTML = '';
         
         if (cart.length === 0) {
             checkEmptyCart();
@@ -918,91 +822,79 @@ if (item.color || item.size) {
 
     // ⭐ FIX PROBLEMA 2: Rimozione immediata senza setTimeout
     function removeItem(index) {
-    const itemElement = document.querySelector(`[data-id="${index}"]`);
-    
-    cart.splice(index, 1);
-    localStorage.setItem('lh360_cart', JSON.stringify(cart));
-    
-    if (cart.length === 0) {
-        appliedCoupon = null;
-        saveCouponToStorage(null);
+        const itemElement = document.querySelector(`[data-id="${index}"]`);
+        if (itemElement) {
+            // Animazione visiva (opzionale, molto breve)
+            itemElement.style.transition = 'opacity 0.2s, transform 0.2s';
+            itemElement.style.opacity = '0';
+            itemElement.style.transform = 'translateX(-1rem)';
+            
+            // ⭐ Rimozione IMMEDIATA dal carrello
+            cart.splice(index, 1);
+            localStorage.setItem('lh360_cart', JSON.stringify(cart));
+            
+            // Re-render immediato dopo 200ms (solo per animazione smooth)
+            setTimeout(() => renderCart(), 200);
+        }
     }
-    
-    if (itemElement) {
-        itemElement.style.transition = 'opacity 0.15s, transform 0.15s';
-        itemElement.style.opacity = '0';
-        itemElement.style.transform = 'translateX(-1rem)';
-    }
-    
-    // ✅ Chiama renderCart che a sua volta chiamerà updateSummary
-    setTimeout(() => {
-        renderCart();
-    }, 150);
-}
 
     // ⭐ FIX PROBLEMA 1: updateSummary con calcolo corretto
     async function updateSummary() {
-    let subtotal = 0;
-    let itemCount = 0;
-    
-    cart.forEach(item => {
-        const finalPrice = (item.discountPrice && item.discountPrice < item.price) ? item.discountPrice : item.price;
-        subtotal += finalPrice * (item.qty || 1);
-        itemCount += (item.qty || 1);
-    });
+        let subtotal = 0;
+        let itemCount = 0;
+        
+        cart.forEach(item => {
+            const finalPrice = (item.discountPrice && item.discountPrice < item.price) ? item.discountPrice : item.price;
+            subtotal += finalPrice * (item.qty || 1);
+            itemCount += (item.qty || 1);
+        });
 
-    // ✅ MOSTRA "Calcolo..." mentre recuperiamo i dati
-    showCalculatingDiscount();
-    
-    // ✅ Calcola TUTTO prima di aggiornare l'UI
-    let comboDiscount = 0;
-    try {
-        const skuList = cart.map(item => item.sku).join(',');
-        const response = await fetch(`${webAppUrl}?action=check_combo&skus=${encodeURIComponent(skuList)}&t=${Date.now()}`);
-        const result = await response.json();
-        if (result.success && result.comboDiscount > 0) {
-            comboDiscount = result.comboDiscount;
+        // Verifica sconti combo (backend corretto ritorna lo sconto, non il prezzo finale)
+        let discount = 0;
+        let isComboDiscount = false;
+
+        try {
+            const skuList = cart.map(item => item.sku).join(',');
+            const response = await fetch(`${webAppUrl}?action=check_combo&skus=${encodeURIComponent(skuList)}&t=${Date.now()}`);
+            const result = await response.json();
+
+            if (result.success && result.comboDiscount > 0) {
+                discount = result.comboDiscount; // ⭐ Ora questo è lo sconto corretto
+                isComboDiscount = true;
+            }
+        } catch (error) {
+            console.error('Errore verifica combo:', error);
         }
-    } catch (error) {
-        console.error('Errore verifica combo:', error);
+
+        // Calcola spedizione DOPO aver applicato gli sconti
+        const totalAfterDiscounts = subtotal - discount;
+        const shipping = totalAfterDiscounts >= 150 ? 0 : 15;
+        const total = subtotal + shipping - discount;
+
+        // Aggiorna UI
+        document.getElementById('subtotal').textContent = `€ ${subtotal.toFixed(2).replace('.', ',')}`;
+        document.getElementById('shipping').textContent = shipping === 0 ? 'Gratuita' : `€ ${shipping.toFixed(2).replace('.', ',')}`;
+        
+        const discountEl = document.getElementById('discount');
+        const discountRow = document.getElementById('discountRow');
+        const comboBadge = document.getElementById('comboBadge');
+
+        if (discount > 0) {
+            discountEl.textContent = `- € ${discount.toFixed(2).replace('.', ',')}`;
+            discountRow.classList.add('discount-active');
+            if (isComboDiscount && comboBadge) comboBadge.style.display = 'inline-block';
+        } else {
+            discountEl.textContent = '- € 0,00';
+            discountRow.classList.remove('discount-active');
+            if (comboBadge) comboBadge.style.display = 'none';
+        }
+
+        document.getElementById('total').textContent = `€ ${total.toFixed(2).replace('.', ',')}`;
+        document.getElementById('itemCount').textContent = `${itemCount} Articoli`;
+
+        const progress = Math.min(100, (totalAfterDiscounts / 150) * 100);
+        document.getElementById('progressFill').style.width = `${progress}%`;
     }
-
-    let couponDiscount = 0;
-    if (appliedCoupon) {
-        couponDiscount = (subtotal * appliedCoupon.discountPercent) / 100;
-    }
-
-    const totalDiscount = comboDiscount + couponDiscount;
-    const isComboDiscount = comboDiscount > 0;
-    const totalAfterDiscounts = subtotal - totalDiscount;
-    const shipping = totalAfterDiscounts >= 150 ? 0 : 15;
-    const total = subtotal + shipping - totalDiscount;
-
-    // ✅ AGGIORNA TUTTO IN UNA VOLTA (nessun valore intermedio visibile)
-    document.getElementById('subtotal').textContent = `€ ${subtotal.toFixed(2).replace('.', ',')}`;
-    document.getElementById('shipping').textContent = shipping === 0 ? 'Gratuita' : `€ ${shipping.toFixed(2).replace('.', ',')}`;
-    document.getElementById('total').textContent = `€ ${total.toFixed(2).replace('.', ',')}`;
-    document.getElementById('itemCount').textContent = `${itemCount} Articoli`;
-    
-    const discountEl = document.getElementById('discount');
-    const discountRow = document.getElementById('discountRow');
-    const comboBadge = document.getElementById('comboBadge');
-
-    if (totalDiscount > 0) {
-        discountEl.textContent = `- € ${totalDiscount.toFixed(2).replace('.', ',')}`;
-        discountEl.style.opacity = '1'; // ✅ Ripristina opacità
-        discountRow.classList.add('discount-active');
-        if (isComboDiscount && comboBadge) comboBadge.style.display = 'inline-block';
-    } else {
-        discountEl.textContent = '- € 0,00';
-        discountEl.style.opacity = '1'; // ✅ Ripristina opacità
-        discountRow.classList.remove('discount-active');
-        if (comboBadge) comboBadge.style.display = 'none';
-    }
-    
-    const progress = Math.min(100, (totalAfterDiscounts / 150) * 100);
-    document.getElementById('progressFill').style.width = `${progress}%`;
-}
 
     function checkEmptyCart() {
         document.querySelector('.cart-layout').style.gridTemplateColumns = '1fr';
@@ -1257,7 +1149,7 @@ localStorage.setItem('lh360_applied_discounts', JSON.stringify({
 
     // FASE 1: VERIFICA
     btn.disabled = true;
-    btn.textContent = 'Verifica...';
+    btn.textContent = 'Verifica in corso...';
 
     try {
         const response = await fetch(`${webAppUrl}?action=validate_coupon&code=${encodeURIComponent(couponCode)}&t=${Date.now()}`);
@@ -1265,18 +1157,11 @@ localStorage.setItem('lh360_applied_discounts', JSON.stringify({
         
         if (result.success && result.valid) {
             // FASE 2: APPLICAZIONE IN CORSO
-            btn.textContent = 'Applicazione...';
+            btn.textContent = 'Applicazione in corso...';
             
             // Salva il coupon
             appliedCoupon = { code: couponCode, discountPercent: result.discountPercent };
             markCouponAsUsed(couponCode);
-
-            // ✅ NUOVO: Salva in localStorage con data scadenza
-    saveCouponToStorage({
-        code: couponCode,
-        discountPercent: result.discountPercent,
-        expiryDate: result.expiryDate || null // Il backend deve inviare questa data
-    });
             
             // Aggiorna TUTTA la pagina (calcoli, UI, totali)
             await updateSummaryWithCoupon();
@@ -1387,4 +1272,3 @@ window.addEventListener('pageshow', function(event) {
 </script>
 </body>
 </html>
-
