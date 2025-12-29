@@ -137,73 +137,83 @@
     <script>
         const WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbwr79RkXIEocpuOKaM6uMJqE6VFs9wjlUPvrr__FvDbDDrD2ELB1NbfrWP3BCYpHj2u/exec';
 
-    window.onload = function() {
+    window.onload = async function() {
     // ✅ AGGIUNGI QUESTO CONTROLLO ALL'INIZIO
     const isTrackingPage = window.location.pathname.includes('tracking-order');
     if (isTrackingPage) {
-        // Se siamo in tracking, non caricare i prodotti
         const introLoader = document.getElementById('intro-loader');
         if (introLoader) introLoader.style.display = 'none';
         document.body.style.overflow = '';
         return;
     }
-        const introLoader = document.getElementById('intro-loader');
-        const progressBar = document.querySelector('.intro-progress-fill');
+    
+    const introLoader = document.getElementById('intro-loader');
+    const progressBar = document.querySelector('.intro-progress-fill');
+    
+    // Blocca lo scroll
+    document.body.style.overflow = 'hidden';
+
+    // ✅ MODIFICA: Avvia animazione barra (ma non nascondere loader fino a caricamento completo)
+    let progress = 0;
+    const fakeLoaderInterval = setInterval(() => {
+        if (progress < 90) { // ✅ Ferma al 90%, aspetta dati reali
+            progress += (Math.random() * 6);
+            if (progress > 90) progress = 90;
+            if (progressBar) progressBar.style.width = `${progress}%`;
+        }
+    }, 80);
+
+    try {
+        // ✅ MODIFICA: Carica TUTTO in parallelo e aspetta
+        const [productsResult, categoriesResult] = await Promise.all([
+            typeof initDynamicProducts === 'function' ? initDynamicProducts() : Promise.resolve(),
+            typeof loadShopCategories === 'function' ? loadShopCategories() : Promise.resolve()
+        ]);
+
+        // ✅ MODIFICA: Completa barra SOLO quando tutto è caricato
+        clearInterval(fakeLoaderInterval);
         
-        // Blocca lo scroll
-        document.body.style.overflow = 'hidden';
+        if (progressBar) {
+            progressBar.style.transition = 'width 0.3s ease-out';
+            progressBar.style.width = '100%';
+        }
 
-        // --- Animazione Caricamento ---
-        // La barra avanza velocemente fino al 70% per dare feedback, poi aspetta i dati
-        let progress = 0;
-        const fakeLoaderInterval = setInterval(() => {
-            if (progress < 70) {
-                progress += (Math.random() * 8); // Avanza randomicamente
-                if (progress > 70) progress = 70;
-                if (progressBar) progressBar.style.width = `${progress}%`;
-            }
-        }, 80);
+        // ✅ MODIFICA: Attendi 200ms (tempo percettivo) e nascondi
+        await new Promise(resolve => setTimeout(resolve, 200));
 
-        // --- Caricamento Dati ---
-        const dataPromise = typeof initDynamicProducts === 'function' 
-            ? initDynamicProducts() 
-            : Promise.resolve();
-
-        // NESSUN ritardo artificiale (rimossa la minTimePromise)
-        dataPromise.then(() => {
-            clearInterval(fakeLoaderInterval);
+        if (introLoader) {
+            introLoader.style.opacity = '0';
+            introLoader.classList.add('fade-out');
+            document.body.style.overflow = '';
             
-            // 1. Completa la barra immediatamente
-            if (progressBar) {
-                progressBar.style.transition = 'width 0.3s ease-out';
-                progressBar.style.width = '100%';
-            }
-
-            // 2. Nascondi il loader appena l'occhio percepisce il 100% (200ms)
-            setTimeout(() => {
-                if (introLoader) {
-                    introLoader.style.opacity = '0'; // Usa opacity per il fade se supportato dal CSS
-                    introLoader.classList.add('fade-out'); // Tua classe CSS per il fade
-                    document.body.style.overflow = ''; // Sblocca scroll
-                    
-                    // Rimozione fisica dal DOM
-                    setTimeout(() => { 
-                        introLoader.style.display = 'none'; 
-                    }, 400); 
-                }
-            }, 200);
-        });
-
-        // PRE-CARICA CATEGORIE SHOP
-        loadShopCategories();
-
-        // Gestione Hash e Icone
-        const hash = window.location.hash.substring(1);
-        if (hash && typeof showSection === 'function') showSection(hash);
+            setTimeout(() => { 
+                introLoader.style.display = 'none'; 
+            }, 400);
+        }
         
-        updateCartIcon();
-        updateTrackingIcon();
-    };
+    } catch (error) {
+        console.error('Errore caricamento:', error);
+        
+        // ✅ Anche in caso di errore, nascondi loader dopo 3s max
+        clearInterval(fakeLoaderInterval);
+        if (progressBar) progressBar.style.width = '100%';
+        
+        setTimeout(() => {
+            if (introLoader) {
+                introLoader.style.opacity = '0';
+                document.body.style.overflow = '';
+                setTimeout(() => introLoader.style.display = 'none', 400);
+            }
+        }, 1000);
+    }
+
+    // Gestione Hash e Icone (invariato)
+    const hash = window.location.hash.substring(1);
+    if (hash && typeof showSection === 'function') showSection(hash);
+    
+    updateCartIcon();
+    updateTrackingIcon();
+};
 
         function updateCartIcon() {
             const cart = JSON.parse(localStorage.getItem('lh360_cart')) || [];
@@ -459,6 +469,7 @@
     </script>
 </body>
 </html>
+
 
 
 
