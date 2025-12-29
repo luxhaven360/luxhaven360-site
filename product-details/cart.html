@@ -944,7 +944,7 @@ async function updateSummary() {
 
     /**
  * ✅ AGGIORNAMENTO IMMEDIATO UI (senza chiamate async)
- * Calcola e mostra istantaneamente: subtotale, articoli, barra progresso
+ * Calcola e mostra istantaneamente: subtotale, articoli, barra progresso, sconto
  */
 function updateSummaryImmediate() {
     let subtotal = 0;
@@ -958,16 +958,15 @@ function updateSummaryImmediate() {
         itemCount += (item.qty || 1);
     });
 
-    // Aggiorna UI immediatamente (senza sconti combo - quelli arrivano dopo)
     const shipping = subtotal >= 150 ? 0 : 15;
     
-    // ✅ Mantieni lo sconto coupon se applicato
-    let couponDiscount = 0;
+    // ✅ MANTIENI SOLO sconto coupon (il combo viene ricalcolato async)
+    let totalDiscount = 0;
     if (appliedCoupon) {
-        couponDiscount = (subtotal * appliedCoupon.discountPercent) / 100;
+        totalDiscount = (subtotal * appliedCoupon.discountPercent) / 100;
     }
     
-    const total = subtotal + shipping - couponDiscount;
+    const total = subtotal + shipping - totalDiscount;
 
     // Aggiorna valori visualizzati
     document.getElementById('subtotal').textContent = `€ ${subtotal.toFixed(2).replace('.', ',')}`;
@@ -979,11 +978,22 @@ function updateSummaryImmediate() {
     const progress = Math.min(100, (subtotal / 150) * 100);
     document.getElementById('progressFill').style.width = `${progress}%`;
     
-    // ✅ Aggiorna sconto coupon se presente
-    if (couponDiscount > 0) {
-        const discountEl = document.getElementById('discount');
-        discountEl.textContent = `- € ${couponDiscount.toFixed(2).replace('.', ',')}`;
-        document.getElementById('discountRow').classList.add('discount-active');
+    // ✅ AGGIORNA SCONTO IMMEDIATAMENTE
+    const discountEl = document.getElementById('discount');
+    const discountRow = document.getElementById('discountRow');
+    const comboBadge = document.getElementById('comboBadge');
+    
+    if (totalDiscount > 0) {
+        discountEl.textContent = `- € ${totalDiscount.toFixed(2).replace('.', ',')}`;
+        discountRow.classList.add('discount-active');
+        
+        // ✅ NASCONDI badge COMBO (verrà ripristinato da updateSummary se valido)
+        if (comboBadge) comboBadge.style.display = 'none';
+    } else {
+        // ✅ AZZERA sconto se nessun coupon attivo
+        discountEl.textContent = '- € 0,00';
+        discountRow.classList.remove('discount-active');
+        if (comboBadge) comboBadge.style.display = 'none';
     }
 }
 
@@ -1373,5 +1383,6 @@ window.addEventListener('pageshow', function(event) {
 </script>
 </body>
 </html>
+
 
 
