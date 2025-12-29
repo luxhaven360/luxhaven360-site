@@ -186,6 +186,8 @@ if (hasDiscount) {
     // attach product data as data- attributes
     btn.dataset.sku = prod.sku || '';
     btn.dataset.title = prod.title || '';
+    // Salva categoria nella card per filtro istantaneo
+    card.dataset.category = prod.category || 'shop';
     if (prod.stripe_link) btn.dataset.stripeLink = prod.stripe_link;
     if (prod.action) btn.dataset.action = prod.action;
 
@@ -476,9 +478,9 @@ function renderCategoryFilter(categories) {
 }
 
 /**
- * Filtra i prodotti dello shop per categoria
+ * Filtra i prodotti dello shop per categoria (VERSIONE ISTANTANEA)
  */
-async function filterShopByCategory(categoryName, pillElement) {
+function filterShopByCategory(categoryName, pillElement) {
     const shopGrid = document.getElementById('shopGrid');
     if (!shopGrid) return;
     
@@ -493,44 +495,30 @@ async function filterShopByCategory(categoryName, pillElement) {
     const resetBtn = document.getElementById('filterResetBtn');
     if (resetBtn) resetBtn.style.display = 'inline-flex';
     
-    // ✅ MODIFICA: Nascondi subito il messaggio vuoto se esiste
+    const cards = shopGrid.querySelectorAll('.card');
     const emptyMsg = shopGrid.querySelector('.filter-empty-message');
+    
+    // ✅ MODIFICA: Nascondi messaggio vuoto se esiste
     if (emptyMsg) emptyMsg.style.display = 'none';
     
-    const cards = shopGrid.querySelectorAll('.card');
-    
-    // ✅ MODIFICA: Nascondi TUTTE le card immediatamente
-    cards.forEach(card => {
-        card.style.display = 'none';
-    });
-    
-    // ✅ MODIFICA: Crea array di promesse per controllare TUTTE le categorie
-    const checkPromises = Array.from(cards).map(async (card) => {
-        const btn = card.querySelector('button[data-sku]');
-        if (!btn) return { card, match: false };
-        
-        const sku = btn.dataset.sku || '';
-        const prodCategory = await checkProductCategory(sku);
-        
-        return { card, match: prodCategory === categoryName };
-    });
-    
-    // ✅ MODIFICA: Aspetta che TUTTE le verifiche siano completate
-    const results = await Promise.all(checkPromises);
-    
-    // ✅ MODIFICA: Mostra solo le card che matchano
+    // ✅ MODIFICA: Filtraggio ISTANTANEO tramite data-category
     let visibleCount = 0;
-    results.forEach(({ card, match }) => {
-        if (match) {
+    
+    cards.forEach(card => {
+        const cardCategory = card.dataset.category || 'shop';
+        
+        if (cardCategory === categoryName) {
             card.style.display = 'block';
-            card.style.animation = 'fadeIn 0.5s ease';
+            card.style.animation = 'fadeIn 0.3s ease';
             visibleCount++;
+        } else {
+            card.style.display = 'none';
         }
     });
     
-    // ✅ MODIFICA: Gestisci messaggio vuoto SOLO dopo aver processato tutto
+    // ✅ MODIFICA: Gestisci messaggio vuoto
     if (visibleCount === 0) {
-        let emptyMessage = shopGrid.querySelector('.filter-empty-message');
+        let emptyMessage = emptyMsg;
         if (!emptyMessage) {
             emptyMessage = document.createElement('div');
             emptyMessage.className = 'filter-empty-message';
@@ -541,17 +529,13 @@ async function filterShopByCategory(categoryName, pillElement) {
                 color: #a1a1aa;
                 font-size: 1.1rem;
             `;
-            emptyMessage.innerHTML = `
-                <div style="font-size: 3rem; margin-bottom: 1rem; opacity: 0.3;">📦</div>
-                <div>Nessun prodotto trovato in "${categoryName}"</div>
-            `;
             shopGrid.appendChild(emptyMessage);
-        } else {
-            emptyMessage.innerHTML = `
-                <div style="font-size: 3rem; margin-bottom: 1rem; opacity: 0.3;">📦</div>
-                <div>Nessun prodotto trovato in "${categoryName}"</div>
-            `;
         }
+        
+        emptyMessage.innerHTML = `
+            <div style="font-size: 3rem; margin-bottom: 1rem; opacity: 0.3;">📦</div>
+            <div>Nessun prodotto trovato in "${categoryName}"</div>
+        `;
         emptyMessage.style.display = 'block';
     }
     
@@ -583,31 +567,4 @@ function resetCategoryFilter() {
         if (emptyMsg) emptyMsg.style.display = 'none';
     }
 }
-
-/**
- * Verifica la categoria di un prodotto tramite SKU
- * (usa cache localStorage per evitare troppe chiamate)
- */
-async function checkProductCategory(sku) {
-    // Cache semplice
-    const cacheKey = `cat_${sku}`;
-    const cached = sessionStorage.getItem(cacheKey);
-    if (cached) return cached;
-    
-    try {
-        const response = await fetch(`${WEB_APP_URL}?action=get_product_details&sku=${encodeURIComponent(sku)}&t=${Date.now()}`);
-        const data = await response.json();
-        
-        if (data.success && data.product && data.product.category) {
-            const category = data.product.category;
-            sessionStorage.setItem(cacheKey, category);
-            return category;
-        }
-    } catch (error) {
-        console.error('Errore recupero categoria per SKU:', sku, error);
-    }
-    
-    return null;
-}
-
 
