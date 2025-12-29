@@ -579,6 +579,11 @@
     font-size: 1.125rem;
 }
 
+        /* ✅ NUOVO: Transizione fluida sconto */
+#discountRow {
+    transition: opacity 0.2s ease;
+}
+
 /* Badge combo applicata */
 .combo-badge {
     display: inline-block;
@@ -906,27 +911,29 @@ if (item.color || item.size) {
     function removeItem(index) {
     const itemElement = document.querySelector(`[data-id="${index}"]`);
     
-    // Rimuovi immediatamente dal carrello
+    // ✅ MODIFICA: Aggiornamento IMMEDIATO
     cart.splice(index, 1);
     localStorage.setItem('lh360_cart', JSON.stringify(cart));
     
-    // ✅ Rimuovi coupon se carrello vuoto
+    // Rimuovi coupon se carrello vuoto
     if (cart.length === 0) {
         appliedCoupon = null;
         saveCouponToStorage(null);
     }
     
-    // Animazione di uscita (opzionale, può essere rimossa per velocità)
+    // ✅ MODIFICA: Nascondi riga sconto PRIMA del ricalcolo
+    const discountRow = document.getElementById('discountRow');
+    if (discountRow) discountRow.style.opacity = '0.5';
+    
+    // Animazione uscita card (opzionale)
     if (itemElement) {
         itemElement.style.transition = 'opacity 0.15s, transform 0.15s';
         itemElement.style.opacity = '0';
         itemElement.style.transform = 'translateX(-1rem)';
     }
     
-    // ✅ MODIFICA: Aggiorna IMMEDIATAMENTE senza setTimeout
-    setTimeout(() => {
-        renderCart();
-    }, 150); // Tempo minimo per completare animazione
+    // ✅ MODIFICA: Render immediato (NO setTimeout)
+    renderCart();
 }
 
     // ⭐ FIX PROBLEMA 1: updateSummary con calcolo corretto
@@ -940,7 +947,15 @@ if (item.color || item.size) {
         itemCount += (item.qty || 1);
     });
 
-    // ✅ MODIFICA: Calcolo combo discount in parallelo (non blocca UI)
+    // ✅ MODIFICA: Nascondi riga sconto durante calcolo
+    const discountEl = document.getElementById('discount');
+    const discountRow = document.getElementById('discountRow');
+    const comboBadge = document.getElementById('comboBadge');
+    
+    discountRow.style.opacity = '0.5'; // Feedback visivo calcolo in corso
+    discountEl.textContent = '- € ...'; // Placeholder
+
+    // Calcolo combo in parallelo (non blocca UI base)
     let discount = 0;
     let isComboDiscount = false;
 
@@ -959,45 +974,26 @@ if (item.color || item.size) {
         return { discount: 0, isCombo: false };
     })();
 
-    // ✅ MODIFICA: Applica coupon immediatamente (calcolo sincrono)
+    // Calcolo coupon (sincrono)
     let couponDiscount = 0;
     if (appliedCoupon) {
         couponDiscount = (subtotal * appliedCoupon.discountPercent) / 100;
     }
 
-    // ✅ MODIFICA: Aggiorna UI SUBITO con i valori attuali (senza aspettare combo)
-    const tempDiscount = couponDiscount; // Usa solo coupon per ora
-    const tempTotalAfterDiscounts = subtotal - tempDiscount;
-    const tempShipping = tempTotalAfterDiscounts >= 150 ? 0 : 15;
-    const tempTotal = subtotal + tempShipping - tempDiscount;
-
-    // Aggiorna immediatamente l'UI
+    // ✅ MODIFICA: Aggiorna UI base IMMEDIATAMENTE
     document.getElementById('subtotal').textContent = `€ ${subtotal.toFixed(2).replace('.', ',')}`;
-    document.getElementById('shipping').textContent = tempShipping === 0 ? 'Gratuita' : `€ ${tempShipping.toFixed(2).replace('.', ',')}`;
-    document.getElementById('total').textContent = `€ ${tempTotal.toFixed(2).replace('.', ',')}`;
     document.getElementById('itemCount').textContent = `${itemCount} Articoli`;
     
-    const tempProgress = Math.min(100, (tempTotalAfterDiscounts / 150) * 100);
-    document.getElementById('progressFill').style.width = `${tempProgress}%`;
-
-    // ✅ Poi aspetta il combo e aggiorna se necessario
+    // Aspetta combo e calcola finale
     const comboResult = await comboPromise;
-    discount = tempDiscount + comboResult.discount;
+    discount = couponDiscount + comboResult.discount;
     isComboDiscount = comboResult.isCombo;
 
-    // Ricalcola con combo incluso
     const totalAfterDiscounts = subtotal - discount;
     const shipping = totalAfterDiscounts >= 150 ? 0 : 15;
     const total = subtotal + shipping - discount;
 
-    // Aggiorna UI finale
-    document.getElementById('shipping').textContent = shipping === 0 ? 'Gratuita' : `€ ${shipping.toFixed(2).replace('.', ',')}`;
-    document.getElementById('total').textContent = `€ ${total.toFixed(2).replace('.', ',')}`;
-    
-    const discountEl = document.getElementById('discount');
-    const discountRow = document.getElementById('discountRow');
-    const comboBadge = document.getElementById('comboBadge');
-
+    // ✅ MODIFICA: Aggiorna sconto in modo ATOMICO
     if (discount > 0) {
         discountEl.textContent = `- € ${discount.toFixed(2).replace('.', ',')}`;
         discountRow.classList.add('discount-active');
@@ -1007,7 +1003,14 @@ if (item.color || item.size) {
         discountRow.classList.remove('discount-active');
         if (comboBadge) comboBadge.style.display = 'none';
     }
+    
+    // ✅ MODIFICA: Ripristina opacità
+    discountRow.style.opacity = '1';
 
+    // Aggiorna resto UI
+    document.getElementById('shipping').textContent = shipping === 0 ? 'Gratuita' : `€ ${shipping.toFixed(2).replace('.', ',')}`;
+    document.getElementById('total').textContent = `€ ${total.toFixed(2).replace('.', ',')}`;
+    
     const progress = Math.min(100, (totalAfterDiscounts / 150) * 100);
     document.getElementById('progressFill').style.width = `${progress}%`;
 }
@@ -1395,6 +1398,7 @@ window.addEventListener('pageshow', function(event) {
 </script>
 </body>
 </html>
+
 
 
 
