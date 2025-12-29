@@ -262,17 +262,16 @@ async function initDynamicProducts(retryCount = 0) {
         const countBySection = {};
 
         // Distribuzione prodotti nelle sezioni
-allProducts.forEach(prod => {
-    // ✅ USA sectionName (non category) per trovare la griglia corretta
-    const sectionName = prod.sectionName || prod.category;
-    const targetSection = SECTIONS.find(s => s.id === sectionName);
-    
-    if (targetSection && grids[targetSection.id]) {
-        const card = createProductCard(prod, targetSection.defaultCta);
-        grids[targetSection.id].appendChild(card);
-        countBySection[targetSection.id] = (countBySection[targetSection.id] || 0) + 1;
-    }
-});
+        allProducts.forEach(prod => {
+            const targetSection = SECTIONS.find(s => s.id === prod.category);
+            
+            if (targetSection && grids[targetSection.id]) {
+                prod.sectionName = targetSection.id;
+                const card = createProductCard(prod, targetSection.defaultCta);
+                grids[targetSection.id].appendChild(card);
+                countBySection[targetSection.id] = (countBySection[targetSection.id] || 0) + 1;
+            }
+        });
 
         // Gestione sezioni vuote
         SECTIONS.forEach(section => {
@@ -540,6 +539,9 @@ function filterShopByCategory(categoryName, pillElement) {
     shopGrid.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
+/**
+ * Reset filtro - mostra tutti i prodotti
+ */
 function resetCategoryFilter() {
     currentShopCategory = null;
     
@@ -556,10 +558,8 @@ function resetCategoryFilter() {
             card.style.animation = 'fadeIn 0.5s ease';
         });
         
+        // ✅ AGGIUNGI: Nascondi messaggio vuoto
         const emptyMsg = shopGrid.querySelector('.filter-empty-message');
         if (emptyMsg) emptyMsg.style.display = 'none';
     }
 }
-
-// ✅ FINE DEL FILE - Nessun codice dopo questa riga!
-
