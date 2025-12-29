@@ -903,15 +903,18 @@ if (item.color || item.size) {
     }
 
    /**
- * ✅ Ripristina coupon salvato in modo SILENZIOSO
- * Il messaggio viene mostrato DOPO il calcolo degli sconti
+ * ✅ Ripristina coupon salvato e forza ricalcolo sconti
  */
 async function restoreAppliedCoupon() {
   const savedCoupon = localStorage.getItem('lh360_applied_coupon');
+  console.log('🔍 restoreAppliedCoupon - savedCoupon:', savedCoupon); // ⭐ DEBUG
+  
   if (!savedCoupon) return;
 
   try {
     const couponData = JSON.parse(savedCoupon);
+    console.log('🔍 Coupon data:', couponData); // ⭐ DEBUG
+    
     const { code, discountPercent } = couponData;
 
     if (!code || !discountPercent) {
@@ -919,55 +922,47 @@ async function restoreAppliedCoupon() {
       return;
     }
 
-    // ✅ Ri-valida con backend (include check "Utilizzato?")
     const response = await fetch(`${webAppUrl}?action=validate_coupon&code=${encodeURIComponent(code)}&t=${Date.now()}`);
     const result = await response.json();
+    console.log('🔍 Validazione risultato:', result); // ⭐ DEBUG
 
     if (result.success && result.valid) {
-      // ✅ RIPRISTINO SILENZIOSO
-      appliedCoupon = couponData;
+      appliedCoupon = { 
+        code: code, 
+        discountPercent: discountPercent,
+        appliedAt: Date.now()
+      };
+      
+      console.log('✅ Coupon ripristinato:', appliedCoupon); // ⭐ DEBUG
+      
       document.getElementById('couponInput').value = code;
       
-      // ⏰ Il messaggio verrà mostrato da showCouponRestored() DOPO updateSummary()
+      showDiscountCalculating();
+      await updateSummaryWithCoupon();
+      
+      console.log('✅ Mostrando messaggio ripristino'); // ⭐ DEBUG
+      
+      showCouponMessage(
+        `Coupon "${code}" ripristinato con successo · Sconto attivo: ${discountPercent}%`, 
+        'success'
+      );
       
     } else {
-      // ✅ Coupon non valido/utilizzato
+      console.log('❌ Coupon non valido:', result.error); // ⭐ DEBUG
+      
       localStorage.removeItem('lh360_applied_coupon');
       appliedCoupon = null;
       
-      // Distingui tra scaduto e utilizzato
       const errorMsg = (result.error && result.error.includes('utilizzato')) 
         ? `Il coupon "${code}" è stato utilizzato in un ordine precedente` 
         : `Il coupon "${code}" non è più valido o è scaduto`;
       
       showCouponMessage(errorMsg, 'error');
+      await updateSummaryWithCoupon();
     }
   } catch (error) {
-    console.error('Errore recupero coupon salvato:', error);
+    console.error('❌ Errore recupero coupon:', error); // ⭐ DEBUG
     localStorage.removeItem('lh360_applied_coupon');
-  }
-}
-
-    /**
- * ✅ NUOVO: Mostra messaggio ripristino coupon DOPO calcolo sconti
- * Chiamata da updateSummary() quando tutti i calcoli sono completi
- */
-function showCouponRestored() {
-  if (!appliedCoupon) return;
-  
-  const code = appliedCoupon.code;
-  const percent = appliedCoupon.discountPercent;
-  
-  // Verifica se è appena stato ripristinato (entro ultimi 2 secondi)
-  const now = Date.now();
-  const appliedAt = appliedCoupon.appliedAt || 0;
-  const isRecentlyRestored = (now - appliedAt) < 2000;
-  
-  if (isRecentlyRestored) {
-    showCouponMessage(
-      `Coupon "${code}" ripristinato con successo · Sconto attivo: ${percent}%`, 
-      'success'
-    );
   }
 }
 
@@ -1046,8 +1041,6 @@ async function updateSummary() {
 
     const progress = Math.min(100, (totalAfterDiscounts / 150) * 100);
     document.getElementById('progressFill').style.width = `${progress}%`;
-
-    showCouponRestored(); // Mostra messaggio ripristino DOPO tutti i calcoli
 }
 
     /**
@@ -1147,9 +1140,15 @@ function showDiscountValue(totalDiscount, isCombo = false) {
         document.querySelector('.cart-summary').style.display = 'none';
     }
 
-    renderCart();
-    restoreAppliedCoupon(); // ✅ RIPRISTINA COUPON SALVATO
-    loadRecommendedProducts();
+    // ✅ Funzione async per gestire caricamento completo
+async function initializeCart() {
+  renderCart(); // Rendering iniziale
+  await restoreAppliedCoupon(); // ⭐ ATTENDI ripristino coupon
+  loadRecommendedProducts(); // Carica prodotti consigliati
+}
+
+// ✅ Chiama inizializzazione
+initializeCart();
 
 /**
  * Carica prodotti consigliati basati sulla categoria del carrello
@@ -1602,6 +1601,7 @@ window.addEventListener('pageshow', function(event) {
 </script>
 </body>
 </html>
+
 
 
 
