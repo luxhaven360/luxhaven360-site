@@ -86,8 +86,12 @@ function createProductCard(prod, defaultCta) {
     // container
     const card = el('div', { class: 'card' });
 
-    // category
-    card.dataset.category = prod.category || 'shop';
+    // category: memorizza sia la forma originale che quella normalizzata
+    const rawCategory = (prod.category || 'shop').toString();
+    const normalizedCategory = rawCategory.trim().toLowerCase();
+    card.dataset.category = rawCategory;                 // es. "Apparel"
+    card.dataset.categoryNormalized = normalizedCategory; // es. "apparel"
+
 
     // image/icon
     const imageContainer = el('div', { class: 'card-image' });
@@ -261,14 +265,29 @@ async function initDynamicProducts(retryCount = 0) {
         const allProducts = data.products || [];
         const countBySection = {};
 
-        // Distribuzione prodotti nelle sezioni
-        allProducts.forEach(prod => {
-            const targetSection = SECTIONS.find(s => s.id === prod.category);
-            
-            if (targetSection && grids[targetSection.id]) {
-                prod.sectionName = targetSection.id;
+           // Distribuzione prodotti nelle sezioni
+            allProducts.forEach(prod => {
+            // Prova a prendere una sezione esplicita: sectionName -> id della sezione
+            const prodSectionCandidate = (prod.sectionName || prod.section || '').toString().trim().toLowerCase();
+
+            // Cerca match diretto in SECTIONS (es. 'properties','supercars','stays','shop')
+            let targetSection = SECTIONS.find(s => s.id === prodSectionCandidate);
+
+            // Se non trovi un id di sezione valido, rimetti il prodotto nella sezione 'shop'
+            if (!targetSection) {
+                targetSection = SECTIONS.find(s => s.id === 'shop');
+            }
+
+            // Imposta sectionName utile per link/cta
+            prod.sectionName = targetSection.id;
+
+            // Crea e append solo se esiste la griglia target
+            const grid = grids[targetSection.id];
+            if (grid) {
                 const card = createProductCard(prod, targetSection.defaultCta);
-                grids[targetSection.id].appendChild(card);
+                // Forza display iniziale visibile
+                card.style.display = 'block';
+                grid.appendChild(card);
                 countBySection[targetSection.id] = (countBySection[targetSection.id] || 0) + 1;
             }
         });
@@ -452,20 +471,24 @@ function renderCategoryFilter(categories) {
     // Pulisci container
     pillsContainer.innerHTML = '';
     
-    // Crea pulsante per ogni categoria
-    categories.forEach(cat => {
+       // Crea pulsante per ogni categoria
+        categories.forEach(cat => {
+        const name = (cat.name || '').toString();
+        const nameNorm = name.trim().toLowerCase();
+
         const pill = document.createElement('button');
         pill.className = 'category-pill';
-        pill.dataset.category = cat.name;
+        pill.dataset.category = name;                 // es. "Apparel"
+        pill.dataset.categoryNormalized = nameNorm;  // es. "apparel"
         pill.innerHTML = `
-            ${cat.name}
+            ${name}
             <span class="count">${cat.count}</span>
         `;
-        
+
         pill.addEventListener('click', () => {
-            filterShopByCategory(cat.name, pill);
+            filterShopByCategory(name, pill);
         });
-        
+
         pillsContainer.appendChild(pill);
     });
     
@@ -484,25 +507,28 @@ function renderCategoryFilter(categories) {
 function filterShopByCategory(categoryName, pillElement) {
     const shopGrid = document.getElementById('shopGrid');
     if (!shopGrid) return;
-    
+
     currentShopCategory = categoryName;
-    
+
+    // Normalizzazione del nome selezionato
+    const selectedNorm = (categoryName || '').toString().trim().toLowerCase();
+
     // Aggiorna UI pills
     document.querySelectorAll('.category-pill').forEach(p => p.classList.remove('active'));
     if (pillElement) pillElement.classList.add('active');
-    
+
     // Mostra pulsante reset
     const resetBtn = document.getElementById('filterResetBtn');
     if (resetBtn) resetBtn.style.display = 'inline-flex';
-    
-    // ✅ FILTRO SINCRONO IMMEDIATO (nessuna chiamata API)
+
+    // FILTRO: usa .dataset.categoryNormalized
     const cards = shopGrid.querySelectorAll('.card');
     let visibleCount = 0;
-    
+
     cards.forEach(card => {
-        const cardCategory = card.dataset.category || '';
-        
-        if (cardCategory === categoryName) {
+        const cardCatNorm = (card.dataset.categoryNormalized || '').toString().trim().toLowerCase();
+
+        if (cardCatNorm === selectedNorm) {
             card.style.display = 'block';
             card.style.animation = 'fadeIn 0.3s ease';
             visibleCount++;
@@ -510,10 +536,10 @@ function filterShopByCategory(categoryName, pillElement) {
             card.style.display = 'none';
         }
     });
-    
-    // Gestisci messaggio vuoto
+
+    // Gestione messaggio vuoto
     let emptyMessage = shopGrid.querySelector('.filter-empty-message');
-    
+
     if (visibleCount === 0) {
         if (!emptyMessage) {
             emptyMessage = document.createElement('div');
@@ -535,7 +561,7 @@ function filterShopByCategory(categoryName, pillElement) {
     } else if (emptyMessage) {
         emptyMessage.style.display = 'none';
     }
-    
+
     shopGrid.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
@@ -563,3 +589,4 @@ function resetCategoryFilter() {
         if (emptyMsg) emptyMsg.style.display = 'none';
     }
 }
+
