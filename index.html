@@ -151,69 +151,65 @@
     
     document.body.style.overflow = 'hidden';
 
-    // ✅ NUOVO: Progress reale basato su eventi
-    let loadingSteps = {
-        started: false,
-        productsLoaded: false,
-        categoriesLoaded: false
-    };
+    // ✅ Barra riflette il caricamento REALE
+    let productsLoaded = false;
+    let categoriesLoaded = false;
     
-    function updateProgressBar() {
-        const steps = Object.values(loadingSteps).filter(Boolean).length;
-        const progress = (steps / 3) * 100;
+    function updateProgress() {
+        let progress = 0;
+        if (productsLoaded) progress += 70;
+        if (categoriesLoaded) progress += 30;
         
         if (progressBar) {
             progressBar.style.width = `${progress}%`;
         }
+        
+        // ✅ Nascondi IMMEDIATAMENTE quando tutto è caricato
+        if (progress >= 100) {
+            setTimeout(() => {
+                if (introLoader) {
+                    introLoader.style.transition = 'opacity 0.3s ease';
+                    introLoader.style.opacity = '0';
+                    document.body.style.overflow = '';
+                    
+                    setTimeout(() => { 
+                        introLoader.style.display = 'none'; 
+                    }, 300);
+                }
+            }, 100); // ✅ Solo 100ms di attesa percettiva
+        }
     }
-    
-    // Avvia barra (0% → 10%)
-    loadingSteps.started = true;
-    updateProgressBar();
 
     try {
-        // Carica in parallelo con tracking progress
-        const productsPromise = (async () => {
-            if (typeof initDynamicProducts === 'function') {
-                await initDynamicProducts();
-            }
-            loadingSteps.productsLoaded = true;
-            updateProgressBar(); // 66%
-        })();
-        
-        const categoriesPromise = (async () => {
-            if (typeof loadShopCategories === 'function') {
-                await loadShopCategories();
-            }
-            loadingSteps.categoriesLoaded = true;
-            updateProgressBar(); // 100%
-        })();
-        
-        // Aspetta completamento
-        await Promise.all([productsPromise, categoriesPromise]);
-        
-        // ✅ MODIFICA: Nascondi IMMEDIATAMENTE dopo caricamento
-        if (introLoader) {
-            introLoader.style.transition = 'opacity 0.4s ease';
-            introLoader.style.opacity = '0';
-            document.body.style.overflow = '';
-            
-            setTimeout(() => { 
-                introLoader.style.display = 'none'; 
-            }, 400); // Solo tempo transizione CSS
-        }
+        // Carica in parallelo
+        const [productsResult, categoriesResult] = await Promise.all([
+            (async () => {
+                if (typeof initDynamicProducts === 'function') {
+                    await initDynamicProducts();
+                }
+                productsLoaded = true;
+                updateProgress();
+            })(),
+            (async () => {
+                if (typeof loadShopCategories === 'function') {
+                    await loadShopCategories();
+                }
+                categoriesLoaded = true;
+                updateProgress();
+            })()
+        ]);
         
     } catch (error) {
         console.error('Errore caricamento:', error);
         
-        // In caso di errore, nascondi dopo 1s max
+        // Anche in caso di errore, nascondi loader dopo max 2s
         setTimeout(() => {
             if (introLoader) {
                 introLoader.style.opacity = '0';
                 document.body.style.overflow = '';
-                setTimeout(() => introLoader.style.display = 'none', 400);
+                setTimeout(() => introLoader.style.display = 'none', 300);
             }
-        }, 1000);
+        }, 2000);
     }
 
     // Gestione Hash e Icone (invariato)
@@ -478,6 +474,7 @@
     </script>
 </body>
 </html>
+
 
 
 
