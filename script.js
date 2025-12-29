@@ -86,9 +86,6 @@ function createProductCard(prod, defaultCta) {
     // container
     const card = el('div', { class: 'card' });
 
-    // category
-    card.dataset.category = prod.category || 'shop';
-
     // image/icon
     const imageContainer = el('div', { class: 'card-image' });
     
@@ -485,6 +482,7 @@ function filterShopByCategory(categoryName, pillElement) {
     const shopGrid = document.getElementById('shopGrid');
     if (!shopGrid) return;
     
+    // Aggiorna stato categoria
     currentShopCategory = categoryName;
     
     // Aggiorna UI pills
@@ -495,47 +493,27 @@ function filterShopByCategory(categoryName, pillElement) {
     const resetBtn = document.getElementById('filterResetBtn');
     if (resetBtn) resetBtn.style.display = 'inline-flex';
     
-    // ✅ FILTRO SINCRONO IMMEDIATO (nessuna chiamata API)
+    // Filtra cards
     const cards = shopGrid.querySelectorAll('.card');
-    let visibleCount = 0;
-    
     cards.forEach(card => {
-        const cardCategory = card.dataset.category || '';
+        const btn = card.querySelector('button[data-sku]');
+        if (!btn) return;
         
-        if (cardCategory === categoryName) {
-            card.style.display = 'block';
-            card.style.animation = 'fadeIn 0.3s ease';
-            visibleCount++;
-        } else {
-            card.style.display = 'none';
-        }
+        const sku = btn.dataset.sku || '';
+        const skuPrefix = sku.split('-')[0];
+        
+        // Verifica se il prodotto appartiene alla categoria (usa cache o richiedi)
+        checkProductCategory(sku).then(prodCategory => {
+            if (prodCategory === categoryName) {
+                card.style.display = 'block';
+                card.style.animation = 'fadeIn 0.5s ease';
+            } else {
+                card.style.display = 'none';
+            }
+        });
     });
     
-    // Gestisci messaggio vuoto
-    let emptyMessage = shopGrid.querySelector('.filter-empty-message');
-    
-    if (visibleCount === 0) {
-        if (!emptyMessage) {
-            emptyMessage = document.createElement('div');
-            emptyMessage.className = 'filter-empty-message';
-            emptyMessage.style.cssText = `
-                grid-column: 1 / -1;
-                text-align: center;
-                padding: 4rem 2rem;
-                color: #a1a1aa;
-                font-size: 1.1rem;
-            `;
-            shopGrid.appendChild(emptyMessage);
-        }
-        emptyMessage.innerHTML = `
-            <div style="font-size: 3rem; margin-bottom: 1rem; opacity: 0.3;">📦</div>
-            <div>Nessun prodotto trovato in "${categoryName}"</div>
-        `;
-        emptyMessage.style.display = 'block';
-    } else if (emptyMessage) {
-        emptyMessage.style.display = 'none';
-    }
-    
+    // Scroll smooth al grid
     shopGrid.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
@@ -545,11 +523,14 @@ function filterShopByCategory(categoryName, pillElement) {
 function resetCategoryFilter() {
     currentShopCategory = null;
     
+    // Rimuovi active da pills
     document.querySelectorAll('.category-pill').forEach(p => p.classList.remove('active'));
     
+    // Nascondi pulsante reset
     const resetBtn = document.getElementById('filterResetBtn');
     if (resetBtn) resetBtn.style.display = 'none';
     
+    // Mostra tutte le cards
     const shopGrid = document.getElementById('shopGrid');
     if (shopGrid) {
         const cards = shopGrid.querySelectorAll('.card');
@@ -557,10 +538,31 @@ function resetCategoryFilter() {
             card.style.display = 'block';
             card.style.animation = 'fadeIn 0.5s ease';
         });
-        
-        // ✅ AGGIUNGI: Nascondi messaggio vuoto
-        const emptyMsg = shopGrid.querySelector('.filter-empty-message');
-        if (emptyMsg) emptyMsg.style.display = 'none';
     }
 }
 
+/**
+ * Verifica la categoria di un prodotto tramite SKU
+ * (usa cache localStorage per evitare troppe chiamate)
+ */
+async function checkProductCategory(sku) {
+    // Cache semplice
+    const cacheKey = `cat_${sku}`;
+    const cached = sessionStorage.getItem(cacheKey);
+    if (cached) return cached;
+    
+    try {
+        const response = await fetch(`${WEB_APP_URL}?action=get_product_details&sku=${encodeURIComponent(sku)}&t=${Date.now()}`);
+        const data = await response.json();
+        
+        if (data.success && data.product && data.product.category) {
+            const category = data.product.category;
+            sessionStorage.setItem(cacheKey, category);
+            return category;
+        }
+    } catch (error) {
+        console.error('Errore recupero categoria per SKU:', sku, error);
+    }
+    
+    return null;
+}
