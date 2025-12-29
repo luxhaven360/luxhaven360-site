@@ -137,88 +137,64 @@
     <script>
         const WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbwr79RkXIEocpuOKaM6uMJqE6VFs9wjlUPvrr__FvDbDDrD2ELB1NbfrWP3BCYpHj2u/exec';
 
-    window.onload = async function() {
-    const isTrackingPage = window.location.pathname.includes('tracking-order');
-    if (isTrackingPage) {
+    window.onload = function() {
         const introLoader = document.getElementById('intro-loader');
-        if (introLoader) introLoader.style.display = 'none';
-        document.body.style.overflow = '';
-        return;
-    }
-    
-    const introLoader = document.getElementById('intro-loader');
-    const progressBar = document.querySelector('.intro-progress-fill');
-    
-    document.body.style.overflow = 'hidden';
+        const progressBar = document.querySelector('.intro-progress-fill');
+        
+        // Blocca lo scroll
+        document.body.style.overflow = 'hidden';
 
-    // ✅ Barra riflette il caricamento REALE
-    let productsLoaded = false;
-    let categoriesLoaded = false;
-    
-    function updateProgress() {
+        // --- Animazione Caricamento ---
+        // La barra avanza velocemente fino al 70% per dare feedback, poi aspetta i dati
         let progress = 0;
-        if (productsLoaded) progress += 70;
-        if (categoriesLoaded) progress += 30;
-        
-        if (progressBar) {
-            progressBar.style.width = `${progress}%`;
-        }
-        
-        // ✅ Nascondi IMMEDIATAMENTE quando tutto è caricato
-        if (progress >= 100) {
+        const fakeLoaderInterval = setInterval(() => {
+            if (progress < 70) {
+                progress += (Math.random() * 8); // Avanza randomicamente
+                if (progress > 70) progress = 70;
+                if (progressBar) progressBar.style.width = `${progress}%`;
+            }
+        }, 80);
+
+        // --- Caricamento Dati ---
+        const dataPromise = typeof initDynamicProducts === 'function' 
+            ? initDynamicProducts() 
+            : Promise.resolve();
+
+        // NESSUN ritardo artificiale (rimossa la minTimePromise)
+        dataPromise.then(() => {
+            clearInterval(fakeLoaderInterval);
+            
+            // 1. Completa la barra immediatamente
+            if (progressBar) {
+                progressBar.style.transition = 'width 0.3s ease-out';
+                progressBar.style.width = '100%';
+            }
+
+            // 2. Nascondi il loader appena l'occhio percepisce il 100% (200ms)
             setTimeout(() => {
                 if (introLoader) {
-                    introLoader.style.transition = 'opacity 0.3s ease';
-                    introLoader.style.opacity = '0';
-                    document.body.style.overflow = '';
+                    introLoader.style.opacity = '0'; // Usa opacity per il fade se supportato dal CSS
+                    introLoader.classList.add('fade-out'); // Tua classe CSS per il fade
+                    document.body.style.overflow = ''; // Sblocca scroll
                     
+                    // Rimozione fisica dal DOM
                     setTimeout(() => { 
                         introLoader.style.display = 'none'; 
-                    }, 300);
+                    }, 400); 
                 }
-            }, 100); // ✅ Solo 100ms di attesa percettiva
-        }
-    }
+            }, 200);
+        });
 
-    try {
-        // Carica in parallelo
-        const [productsResult, categoriesResult] = await Promise.all([
-            (async () => {
-                if (typeof initDynamicProducts === 'function') {
-                    await initDynamicProducts();
-                }
-                productsLoaded = true;
-                updateProgress();
-            })(),
-            (async () => {
-                if (typeof loadShopCategories === 'function') {
-                    await loadShopCategories();
-                }
-                categoriesLoaded = true;
-                updateProgress();
-            })()
-        ]);
-        
-    } catch (error) {
-        console.error('Errore caricamento:', error);
-        
-        // Anche in caso di errore, nascondi loader dopo max 2s
-        setTimeout(() => {
-            if (introLoader) {
-                introLoader.style.opacity = '0';
-                document.body.style.overflow = '';
-                setTimeout(() => introLoader.style.display = 'none', 300);
-            }
-        }, 2000);
-    }
+        // PRE-CARICA CATEGORIE SHOP
+        loadShopCategories();
 
-    // Gestione Hash e Icone (invariato)
-    const hash = window.location.hash.substring(1);
-    if (hash && typeof showSection === 'function') showSection(hash);
-    
-    updateCartIcon();
-    updateTrackingIcon();
-};
+        // Gestione Hash e Icone
+        const hash = window.location.hash.substring(1);
+        if (hash && typeof showSection === 'function') showSection(hash);
+        
+        updateCartIcon();
+        updateTrackingIcon();
+    };
 
         function updateCartIcon() {
             const cart = JSON.parse(localStorage.getItem('lh360_cart')) || [];
@@ -474,9 +450,3 @@
     </script>
 </body>
 </html>
-
-
-
-
-
-
