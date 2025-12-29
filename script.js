@@ -478,7 +478,7 @@ function renderCategoryFilter(categories) {
 /**
  * Filtra i prodotti dello shop per categoria
  */
-function filterShopByCategory(categoryName, pillElement) {
+async function filterShopByCategory(categoryName, pillElement) {
     const shopGrid = document.getElementById('shopGrid');
     if (!shopGrid) return;
     
@@ -493,57 +493,67 @@ function filterShopByCategory(categoryName, pillElement) {
     const resetBtn = document.getElementById('filterResetBtn');
     if (resetBtn) resetBtn.style.display = 'inline-flex';
     
-    // ✅ MODIFICA CHIAVE: Nascondi SUBITO tutte le cards
+    // ✅ MODIFICA: Nascondi subito il messaggio vuoto se esiste
+    const emptyMsg = shopGrid.querySelector('.filter-empty-message');
+    if (emptyMsg) emptyMsg.style.display = 'none';
+    
     const cards = shopGrid.querySelectorAll('.card');
+    
+    // ✅ MODIFICA: Nascondi TUTTE le card immediatamente
     cards.forEach(card => {
-        card.style.display = 'none'; // Nascondi immediatamente
+        card.style.display = 'none';
     });
     
-    // ✅ POI verifica quali mostrare (async)
-    cards.forEach(card => {
+    // ✅ MODIFICA: Crea array di promesse per controllare TUTTE le categorie
+    const checkPromises = Array.from(cards).map(async (card) => {
         const btn = card.querySelector('button[data-sku]');
-        if (!btn) return;
+        if (!btn) return { card, match: false };
         
         const sku = btn.dataset.sku || '';
+        const prodCategory = await checkProductCategory(sku);
         
-        checkProductCategory(sku).then(prodCategory => {
-            if (prodCategory === categoryName) {
-                card.style.display = 'block';
-                card.style.animation = 'fadeIn 0.5s ease';
-            }
-        });
+        return { card, match: prodCategory === categoryName };
     });
-
-    // ✅ NUOVO: Gestisci caso "nessun prodotto trovato"
-    setTimeout(() => {
-        const visibleCards = Array.from(cards).filter(c => c.style.display === 'block');
-        
-        if (visibleCards.length === 0) {
-            // Mostra messaggio "nessun prodotto"
-            let emptyMsg = shopGrid.querySelector('.filter-empty-message');
-            if (!emptyMsg) {
-                emptyMsg = document.createElement('div');
-                emptyMsg.className = 'filter-empty-message';
-                emptyMsg.style.cssText = `
-                    grid-column: 1 / -1;
-                    text-align: center;
-                    padding: 4rem 2rem;
-                    color: #a1a1aa;
-                    font-size: 1.1rem;
-                `;
-                emptyMsg.innerHTML = `
-                    <div style="font-size: 3rem; margin-bottom: 1rem; opacity: 0.3;">📦</div>
-                    <div>Nessun prodotto trovato in "${categoryName}"</div>
-                `;
-                shopGrid.appendChild(emptyMsg);
-            }
-            emptyMsg.style.display = 'block';
-        } else {
-            // Rimuovi messaggio se presente
-            const emptyMsg = shopGrid.querySelector('.filter-empty-message');
-            if (emptyMsg) emptyMsg.style.display = 'none';
+    
+    // ✅ MODIFICA: Aspetta che TUTTE le verifiche siano completate
+    const results = await Promise.all(checkPromises);
+    
+    // ✅ MODIFICA: Mostra solo le card che matchano
+    let visibleCount = 0;
+    results.forEach(({ card, match }) => {
+        if (match) {
+            card.style.display = 'block';
+            card.style.animation = 'fadeIn 0.5s ease';
+            visibleCount++;
         }
-    }, 500); // Aspetta che le chiamate async si completino
+    });
+    
+    // ✅ MODIFICA: Gestisci messaggio vuoto SOLO dopo aver processato tutto
+    if (visibleCount === 0) {
+        let emptyMessage = shopGrid.querySelector('.filter-empty-message');
+        if (!emptyMessage) {
+            emptyMessage = document.createElement('div');
+            emptyMessage.className = 'filter-empty-message';
+            emptyMessage.style.cssText = `
+                grid-column: 1 / -1;
+                text-align: center;
+                padding: 4rem 2rem;
+                color: #a1a1aa;
+                font-size: 1.1rem;
+            `;
+            emptyMessage.innerHTML = `
+                <div style="font-size: 3rem; margin-bottom: 1rem; opacity: 0.3;">📦</div>
+                <div>Nessun prodotto trovato in "${categoryName}"</div>
+            `;
+            shopGrid.appendChild(emptyMessage);
+        } else {
+            emptyMessage.innerHTML = `
+                <div style="font-size: 3rem; margin-bottom: 1rem; opacity: 0.3;">📦</div>
+                <div>Nessun prodotto trovato in "${categoryName}"</div>
+            `;
+        }
+        emptyMessage.style.display = 'block';
+    }
     
     // Scroll smooth al grid
     shopGrid.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -599,4 +609,5 @@ async function checkProductCategory(sku) {
     
     return null;
 }
+
 
