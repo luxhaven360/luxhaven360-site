@@ -493,25 +493,57 @@ function filterShopByCategory(categoryName, pillElement) {
     const resetBtn = document.getElementById('filterResetBtn');
     if (resetBtn) resetBtn.style.display = 'inline-flex';
     
-    // Filtra cards
+    // ✅ MODIFICA CHIAVE: Nascondi SUBITO tutte le cards
     const cards = shopGrid.querySelectorAll('.card');
+    cards.forEach(card => {
+        card.style.display = 'none'; // Nascondi immediatamente
+    });
+    
+    // ✅ POI verifica quali mostrare (async)
     cards.forEach(card => {
         const btn = card.querySelector('button[data-sku]');
         if (!btn) return;
         
         const sku = btn.dataset.sku || '';
-        const skuPrefix = sku.split('-')[0];
         
-        // Verifica se il prodotto appartiene alla categoria (usa cache o richiedi)
         checkProductCategory(sku).then(prodCategory => {
             if (prodCategory === categoryName) {
                 card.style.display = 'block';
                 card.style.animation = 'fadeIn 0.5s ease';
-            } else {
-                card.style.display = 'none';
             }
         });
     });
+
+    // ✅ NUOVO: Gestisci caso "nessun prodotto trovato"
+    setTimeout(() => {
+        const visibleCards = Array.from(cards).filter(c => c.style.display === 'block');
+        
+        if (visibleCards.length === 0) {
+            // Mostra messaggio "nessun prodotto"
+            let emptyMsg = shopGrid.querySelector('.filter-empty-message');
+            if (!emptyMsg) {
+                emptyMsg = document.createElement('div');
+                emptyMsg.className = 'filter-empty-message';
+                emptyMsg.style.cssText = `
+                    grid-column: 1 / -1;
+                    text-align: center;
+                    padding: 4rem 2rem;
+                    color: #a1a1aa;
+                    font-size: 1.1rem;
+                `;
+                emptyMsg.innerHTML = `
+                    <div style="font-size: 3rem; margin-bottom: 1rem; opacity: 0.3;">📦</div>
+                    <div>Nessun prodotto trovato in "${categoryName}"</div>
+                `;
+                shopGrid.appendChild(emptyMsg);
+            }
+            emptyMsg.style.display = 'block';
+        } else {
+            // Rimuovi messaggio se presente
+            const emptyMsg = shopGrid.querySelector('.filter-empty-message');
+            if (emptyMsg) emptyMsg.style.display = 'none';
+        }
+    }, 500); // Aspetta che le chiamate async si completino
     
     // Scroll smooth al grid
     shopGrid.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -523,14 +555,11 @@ function filterShopByCategory(categoryName, pillElement) {
 function resetCategoryFilter() {
     currentShopCategory = null;
     
-    // Rimuovi active da pills
     document.querySelectorAll('.category-pill').forEach(p => p.classList.remove('active'));
     
-    // Nascondi pulsante reset
     const resetBtn = document.getElementById('filterResetBtn');
     if (resetBtn) resetBtn.style.display = 'none';
     
-    // Mostra tutte le cards
     const shopGrid = document.getElementById('shopGrid');
     if (shopGrid) {
         const cards = shopGrid.querySelectorAll('.card');
@@ -538,6 +567,10 @@ function resetCategoryFilter() {
             card.style.display = 'block';
             card.style.animation = 'fadeIn 0.5s ease';
         });
+        
+        // ✅ AGGIUNGI: Nascondi messaggio vuoto
+        const emptyMsg = shopGrid.querySelector('.filter-empty-message');
+        if (emptyMsg) emptyMsg.style.display = 'none';
     }
 }
 
@@ -566,3 +599,4 @@ async function checkProductCategory(sku) {
     
     return null;
 }
+
