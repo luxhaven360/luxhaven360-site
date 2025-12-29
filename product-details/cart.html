@@ -905,81 +905,112 @@ if (item.color || item.size) {
     // ⭐ FIX PROBLEMA 2: Rimozione immediata senza setTimeout
     function removeItem(index) {
     const itemElement = document.querySelector(`[data-id="${index}"]`);
+    
+    // Rimuovi immediatamente dal carrello
+    cart.splice(index, 1);
+    localStorage.setItem('lh360_cart', JSON.stringify(cart));
+    
+    // ✅ Rimuovi coupon se carrello vuoto
+    if (cart.length === 0) {
+        appliedCoupon = null;
+        saveCouponToStorage(null);
+    }
+    
+    // Animazione di uscita (opzionale, può essere rimossa per velocità)
     if (itemElement) {
-        itemElement.style.transition = 'opacity 0.2s, transform 0.2s';
+        itemElement.style.transition = 'opacity 0.15s, transform 0.15s';
         itemElement.style.opacity = '0';
         itemElement.style.transform = 'translateX(-1rem)';
-        
-        cart.splice(index, 1);
-        localStorage.setItem('lh360_cart', JSON.stringify(cart));
-        
-        // ✅ AGGIUNGI: Rimuovi coupon se carrello vuoto
-        if (cart.length === 0) {
-            appliedCoupon = null;
-            saveCouponToStorage(null);
-        }
-        
-        setTimeout(() => renderCart(), 200);
     }
+    
+    // ✅ MODIFICA: Aggiorna IMMEDIATAMENTE senza setTimeout
+    setTimeout(() => {
+        renderCart();
+    }, 150); // Tempo minimo per completare animazione
 }
 
     // ⭐ FIX PROBLEMA 1: updateSummary con calcolo corretto
     async function updateSummary() {
-        let subtotal = 0;
-        let itemCount = 0;
-        
-        cart.forEach(item => {
-            const finalPrice = (item.discountPrice && item.discountPrice < item.price) ? item.discountPrice : item.price;
-            subtotal += finalPrice * (item.qty || 1);
-            itemCount += (item.qty || 1);
-        });
+    let subtotal = 0;
+    let itemCount = 0;
+    
+    cart.forEach(item => {
+        const finalPrice = (item.discountPrice && item.discountPrice < item.price) ? item.discountPrice : item.price;
+        subtotal += finalPrice * (item.qty || 1);
+        itemCount += (item.qty || 1);
+    });
 
-        // Verifica sconti combo (backend corretto ritorna lo sconto, non il prezzo finale)
-        let discount = 0;
-        let isComboDiscount = false;
+    // ✅ MODIFICA: Calcolo combo discount in parallelo (non blocca UI)
+    let discount = 0;
+    let isComboDiscount = false;
 
+    const comboPromise = (async () => {
         try {
             const skuList = cart.map(item => item.sku).join(',');
             const response = await fetch(`${webAppUrl}?action=check_combo&skus=${encodeURIComponent(skuList)}&t=${Date.now()}`);
             const result = await response.json();
 
             if (result.success && result.comboDiscount > 0) {
-                discount = result.comboDiscount; // ⭐ Ora questo è lo sconto corretto
-                isComboDiscount = true;
+                return { discount: result.comboDiscount, isCombo: true };
             }
         } catch (error) {
             console.error('Errore verifica combo:', error);
         }
+        return { discount: 0, isCombo: false };
+    })();
 
-        // Calcola spedizione DOPO aver applicato gli sconti
-        const totalAfterDiscounts = subtotal - discount;
-        const shipping = totalAfterDiscounts >= 150 ? 0 : 15;
-        const total = subtotal + shipping - discount;
-
-        // Aggiorna UI
-        document.getElementById('subtotal').textContent = `€ ${subtotal.toFixed(2).replace('.', ',')}`;
-        document.getElementById('shipping').textContent = shipping === 0 ? 'Gratuita' : `€ ${shipping.toFixed(2).replace('.', ',')}`;
-        
-        const discountEl = document.getElementById('discount');
-        const discountRow = document.getElementById('discountRow');
-        const comboBadge = document.getElementById('comboBadge');
-
-        if (discount > 0) {
-            discountEl.textContent = `- € ${discount.toFixed(2).replace('.', ',')}`;
-            discountRow.classList.add('discount-active');
-            if (isComboDiscount && comboBadge) comboBadge.style.display = 'inline-block';
-        } else {
-            discountEl.textContent = '- € 0,00';
-            discountRow.classList.remove('discount-active');
-            if (comboBadge) comboBadge.style.display = 'none';
-        }
-
-        document.getElementById('total').textContent = `€ ${total.toFixed(2).replace('.', ',')}`;
-        document.getElementById('itemCount').textContent = `${itemCount} Articoli`;
-
-        const progress = Math.min(100, (totalAfterDiscounts / 150) * 100);
-        document.getElementById('progressFill').style.width = `${progress}%`;
+    // ✅ MODIFICA: Applica coupon immediatamente (calcolo sincrono)
+    let couponDiscount = 0;
+    if (appliedCoupon) {
+        couponDiscount = (subtotal * appliedCoupon.discountPercent) / 100;
     }
+
+    // ✅ MODIFICA: Aggiorna UI SUBITO con i valori attuali (senza aspettare combo)
+    const tempDiscount = couponDiscount; // Usa solo coupon per ora
+    const tempTotalAfterDiscounts = subtotal - tempDiscount;
+    const tempShipping = tempTotalAfterDiscounts >= 150 ? 0 : 15;
+    const tempTotal = subtotal + tempShipping - tempDiscount;
+
+    // Aggiorna immediatamente l'UI
+    document.getElementById('subtotal').textContent = `€ ${subtotal.toFixed(2).replace('.', ',')}`;
+    document.getElementById('shipping').textContent = tempShipping === 0 ? 'Gratuita' : `€ ${tempShipping.toFixed(2).replace('.', ',')}`;
+    document.getElementById('total').textContent = `€ ${tempTotal.toFixed(2).replace('.', ',')}`;
+    document.getElementById('itemCount').textContent = `${itemCount} Articoli`;
+    
+    const tempProgress = Math.min(100, (tempTotalAfterDiscounts / 150) * 100);
+    document.getElementById('progressFill').style.width = `${tempProgress}%`;
+
+    // ✅ Poi aspetta il combo e aggiorna se necessario
+    const comboResult = await comboPromise;
+    discount = tempDiscount + comboResult.discount;
+    isComboDiscount = comboResult.isCombo;
+
+    // Ricalcola con combo incluso
+    const totalAfterDiscounts = subtotal - discount;
+    const shipping = totalAfterDiscounts >= 150 ? 0 : 15;
+    const total = subtotal + shipping - discount;
+
+    // Aggiorna UI finale
+    document.getElementById('shipping').textContent = shipping === 0 ? 'Gratuita' : `€ ${shipping.toFixed(2).replace('.', ',')}`;
+    document.getElementById('total').textContent = `€ ${total.toFixed(2).replace('.', ',')}`;
+    
+    const discountEl = document.getElementById('discount');
+    const discountRow = document.getElementById('discountRow');
+    const comboBadge = document.getElementById('comboBadge');
+
+    if (discount > 0) {
+        discountEl.textContent = `- € ${discount.toFixed(2).replace('.', ',')}`;
+        discountRow.classList.add('discount-active');
+        if (isComboDiscount && comboBadge) comboBadge.style.display = 'inline-block';
+    } else {
+        discountEl.textContent = '- € 0,00';
+        discountRow.classList.remove('discount-active');
+        if (comboBadge) comboBadge.style.display = 'none';
+    }
+
+    const progress = Math.min(100, (totalAfterDiscounts / 150) * 100);
+    document.getElementById('progressFill').style.width = `${progress}%`;
+}
 
     function checkEmptyCart() {
         document.querySelector('.cart-layout').style.gridTemplateColumns = '1fr';
@@ -1364,6 +1395,7 @@ window.addEventListener('pageshow', function(event) {
 </script>
 </body>
 </html>
+
 
 
 
