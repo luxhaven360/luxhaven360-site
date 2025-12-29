@@ -81,15 +81,8 @@ function formatPrice(p, currency = 'EUR') {
     }
 }
 
-// ✅ CACHE GLOBALE PER CATEGORIE PRODOTTI
-const productCategoryCache = new Map();
-
+// funzione per creare una card prodotto
 function createProductCard(prod, defaultCta) {
-    // ✅ SALVA CATEGORIA IN CACHE DURANTE LA CREAZIONE
-    if (prod.sku && prod.category) {
-        productCategoryCache.set(prod.sku, prod.category);
-    }
-    
     // container
     const card = el('div', { class: 'card' });
 
@@ -500,42 +493,25 @@ function filterShopByCategory(categoryName, pillElement) {
     const resetBtn = document.getElementById('filterResetBtn');
     if (resetBtn) resetBtn.style.display = 'inline-flex';
     
-    // ✅ FILTRAGGIO IMMEDIATO E SINCRONO (USA CACHE)
+    // Filtra cards
     const cards = shopGrid.querySelectorAll('.card');
-    let visibleCount = 0;
-    
     cards.forEach(card => {
         const btn = card.querySelector('button[data-sku]');
         if (!btn) return;
         
         const sku = btn.dataset.sku || '';
+        const skuPrefix = sku.split('-')[0];
         
-        // ✅ RECUPERA CATEGORIA DALLA CACHE (SINCRONO)
-        const prodCategory = productCategoryCache.get(sku);
-        
-        if (prodCategory === categoryName) {
-            card.style.display = 'block';
-            card.style.animation = 'fadeIn 0.5s ease';
-            visibleCount++;
-        } else {
-            card.style.display = 'none';
-        }
+        // Verifica se il prodotto appartiene alla categoria (usa cache o richiedi)
+        checkProductCategory(sku).then(prodCategory => {
+            if (prodCategory === categoryName) {
+                card.style.display = 'block';
+                card.style.animation = 'fadeIn 0.5s ease';
+            } else {
+                card.style.display = 'none';
+            }
+        });
     });
-    
-    // ✅ GESTIONE CATEGORIA VUOTA
-    let emptyMessage = shopGrid.querySelector('.empty-category-message');
-    if (visibleCount === 0) {
-        if (!emptyMessage) {
-            emptyMessage = document.createElement('div');
-            emptyMessage.className = 'empty-category-message';
-            emptyMessage.style.cssText = 'grid-column: 1/-1; text-align: center; padding: 3rem; color: #a1a1aa;';
-            emptyMessage.textContent = `Nessun prodotto in "${categoryName}"`;
-            shopGrid.appendChild(emptyMessage);
-        }
-        emptyMessage.style.display = 'block';
-    } else if (emptyMessage) {
-        emptyMessage.style.display = 'none';
-    }
     
     // Scroll smooth al grid
     shopGrid.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -565,7 +541,29 @@ function resetCategoryFilter() {
     }
 }
 
-// ✅ VERSIONE SINCRONA - USA SOLO LA CACHE
-function getProductCategory(sku) {
-    return productCategoryCache.get(sku) || null;
+/**
+ * Verifica la categoria di un prodotto tramite SKU
+ * (usa cache localStorage per evitare troppe chiamate)
+ */
+async function checkProductCategory(sku) {
+    // Cache semplice
+    const cacheKey = `cat_${sku}`;
+    const cached = sessionStorage.getItem(cacheKey);
+    if (cached) return cached;
+    
+    try {
+        const response = await fetch(`${WEB_APP_URL}?action=get_product_details&sku=${encodeURIComponent(sku)}&t=${Date.now()}`);
+        const data = await response.json();
+        
+        if (data.success && data.product && data.product.category) {
+            const category = data.product.category;
+            sessionStorage.setItem(cacheKey, category);
+            return category;
+        }
+    } catch (error) {
+        console.error('Errore recupero categoria per SKU:', sku, error);
+    }
+    
+    return null;
 }
+
