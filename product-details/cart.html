@@ -868,28 +868,33 @@ async function restoreAppliedCoupon() {
 
   try {
     const couponData = JSON.parse(savedCoupon);
-    const { code, discountPercent, appliedAt } = couponData;
+    const { code, discountPercent } = couponData;
 
     if (!code || !discountPercent) {
       localStorage.removeItem('lh360_applied_coupon');
       return;
     }
 
-    // ✅ Ri-valida il coupon con il backend
+    // ✅ Ri-valida con backend (ora include check "Utilizzato?")
     const response = await fetch(`${webAppUrl}?action=validate_coupon&code=${encodeURIComponent(code)}&t=${Date.now()}`);
     const result = await response.json();
 
     if (result.success && result.valid) {
-      // ✅ Coupon ancora valido, ripristina
       appliedCoupon = couponData;
       document.getElementById('couponInput').value = code;
+      
+      // ✅ MESSAGGIO MIGLIORATO
       showCouponMessage(`✓ Coupon "${code}" ripristinato (${discountPercent}% di sconto)`, 'success');
       await updateSummaryWithCoupon();
     } else {
-      // ✅ Coupon scaduto o non più valido
+      // ✅ Distingui tra scaduto e utilizzato
+      const errorMsg = (result.error && result.error.includes('utilizzato')) 
+        ? `Il coupon "${code}" è stato utilizzato in un ordine completato` 
+        : `Il coupon "${code}" è scaduto o non è più valido`;
+      
       localStorage.removeItem('lh360_applied_coupon');
       appliedCoupon = null;
-      showCouponMessage(`Il coupon "${code}" è scaduto o non è più valido`, 'error');
+      showCouponMessage(errorMsg, 'error');
       await updateSummaryWithCoupon();
     }
   } catch (error) {
@@ -1265,10 +1270,13 @@ localStorage.setItem('lh360_applied_discounts', JSON.stringify({
            image: item.image || ''
          };
     }),
-        shipping: shipping,
-        is_buy_now: false,
-        cancel_url: window.location.href
-    };
+            shipping: shipping,
+            is_buy_now: false,
+            cancel_url: window.location.href,
+            checkout_metadata: {  // ✅ AGGIUNGI QUESTO BLOCCO
+              used_coupon: appliedCoupon ? appliedCoupon.code : ''
+            }
+     };
 
     try {
         const dataStr = encodeURIComponent(JSON.stringify(data));
@@ -1282,9 +1290,12 @@ localStorage.setItem('lh360_applied_discounts', JSON.stringify({
         const result = JSON.parse(jsonString);
         if (result.error) throw new Error(result.error);
 else if (result.url) { 
-  // ✅ PULISCI COUPON APPLICATO (ORDINE COMPLETATO)
-  localStorage.removeItem('lh360_applied_coupon');
+  // ✅ AGGIUNGI QUESTE RIGHE PRIMA DEL REDIRECT
+  if (appliedCoupon) {
+    markCouponAsUsed(appliedCoupon.code);
+  }
   
+  localStorage.removeItem('lh360_applied_coupon');
   btn.innerText = 'Reindirizzamento...'; 
   window.location.assign(result.url); 
 }
@@ -1307,8 +1318,22 @@ else if (result.url) {
   const messageEl = document.getElementById('couponMessage');
   const btn = this;
 
-  if (!couponCode) { showCouponMessage('Inserisci un codice promozionale', 'error'); return; }
-  if (hasCouponBeenUsed(couponCode)) { showCouponMessage('Hai già utilizzato questo coupon in precedenza', 'error'); return; }
+  if (!couponCode) { 
+    showCouponMessage('Inserisci un codice promozionale', 'error'); 
+    return; 
+  }
+
+  // ✅ NUOVO: Check se coupon già applicato
+  if (appliedCoupon && appliedCoupon.code === couponCode) {
+    showCouponMessage(`✓ Questo coupon è già stato applicato`, 'success');
+    setTimeout(() => {
+      showCouponMessage(`✓ Coupon ripristinato (${appliedCoupon.discountPercent}% di sconto)`, 'success');
+    }, 3000);
+    return;
+  }
+  
+  // ✅ RIMOSSO: controllo locale hasCouponBeenUsed()
+  // Ora il controllo è fatto dal backend
   
   // ✅ Rimuovi coupon precedente se presente
   if (appliedCoupon) {
@@ -1336,7 +1361,7 @@ else if (result.url) {
       };
       
       localStorage.setItem('lh360_applied_coupon', JSON.stringify(appliedCoupon));
-      markCouponAsUsed(couponCode);
+      // ✅ NON marcare come usato qui, solo quando checkout completato
 
       // ✅ Mostra indicatore prima del calcolo
       showDiscountCalculating();
@@ -1452,6 +1477,7 @@ window.addEventListener('pageshow', function(event) {
 </script>
 </body>
 </html>
+
 
 
 
