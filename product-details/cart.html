@@ -899,22 +899,18 @@ if (item.color || item.size) {
             });
         }
         updateSummaryImmediate(); // ✅ Update immediato UI
-        updateSummary();          // Update async con verifica combo
     }
 
-   /**
- * ✅ Ripristina coupon salvato e forza ricalcolo sconti
+    /**
+ * ✅ Ripristina coupon salvato (OTTIMIZZATO - evita calcoli multipli)
  */
 async function restoreAppliedCoupon() {
   const savedCoupon = localStorage.getItem('lh360_applied_coupon');
-  console.log('🔍 restoreAppliedCoupon - savedCoupon:', savedCoupon); // ⭐ DEBUG
   
-  if (!savedCoupon) return;
+  if (!savedCoupon) return; // ⭐ Se non c'è coupon, esci subito
 
   try {
     const couponData = JSON.parse(savedCoupon);
-    console.log('🔍 Coupon data:', couponData); // ⭐ DEBUG
-    
     const { code, discountPercent } = couponData;
 
     if (!code || !discountPercent) {
@@ -922,34 +918,32 @@ async function restoreAppliedCoupon() {
       return;
     }
 
+    // ✅ Valida coupon con backend
     const response = await fetch(`${webAppUrl}?action=validate_coupon&code=${encodeURIComponent(code)}&t=${Date.now()}`);
     const result = await response.json();
-    console.log('🔍 Validazione risultato:', result); // ⭐ DEBUG
 
     if (result.success && result.valid) {
+      // ✅ Ripristina coupon PRIMA di chiamare updateSummary
       appliedCoupon = { 
         code: code, 
         discountPercent: discountPercent,
         appliedAt: Date.now()
       };
       
-      console.log('✅ Coupon ripristinato:', appliedCoupon); // ⭐ DEBUG
-      
       document.getElementById('couponInput').value = code;
       
-      showDiscountCalculating();
+      // ✅ SINGOLA chiamata diretta a updateSummaryWithCoupon
+      // (updateSummaryImmediate è già stato chiamato da renderCart)
       await updateSummaryWithCoupon();
       
-      console.log('✅ Mostrando messaggio ripristino'); // ⭐ DEBUG
-      
+      // ✅ Mostra messaggio ripristino
       showCouponMessage(
         `Coupon "${code}" ripristinato con successo · Sconto attivo: ${discountPercent}%`, 
         'success'
       );
       
     } else {
-      console.log('❌ Coupon non valido:', result.error); // ⭐ DEBUG
-      
+      // ❌ Coupon non valido/utilizzato
       localStorage.removeItem('lh360_applied_coupon');
       appliedCoupon = null;
       
@@ -958,11 +952,14 @@ async function restoreAppliedCoupon() {
         : `Il coupon "${code}" non è più valido o è scaduto`;
       
       showCouponMessage(errorMsg, 'error');
-      await updateSummaryWithCoupon();
+      
+      // Ricalcola senza coupon
+      await updateSummary();
     }
   } catch (error) {
-    console.error('❌ Errore recupero coupon:', error); // ⭐ DEBUG
+    console.error('❌ Errore recupero coupon:', error);
     localStorage.removeItem('lh360_applied_coupon');
+    appliedCoupon = null;
   }
 }
 
@@ -1140,14 +1137,27 @@ function showDiscountValue(totalDiscount, isCombo = false) {
         document.querySelector('.cart-summary').style.display = 'none';
     }
 
-    // ✅ Funzione async per gestire caricamento completo
+    /**
+ * ✅ Inizializza carrello con sequenza ottimizzata
+ * Evita calcoli multipli durante il ripristino coupon
+ */
 async function initializeCart() {
-  renderCart(); // Rendering iniziale
-  await restoreAppliedCoupon(); // ⭐ ATTENDI ripristino coupon
-  loadRecommendedProducts(); // Carica prodotti consigliati
+  // 1. Rendering DOM
+  renderCart(); 
+  
+  // 2. Ripristina coupon (se presente) e calcola sconti
+  await restoreAppliedCoupon();
+  
+  // 3. Se NON c'era coupon da ripristinare, calcola normalmente
+  if (!appliedCoupon) {
+    await updateSummary();
+  }
+  
+  // 4. Carica prodotti consigliati
+  loadRecommendedProducts();
 }
 
-// ✅ Chiama inizializzazione
+// ✅ Avvia inizializzazione
 initializeCart();
 
 /**
@@ -1381,8 +1391,15 @@ else if (result.url) {
     const checkoutBtn = document.getElementById('checkoutBtn');
     if (checkoutBtn) checkoutBtn.onclick = initiateCheckout;
 
-    /* --- GESTIONE COUPON (invariata) --- */
-    document.getElementById('applyCouponBtn').addEventListener('click', async function() {
+   // ✅ Converti automaticamente input coupon in maiuscolo
+document.getElementById('couponInput').addEventListener('input', function(e) {
+  const cursorPosition = e.target.selectionStart; // Salva posizione cursore
+  e.target.value = e.target.value.toUpperCase();
+  e.target.setSelectionRange(cursorPosition, cursorPosition); // Ripristina cursore
+});
+
+// Evento applicazione coupon
+document.getElementById('applyCouponBtn').addEventListener('click', async function() {
   const couponCode = document.getElementById('couponInput').value.trim().toUpperCase();
   const btn = this;
 
@@ -1519,10 +1536,7 @@ function showCouponMessage(message, type) {
     }, hideDelay);
 }
 
-    async function updateSummaryWithCoupon() {
-    // ✅ Mostra indicatore "Calcolo..." immediatamente
-    showDiscountCalculating();
-    
+    async function updateSummaryWithCoupon() {    
     let subtotal = 0;
     let itemCount = 0;
     
@@ -1601,6 +1615,7 @@ window.addEventListener('pageshow', function(event) {
 </script>
 </body>
 </html>
+
 
 
 
