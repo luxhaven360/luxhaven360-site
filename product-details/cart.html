@@ -285,6 +285,44 @@
             letter-spacing: 0.02em;
         }
 
+        /* Indicatore calcolo sconto premium */
+.discount-calculating {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    color: #D4AF37;
+    font-size: 0.875rem;
+    font-weight: 400;
+    letter-spacing: 0.05em;
+}
+
+.discount-calculating::before {
+    content: '';
+    width: 12px;
+    height: 12px;
+    border: 2px solid #D4AF37;
+    border-top-color: transparent;
+    border-radius: 50%;
+    animation: discountSpin 0.8s linear infinite;
+}
+
+@keyframes discountSpin {
+    to { transform: rotate(360deg); }
+}
+
+.discount-calculating-text {
+    background: linear-gradient(90deg, #D4AF37, #FFD700, #D4AF37);
+    background-size: 200% auto;
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    animation: discountShimmer 2s linear infinite;
+}
+
+@keyframes discountShimmer {
+    to { background-position: 200% center; }
+}
+
         .progress-section {
             margin-bottom: 1.5rem;
         }
@@ -921,19 +959,8 @@ async function updateSummary() {
         document.getElementById('subtotal').textContent = `€ ${subtotal.toFixed(2).replace('.', ',')}`;
         document.getElementById('shipping').textContent = shipping === 0 ? 'Gratuita' : `€ ${shipping.toFixed(2).replace('.', ',')}`;
         
-        const discountEl = document.getElementById('discount');
-        const discountRow = document.getElementById('discountRow');
-        const comboBadge = document.getElementById('comboBadge');
-
-        if (discount > 0) {
-            discountEl.textContent = `- € ${discount.toFixed(2).replace('.', ',')}`;
-            discountRow.classList.add('discount-active');
-            if (isComboDiscount && comboBadge) comboBadge.style.display = 'inline-block';
-        } else {
-            discountEl.textContent = '- € 0,00';
-            discountRow.classList.remove('discount-active');
-            if (comboBadge) comboBadge.style.display = 'none';
-        }
+        // ✅ Mostra valore finale (nasconde indicatore)
+        showDiscountValue(discount, isComboDiscount);
 
         document.getElementById('total').textContent = `€ ${total.toFixed(2).replace('.', ',')}`;
         document.getElementById('itemCount').textContent = `${itemCount} Articoli`;
@@ -944,7 +971,7 @@ async function updateSummary() {
 
     /**
  * ✅ AGGIORNAMENTO IMMEDIATO UI (senza chiamate async)
- * Calcola e mostra istantaneamente: subtotale, articoli, barra progresso, sconto
+ * Calcola e mostra istantaneamente: subtotale, articoli, barra progresso
  */
 function updateSummaryImmediate() {
     let subtotal = 0;
@@ -960,37 +987,63 @@ function updateSummaryImmediate() {
 
     const shipping = subtotal >= 150 ? 0 : 15;
     
-    // ✅ MANTIENI SOLO sconto coupon (il combo viene ricalcolato async)
-    let totalDiscount = 0;
+    // ✅ Calcola coupon discount (se presente)
+    let couponDiscount = 0;
     if (appliedCoupon) {
-        totalDiscount = (subtotal * appliedCoupon.discountPercent) / 100;
+        couponDiscount = (subtotal * appliedCoupon.discountPercent) / 100;
     }
     
-    const total = subtotal + shipping - totalDiscount;
+    const totalWithCoupon = subtotal + shipping - couponDiscount;
 
     // Aggiorna valori visualizzati
     document.getElementById('subtotal').textContent = `€ ${subtotal.toFixed(2).replace('.', ',')}`;
     document.getElementById('shipping').textContent = shipping === 0 ? 'Gratuita' : `€ ${shipping.toFixed(2).replace('.', ',')}`;
-    document.getElementById('total').textContent = `€ ${total.toFixed(2).replace('.', ',')}`;
+    document.getElementById('total').textContent = `€ ${totalWithCoupon.toFixed(2).replace('.', ',')}`;
     document.getElementById('itemCount').textContent = `${itemCount} Articoli`;
 
     // Aggiorna barra progresso
     const progress = Math.min(100, (subtotal / 150) * 100);
     document.getElementById('progressFill').style.width = `${progress}%`;
     
-    // ✅ AGGIORNA SCONTO IMMEDIATAMENTE
+    // ✅ NUOVO: Mostra indicatore "Calcolo..." perché combo è async
+    if (cart.length > 0) {
+        showDiscountCalculating();
+    } else {
+        showDiscountValue(0);
+    }
+}
+
+    /**
+ * ✅ Mostra indicatore "Calcolo..." per sconti in elaborazione
+ */
+function showDiscountCalculating() {
+    const discountEl = document.getElementById('discount');
+    const discountRow = document.getElementById('discountRow');
+    
+    discountEl.innerHTML = `
+        <span class="discount-calculating">
+            <span class="discount-calculating-text">Calcolo...</span>
+        </span>
+    `;
+    discountRow.classList.add('discount-active');
+}
+
+/**
+ * ✅ Mostra valore sconto finale (o nasconde se zero)
+ */
+function showDiscountValue(totalDiscount, isCombo = false) {
     const discountEl = document.getElementById('discount');
     const discountRow = document.getElementById('discountRow');
     const comboBadge = document.getElementById('comboBadge');
     
     if (totalDiscount > 0) {
-        discountEl.textContent = `- € ${totalDiscount.toFixed(2).replace('.', ',')}`;
+        discountEl.innerHTML = `- € ${totalDiscount.toFixed(2).replace('.', ',')}`;
         discountRow.classList.add('discount-active');
         
-        // ✅ NASCONDI badge COMBO (verrà ripristinato da updateSummary se valido)
-        if (comboBadge) comboBadge.style.display = 'none';
+        if (isCombo && comboBadge) {
+            comboBadge.style.display = 'inline-block';
+        }
     } else {
-        // ✅ AZZERA sconto se nessun coupon attivo
         discountEl.textContent = '- € 0,00';
         discountRow.classList.remove('discount-active');
         if (comboBadge) comboBadge.style.display = 'none';
@@ -1275,6 +1328,9 @@ else if (result.url) {
       
       localStorage.setItem('lh360_applied_coupon', JSON.stringify(appliedCoupon));
       markCouponAsUsed(couponCode);
+
+      // ✅ Mostra indicatore prima del calcolo
+      showDiscountCalculating();
       
       await updateSummaryWithCoupon();
       await new Promise(resolve => setTimeout(resolve, 300));
@@ -1306,57 +1362,61 @@ else if (result.url) {
     }
 
     async function updateSummaryWithCoupon() {
-        let subtotal = 0;
-        let itemCount = 0;
-        cart.forEach(item => {
-            const finalPrice = (item.discountPrice && item.discountPrice < item.price) ? item.discountPrice : item.price;
-            subtotal += finalPrice * (item.qty || 1);
-            itemCount += (item.qty || 1);
-        });
+    // ✅ Mostra indicatore "Calcolo..." immediatamente
+    showDiscountCalculating();
+    
+    let subtotal = 0;
+    let itemCount = 0;
+    
+    cart.forEach(item => {
+        const finalPrice = (item.discountPrice && item.discountPrice < item.price) 
+            ? item.discountPrice 
+            : item.price;
+        subtotal += finalPrice * (item.qty || 1);
+        itemCount += (item.qty || 1);
+    });
 
-        let discount = 0;
-        let isComboDiscount = false;
-        try {
-            const skuList = cart.map(item => item.sku).join(',');
-            const response = await fetch(`${webAppUrl}?action=check_combo&skus=${encodeURIComponent(skuList)}&t=${Date.now()}`);
-            const result = await response.json();
-            if (result.success && result.comboDiscount > 0) {
-                discount = result.comboDiscount;
-                isComboDiscount = true;
-            }
-        } catch (error) { console.error('Errore verifica combo:', error); }
-
-        if (appliedCoupon) {
-            const couponDiscount = (subtotal * appliedCoupon.discountPercent) / 100;
-            discount += couponDiscount;
-        }
-
-        const totalAfterDiscounts = subtotal - discount;
-        const shipping = totalAfterDiscounts >= 150 ? 0 : 15;
-        const total = subtotal + shipping - discount;
-
-        document.getElementById('subtotal').textContent = `€ ${subtotal.toFixed(2).replace('.', ',')}`;
-        document.getElementById('shipping').textContent = shipping === 0 ? 'Gratuita' : `€ ${shipping.toFixed(2).replace('.', ',')}`;
+    let discount = 0;
+    let isComboDiscount = false;
+    
+    // Verifica sconti combo dal backend
+    try {
+        const skuList = cart.map(item => item.sku).join(',');
+        const response = await fetch(`${webAppUrl}?action=check_combo&skus=${encodeURIComponent(skuList)}&t=${Date.now()}`);
+        const result = await response.json();
         
-        const discountEl = document.getElementById('discount');
-        const discountRow = document.getElementById('discountRow');
-        const comboBadge = document.getElementById('comboBadge');
-
-        if (discount > 0) {
-            discountEl.textContent = `- € ${discount.toFixed(2).replace('.', ',')}`;
-            discountRow.classList.add('discount-active');
-            if (isComboDiscount && comboBadge) comboBadge.style.display = 'inline-block';
-        } else {
-            discountEl.textContent = '- € 0,00';
-            discountRow.classList.remove('discount-active');
-            if (comboBadge) comboBadge.style.display = 'none';
+        if (result.success && result.comboDiscount > 0) {
+            discount = result.comboDiscount;
+            isComboDiscount = true;
         }
-
-        document.getElementById('total').textContent = `€ ${total.toFixed(2).replace('.', ',')}`;
-        document.getElementById('itemCount').textContent = `${itemCount} Articoli`;
-        const progress = Math.min(100, (totalAfterDiscounts / 150) * 100);
-        document.getElementById('progressFill').style.width = `${progress}%`;
+    } catch (error) { 
+        console.error('Errore verifica combo:', error); 
     }
+
+    // Aggiungi sconto coupon se presente
+    if (appliedCoupon) {
+        const couponDiscount = (subtotal * appliedCoupon.discountPercent) / 100;
+        discount += couponDiscount;
+    }
+
+    // Calcola totali finali
+    const totalAfterDiscounts = subtotal - discount;
+    const shipping = totalAfterDiscounts >= 150 ? 0 : 15;
+    const total = subtotal + shipping - discount;
+
+    // Aggiorna UI
+    document.getElementById('subtotal').textContent = `€ ${subtotal.toFixed(2).replace('.', ',')}`;
+    document.getElementById('shipping').textContent = shipping === 0 ? 'Gratuita' : `€ ${shipping.toFixed(2).replace('.', ',')}`;
+    document.getElementById('total').textContent = `€ ${total.toFixed(2).replace('.', ',')}`;
+    document.getElementById('itemCount').textContent = `${itemCount} Articoli`;
+    
+    // Aggiorna barra progresso
+    const progress = Math.min(100, (totalAfterDiscounts / 150) * 100);
+    document.getElementById('progressFill').style.width = `${progress}%`;
+    
+    // ✅ Mostra valore sconto finale (nasconde indicatore)
+    showDiscountValue(discount, isComboDiscount);
+}
 
     // ⭐ FIX PROBLEMA 3: Nascondi loader dopo 3 secondi (ridotto da 4)
     window.addEventListener('DOMContentLoaded', () => {
@@ -1383,6 +1443,7 @@ window.addEventListener('pageshow', function(event) {
 </script>
 </body>
 </html>
+
 
 
 
