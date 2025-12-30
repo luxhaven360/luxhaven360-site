@@ -217,65 +217,67 @@ if (hasDiscount) {
 
 /**
  * NUOVA FUNZIONE UNIFICATA (Fetch API)
- * Scarica i prodotti usando fetch() invece di <script>.
- * Risolve i blocchi "ERR_BLOCKED_BY_CLIENT" e i problemi di rete mobile.
+ * Scarica prodotti SHOP + BOOKABLE e li distribuisce nelle sezioni
  */
 async function initDynamicProducts(retryCount = 0) {
-    // 1. Imposta lo stato di caricamento su tutte le griglie (solo al primo tentativo)
+    // 1. Imposta loader su tutte le griglie
     const grids = {};
     SECTIONS.forEach(section => {
         const gridEl = document.getElementById(section.gridId);
         if (gridEl) {
             if (retryCount === 0) {
-                // Loader visivo
                 gridEl.innerHTML = '<div class="loading"><div class="lh-ring"></div><br>Caricamento prodotti...</div>';
             }
             grids[section.id] = gridEl;
         }
     });
 
-    // 2. Prepara l'URL
-    // NOTA: Rimuoviamo 'callback' per ricevere JSON puro, non JSONP.
-    // Aggiungiamo 'r' per evitare la cache del browser tra i tentativi.
-    const apiUrl = `${WEB_APP_URL}?action=get_products&category=all&t=${Date.now()}&r=${retryCount}`;
-
     try {
-        // --- CHIAMATA FETCH (Più robusta di script tag) ---
-        const response = await fetch(apiUrl, {
-            method: 'GET',
-            redirect: 'follow' // Segue automaticamente il redirect 302 di Google
-        });
+        // === 2. CHIAMATE PARALLELE (shop + bookable) ===
+        const shopPromise = fetch(`${WEB_APP_URL}?action=get_products&category=shop&t=${Date.now()}&r=${retryCount}`)
+            .then(res => res.json());
+        
+        const bookablePromise = fetch(`${WEB_APP_URL}?action=get_bookable_products&category=all&t=${Date.now()}&r=${retryCount}`)
+            .then(res => res.json());
 
-        if (!response.ok) {
-            throw new Error(`Errore HTTP: ${response.status}`);
-        }
+        const [shopData, bookableData] = await Promise.all([shopPromise, bookablePromise]);
 
-        const data = await response.json(); // Converte la risposta in JSON
+        // 3. Pulizia griglie
+        Object.values(grids).forEach(g => g.innerHTML = '');
 
-        // 3. Verifica successo logico
-        if (!data.success || !data.products) {
-            throw new Error(data.error || 'Dati non validi dal server');
-        }
-
-        // 4. Pulizia e Rendering
-        Object.values(grids).forEach(g => g.innerHTML = ''); // Rimuove loader
-
-        const allProducts = data.products || [];
         const countBySection = {};
 
-        // Distribuzione prodotti nelle sezioni
-        allProducts.forEach(prod => {
-            const targetSection = SECTIONS.find(s => s.id === prod.category);
-            
-            if (targetSection && grids[targetSection.id]) {
-                prod.sectionName = targetSection.id;
-                const card = createProductCard(prod, targetSection.defaultCta);
-                grids[targetSection.id].appendChild(card);
-                countBySection[targetSection.id] = (countBySection[targetSection.id] || 0) + 1;
-            }
-        });
+        // === 4a. RENDERING PRODOTTI SHOP ===
+        if (shopData.success && shopData.products) {
+            shopData.products.forEach(prod => {
+                if (prod.category === 'shop' && grids.shop) {
+                    prod.sectionName = 'shop';
+                    const card = createProductCard(prod, 'Acquista');
+                    grids.shop.appendChild(card);
+                    countBySection.shop = (countBySection.shop || 0) + 1;
+                }
+            });
+        }
 
-        // Gestione sezioni vuote
+        // === 4b. RENDERING PRODOTTI BOOKABLE (properties, supercars, stays) ===
+        if (bookableData.success && bookableData.products) {
+            bookableData.products.forEach(prod => {
+                const targetSection = SECTIONS.find(s => s.id === prod.category);
+                
+                if (targetSection && grids[targetSection.id]) {
+                    prod.sectionName = targetSection.id;
+                    
+                    // ✅ USA mainImage per card
+                    prod.icon = prod.mainImage || '📦';
+                    
+                    const card = createProductCard(prod, targetSection.defaultCta);
+                    grids[targetSection.id].appendChild(card);
+                    countBySection[targetSection.id] = (countBySection[targetSection.id] || 0) + 1;
+                }
+            });
+        }
+
+        // 5. Gestione sezioni vuote
         SECTIONS.forEach(section => {
             if (!countBySection[section.id] && grids[section.id]) {
                 grids[section.id].innerHTML = `<div class="empty" style="grid-column: 1/-1; text-align: center; padding: 3rem; opacity: 0.5;">Nessun prodotto disponibile al momento.</div>`;
@@ -285,15 +287,14 @@ async function initDynamicProducts(retryCount = 0) {
     } catch (error) {
         console.warn(`Tentativo ${retryCount + 1} fallito:`, error);
 
-        // --- LOGICA DI RETRY ---
+        // Logica di retry
         if (retryCount < 2) {
-            const delay = 1500 * (retryCount + 1); // Attesa incrementale
+            const delay = 1500 * (retryCount + 1);
             console.log(`Riprovo tra ${delay}ms...`);
             setTimeout(() => {
                 initDynamicProducts(retryCount + 1);
             }, delay);
         } else {
-            // Fallimento definitivo
             showErrorInAllGrids();
         }
     }
@@ -537,3 +538,4 @@ function resetCategoryFilter() {
         });
     }
 }
+
