@@ -1283,24 +1283,15 @@ if (singleNoYearMatch) {
 }
     
     // CASO 6: Singola data con anno (es: "2 gennaio 2025")
-const singleWithYearMatch = str.match(/^(\d+)\s+(gennaio|febbraio|marzo|aprile|maggio|giugno|luglio|agosto|settembre|ottobre|novembre|dicembre)\s+(\d{4})$/i);
-if (singleWithYearMatch) {
-    const day = parseInt(singleWithYearMatch[1]);
-    const monthName = singleWithYearMatch[2].toLowerCase();
-    let year = parseInt(singleWithYearMatch[3]);
-    
-    // ✅ CORREZIONE: Se la data specificata è nel passato, usa l'anno successivo
-    const monthIndex = MESI_IT[monthName];
-    const testDate = new Date(year, monthIndex, day);
-    
-    if (testDate < new Date()) {
-        year++;
+    const singleWithYearMatch = str.match(/^(\d+)\s+(gennaio|febbraio|marzo|aprile|maggio|giugno|luglio|agosto|settembre|ottobre|novembre|dicembre)\s+(\d{4})$/i);
+    if (singleWithYearMatch) {
+        const day = singleWithYearMatch[1];
+        const month = singleWithYearMatch[2];
+        const year = singleWithYearMatch[3];
+        return `${day} ${month.toLowerCase()} ${year}`;
     }
     
-    return `${day} ${monthName} ${year}`;
-}
-    
-    // --- CASO 7 (aggiornato): Prova a parsare come oggetto Date e applica la regola giorno/mese → anno
+    // CASO 7: Prova a parsare come oggetto Date
     let date;
     if (input instanceof Date) {
         date = input;
@@ -1311,34 +1302,67 @@ if (singleWithYearMatch) {
     if (date && !isNaN(date.getTime())) {
         const giorno = date.getDate();
         const mese = MESI_NOMI[date.getMonth()];
-        let annoOriginale = date.getFullYear();
-        const oggi = new Date();
-        const annoCorrente = oggi.getFullYear();
-
-        // Se l'anno parsato è chiaramente nel futuro rispetto all'anno corrente,
-        // lo rispettiamo (probabilmente è una data con anno intenzionale).
-        if (annoOriginale > annoCorrente) {
-            return `${giorno} ${mese} ${annoOriginale}`;
-        }
-
-        // Altrimenti applichiamo la regola giorno/mese → anno:
-        // se il giorno/mese nell'anno corrente è già passato → anno prossimo,
-        // altrimenti → anno corrente.
-        const candidateThisYear = new Date(annoCorrente, date.getMonth(), giorno);
-
-        let displayYear;
-        if (candidateThisYear < oggi) {
-            displayYear = annoCorrente + 1;
-        } else {
-            displayYear = annoCorrente;
-        }
-
-        return `${giorno} ${mese} ${displayYear}`;
+        const anno = date.getFullYear();
+        return `${giorno} ${mese} ${anno}`;
     }
     
     // Fallback: restituisci il valore originale se non riconosciuto
     return str;
 }
+
+        /**
+ * Formatta la data di consegna applicando la regola:
+ *  - se la delivery è espressa solo come giorno/mese -> usa la logica già presente
+ *  - se la delivery arriva come Date/ISO con anno (es. Google Sheets che auto-inserisce un anno),
+ *    allora: se giorno/mese nell'anno corrente è già passato -> mostra anno successivo,
+ *    altrimenti -> mostra anno corrente. Se l'anno parsato è chiaramente > anno corrente lo rispetta.
+ */
+function formatDataItalianaConsegna(input) {
+    if (!input) return 'Data non disponibile';
+    const str = input.toString().trim();
+
+    // Se è un formato testuale già gestito da formatDataItaliana (es. "5 gennaio" o range),
+    // riusa la funzione esistente (manteniamo tutte le regex/handling implementati).
+    const simpleNoYear = /^(\d+)\s+(gennaio|febbraio|marzo|aprile|maggio|giugno|luglio|agosto|settembre|ottobre|novembre|dicembre)$/i;
+    const rangeOnly = /^(\d+)\s*[-—–]\s*(\d+)\s+(gennaio|febbraio|marzo|aprile|maggio|giugno|luglio|agosto|settembre|ottobre|novembre|dicembre)$/i;
+    const crossMonth = /(\d+)\s+(gennaio|febbraio|marzo|aprile|maggio|giugno|luglio|agosto|settembre|ottobre|novembre|dicembre)\s*[-–—]\s*(\d+)\s+(gennaio|febbraio|marzo|aprile|maggio|giugno|luglio|agosto|settembre|ottobre|novembre|dicembre)/i;
+    const withYear = /^(\d+)\s+(gennaio|febbraio|marzo|aprile|maggio|giugno|luglio|agosto|settembre|ottobre|novembre|dicembre)\s+(\d{4})$/i;
+
+    if (str.match(simpleNoYear) || str.match(rangeOnly) || str.match(crossMonth) || str.match(withYear)) {
+        // Per questi casi usiamo la logica già testata nella funzione principale
+        return formatDataItaliana(input);
+    }
+
+    // Altrimenti proviamo a parsare come Date/ISO
+    let date;
+    if (input instanceof Date) {
+        date = input;
+    } else {
+        date = parseAnyDateFormat(input);
+    }
+
+    if (date && !isNaN(date.getTime())) {
+        const giorno = date.getDate();
+        const meseNome = MESI_NOMI[date.getMonth()];
+        const annoParsato = date.getFullYear();
+        const oggi = new Date();
+        const annoCorrente = oggi.getFullYear();
+
+        // Se l'anno parsato è chiaramente futuro rispetto all'anno corrente -> rispetta l'anno
+        if (annoParsato > annoCorrente) {
+            return `${giorno} ${meseNome} ${annoParsato}`;
+        }
+
+        // Altrimenti applichiamo la regola giorno/mese -> anno
+        const candidateThisYear = new Date(annoCorrente, date.getMonth(), giorno);
+        const displayYear = (candidateThisYear < oggi) ? (annoCorrente + 1) : annoCorrente;
+        return `${giorno} ${meseNome} ${displayYear}`;
+    }
+
+    // Fallback generico
+    return formatDataItaliana(input);
+}
+
 
 /**
  * Parse intelligente di qualsiasi formato data
@@ -1462,8 +1486,9 @@ function calcolaProgressoRealistico(dataOrdine, dataConsegna, statoCorrente) {
             const orderCategory = order.category || 'Prodotto';
             
             // === FORMATTAZIONE DATE UNIFORMI ===
-            const dataOrdineFormatted = formatDataItaliana(order.data);
-            const dataConsegnaFormatted = formatDataItaliana(order.consegna_prevista);
+            const dataOrdineFormatted = formatDataItaliana(order.data);            
+            const dataConsegnaFormatted = formatDataItalianaConsegna(order.consegna_prevista);
+
             
             // === CALCOLO PROGRESSO (Logica ibrida Desktop/Mobile) ===
             const progress = calcolaProgressoRealistico(order.data, order.consegna_prevista, order.stato);
@@ -2241,5 +2266,6 @@ function closeInvalidRecoveryEmailModal() {
     </script>
 </body>
 </html>
+
 
 
