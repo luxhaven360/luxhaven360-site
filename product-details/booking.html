@@ -878,14 +878,25 @@ textarea[placeholder="Hai richieste particolari?"] {
            `;
         });
 
-        // ✅ 11. AGGIORNA NOME PRODOTTO NEL RIEPILOGO (SIDEBAR)
+        // 11. AGGIORNA NOME PRODOTTO NEL RIEPILOGO (SIDEBAR)
         const summaryTitle = document.querySelector('.summary-product-title');
         if (summaryTitle) {
-           summaryTitle.textContent = product.title;
+            summaryTitle.textContent = product.title;
         }
 
-       // ✅ 12. AGGIORNA PREZZO BASE NEL RIEPILOGO
-       updatePriceSummary();
+        // 12. GESTIONE PREZZO SU RICHIESTA PER IMMOBILI
+        const isPriceOnRequest = !config.showDynamicPrice && config.fixedPrice === '€ —';
+        if (isPriceOnRequest) {
+            // Nascondi sezione selezione percorso per IMMOBILI
+            const distanceSection = document.querySelector('.glass-card:has(#distanceOptions)');
+            if (distanceSection) distanceSection.style.display = 'none';
+    
+            // Nascondi checkbox seconda supercar (non applicabile a IMMOBILI)
+            const secondCarSection = document.querySelector('.glass-card:has(#secondCarCheckbox)');
+            if (secondCarSection) secondCarSection.style.display = 'none';
+        }
+
+        updatePriceSummary();
     }
 
     // ========================================
@@ -980,8 +991,19 @@ textarea[placeholder="Hai richieste particolari?"] {
     // PRICE SUMMARY UPDATE
     // ========================================
     function updatePriceSummary() {
+        const isPriceOnRequest = bookingData.productData?.typeConfig && 
+                                 !bookingData.productData.typeConfig.showDynamicPrice &&
+                                  bookingData.productData.typeConfig.fixedPrice === '€ —';
+    
+        if (isPriceOnRequest) {
+            // Prezzo su richiesta per IMMOBILI
+            document.getElementById('basePrice').textContent = '€ —';
+            document.getElementById('totalPrice').textContent = '€ —';
+            return; // Esce senza calcolare totali
+        }
+    
         let total = bookingData.basePrice;
-        
+    
         document.getElementById('basePrice').textContent = `€${bookingData.basePrice.toLocaleString()}`;
         
         if (bookingData.secondCar) {
@@ -1041,7 +1063,13 @@ textarea[placeholder="Hai richieste particolari?"] {
             year: 'numeric'
         });
         
-        alert(`Prenotazione confermata!\n\nRiepilogo:\n- Prodotto: ${bookingData.productData.title}\n- Percorso: ${bookingData.distance} km\n- Data: ${formatted} alle ${time}\n- Totale: €${bookingData.total.toLocaleString()}\n\nRiceverai una conferma via email.`);
+        const isPriceOnRequest = bookingData.productData?.typeConfig && 
+                                 !bookingData.productData.typeConfig.showDynamicPrice;
+
+        const priceDisplay = isPriceOnRequest ? 'Su richiesta' : `€${bookingData.total.toLocaleString()}`;
+        const distanceInfo = isPriceOnRequest ? '' : `- Percorso: ${bookingData.distance} km\n`;
+
+        alert(`Prenotazione confermata!\n\nRiepilogo:\n- Prodotto: ${bookingData.productData.title}\n${distanceInfo}- Data: ${formatted} alle ${time}\n- Totale: ${priceDisplay}\n\nRiceverai una conferma via email.`);
     }
 
     // ========================================
