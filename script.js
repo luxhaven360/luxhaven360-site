@@ -199,35 +199,26 @@ if (hasDiscount) {
     e.preventDefault();
     showLoader();
     
-    try {
-        localStorage.setItem('lh360_last_product', JSON.stringify({ 
-            sku: btn.dataset.sku, 
-            title: btn.dataset.title, 
-            ts: Date.now() 
-        }));
-        localStorage.setItem('lh360_selected_sku', btn.dataset.sku || '');
-    } catch (e) {}
-
-    setTimeout(() => {
-        const sku = encodeURIComponent(btn.dataset.sku || '');
-        const section = encodeURIComponent(prod.sectionName || prod.category || 'shop');
+    const sku = btn.dataset.sku || '';
+    const skuPrefix = sku.split('-')[0].toUpperCase();
+    
+    // ✅ Prodotti prenotabili → booking.html
+    if (['SC', 'PR', 'EX'].includes(skuPrefix)) {
+        window.location.href = `product-details/booking.html?sku=${encodeURIComponent(sku)}`;
+    } 
+    // ✅ Prodotti shop → pdp-products.html
+    else {
+        try {
+            localStorage.setItem('lh360_last_product', JSON.stringify({ sku: sku, title: btn.dataset.title, ts: Date.now() }));
+            localStorage.setItem('lh360_selected_sku', sku);
+        } catch (e) {}
         
-        // ✅ LOGICA ROUTING: Shop → PDP | Bookable → Booking
-        let targetPage;
-        
-        if (prod.category === 'shop') {
-            // Prodotti merchandising → pagina PDP classica
-            targetPage = 'product-details/pdp-products.html';
-        } else if (['properties', 'supercars', 'stays'].includes(prod.category)) {
-            // Prodotti prenotabili → pagina booking unificata
-            targetPage = 'product-details/booking.html';
-        } else {
-            // Fallback sicuro (non dovrebbe mai accadere)
-            targetPage = 'product-details/pdp-products.html';
-        }
-        
-        window.location.href = `${targetPage}?sku=${sku}&section=${section}`;
-    }, 500); 
+        setTimeout(() => {
+            const base = 'product-details/pdp-products.html';
+            const section = encodeURIComponent(prod.sectionName || prod.category || 'shop');
+            window.location.href = `${base}?sku=${encodeURIComponent(sku)}&section=${section}`;
+        }, 500);
+    }
 });
 
     card.appendChild(btn);
@@ -557,6 +548,7 @@ function resetCategoryFilter() {
         });
     }
 }
+
 
 
 
