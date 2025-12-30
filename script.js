@@ -135,55 +135,99 @@ function createProductCard(prod, defaultCta) {
     const desc = el('p', { class: 'card-desc' }, [document.createTextNode(prod.desc || '')]);
     card.appendChild(desc);
 
-    // ✅ PREZZO CON SCONTO (SE PRESENTE)
-const hasDiscount = prod.discountPrice && prod.discountPrice < prod.price;
+    // GESTIONE PREZZO SPECIALE PER IMMOBILI
+const isProperty = prod.category === 'properties';
 
-if (hasDiscount) {
-    // Container prezzi
+if (isProperty) {
+    // Design premium per IMMOBILI: prezzo su richiesta
     const priceContainer = el('div', { 
-        style: 'display: flex; flex-direction: column; gap: 0.5rem; margin-bottom: 1rem;' 
+        class: 'property-price-container',
+        style: `
+            margin: 1.5rem 0;
+            padding: 1.5rem;
+            background: linear-gradient(135deg, rgba(212, 175, 55, 0.08), rgba(255, 215, 0, 0.05));
+            border: 1px solid rgba(212, 175, 55, 0.3);
+            border-radius: 12px;
+            text-align: center;
+        `
     });
     
-    // Prezzo originale barrato
-    const originalPrice = el('div', { 
-        style: 'font-size: 1rem; color: #71717a; text-decoration: line-through; font-weight: 300;' 
-    }, [document.createTextNode(formatPrice(prod.price, prod.currency || 'EUR'))]);
-    priceContainer.appendChild(originalPrice);
+    const priceSymbol = el('div', { 
+        style: `
+            font-size: 2.5rem;
+            font-weight: 300;
+            background: linear-gradient(135deg, #D4AF37, #FFD700);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            letter-spacing: 2px;
+            margin-bottom: 0.5rem;
+        `
+    }, [document.createTextNode('€ —')]);
     
-    // Row: Prezzo scontato + Badge
-    const discountRow = el('div', { 
-        style: 'display: flex; align-items: center; gap: 0.75rem;' 
-    });
+    const priceLabel = el('div', { 
+        style: `
+            font-size: 0.9rem;
+            color: #c9a891;
+            letter-spacing: 2px;
+            text-transform: uppercase;
+            font-weight: 500;
+        `
+    }, [document.createTextNode('Su Richiesta')]);
     
-    // Prezzo scontato dorato
-    const discountedPrice = el('div', { 
-        style: `font-size: 1.75rem; font-weight: 700; letter-spacing: 0.02em; 
-                background: linear-gradient(135deg, #D4AF37, #FFD700);
-                -webkit-background-clip: text; -webkit-text-fill-color: transparent;
-                background-clip: text;` 
-    }, [document.createTextNode(formatPrice(prod.discountPrice, prod.currency || 'EUR'))]);
-    discountRow.appendChild(discountedPrice);
-    
-    // Badge sconto percentuale
-    const discountPercent = Math.round(((prod.price - prod.discountPrice) / prod.price) * 100);
-    const badge = el('span', { 
-        style: `display: inline-block; background: linear-gradient(135deg, #D4AF37, #FFD700);
-                color: #09090b; padding: 0.375rem 0.875rem; border-radius: 2rem;
-                font-size: 0.875rem; font-weight: 600; letter-spacing: 0.05em;
-                box-shadow: 0 4px 12px rgba(212, 175, 55, 0.3);` 
-    }, [document.createTextNode(`-${discountPercent}%`)]);
-    discountRow.appendChild(badge);
-    
-    priceContainer.appendChild(discountRow);
+    priceContainer.appendChild(priceSymbol);
+    priceContainer.appendChild(priceLabel);
     card.appendChild(priceContainer);
+    
+    // Badge esclusivo per IMMOBILI
+    card.classList.add('property-premium-card');
 } else {
-    // Prezzo normale (senza sconto)
-    const priceText = el('div', { class: 'card-price' }, [
-        document.createTextNode(prod.price != null && prod.price > 0 
-            ? formatPrice(prod.price, prod.currency || 'EUR') 
-            : (prod.price_text || 'Contattaci'))
-    ]);
-    card.appendChild(priceText);
+    // Logica normale per SUPERCAR/ESPERIENZE/SHOP
+    const hasDiscount = prod.discountPrice && prod.discountPrice < prod.price;
+
+    if (hasDiscount) {
+        // ... codice esistente prezzo scontato ...
+        const priceContainer = el('div', { 
+            style: 'display: flex; flex-direction: column; gap: 0.5rem; margin-bottom: 1rem;' 
+        });
+        
+        const originalPrice = el('div', { 
+            style: 'font-size: 1rem; color: #71717a; text-decoration: line-through; font-weight: 300;' 
+        }, [document.createTextNode(formatPrice(prod.price, prod.currency || 'EUR'))]);
+        priceContainer.appendChild(originalPrice);
+        
+        const discountRow = el('div', { 
+            style: 'display: flex; align-items: center; gap: 0.75rem;' 
+        });
+        
+        const discountedPrice = el('div', { 
+            style: `font-size: 1.75rem; font-weight: 700; letter-spacing: 0.02em; 
+                    background: linear-gradient(135deg, #D4AF37, #FFD700);
+                    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+                    background-clip: text;` 
+        }, [document.createTextNode(formatPrice(prod.discountPrice, prod.currency || 'EUR'))]);
+        discountRow.appendChild(discountedPrice);
+        
+        const discountPercent = Math.round(((prod.price - prod.discountPrice) / prod.price) * 100);
+        const badge = el('span', { 
+            style: `display: inline-block; background: linear-gradient(135deg, #D4AF37, #FFD700);
+                    color: #09090b; padding: 0.375rem 0.875rem; border-radius: 2rem;
+                    font-size: 0.875rem; font-weight: 600; letter-spacing: 0.05em;
+                    box-shadow: 0 4px 12px rgba(212, 175, 55, 0.3);` 
+        }, [document.createTextNode(`-${discountPercent}%`)]);
+        discountRow.appendChild(badge);
+        
+        priceContainer.appendChild(discountRow);
+        card.appendChild(priceContainer);
+    } else {
+        // Prezzo normale
+        const priceText = el('div', { class: 'card-price' }, [
+            document.createTextNode(prod.price != null && prod.price > 0 
+                ? formatPrice(prod.price, prod.currency || 'EUR') 
+                : (prod.price_text || 'Contattaci'))
+        ]);
+        card.appendChild(priceText);
+    }
 }
 
     // button area
@@ -566,3 +610,4 @@ function resetCategoryFilter() {
         });
     }
 }
+
