@@ -135,80 +135,55 @@ function createProductCard(prod, defaultCta) {
     const desc = el('p', { class: 'card-desc' }, [document.createTextNode(prod.desc || '')]);
     card.appendChild(desc);
 
-    // === GESTIONE PREZZO: IMMOBILI vs ALTRI PRODOTTI ===
-const isRealEstate = prod.category === 'properties' || (prod.sku && prod.sku.startsWith('PR'));
+    // ✅ PREZZO CON SCONTO (SE PRESENTE)
+const hasDiscount = prod.discountPrice && prod.discountPrice < prod.price;
 
-if (isRealEstate) {
-    // 🏛️ DESIGN PREMIUM PER IMMOBILI (€ — su richiesta)
-    card.dataset.category = 'properties'; // Per CSS dedicato
-    
+if (hasDiscount) {
+    // Container prezzi
     const priceContainer = el('div', { 
-        style: 'margin-top: 1.5rem; padding: 1.5rem; background: linear-gradient(135deg, rgba(212, 175, 55, 0.08), rgba(255, 215, 0, 0.04)); border: 1px solid rgba(212, 175, 55, 0.3); border-radius: 8px; text-align: center;'
+        style: 'display: flex; flex-direction: column; gap: 0.5rem; margin-bottom: 1rem;' 
     });
     
-    const priceSymbol = el('div', {
-        style: 'font-size: 2.5rem; font-weight: 300; color: #D4AF37; letter-spacing: 2px; margin-bottom: 0.5rem;'
-    }, [document.createTextNode('€ —')]);
+    // Prezzo originale barrato
+    const originalPrice = el('div', { 
+        style: 'font-size: 1rem; color: #71717a; text-decoration: line-through; font-weight: 300;' 
+    }, [document.createTextNode(formatPrice(prod.price, prod.currency || 'EUR'))]);
+    priceContainer.appendChild(originalPrice);
     
-    const priceLabel = el('div', {
-        style: 'font-size: 0.85rem; color: rgba(212, 175, 55, 0.8); letter-spacing: 3px; text-transform: uppercase; font-weight: 500;'
-    }, [document.createTextNode('Su Richiesta')]);
+    // Row: Prezzo scontato + Badge
+    const discountRow = el('div', { 
+        style: 'display: flex; align-items: center; gap: 0.75rem;' 
+    });
     
-    priceContainer.appendChild(priceSymbol);
-    priceContainer.appendChild(priceLabel);
+    // Prezzo scontato dorato
+    const discountedPrice = el('div', { 
+        style: `font-size: 1.75rem; font-weight: 700; letter-spacing: 0.02em; 
+                background: linear-gradient(135deg, #D4AF37, #FFD700);
+                -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+                background-clip: text;` 
+    }, [document.createTextNode(formatPrice(prod.discountPrice, prod.currency || 'EUR'))]);
+    discountRow.appendChild(discountedPrice);
+    
+    // Badge sconto percentuale
+    const discountPercent = Math.round(((prod.price - prod.discountPrice) / prod.price) * 100);
+    const badge = el('span', { 
+        style: `display: inline-block; background: linear-gradient(135deg, #D4AF37, #FFD700);
+                color: #09090b; padding: 0.375rem 0.875rem; border-radius: 2rem;
+                font-size: 0.875rem; font-weight: 600; letter-spacing: 0.05em;
+                box-shadow: 0 4px 12px rgba(212, 175, 55, 0.3);` 
+    }, [document.createTextNode(`-${discountPercent}%`)]);
+    discountRow.appendChild(badge);
+    
+    priceContainer.appendChild(discountRow);
     card.appendChild(priceContainer);
-    
 } else {
-    // 💎 LOGICA STANDARD (Shop, Supercar, Esperienze)
-    const hasDiscount = prod.discountPrice && prod.discountPrice < prod.price;
-
-    if (hasDiscount) {
-        // Container prezzi
-        const priceContainer = el('div', { 
-            style: 'display: flex; flex-direction: column; gap: 0.5rem; margin-bottom: 1rem;' 
-        });
-        
-        // Prezzo originale barrato
-        const originalPrice = el('div', { 
-            style: 'font-size: 1rem; color: #71717a; text-decoration: line-through; font-weight: 300;' 
-        }, [document.createTextNode(formatPrice(prod.price, prod.currency || 'EUR'))]);
-        priceContainer.appendChild(originalPrice);
-        
-        // Row: Prezzo scontato + Badge
-        const discountRow = el('div', { 
-            style: 'display: flex; align-items: center; gap: 0.75rem;' 
-        });
-        
-        // Prezzo scontato dorato
-        const discountedPrice = el('div', { 
-            style: `font-size: 1.75rem; font-weight: 700; letter-spacing: 0.02em; 
-                    background: linear-gradient(135deg, #D4AF37, #FFD700);
-                    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
-                    background-clip: text;` 
-        }, [document.createTextNode(formatPrice(prod.discountPrice, prod.currency || 'EUR'))]);
-        discountRow.appendChild(discountedPrice);
-        
-        // Badge sconto percentuale
-        const discountPercent = Math.round(((prod.price - prod.discountPrice) / prod.price) * 100);
-        const badge = el('span', { 
-            style: `display: inline-block; background: linear-gradient(135deg, #D4AF37, #FFD700);
-                    color: #09090b; padding: 0.375rem 0.875rem; border-radius: 2rem;
-                    font-size: 0.875rem; font-weight: 600; letter-spacing: 0.05em;
-                    box-shadow: 0 4px 12px rgba(212, 175, 55, 0.3);` 
-        }, [document.createTextNode(`-${discountPercent}%`)]);
-        discountRow.appendChild(badge);
-        
-        priceContainer.appendChild(discountRow);
-        card.appendChild(priceContainer);
-    } else {
-        // Prezzo normale (senza sconto)
-        const priceText = el('div', { class: 'card-price' }, [
-            document.createTextNode(prod.price != null && prod.price > 0 
-                ? formatPrice(prod.price, prod.currency || 'EUR') 
-                : (prod.price_text || 'Contattaci'))
-        ]);
-        card.appendChild(priceText);
-    }
+    // Prezzo normale (senza sconto)
+    const priceText = el('div', { class: 'card-price' }, [
+        document.createTextNode(prod.price != null && prod.price > 0 
+            ? formatPrice(prod.price, prod.currency || 'EUR') 
+            : (prod.price_text || 'Contattaci'))
+    ]);
+    card.appendChild(priceText);
 }
 
     // button area
@@ -591,10 +566,3 @@ function resetCategoryFilter() {
         });
     }
 }
-
-
-
-
-
-
-
