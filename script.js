@@ -195,25 +195,7 @@ if (hasDiscount) {
     if (prod.action) btn.dataset.action = prod.action;
 
     // on click behaviour
-    // OLD CODE (da sostituire):
-btn.addEventListener('click', (e) => {
-    e.preventDefault();
-    showLoader();
-    try {
-        localStorage.setItem('lh360_last_product', JSON.stringify({ sku: btn.dataset.sku, title: btn.dataset.title, ts: Date.now() }));
-        localStorage.setItem('lh360_selected_sku', btn.dataset.sku || '');
-    } catch (e) {}
-
-    setTimeout(() => {
-        const base = 'product-details/pdp-products.html';
-        const sku = encodeURIComponent(btn.dataset.sku || '');
-        const section = encodeURIComponent(prod.sectionName || prod.category || 'shop');
-        window.location.href = `${base}?sku=${sku}&section=${section}`;
-    }, 500); 
-});
-
-// NEW CODE (sostituisci con questo):
-btn.addEventListener('click', (e) => {
+    btn.addEventListener('click', (e) => {
     e.preventDefault();
     showLoader();
     
@@ -575,5 +557,6 @@ function resetCategoryFilter() {
         });
     }
 }
+
 
 
