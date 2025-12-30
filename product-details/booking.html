@@ -896,6 +896,26 @@ textarea[placeholder="Hai richieste particolari?"] {
             if (secondCarSection) secondCarSection.style.display = 'none';
         }
 
+        // 13. GESTIONE ESPERIENZE (EX) - Nascondi sezioni non applicabili
+        const skuPrefix = product.sku.split('-')[0].toUpperCase();
+        if (skuPrefix === 'EX') {
+            // Nascondi "Scegli il tuo percorso"
+            const distanceSection = document.querySelector('.glass-card:has(#distanceOptions)');
+            if (distanceSection) distanceSection.style.display = 'none';
+    
+            // Nascondi "Aggiungi una seconda supercar"
+            const secondCarSection = document.querySelector('.glass-card:has(#secondCarCheckbox)');
+            if (secondCarSection) secondCarSection.style.display = 'none';
+    
+            // Imposta prezzo base dal prodotto (colonna Prezzo del foglio)
+            bookingData.basePrice = product.price || 0;
+        }
+
+        // 14. GESTIONE SUPERCAR (SC) - Usa prezzo base prodotto
+        if (skuPrefix === 'SC') {
+            bookingData.basePrice = product.price || 0;
+        }
+
         updatePriceSummary();
     }
 
@@ -929,25 +949,34 @@ textarea[placeholder="Hai richieste particolari?"] {
     // INIZIALIZZAZIONE COMPONENTI
     // ========================================
     function initializeComponents(product) {
-        // Distance selection
+        const skuPrefix = product.sku.split('-')[0].toUpperCase();
+    
+        // Distance selection (solo per prodotti che NON sono EX o SC)
         document.querySelectorAll('.distance-option').forEach(option => {
             option.addEventListener('click', function() {
                 document.querySelectorAll('.distance-option').forEach(opt => opt.classList.remove('selected'));
                 this.classList.add('selected');
-                
+            
                 bookingData.distance = this.dataset.km;
-                bookingData.basePrice = parseInt(this.dataset.price);
+            
+                // Per SC ed EX, non sovrascrivere il prezzo base con quello della distanza
+                if (skuPrefix !== 'SC' && skuPrefix !== 'EX') {
+                    bookingData.basePrice = parseInt(this.dataset.price);
+                }
+            
                 updatePriceSummary();
             });
         });
 
-        // Auto-select first distance option on load
-        const firstOption = document.querySelector('.distance-option');
-        if (firstOption) {
-            firstOption.classList.add('selected');
-            bookingData.distance = firstOption.dataset.km;
-            bookingData.basePrice = parseInt(firstOption.dataset.price);
-            updatePriceSummary();
+        // Auto-select first distance option SOLO se non è EX o SC
+        if (skuPrefix !== 'EX' && skuPrefix !== 'SC') {
+            const firstOption = document.querySelector('.distance-option');
+            if (firstOption) {
+                firstOption.classList.add('selected');
+                bookingData.distance = firstOption.dataset.km;
+                bookingData.basePrice = parseInt(firstOption.dataset.price);
+                updatePriceSummary();
+            }
         }
 
         // Second car checkbox
@@ -1002,6 +1031,15 @@ textarea[placeholder="Hai richieste particolari?"] {
             return; // Esce senza calcolare totali
         }
     
+        // ASSICURA CHE IL PREZZO BASE SIA SEMPRE VALORIZZATO
+        // Per SC ed EX, usa sempre il prezzo dal prodotto se non impostato
+        if (!bookingData.basePrice && bookingData.productData) {
+            const skuPrefix = bookingData.productData.sku.split('-')[0].toUpperCase();
+            if (skuPrefix === 'SC' || skuPrefix === 'EX') {
+                bookingData.basePrice = bookingData.productData.price || 0;
+            }
+        }
+    
         let total = bookingData.basePrice;
     
         document.getElementById('basePrice').textContent = `€${bookingData.basePrice.toLocaleString()}`;
@@ -1038,7 +1076,11 @@ textarea[placeholder="Hai richieste particolari?"] {
     // CONFERMA PRENOTAZIONE
     // ========================================
     function confirmBooking() {
-        if (!bookingData.distance) {
+        // VALIDAZIONE DISTANZA: Richiesta solo per prodotti che NON sono EX o SC
+        const skuPrefix = bookingData.productData?.sku.split('-')[0].toUpperCase();
+        const requiresDistance = skuPrefix !== 'EX' && skuPrefix !== 'SC';
+    
+        if (requiresDistance && !bookingData.distance) {
             alert('Seleziona un percorso prima di procedere');
             return;
         }
@@ -1066,8 +1108,11 @@ textarea[placeholder="Hai richieste particolari?"] {
         const isPriceOnRequest = bookingData.productData?.typeConfig && 
                                  !bookingData.productData.typeConfig.showDynamicPrice;
 
+        const skuPrefix = bookingData.productData?.sku.split('-')[0].toUpperCase();
+        const showDistance = skuPrefix !== 'EX' && skuPrefix !== 'SC' && bookingData.distance;
+
         const priceDisplay = isPriceOnRequest ? 'Su richiesta' : `€${bookingData.total.toLocaleString()}`;
-        const distanceInfo = isPriceOnRequest ? '' : `- Percorso: ${bookingData.distance} km\n`;
+        const distanceInfo = showDistance ? `- Percorso: ${bookingData.distance} km\n` : '';
 
         alert(`Prenotazione confermata!\n\nRiepilogo:\n- Prodotto: ${bookingData.productData.title}\n${distanceInfo}- Data: ${formatted} alle ${time}\n- Totale: ${priceDisplay}\n\nRiceverai una conferma via email.`);
     }
