@@ -489,6 +489,22 @@ function renderCategoryFilter(categories) {
     if (resetBtn) {
         resetBtn.addEventListener('click', resetCategoryFilter);
     }
+    
+    // ✅ AGGIUNGI QUESTO BLOCCO ALLA FINE DELLA FUNZIONE
+    // Ripristina filtro salvato (se presente)
+    const savedFilter = localStorage.getItem('lh360_active_shop_filter');
+    if (savedFilter) {
+        // Trova la pill corrispondente
+        const targetPill = Array.from(pillsContainer.querySelectorAll('.category-pill'))
+            .find(p => p.dataset.category === savedFilter);
+        
+        if (targetPill) {
+            // Aspetta che i prodotti siano caricati prima di filtrare
+            setTimeout(() => {
+                filterShopByCategory(savedFilter, targetPill);
+            }, 100);
+        }
+    }
 }
 
 /**
@@ -499,6 +515,7 @@ function filterShopByCategory(categoryName, pillElement) {
   if (!shopGrid) return;
   
   currentShopCategory = categoryName;
+  localStorage.setItem('lh360_active_shop_filter', categoryName);
   
   // Aggiorna UI pills
   document.querySelectorAll('.category-pill').forEach(p => p.classList.remove('active'));
@@ -530,7 +547,7 @@ function filterShopByCategory(categoryName, pillElement) {
  */
 function resetCategoryFilter() {
     currentShopCategory = null;
-    
+    localStorage.removeItem('lh360_active_shop_filter');
     // Rimuovi active da pills
     document.querySelectorAll('.category-pill').forEach(p => p.classList.remove('active'));
     
@@ -548,6 +565,7 @@ function resetCategoryFilter() {
         });
     }
 }
+
 
 
 
