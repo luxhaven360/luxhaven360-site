@@ -122,8 +122,9 @@ function createProductCard(prod, defaultCta) {
     card.appendChild(imageContainer);
 
     // ✅ AGGIUNGI CATEGORIA COME DATA ATTRIBUTE PER FILTRO IMMEDIATO
-if (prod.shopCategory) {
+    if (prod.shopCategory) {
   card.dataset.shopCategory = prod.shopCategory;
+  console.log(`🏷️ Card creata: ${prod.title} → Categoria: ${prod.shopCategory}`);
 }
 
     // title
@@ -565,6 +566,7 @@ function resetCategoryFilter() {
         });
     }
 }
+
 
 
 
