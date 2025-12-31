@@ -946,6 +946,8 @@ function formatPrice(price, currency = 'EUR') {
                 const basePrice = product.price || 0;
                 const comboPrice = product.supercarComboPrice || 0;
                 const additionalPrice = Math.max(0, comboPrice - basePrice);
+
+                const comboHas4Seats = secondCar.numPosti >= 4;
                 
                 let labelHTML = `
                     <div class="font-semibold mb-1">Aggiungi ${secondCar.title}</div>
@@ -965,8 +967,8 @@ function formatPrice(price, currency = 'EUR') {
                                 </svg>
                             </div>
                             <div>
-                                <div style="font-size: 0.95rem; font-weight: 600; color: #D4AF37; letter-spacing: 1px; text-transform: uppercase;">Servizi Premium</div>
-                                <div style="font-size: 0.75rem; color: #9ca3af; margin-top: 2px;">Personalizza la tua esperienza</div>
+                                <h3 class="text-2xl font-bold gradient-text mb-2">Servizi Aggiuntivi Disponibili</h3>
+                                <div style="font-size: 0.875rem; color: #c9a891;">Personalizza la tua esperienza</div>
                             </div>
                         </div>
                         
@@ -1022,6 +1024,32 @@ function formatPrice(price, currency = 'EUR') {
                                 <div style="font-size: 1.1rem; font-weight: 700; color: #D4AF37; z-index: 2;">${formatPrice(690)}</div>
                                 <div class="service-glow" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: linear-gradient(135deg, transparent 0%, rgba(212, 175, 55, 0.1) 50%, transparent 100%); opacity: 0; transition: opacity 0.3s ease;"></div>
                             </label>
+
+                            ${comboHas4Seats ? `
+                            <!-- Passeggeri Extra -->
+                            <div style="border-top: 1px solid rgba(212, 175, 55, 0.2); padding-top: 16px; margin-top: 16px;">
+                                <div style="font-size: 0.9rem; font-weight: 600; color: #fff; margin-bottom: 12px;">Aggiungi Passeggeri</div>
+                                <div style="display: flex; gap: 12px;">
+                                    <label class="huracan-passenger-option" style="display: flex; align-items: center; gap: 10px; padding: 14px 18px; background: rgba(20, 15, 12, 0.8); border: 2px solid rgba(80, 60, 45, 0.4); border-radius: 10px; cursor: pointer; flex: 1; transition: all 0.3s ease;">
+                                        <input type="radio" name="huracanPassengers" value="1" class="huracan-passenger-radio" style="width: 18px; height: 18px; accent-color: #D4AF37;">
+                                        <div>
+                                            <div style="font-size: 0.875rem; font-weight: 600; color: #fff;">1 Passeggero</div>
+                                            <div style="font-size: 0.75rem; color: #a59173;">+${formatPrice(50)}</div>
+                                        </div>
+                                    </label>
+                                    <label class="huracan-passenger-option" style="display: flex; align-items: center; gap: 10px; padding: 14px 18px; background: rgba(20, 15, 12, 0.8); border: 2px solid rgba(80, 60, 45, 0.4); border-radius: 10px; cursor: pointer; flex: 1; transition: all 0.3s ease;">
+                                        <input type="radio" name="huracanPassengers" value="2" class="huracan-passenger-radio" style="width: 18px; height: 18px; accent-color: #D4AF37;">
+                                        <div>
+                                            <div style="font-size: 0.875rem; font-weight: 600; color: #fff;">2 Passeggeri</div>
+                                            <div style="font-size: 0.75rem; color: #a59173;">+${formatPrice(100)}</div>
+                                        </div>
+                                    </label>
+                                </div>
+                            </div>
+                            ` : ''}
+                            
+                        </div>
+                    </div>
                             
                         </div>
                     </div>
@@ -1040,6 +1068,15 @@ function formatPrice(price, currency = 'EUR') {
                         .huracan-service-checkbox:checked ~ * {
                             color: #D4AF37 !important;
                         }
+
+                        .huracan-passenger-option:hover {
+    border-color: rgba(212, 175, 55, 0.6);
+    background: rgba(45, 24, 16, 0.4);
+}
+
+.huracan-passenger-radio:checked + div {
+    color: #D4AF37 !important;
+}
                     </style>
                     `;
                 }
@@ -1342,6 +1379,70 @@ if (skuPrefix === 'SC') {
                 const huracanServices = document.getElementById('huracanExtraServices');
                 if (huracanServices) {
                     huracanServices.style.display = this.checked ? 'block' : 'none';
+
+                    // ✅ AGGIUNGI QUESTO BLOCCO
+if (this.checked) {
+    // Attendi rendering DOM, poi aggiungi event listeners
+    setTimeout(() => {
+        document.querySelectorAll('.huracan-service-checkbox').forEach(cb => {
+            // Rimuovi listener duplicati clonando
+            const newCb = cb.cloneNode(true);
+            cb.parentNode.replaceChild(newCb, cb);
+            
+            // Aggiungi listener pulito
+            newCb.addEventListener('change', function() {
+                const price = parseInt(this.dataset.price);
+                const service = this.dataset.service;
+                
+                if (this.checked) {
+                    if (!bookingData.extraServices.find(s => s.service === service)) {
+                        bookingData.extraServices.push({ service, price });
+                    }
+                } else {
+                    bookingData.extraServices = bookingData.extraServices.filter(s => s.service !== service);
+                }
+                
+                updatePriceSummary();
+            });
+        });
+
+        // Aggiungi listener per passeggeri Huracán
+document.querySelectorAll('.huracan-passenger-radio').forEach(radio => {
+    radio.addEventListener('change', function() {
+        const quantity = parseInt(this.value);
+        const pricePerPassenger = 50;
+        const totalPrice = pricePerPassenger * quantity;
+        
+        // Rimuovi servizio passeggeri precedente
+        bookingData.extraServices = bookingData.extraServices.filter(s => s.service !== 'extra-passengers');
+        
+        // Aggiungi nuovo servizio
+        if (this.checked) {
+            bookingData.extraServices.push({ 
+                service: 'extra-passengers', 
+                price: totalPrice,
+                quantity: quantity
+            });
+        }
+        
+        // ✅ RESET STILI LABEL (FIX PUNTO 4)
+        document.querySelectorAll('.huracan-passenger-option').forEach(lbl => {
+            lbl.style.borderColor = 'rgba(80, 60, 45, 0.4)';
+            lbl.style.background = 'rgba(20, 15, 12, 0.8)';
+        });
+        
+        // Evidenzia label selezionato
+        const selectedLabel = this.closest('.huracan-passenger-option');
+        if (selectedLabel) {
+            selectedLabel.style.borderColor = '#D4AF37';
+            selectedLabel.style.background = 'rgba(212, 175, 55, 0.12)';
+        }
+        
+        updatePriceSummary();
+    });
+});
+    }, 100);
+}
                     
                     // Animazione smooth
                     if (this.checked) {
@@ -1452,12 +1553,20 @@ document.querySelectorAll('.passenger-radio').forEach(radio => {
         
         // Aggiungi nuovo servizio
         if (this.checked) {
-            bookingData.extraServices.push({ 
-                service: 'extra-passengers', 
-                price: totalPrice,
-                quantity: quantity  // Salva quantità per il riepilogo
-            });
-        }
+    // ✅ RESET STILI TUTTI I LABEL
+    document.querySelectorAll('label:has(.passenger-radio)').forEach(lbl => {
+        lbl.style.borderColor = 'rgba(212, 175, 55, 0.3)';
+        lbl.style.background = 'rgba(212, 175, 55, 0.08)';
+    });
+    
+    // Evidenzia label selezionato
+    const selectedLabel = this.closest('label');
+    if (selectedLabel) {
+        selectedLabel.style.borderColor = '#D4AF37';
+        selectedLabel.style.background = 'rgba(212, 175, 55, 0.18)';
+    }
+    
+    bookingData.extraServices.push({
         
         updatePriceSummary();
     });
@@ -1477,28 +1586,6 @@ document.querySelectorAll('label:has(.passenger-radio)').forEach(label => {
         }
     });
 });
-
-        // ✅ Re-bind listener per servizi Huracán (creati dinamicamente)
-setTimeout(() => {
-    document.querySelectorAll('.extra-service').forEach(checkbox => {
-        // Rimuovi eventuali listener duplicati
-        const newCheckbox = checkbox.cloneNode(true);
-        checkbox.parentNode.replaceChild(newCheckbox, checkbox);
-        
-        newCheckbox.addEventListener('change', function() {
-            const price = parseInt(this.dataset.price);
-            const service = this.dataset.service;
-            
-            if (this.checked) {
-                bookingData.extraServices.push({ service, price });
-            } else {
-                bookingData.extraServices = bookingData.extraServices.filter(s => s.service !== service);
-            }
-            
-            updatePriceSummary();
-        });
-    });
-}, 500); // Attendi che il DOM sia aggiornato
 
         // Initialize calendar
         initCalendar();
