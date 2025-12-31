@@ -75,9 +75,15 @@ function el(tag, attrs = {}, children = []) {
 // format prezzo semplice
 function formatPrice(p, currency = 'EUR') {
     try {
-        return new Intl.NumberFormat('it-IT', { style: 'currency', currency }).format(p);
+        // ✅ Formattazione italiana con separatore migliaia
+        return new Intl.NumberFormat('it-IT', { 
+            style: 'currency', 
+            currency: currency,
+            minimumFractionDigits: 0, // ✅ Rimuove i decimali se il prezzo è intero
+            maximumFractionDigits: 0
+        }).format(p);
     } catch (e) {
-        return `${p} ${currency}`;
+        return `€ ${p.toLocaleString('it-IT')}`;
     }
 }
 
@@ -610,3 +616,4 @@ function resetCategoryFilter() {
         });
     }
 }
+
