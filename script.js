@@ -73,40 +73,33 @@ function el(tag, attrs = {}, children = []) {
 }
 
 /**
- * Formatta il prezzo secondo lo standard italiano
- * @param {number} price - Prezzo da formattare
- * @param {string} currency - Valuta (default: EUR)
- * @returns {string} Prezzo formattato (es: "1.265 €" o "150,00 €")
+ * Formatta il prezzo con separatore migliaia MANUALE (più robusto)
+ * Output: "1.265 €" per index.html
  */
 function formatPrice(price, currency = 'EUR') {
     const amount = parseFloat(price) || 0;
     
-    let minimumFractionDigits = 0;
-    let maximumFractionDigits = 0;
+    // Determina decimali
+    let decimals = 0;
+    if (amount < 100) decimals = 2;
+    else if (amount < 500) decimals = 2;
+    else if (amount < 1000) decimals = amount % 1 !== 0 ? 2 : 0; // Decimali solo se necessari
+    else decimals = 0; // Da 1000 in su: mai decimali
     
-    if (amount < 100) {
-        minimumFractionDigits = 2;
-        maximumFractionDigits = 2;
-    } else if (amount < 500) {
-        minimumFractionDigits = 2;
-        maximumFractionDigits = 2;
-    } else if (amount < 1000) {
-        minimumFractionDigits = 0;
-        maximumFractionDigits = 2;
-    } else {
-        minimumFractionDigits = 0;
-        maximumFractionDigits = 0;
-    }
+    // Formatta manualmente
+    let formatted = amount.toFixed(decimals);
     
-    const formatted = new Intl.NumberFormat('it-IT', {
-        style: 'currency',
-        currency: currency,
-        minimumFractionDigits: minimumFractionDigits,
-        maximumFractionDigits: maximumFractionDigits
-    }).format(amount);
+    // Sostituisci punto decimale con virgola
+    formatted = formatted.replace('.', ',');
     
-    // ✅ PER INDEX: Mantieni formato standard italiano "1.265 €"
-    return formatted;
+    // Aggiungi separatore migliaia (punto)
+    let parts = formatted.split(',');
+    parts[0] = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+    
+    // Simbolo valuta
+    const symbol = currency === 'EUR' ? '€' : currency;
+    
+    return `${parts.join(',')} ${symbol}`;
 }
 
 // funzione per creare una card prodotto
@@ -645,6 +638,7 @@ function resetCategoryFilter() {
         });
     }
 }
+
 
 
 
