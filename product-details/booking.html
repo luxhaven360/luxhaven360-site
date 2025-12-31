@@ -862,6 +862,42 @@ textarea[placeholder="Hai richieste particolari?"] {
               });
           }
         }
+
+        // 🆕 10a. CHILOMETRAGGIO DINAMICO (SOLO SUPERCAR)
+const skuPrefix = product.sku.split('-')[0].toUpperCase();
+
+if (skuPrefix === 'SC' && product.chilometraggioPrices && product.chilometraggioPrices.length > 0) {
+    const distanceGrid = document.getElementById('distanceOptions');
+    if (distanceGrid) {
+        distanceGrid.innerHTML = ''; // Pulisci opzioni statiche
+        
+        // Determina km/minuti in base al prodotto
+        const distanceConfig = getDistanceConfigForProduct(product);
+        
+        distanceConfig.options.forEach((distance, index) => {
+            if (index < product.chilometraggioPrices.length) {
+                const price = product.chilometraggioPrices[index];
+                const formattedPrice = new Intl.NumberFormat('it-IT').format(price);
+                
+                const option = document.createElement('div');
+                option.className = 'distance-option';
+                option.dataset.km = distance.value;
+                option.dataset.price = price;
+                
+                option.innerHTML = `
+                    <div class="text-2xl font-bold gradient-text mb-2">${distance.value} ${distance.unit}</div>
+                    <div class="text-xl font-semibold mb-1">€${formattedPrice}</div>
+                    <div class="text-sm" style="color: #a59173;">${distance.label}</div>
+                `;
+                
+                distanceGrid.appendChild(option);
+            }
+        });
+        
+        // Re-attach event listeners
+        initDistanceSelection(product);
+    }
+}
         
         // ✅ 10. BENEFIT NEL RIEPILOGO (restanti)
         const summaryBenefits = document.querySelector('.summary-benefits');
@@ -877,6 +913,37 @@ textarea[placeholder="Hai richieste particolari?"] {
                 </div>
            `;
         });
+
+        // 🆕 10b. CARD SECONDA SUPERCAR DINAMICA
+if (skuPrefix === 'SC' && product.supercarComboSku) {
+    // Fetch dati seconda supercar
+    fetchProductDetails(product.supercarComboSku)
+        .then(secondCar => {
+            const secondCarSection = document.querySelector('.glass-card:has(#secondCarCheckbox)');
+            if (secondCarSection) {
+                // Aggiorna testo card
+                const checkboxLabel = secondCarSection.querySelector('.checkbox-container div');
+                if (checkboxLabel) {
+                    checkboxLabel.innerHTML = `
+                        <div class="font-semibold mb-1">Aggiungi ${secondCar.title}</div>
+                        <div class="text-sm" style="color: #a59173;">€1.490 aggiuntivi - Include servizi fotografici e video</div>
+                    `;
+                }
+                
+                // Mostra la sezione
+                secondCarSection.style.display = 'block';
+            }
+        })
+        .catch(err => {
+            console.log('Supercar Combo non trovata, card nascosta');
+            const secondCarSection = document.querySelector('.glass-card:has(#secondCarCheckbox)');
+            if (secondCarSection) secondCarSection.style.display = 'none';
+        });
+} else {
+    // Nascondi se non applicabile
+    const secondCarSection = document.querySelector('.glass-card:has(#secondCarCheckbox)');
+    if (secondCarSection) secondCarSection.style.display = 'none';
+}
 
         // 11. AGGIORNA NOME PRODOTTO NEL RIEPILOGO (SIDEBAR)
         const summaryTitle = document.querySelector('.summary-product-title');
@@ -945,39 +1012,100 @@ textarea[placeholder="Hai richieste particolari?"] {
         }
     }
 
+        /**
+ * Determina configurazione chilometraggio in base a SKU e Nome Prodotto
+ */
+function getDistanceConfigForProduct(product) {
+    const sku = product.sku.toUpperCase();
+    const title = product.title.toLowerCase();
+    
+    // Caso 1: Ferrari 458 Spider
+    if (title.includes('ferrari 458 spider')) {
+        return {
+            options: [
+                { value: 9, unit: 'km', label: 'Esperienza rapida' },
+                { value: 16, unit: 'km', label: 'Più popolare' },
+                { value: 32, unit: 'km', label: 'Esperienza completa' },
+                { value: 65, unit: 'km', label: 'Tour esteso' },
+                { value: 80, unit: 'km', label: 'Avventura lunga' },
+                { value: 100, unit: 'km', label: 'Esperienza definitiva' }
+            ]
+        };
+    }
+    
+    // Caso 2: McLaren 720s Performance
+    if (title.includes('mclaren 720s')) {
+        return {
+            options: [
+                { value: 10, unit: 'min', label: 'Esperienza rapida' },
+                { value: 20, unit: 'min', label: 'Più popolare' },
+                { value: 30, unit: 'min', label: 'Esperienza completa' },
+                { value: 60, unit: 'min', label: 'Tour esteso' },
+                { value: 90, unit: 'min', label: 'Avventura lunga' },
+                { value: 120, unit: 'min', label: 'Esperienza definitiva' }
+            ]
+        };
+    }
+    
+    // Caso 3/4/5: Combo Supercar (Ferrari + Lamborghini)
+    if (title.includes('ferrari') && title.includes('lamborghini')) {
+        return {
+            options: [
+                { value: 10, unit: 'km', label: 'Esperienza rapida' },
+                { value: 20, unit: 'km', label: 'Più popolare' },
+                { value: 30, unit: 'km', label: 'Esperienza completa' },
+                { value: 60, unit: 'km', label: 'Tour esteso' },
+                { value: 90, unit: 'km', label: 'Avventura lunga' },
+                { value: 120, unit: 'km', label: 'Esperienza definitiva' }
+            ]
+        };
+    }
+    
+    // Default: km standard
+    return {
+        options: [
+            { value: 10, unit: 'km', label: 'Esperienza rapida' },
+            { value: 20, unit: 'km', label: 'Più popolare' },
+            { value: 30, unit: 'km', label: 'Esperienza completa' },
+            { value: 60, unit: 'km', label: 'Tour esteso' },
+            { value: 70, unit: 'km', label: 'Avventura lunga' },
+            { value: 120, unit: 'km', label: 'Esperienza definitiva' }
+        ]
+    };
+}
+
     // ========================================
     // INIZIALIZZAZIONE COMPONENTI
     // ========================================
     function initializeComponents(product) {
-        const skuPrefix = product.sku.split('-')[0].toUpperCase();
+    const skuPrefix = product.sku.split('-')[0].toUpperCase();
     
-        // Distance selection (solo per prodotti che NON sono EX o SC)
+    // Distance selection (se non già gestito dinamicamente)
+    if (skuPrefix !== 'SC' || !product.chilometraggioPrices) {
         document.querySelectorAll('.distance-option').forEach(option => {
             option.addEventListener('click', function() {
                 document.querySelectorAll('.distance-option').forEach(opt => opt.classList.remove('selected'));
                 this.classList.add('selected');
-            
+                
                 bookingData.distance = this.dataset.km;
-            
-                // Per SC ed EX, non sovrascrivere il prezzo base con quello della distanza
+                
                 if (skuPrefix !== 'SC' && skuPrefix !== 'EX') {
                     bookingData.basePrice = parseInt(this.dataset.price);
                 }
-            
+                
                 updatePriceSummary();
             });
         });
-
-        // Auto-select first distance option SOLO se non è EX o SC
-        if (skuPrefix !== 'EX' && skuPrefix !== 'SC') {
-            const firstOption = document.querySelector('.distance-option');
-            if (firstOption) {
-                firstOption.classList.add('selected');
-                bookingData.distance = firstOption.dataset.km;
-                bookingData.basePrice = parseInt(firstOption.dataset.price);
-                updatePriceSummary();
-            }
+        
+        // Auto-select first option
+        const firstOption = document.querySelector('.distance-option');
+        if (firstOption && skuPrefix !== 'EX' && skuPrefix !== 'SC') {
+            firstOption.classList.add('selected');
+            bookingData.distance = firstOption.dataset.km;
+            bookingData.basePrice = parseInt(firstOption.dataset.price);
+            updatePriceSummary();
         }
+    }
 
         // Second car checkbox
         const secondCarCheckbox = document.getElementById('secondCarCheckbox');
@@ -1015,6 +1143,45 @@ textarea[placeholder="Hai richieste particolari?"] {
         // Initialize calendar
         initCalendar();
     }
+
+        /**
+ * Inizializza selezione distanza per prodotti con chilometraggio dinamico
+ */
+function initDistanceSelection(product) {
+    const skuPrefix = product.sku.split('-')[0].toUpperCase();
+    
+    document.querySelectorAll('.distance-option').forEach(option => {
+        option.addEventListener('click', function() {
+            document.querySelectorAll('.distance-option').forEach(opt => opt.classList.remove('selected'));
+            this.classList.add('selected');
+            
+            bookingData.distance = this.dataset.km;
+            
+            // Per SC ed EX, non sovrascrivere il prezzo base con quello della distanza
+            if (skuPrefix !== 'SC' && skuPrefix !== 'EX') {
+                bookingData.basePrice = parseInt(this.dataset.price);
+            } else {
+                // Per SC, aggiorna il prezzo base con quello selezionato
+                bookingData.basePrice = parseInt(this.dataset.price);
+            }
+            
+            updatePriceSummary();
+        });
+    });
+    
+    // Auto-select prima opzione se presente
+    const firstOption = document.querySelector('.distance-option');
+    if (firstOption) {
+        firstOption.classList.add('selected');
+        bookingData.distance = firstOption.dataset.km;
+        
+        if (skuPrefix === 'SC' || skuPrefix === 'EX') {
+            bookingData.basePrice = parseInt(firstOption.dataset.price);
+        }
+        
+        updatePriceSummary();
+    }
+}
 
     // ========================================
     // PRICE SUMMARY UPDATE
