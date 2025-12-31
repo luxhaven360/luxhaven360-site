@@ -663,43 +663,35 @@ textarea[placeholder="Hai richieste particolari?"] {
     // ========================================
     const WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbwr79RkXIEocpuOKaM6uMJqE6VFs9wjlUPvrr__FvDbDDrD2ELB1NbfrWP3BCYpHj2u/exec';
 
-        /**
- * Formatta il prezzo secondo lo standard italiano
- * @param {number} price - Prezzo da formattare
- * @param {string} currency - Valuta (default: EUR)
- * @returns {string} Prezzo formattato (es: "1.265 €" o "150,00 €")
- */
-function formatPrice(price, currency = 'EUR') {
+       function formatPrice(price, currency = 'EUR') {
     const amount = parseFloat(price) || 0;
     
-    // Determina se mostrare i decimali in base al range
     let minimumFractionDigits = 0;
     let maximumFractionDigits = 0;
     
     if (amount < 100) {
-        // Da 0 a 99,99: mostra sempre ",00"
         minimumFractionDigits = 2;
         maximumFractionDigits = 2;
     } else if (amount < 500) {
-        // Da 100 a 499: mostra sempre ",00"
         minimumFractionDigits = 2;
         maximumFractionDigits = 2;
     } else if (amount < 1000) {
-        // Da 500 a 999: decimali opzionali (solo se ha decimali)
         minimumFractionDigits = 0;
         maximumFractionDigits = 2;
     } else {
-        // Da 1.000 in su: mai decimali
         minimumFractionDigits = 0;
         maximumFractionDigits = 0;
     }
     
-    return new Intl.NumberFormat('it-IT', {
+    const formatted = new Intl.NumberFormat('it-IT', {
         style: 'currency',
         currency: currency,
         minimumFractionDigits: minimumFractionDigits,
         maximumFractionDigits: maximumFractionDigits
     }).format(amount);
+    
+    // ✅ INVERTE POSIZIONE € (da "1.265 €" a "€1.265")
+    return formatted.replace(/(\d[\d\.,]*)\s*€/, '€$1');
 }
     
     let bookingData = {
@@ -944,37 +936,75 @@ function formatPrice(price, currency = 'EUR') {
 
     // ✅ 10c. CARD SECONDA SUPERCAR DINAMICA (con nome corretto)
     if (skuPrefix === 'SC' && product.supercarComboSku) {
-        fetchProductDetails(product.supercarComboSku)
-            .then(secondCar => {
-                const secondCarSection = document.getElementById('secondCarSection');
-                if (secondCarSection) {
-                    const basePrice = product.price || 0;
-                    const comboPrice = product.supercarComboPrice || 0;
-                    const additionalPrice = Math.max(0, comboPrice - basePrice);
-                    
-                    const checkboxLabel = secondCarSection.querySelector('.checkbox-container div');
-                    if (checkboxLabel) {
-                        checkboxLabel.innerHTML = `
-                            <div class="font-semibold mb-1">Aggiungi ${secondCar.title}</div>
-                            <div class="text-sm" style="color: #a59173;">${formatPrice(additionalPrice)} aggiuntivi - Include servizi fotografici e video</div>
-                        `;
-                    }
-                    
-                    const checkbox = document.getElementById('secondCarCheckbox');
-                    if (checkbox) {
-                        checkbox.dataset.comboPrice = additionalPrice;
-                        checkbox.dataset.comboName = secondCar.title; // ✅ SALVA NOME
-                    }
-                    
-                    secondCarSection.style.display = 'block';
+    fetchProductDetails(product.supercarComboSku)
+        .then(secondCar => {
+            const secondCarSection = document.getElementById('secondCarSection');
+            const isHuracanSpyder = product.title && 
+                                    product.title.toLowerCase().includes('lamborghini') && 
+                                    product.title.toLowerCase().includes('huracán spyder');
+            
+            if (secondCarSection) {
+                const basePrice = product.price || 0;
+                const comboPrice = product.supercarComboPrice || 0;
+                const additionalPrice = Math.max(0, comboPrice - basePrice);
+                
+                let labelHTML = `
+                    <div class="font-semibold mb-1">Aggiungi ${secondCar.title}</div>
+                    <div class="text-sm" style="color: #a59173;">${formatPrice(additionalPrice)} aggiuntivi - Include servizi fotografici e video</div>
+                `;
+                
+                // ✅ HURACÁN: Aggiungi servizi DENTRO la card
+                if (isHuracanSpyder) {
+                    labelHTML += `
+                    <div class="mt-4 space-y-3" id="huracanExtraServices" style="display: none;">
+                        <div style="border-top: 1px solid rgba(80, 60, 45, 0.3); padding-top: 15px; margin-top: 15px;">
+                            <div style="font-size: 0.85rem; color: #D4AF37; margin-bottom: 10px; text-transform: uppercase; letter-spacing: 1px;">Servizi Aggiuntivi Disponibili</div>
+                            <label class="checkbox-container" style="margin-bottom: 10px;">
+                                <input type="checkbox" class="extra-service" data-price="290" data-service="photo">
+                                <div>
+                                    <div class="font-semibold mb-1" style="font-size: 0.9rem;">Servizio Fotografico Professionale</div>
+                                    <div class="text-sm" style="color: #a59173;">+${formatPrice(290)} - Su una vettura a scelta</div>
+                                </div>
+                            </label>
+                            <label class="checkbox-container" style="margin-bottom: 10px;">
+                                <input type="checkbox" class="extra-service" data-price="490" data-service="video-hd">
+                                <div>
+                                    <div class="font-semibold mb-1" style="font-size: 0.9rem;">Video HD Professionale</div>
+                                    <div class="text-sm" style="color: #a59173;">+${formatPrice(490)} - Disponibile su entrambe le vetture</div>
+                                </div>
+                            </label>
+                            <label class="checkbox-container">
+                                <input type="checkbox" class="extra-service" data-price="690" data-service="video-360">
+                                <div>
+                                    <div class="font-semibold mb-1" style="font-size: 0.9rem;">Video 360° Immersivo</div>
+                                    <div class="text-sm" style="color: #a59173;">+${formatPrice(690)} - Su una vettura (marchi diversi)</div>
+                                </div>
+                            </label>
+                        </div>
+                    </div>
+                    `;
                 }
-            })
-            .catch(err => {
-                console.log('Supercar Combo non trovata, card nascosta');
-                const secondCarSection = document.getElementById('secondCarSection');
-                if (secondCarSection) secondCarSection.style.display = 'none';
-            });
-    } else {
+                
+                const checkboxLabel = secondCarSection.querySelector('.checkbox-container div');
+                if (checkboxLabel) {
+                    checkboxLabel.innerHTML = labelHTML;
+                }
+                
+                const checkbox = document.getElementById('secondCarCheckbox');
+                if (checkbox) {
+                    checkbox.dataset.comboPrice = additionalPrice;
+                    checkbox.dataset.comboName = secondCar.title;
+                }
+                
+                secondCarSection.style.display = 'block';
+            }
+        })
+        .catch(err => {
+            console.log('Supercar Combo non trovata, card nascosta');
+            const secondCarSection = document.getElementById('secondCarSection');
+            if (secondCarSection) secondCarSection.style.display = 'none';
+        });
+} else {
         const secondCarSection = document.getElementById('secondCarSection');
         if (secondCarSection) secondCarSection.style.display = 'none';
     }
@@ -1222,47 +1252,28 @@ const isHuracanSpyder = product.title &&
                         product.title.toLowerCase().includes('huracán spyder');
 
 if (skuPrefix === 'SC') {
+    const isHuracanSpyder = product.title && 
+                            product.title.toLowerCase().includes('lamborghini') && 
+                            product.title.toLowerCase().includes('huracán spyder');
+    
     if (isHuracanSpyder) {
-        // ✅ Huracán Spyder: servizi solo con combo (logica speciale)
-        const extraServicesSection = document.getElementById('extraServicesSection');
-        const extraServicesContainer = document.getElementById('extraServicesContainer');
-        
+        // ✅ Huracán Spyder: toggle servizi DENTRO la card combo
         if (secondCarCheckbox) {
             secondCarCheckbox.addEventListener('change', function() {
                 bookingData.secondCar = this.checked;
                 const comboPrice = parseInt(this.dataset.comboPrice) || 1490;
                 const comboName = this.dataset.comboName || 'Seconda Supercar';
                 
-                // ✅ Mostra/nascondi sezione servizi per Huracán
-                if (extraServicesSection && extraServicesContainer) {
-                    if (this.checked) {
-                        // Popola servizi se non già fatto
-                        if (extraServicesContainer.children.length === 0) {
-                            const services = [
-                                { id: 'photo', label: 'Servizio Fotografico Professionale', price: 290, desc: 'Su una vettura a scelta' },
-                                { id: 'video-hd', label: 'Video HD Professionale', price: 490, desc: 'Disponibile su entrambe le vetture' },
-                                { id: 'video-360', label: 'Video 360° Immersivo', price: 690, desc: 'Su una vettura (marchi diversi)' }
-                            ];
-                            
-                            services.forEach(service => {
-                                const checkbox = document.createElement('label');
-                                checkbox.className = 'checkbox-container';
-                                checkbox.innerHTML = `
-                                    <input type="checkbox" class="extra-service" data-price="${service.price}" data-service="${service.id}">
-                                    <div>
-                                        <div class="font-semibold mb-1">${service.label}</div>
-                                        <div class="text-sm" style="color: #a59173;">+${formatPrice(service.price)} - ${service.desc}</div>
-                                    </div>
-                                `;
-                                extraServicesContainer.appendChild(checkbox);
-                            });
-                        }
-                        
-                        extraServicesSection.style.display = 'block';
-                    } else {
-                        extraServicesSection.style.display = 'none';
-                        // Deseleziona tutti i servizi
-                        document.querySelectorAll('.extra-service').forEach(cb => cb.checked = false);
+                // ✅ Mostra/nascondi servizi DENTRO la card
+                const huracanServices = document.getElementById('huracanExtraServices');
+                if (huracanServices) {
+                    huracanServices.style.display = this.checked ? 'block' : 'none';
+                    
+                    // Deseleziona servizi se unchecked
+                    if (!this.checked) {
+                        huracanServices.querySelectorAll('.extra-service').forEach(cb => {
+                            cb.checked = false;
+                        });
                         bookingData.extraServices = [];
                     }
                 }
@@ -1280,7 +1291,7 @@ if (skuPrefix === 'SC') {
             });
         }
     } else {
-        // ✅ Altre supercar: servizi sempre visibili (già gestito in renderPage)
+        // ✅ Altre supercar: comportamento normale
         if (secondCarCheckbox) {
             secondCarCheckbox.addEventListener('change', function() {
                 bookingData.secondCar = this.checked;
@@ -1316,6 +1327,28 @@ if (skuPrefix === 'SC') {
                 updatePriceSummary();
             });
         });
+
+        // ✅ Re-bind listener per servizi Huracán (creati dinamicamente)
+setTimeout(() => {
+    document.querySelectorAll('.extra-service').forEach(checkbox => {
+        // Rimuovi eventuali listener duplicati
+        const newCheckbox = checkbox.cloneNode(true);
+        checkbox.parentNode.replaceChild(newCheckbox, checkbox);
+        
+        newCheckbox.addEventListener('change', function() {
+            const price = parseInt(this.dataset.price);
+            const service = this.dataset.service;
+            
+            if (this.checked) {
+                bookingData.extraServices.push({ service, price });
+            } else {
+                bookingData.extraServices = bookingData.extraServices.filter(s => s.service !== service);
+            }
+            
+            updatePriceSummary();
+        });
+    });
+}, 500); // Attendi che il DOM sia aggiornato
 
         // Initialize calendar
         initCalendar();
@@ -1402,7 +1435,8 @@ function initDistanceSelection(product) {
             const serviceNames = {
                 'photo': 'Servizio Fotografico',
                 'video-hd': 'Video HD',
-                'video-360': 'Video 360°'
+                'video-360': 'Video 360°',
+                'extra-passengers': 'Passeggeri Extra'
             };
             
             const div = document.createElement('div');
