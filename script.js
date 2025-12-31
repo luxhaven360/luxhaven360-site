@@ -131,10 +131,9 @@ function createProductCard(prod, defaultCta) {
     const title = el('h3', { class: 'card-title' }, [document.createTextNode(prod.title || 'Untitled')]);
     card.appendChild(title);
 
-    // ✅ AGGIORNATO: Usa shortDesc per index.html
-const descText = prod.shortDesc || prod.desc || '';
-const desc = el('p', { class: 'card-desc' }, [document.createTextNode(descText)]);
-card.appendChild(desc);
+    // desc
+    const desc = el('p', { class: 'card-desc' }, [document.createTextNode(prod.desc || '')]);
+    card.appendChild(desc);
 
     // GESTIONE PREZZO SPECIALE PER IMMOBILI
 const isProperty = prod.category === 'properties';
@@ -611,5 +610,3 @@ function resetCategoryFilter() {
         });
     }
 }
-
-
