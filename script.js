@@ -76,7 +76,7 @@ function el(tag, attrs = {}, children = []) {
  * Formatta il prezzo secondo lo standard italiano
  * @param {number} price - Prezzo da formattare
  * @param {string} currency - Valuta (default: EUR)
- * @returns {string} Prezzo formattato
+ * @returns {string} Prezzo formattato (es: "1.265 €" o "150,00 €")
  */
 function formatPrice(price, currency = 'EUR') {
     const amount = parseFloat(price) || 0;
@@ -94,15 +94,11 @@ function formatPrice(price, currency = 'EUR') {
         minimumFractionDigits = 2;
         maximumFractionDigits = 2;
     } else if (amount < 1000) {
-        // Da 500 a 999: decimali opzionali (se è intero non mostra)
+        // Da 500 a 999: decimali opzionali
         minimumFractionDigits = 0;
         maximumFractionDigits = 2;
-    } else if (amount < 10000) {
-        // Da 1.000 a 9.999: no decimali
-        minimumFractionDigits = 0;
-        maximumFractionDigits = 0;
     } else {
-        // Da 10.000 in su: mai decimali
+        // Da 1.000 in su: mai decimali
         minimumFractionDigits = 0;
         maximumFractionDigits = 0;
     }
@@ -256,26 +252,19 @@ if (isProperty) {
         priceContainer.appendChild(discountRow);
         card.appendChild(priceContainer);
     } else {
-                // Prezzo normale con formattazione italiana
-        let priceDisplay;
-        if (prod.price != null && prod.price > 0) {
-            // 🆕 Formattazione italiana con separatore migliaia
-            const formattedPrice = new Intl.NumberFormat('it-IT', {
-                style: 'currency',
-                currency: prod.currency || 'EUR',
-                minimumFractionDigits: 0,
-                maximumFractionDigits: 0
-            }).format(prod.price);
-            priceDisplay = formattedPrice;
-        } else {
-            priceDisplay = prod.price_text || 'Contattaci';
-        }
-        
-        const priceText = el('div', { class: 'card-price' }, [
-            document.createTextNode(priceDisplay)
-        ]);
-        card.appendChild(priceText);
+    // Prezzo normale con formattazione italiana
+    let priceDisplay;
+    if (prod.price != null && prod.price > 0) {
+        priceDisplay = formatPrice(prod.price, prod.currency || 'EUR');
+    } else {
+        priceDisplay = prod.price_text || 'Contattaci';
     }
+    
+    const priceText = el('div', { class: 'card-price' }, [
+        document.createTextNode(priceDisplay)
+    ]);
+    card.appendChild(priceText);
+}
 }
 
     // button area
@@ -658,5 +647,6 @@ function resetCategoryFilter() {
         });
     }
 }
+
 
 
