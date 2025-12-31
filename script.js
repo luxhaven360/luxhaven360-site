@@ -81,34 +81,32 @@ function el(tag, attrs = {}, children = []) {
 function formatPrice(price, currency = 'EUR') {
     const amount = parseFloat(price) || 0;
     
-    // Determina se mostrare i decimali in base al range
     let minimumFractionDigits = 0;
     let maximumFractionDigits = 0;
     
     if (amount < 100) {
-        // Da 0 a 99,99: mostra sempre ",00"
         minimumFractionDigits = 2;
         maximumFractionDigits = 2;
     } else if (amount < 500) {
-        // Da 100 a 499: mostra sempre ",00"
         minimumFractionDigits = 2;
         maximumFractionDigits = 2;
     } else if (amount < 1000) {
-        // Da 500 a 999: decimali opzionali
         minimumFractionDigits = 0;
         maximumFractionDigits = 2;
     } else {
-        // Da 1.000 in su: mai decimali
         minimumFractionDigits = 0;
         maximumFractionDigits = 0;
     }
     
-    return new Intl.NumberFormat('it-IT', {
+    const formatted = new Intl.NumberFormat('it-IT', {
         style: 'currency',
         currency: currency,
         minimumFractionDigits: minimumFractionDigits,
         maximumFractionDigits: maximumFractionDigits
     }).format(amount);
+    
+    // ✅ PER INDEX: Mantieni formato standard italiano "1.265 €"
+    return formatted;
 }
 
 // funzione per creare una card prodotto
@@ -647,6 +645,7 @@ function resetCategoryFilter() {
         });
     }
 }
+
 
 
 
