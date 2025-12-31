@@ -72,13 +72,47 @@ function el(tag, attrs = {}, children = []) {
     return node;
 }
 
-// format prezzo semplice
-function formatPrice(p, currency = 'EUR') {
-    try {
-        return new Intl.NumberFormat('it-IT', { style: 'currency', currency }).format(p);
-    } catch (e) {
-        return `${p} ${currency}`;
+/**
+ * Formatta il prezzo secondo lo standard italiano
+ * @param {number} price - Prezzo da formattare
+ * @param {string} currency - Valuta (default: EUR)
+ * @returns {string} Prezzo formattato
+ */
+function formatPrice(price, currency = 'EUR') {
+    const amount = parseFloat(price) || 0;
+    
+    // Determina se mostrare i decimali in base al range
+    let minimumFractionDigits = 0;
+    let maximumFractionDigits = 0;
+    
+    if (amount < 100) {
+        // Da 0 a 99,99: mostra sempre ",00"
+        minimumFractionDigits = 2;
+        maximumFractionDigits = 2;
+    } else if (amount < 500) {
+        // Da 100 a 499: mostra sempre ",00"
+        minimumFractionDigits = 2;
+        maximumFractionDigits = 2;
+    } else if (amount < 1000) {
+        // Da 500 a 999: decimali opzionali (se è intero non mostra)
+        minimumFractionDigits = 0;
+        maximumFractionDigits = 2;
+    } else if (amount < 10000) {
+        // Da 1.000 a 9.999: no decimali
+        minimumFractionDigits = 0;
+        maximumFractionDigits = 0;
+    } else {
+        // Da 10.000 in su: mai decimali
+        minimumFractionDigits = 0;
+        maximumFractionDigits = 0;
     }
+    
+    return new Intl.NumberFormat('it-IT', {
+        style: 'currency',
+        currency: currency,
+        minimumFractionDigits: minimumFractionDigits,
+        maximumFractionDigits: maximumFractionDigits
+    }).format(amount);
 }
 
 // funzione per creare una card prodotto
@@ -624,4 +658,5 @@ function resetCategoryFilter() {
         });
     }
 }
+
 
