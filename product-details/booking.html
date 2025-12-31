@@ -804,76 +804,6 @@ textarea[placeholder="Hai richieste particolari?"] {
         
         // ✅ 6. DESCRIZIONE
         document.querySelector('.product-description').textContent = product.desc;
-
-        // ✅ 6b. GESTIONE CHILOMETRAGGIO/MINUTI DINAMICI (solo per SUPERCAR)
-const skuPrefix = product.sku.split('-')[0].toUpperCase();
-
-if (skuPrefix === 'SC' && product.chilometraggio && product.chilometraggio.length > 0) {
-    const distanceContainer = document.getElementById('distanceOptions');
-    
-    if (distanceContainer) {
-        // ✅ Definisci casi speciali
-        const specialCases = {
-            'Ferrari 458 Spider': [9, 16, 32, 65, 80, 100],
-            'McLaren 720s Performance': [10, 20, 30, 60, 90, 120] // minuti
-        };
-        
-        const isCombo = product.title.includes('+');
-        const useMinutes = product.title === 'McLaren 720s Performance';
-        
-        let distances = [10, 20, 30, 60, 70, 120]; // Default km
-        
-        if (specialCases[product.title]) {
-            distances = specialCases[product.title];
-        } else if (isCombo) {
-            distances = [10, 20, 30, 60, 90, 120];
-        }
-        
-        // ✅ Genera HTML dinamico
-        distanceContainer.innerHTML = '';
-        
-        distances.forEach((dist, index) => {
-            if (index >= product.chilometraggio.length) return;
-            
-            const price = parseInt(product.chilometraggio[index]);
-            const unit = useMinutes ? 'min' : 'km';
-            const label = useMinutes ? 
-                `${dist} minuti` : 
-                (dist < 30 ? 'Esperienza rapida' : 
-                 dist < 60 ? 'Più popolare' : 
-                 dist < 90 ? 'Esperienza completa' : 'Esperienza definitiva');
-            
-            distanceContainer.innerHTML += `
-                <div class="distance-option" data-km="${dist}" data-price="${price}">
-                    <div class="text-2xl font-bold gradient-text mb-2">${dist} ${unit}</div>
-                    <div class="text-xl font-semibold mb-1">€${price.toLocaleString('it-IT')}</div>
-                    <div class="text-sm" style="color: #a59173;">${label}</div>
-                </div>
-            `;
-        });
-        
-        // ✅ Reattiva i listener
-        document.querySelectorAll('.distance-option').forEach(option => {
-            option.addEventListener('click', function() {
-                document.querySelectorAll('.distance-option').forEach(opt => opt.classList.remove('selected'));
-                this.classList.add('selected');
-                
-                bookingData.distance = this.dataset.km;
-                bookingData.basePrice = parseInt(this.dataset.price);
-                
-                updatePriceSummary();
-            });
-        });
-        
-        // ✅ Auto-select prima opzione
-        const firstOption = distanceContainer.querySelector('.distance-option');
-        if (firstOption) {
-            firstOption.classList.add('selected');
-            bookingData.distance = firstOption.dataset.km;
-            bookingData.basePrice = parseInt(firstOption.dataset.price);
-        }
-    }
-}
         
         // ✅ 7. TABELLA PRESTAZIONI
         const table1Title = document.querySelector('.table-1-title');
@@ -954,62 +884,17 @@ if (skuPrefix === 'SC' && product.chilometraggio && product.chilometraggio.lengt
             summaryTitle.textContent = product.title;
         }
 
-        // 12. GESTIONE PREZZO SU RICHIESTA + CARD SECONDA SUPERCAR DINAMICA
-const isPriceOnRequest = !config.showDynamicPrice && config.fixedPrice === '€ —';
-if (isPriceOnRequest) {
-    // Nascondi sezione selezione percorso per IMMOBILI
-    const distanceSection = document.querySelector('.glass-card:has(#distanceOptions)');
-    if (distanceSection) distanceSection.style.display = 'none';
-
-    // Nascondi checkbox seconda supercar (non applicabile a IMMOBILI)
-    const secondCarSection = document.querySelector('.glass-card:has(#secondCarCheckbox)');
-    if (secondCarSection) secondCarSection.style.display = 'none';
-} else {
-    // GESTIONE CARD SECONDA SUPERCAR (dinamica da colonna Supercar Combo)
-    const secondCarSection = document.querySelector('.glass-card:has(#secondCarCheckbox)');
-
-    if (product.supercarCombo && product.supercarCombo.sku) {
-        // ✅ Fetch dati supercar combo
-        fetch(`${WEB_APP_URL}?action=get_combo_car_details&sku=${encodeURIComponent(product.supercarCombo.sku)}&t=${Date.now()}`)
-            .then(res => res.json())
-            .then(comboData => {
-                if (comboData.success) {
-                    // ✅ Calcola prezzo aggiuntivo
-                    const comboPrice = product.supercarCombo.price || 0;
-                    const singlePrice = product.price || 0;
-                    const additionalPrice = comboPrice - singlePrice;
-                    
-                    // ✅ Aggiorna testo dinamicamente
-                    const checkboxLabel = secondCarSection && secondCarSection.querySelector('label .font-semibold');
-                    const checkboxDesc = secondCarSection && secondCarSection.querySelector('label .text-sm');
-                    
-                    if (checkboxLabel) {
-                        checkboxLabel.textContent = `Aggiungi ${comboData.title}`;
-                    }
-                    
-                    if (checkboxDesc) {
-                        checkboxDesc.textContent = `€${additionalPrice.toLocaleString('it-IT')} aggiuntivi – Include servizi fotografici e video`;
-                    }
-                    
-                    // ✅ Memorizza prezzo aggiuntivo
-                    bookingData.comboAdditionalPrice = additionalPrice;
-                    
-                    // ✅ Mostra la sezione
-                    if (secondCarSection) secondCarSection.style.display = 'block';
-                } else {
-                    // se response non ok, nascondi la sezione
-                    if (secondCarSection) secondCarSection.style.display = 'none';
-                }
-            })
-            .catch(err => {
-                console.error('Errore recupero combo car:', err);
-                if (secondCarSection) secondCarSection.style.display = 'none';
-            });
-    } else {
-        // ✅ Nascondi se non c'è combo
-        if (secondCarSection) secondCarSection.style.display = 'none';
-    }
-}
+        // 12. GESTIONE PREZZO SU RICHIESTA PER IMMOBILI
+        const isPriceOnRequest = !config.showDynamicPrice && config.fixedPrice === '€ —';
+        if (isPriceOnRequest) {
+            // Nascondi sezione selezione percorso per IMMOBILI
+            const distanceSection = document.querySelector('.glass-card:has(#distanceOptions)');
+            if (distanceSection) distanceSection.style.display = 'none';
+    
+            // Nascondi checkbox seconda supercar (non applicabile a IMMOBILI)
+            const secondCarSection = document.querySelector('.glass-card:has(#secondCarCheckbox)');
+            if (secondCarSection) secondCarSection.style.display = 'none';
+        }
 
         // 13. GESTIONE ESPERIENZE (EX) - Nascondi sezioni non applicabili
         const skuPrefix = product.sku.split('-')[0].toUpperCase();
@@ -1026,39 +911,7 @@ if (isPriceOnRequest) {
             bookingData.basePrice = product.price || 0;
         }
 
-        // TROVA la sezione politiche e SOSTITUISCI con:
-
-// ✅ 14. POLITICHE DINAMICHE (da colonna Politiche)
-const policiesCard = document.querySelector('.policies-card');
-
-if (policiesCard && product.politiche && product.politiche.length > 0) {
-    const policiesBody = policiesCard.querySelector('.space-y-3');
-    
-    if (policiesBody) {
-        policiesBody.innerHTML = '';
-        
-        product.politiche.forEach(policy => {
-            // ✅ Split per ":" e rendi prima parte in grassetto
-            const parts = policy.split(':');
-            
-            if (parts.length >= 2) {
-                const title = parts[0].trim();
-                const description = parts.slice(1).join(':').trim();
-                
-                policiesBody.innerHTML += `
-                    <div>
-                        <strong style="color: #f5f5f0;">${title}:</strong> ${description}
-                    </div>
-                `;
-            } else {
-                // ✅ Fallback se non c'è ":"
-                policiesBody.innerHTML += `<div>${policy}</div>`;
-            }
-        });
-    }
-}
-
-        // 15. GESTIONE SUPERCAR (SC) - Usa prezzo base prodotto
+        // 14. GESTIONE SUPERCAR (SC) - Usa prezzo base prodotto
         if (skuPrefix === 'SC') {
             bookingData.basePrice = product.price || 0;
         }
@@ -1097,40 +950,6 @@ if (policiesCard && product.politiche && product.politiche.length > 0) {
     // ========================================
     function initializeComponents(product) {
         const skuPrefix = product.sku.split('-')[0].toUpperCase();
-
-        // ✅ SERVIZI AGGIUNTIVI: Visibili sempre tranne per "Lamborghini Huracán Spyder" senza combo
-const extraServicesSection = document.getElementById('extraServices');
-const isLamborghiniHuracan = product.title.includes('Lamborghini Huracán Spyder');
-
-if (skuPrefix === 'SC') {
-    if (isLamborghiniHuracan) {
-        // ✅ Solo dopo aver aggiunto seconda supercar
-        extraServicesSection.classList.add('hidden');
-    } else {
-        // ✅ Mostra subito per altre supercar
-        extraServicesSection.classList.remove('hidden');
-    }
-}
-
-        // AGGIUNGI questa sezione DOPO gli altri servizi extra:
-
-// ✅ NUOVO SERVIZIO: PASSEGGERI EXTRA (se posti = 4)
-const caratteristiche = product.caratteristiche || [];
-const postiAuto = caratteristiche[caratteristiche.length - 1]; // Ultimo valore
-
-if (postiAuto && parseInt(postiAuto) === 4) {
-    const extraPassengerService = `
-        <label class="checkbox-container">
-            <input type="checkbox" class="extra-service" data-price="50" data-service="extra-passengers">
-            <div>
-                <div class="font-semibold mb-1">Passeggeri Extra (max 2)</div>
-                <div class="text-sm" style="color: #a59173;">+€50 a persona</div>
-            </div>
-        </label>
-    `;
-    
-    extraServicesSection.insertAdjacentHTML('beforeend', extraPassengerService);
-}
     
         // Distance selection (solo per prodotti che NON sono EX o SC)
         document.querySelectorAll('.distance-option').forEach(option => {
@@ -1164,25 +983,17 @@ if (postiAuto && parseInt(postiAuto) === 4) {
         const secondCarCheckbox = document.getElementById('secondCarCheckbox');
         if (secondCarCheckbox) {
             secondCarCheckbox.addEventListener('change', function() {
-    bookingData.secondCar = this.checked;
-    document.getElementById('extraServices').classList.toggle('hidden', !this.checked);
-    document.getElementById('secondCarPrice').classList.toggle('hidden', !this.checked);
-    
-    // ✅ Aggiorna testo del prezzo nel riepilogo
-    if (this.checked && bookingData.comboAdditionalPrice) {
-        const priceSpan = document.querySelector('#secondCarPrice .font-semibold');
-        if (priceSpan) {
-            priceSpan.textContent = `€${bookingData.comboAdditionalPrice.toLocaleString('it-IT')}`;
-        }
-    }
-    
-    if (!this.checked) {
-        document.querySelectorAll('.extra-service').forEach(cb => cb.checked = false);
-        bookingData.extraServices = [];
-    }
-    
-    updatePriceSummary();
-});
+                bookingData.secondCar = this.checked;
+                document.getElementById('extraServices').classList.toggle('hidden', !this.checked);
+                document.getElementById('secondCarPrice').classList.toggle('hidden', !this.checked);
+                
+                if (!this.checked) {
+                    document.querySelectorAll('.extra-service').forEach(cb => cb.checked = false);
+                    bookingData.extraServices = [];
+                }
+                
+                updatePriceSummary();
+            });
         }
 
         // Extra services
@@ -1233,13 +1044,9 @@ if (postiAuto && parseInt(postiAuto) === 4) {
     
         document.getElementById('basePrice').textContent = `€${bookingData.basePrice.toLocaleString()}`;
         
-        // TROVA la funzione updatePriceSummary e MODIFICA la sezione secondCar:
-
-if (bookingData.secondCar) {
-    // ✅ Usa il prezzo aggiuntivo calcolato
-    const additionalPrice = bookingData.comboAdditionalPrice || 1490;
-    total += additionalPrice;
-}
+        if (bookingData.secondCar) {
+            total += 1490;
+        }
         
         const extraServicesDiv = document.getElementById('extraServicesPrice');
         extraServicesDiv.innerHTML = '';
