@@ -5,6 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Prenota il Tuo Test Drive</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <!-- International Telephone Input -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/intl-tel-input/18.2.1/css/intlTelInput.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/intl-tel-input/18.2.1/js/intlTelInput.min.js"></script>
     <script>
         // Suppress Tailwind CDN warning
         tailwind.config = {
@@ -578,9 +581,9 @@ textarea[placeholder="Hai richieste particolari?"] {
                             <input type="email" placeholder="tua@email.com" required>
                         </div>
                         <div>
-                            <label class="block text-sm font-medium mb-2" style="color: #c9a891;">Telefono</label>
-                            <input type="tel" placeholder="+39 123 456 7890" required>
-                        </div>
+    <label class="block text-sm font-medium mb-2" style="color: #c9a891;">Telefono</label>
+    <input type="tel" id="phoneInput" required>
+</div>
                         <div class="md:col-span-2">
                             <label class="block text-sm font-medium mb-2" style="color: #c9a891;">Note Aggiuntive (opzionale)</label>
                             <textarea rows="3" placeholder="Hai richieste particolari?"></textarea>
@@ -711,6 +714,185 @@ function formatPrice(price, currency = 'EUR') {
     const maxDate = new Date(now);
     maxDate.setMonth(maxDate.getMonth() + 6);
     const earliestAllowed = new Date(now.getFullYear(), now.getMonth() - 2, 1);
+
+        // ========================================
+// CONFIGURAZIONE COMBO SUPERCAR SPECIFICHE
+// ========================================
+const COMBO_PRICING = {
+    // Mapping SKU → Nome normalizzato
+    skuMap: {
+        'SC-001': 'ferrari-california',
+        'SC-003': 'ferrari-portofino',
+        'SC-005': 'ferrari-488-spider',
+        'SC-002': 'lamborghini-huracan-spyder'
+    },
+    
+    // Prezzi per ciascuna combinazione valida
+    combos: {
+        'ferrari-california+lamborghini-huracan-spyder': {
+            km: [10, 20, 30, 60, 90, 120],
+            prices: [176, 312, 424, 784, 1096, 1368],
+            labels: ['Esperienza rapida', 'Più popolare', 'Esperienza completa', 'Tour esteso', 'Avventura lunga', 'Esperienza definitiva']
+        },
+        'ferrari-portofino+lamborghini-huracan-spyder': {
+            km: [10, 20, 30, 60, 90, 120],
+            prices: [208, 368, 528, 929, 1315, 1528],
+            labels: ['Esperienza rapida', 'Più popolare', 'Esperienza completa', 'Tour esteso', 'Avventura lunga', 'Esperienza definitiva']
+        },
+        'ferrari-488-spider+lamborghini-huracan-spyder': {
+            km: [10, 20, 30, 60, 90, 120],
+            prices: [224, 399, 575, 1040, 1460, 1800],
+            labels: ['Esperienza rapida', 'Più popolare', 'Esperienza completa', 'Tour esteso', 'Avventura lunga', 'Esperienza definitiva']
+        }
+    }
+};
+
+/**
+ * Genera chiave combo normalizzata (ordine alfabetico)
+ */
+function getComboKey(sku1, sku2) {
+    const name1 = COMBO_PRICING.skuMap[sku1];
+    const name2 = COMBO_PRICING.skuMap[sku2];
+    
+    if (!name1 || !name2) return null;
+    
+    // Ordine alfabetico per garantire match bidirezionale
+    const sorted = [name1, name2].sort();
+    return sorted.join('+');
+}
+
+/**
+ * Verifica se la combinazione è una delle 3 speciali
+ */
+function isSpecialCombo(mainSku, secondSku) {
+    const comboKey = getComboKey(mainSku, secondSku);
+    return comboKey && COMBO_PRICING.combos.hasOwnProperty(comboKey);
+}
+
+/**
+ * Recupera configurazione prezzi combo
+ */
+function getComboPricing(mainSku, secondSku) {
+    const comboKey = getComboKey(mainSku, secondSku);
+    return comboKey ? COMBO_PRICING.combos[comboKey] : null;
+}
+
+        // ========================================
+// VALIDAZIONE EMAIL AVANZATA
+// ========================================
+const EMAIL_CONFIG = {
+    // Provider affidabili (whitelist)
+    allowedProviders: [
+        'gmail.com', 'googlemail.com', 'outlook.com', 'outlook.it', 
+        'hotmail.com', 'hotmail.it', 'live.com', 'live.it',
+        'yahoo.com', 'yahoo.it', 'icloud.com', 'me.com', 'mac.com',
+        'protonmail.com', 'proton.me', 'libero.it', 'virgilio.it',
+        'tiscali.it', 'alice.it', 'tim.it', 'fastwebnet.it',
+        'aruba.it', 'pec.it', 'legalmail.it'
+    ],
+    
+    // Domini temporanei/sospetti (blacklist)
+    blockedDomains: [
+        'tempmail.com', '10minutemail.com', 'guerrillamail.com',
+        'mailinator.com', 'throwaway.email', 'temp-mail.org',
+        'yopmail.com', 'fakeinbox.com', 'trashmail.com'
+    ]
+};
+
+/**
+ * Valida email contro regole aziendali
+ */
+function validateEmail(email) {
+    // 1. Validazione formato base
+    const regex = /^[a-zA-Z0-9._+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
+    if (!regex.test(email)) {
+        return { valid: false, reason: 'formato' };
+    }
+    
+    // 2. Estrai dominio
+    const domain = email.split('@')[1].toLowerCase();
+    
+    // 3. Check blacklist
+    if (EMAIL_CONFIG.blockedDomains.includes(domain)) {
+        return { valid: false, reason: 'temporaneo' };
+    }
+    
+    // 4. Check whitelist
+    if (!EMAIL_CONFIG.allowedProviders.includes(domain)) {
+        return { valid: false, reason: 'sconosciuto' };
+    }
+    
+    return { valid: true };
+}
+
+/**
+ * Mostra avviso email elegante
+ */
+function showEmailWarning(reason) {
+    const messages = {
+        'formato': 'Formato email non valido. Inserisci un indirizzo email corretto.',
+        'temporaneo': 'Email temporanee non sono consentite. Utilizza un indirizzo email permanente.',
+        'sconosciuto': 'Provider email non riconosciuto. Utilizza un servizio email affidabile (Gmail, Outlook, iCloud, ecc.).'
+    };
+    
+    const emailInput = document.querySelector('input[type="email"]');
+    const existingWarning = document.getElementById('emailWarning');
+    
+    // Rimuovi avviso precedente
+    if (existingWarning) existingWarning.remove();
+    
+    // Crea nuovo avviso
+    const warning = document.createElement('div');
+    warning.id = 'emailWarning';
+    warning.style.cssText = `
+        margin-top: 12px;
+        padding: 16px 20px;
+        background: linear-gradient(135deg, rgba(239, 68, 68, 0.15), rgba(220, 38, 38, 0.08));
+        border: 1.5px solid rgba(239, 68, 68, 0.4);
+        border-radius: 12px;
+        color: #fca5a5;
+        font-size: 14px;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        animation: slideDown 0.4s ease;
+    `;
+    
+    warning.innerHTML = `
+        <svg style="width: 20px; height: 20px; min-width: 20px; color: #ef4444;" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+        </svg>
+        <span>${messages[reason]}</span>
+    `;
+    
+    // Aggiungi stile animazione
+    if (!document.getElementById('emailAnimationStyle')) {
+        const style = document.createElement('style');
+        style.id = 'emailAnimationStyle';
+        style.textContent = `
+            @keyframes slideDown {
+                from { opacity: 0; transform: translateY(-10px); }
+                to { opacity: 1; transform: translateY(0); }
+            }
+        `;
+        document.head.appendChild(style);
+    }
+    
+    // Inserisci dopo input
+    emailInput.parentElement.appendChild(warning);
+    
+    // Evidenzia input
+    emailInput.style.borderColor = '#ef4444';
+    emailInput.style.boxShadow = '0 0 0 4px rgba(239, 68, 68, 0.15)';
+    
+    // Auto-rimuovi dopo 5 secondi
+    setTimeout(() => {
+        warning.style.opacity = '0';
+        warning.style.transform = 'translateY(-10px)';
+        warning.style.transition = 'all 0.3s ease';
+        setTimeout(() => warning.remove(), 300);
+    }, 5000);
+}
 
     // ========================================
     // INIZIALIZZAZIONE PAGINA
@@ -1090,6 +1272,7 @@ function formatPrice(price, currency = 'EUR') {
                 if (checkbox) {
                     checkbox.dataset.comboPrice = additionalPrice;
                     checkbox.dataset.comboName = secondCar.title;
+                    checkbox.dataset.secondSku = product.supercarComboSku;
                 }
                 
                 secondCarSection.style.display = 'block';
@@ -1370,10 +1553,79 @@ if (skuPrefix === 'SC') {
     if (isHuracanSpyder) {
         // ✅ Huracán: toggle servizi nella card combo
         if (secondCarCheckbox) {
-            secondCarCheckbox.addEventListener('change', function() {
-                bookingData.secondCar = this.checked;
-                const comboPrice = parseInt(this.dataset.comboPrice) || 1490;
-                const comboName = this.dataset.comboName || 'Seconda Supercar';
+    secondCarCheckbox.addEventListener('change', function() {
+        bookingData.secondCar = this.checked;
+        const comboPrice = parseInt(this.dataset.comboPrice) || 1490;
+        const comboName = this.dataset.comboName || 'Seconda Supercar';
+        const secondSku = this.dataset.secondSku; // NUOVO: salva SKU seconda supercar
+        
+        // ✅ LOGICA COMBO SPECIALE
+        const mainSku = bookingData.sku;
+        const distanceGrid = document.getElementById('distanceOptions');
+        
+        if (this.checked && secondSku && isSpecialCombo(mainSku, secondSku)) {
+            // 🎯 COMBO SPECIALE ATTIVATA → Aggiorna prezzi immediatamente
+            const comboPricing = getComboPricing(mainSku, secondSku);
+            
+            if (distanceGrid && comboPricing) {
+                distanceGrid.innerHTML = ''; // Pulisci grid esistente
+                
+                comboPricing.km.forEach((km, index) => {
+                    const price = comboPricing.prices[index];
+                    const label = comboPricing.labels[index];
+                    
+                    const option = document.createElement('div');
+                    option.className = 'distance-option';
+                    option.dataset.km = km;
+                    option.dataset.price = price;
+                    
+                    option.innerHTML = `
+                        <div class="text-2xl font-bold gradient-text mb-2">${km} km</div>
+                        <div class="text-xl font-semibold mb-1">${formatPrice(price)}</div>
+                        <div class="text-sm" style="color: #a59173;">${label}</div>
+                    `;
+                    
+                    distanceGrid.appendChild(option);
+                });
+                
+                // Re-inizializza selezione distanza con nuovi prezzi
+                initDistanceSelection(bookingData.productData);
+                
+                console.log('✅ COMBO SPECIALE ATTIVATA:', getComboKey(mainSku, secondSku));
+            }
+        } else if (!this.checked && distanceGrid) {
+            // 🔄 COMBO DISATTIVATA → Ripristina prezzi originali
+            const product = bookingData.productData;
+            
+            if (product.chilometraggioPrices && product.chilometraggioPrices.length > 0) {
+                distanceGrid.innerHTML = '';
+                
+                const distanceConfig = getDistanceConfigForProduct(product);
+                
+                distanceConfig.options.forEach((distance, index) => {
+                    if (index < product.chilometraggioPrices.length) {
+                        const price = product.chilometraggioPrices[index];
+                        
+                        const option = document.createElement('div');
+                        option.className = 'distance-option';
+                        option.dataset.km = distance.value;
+                        option.dataset.price = price;
+                        
+                        option.innerHTML = `
+                            <div class="text-2xl font-bold gradient-text mb-2">${distance.value} ${distance.unit}</div>
+                            <div class="text-xl font-semibold mb-1">${formatPrice(price)}</div>
+                            <div class="text-sm" style="color: #a59173;">${distance.label}</div>
+                        `;
+                        
+                        distanceGrid.appendChild(option);
+                    }
+                });
+                
+                initDistanceSelection(product);
+                
+                console.log('🔄 Prezzi originali ripristinati');
+            }
+        }
                 
                 // Toggle visibilità servizi
                 const huracanServices = document.getElementById('huracanExtraServices');
@@ -1592,6 +1844,132 @@ document.querySelectorAll('label:has(.passenger-radio)').forEach(label => {
     });
 });
 
+        // ✅ VALIDAZIONE EMAIL IN TEMPO REALE
+const emailInput = document.querySelector('input[type="email"]');
+if (emailInput) {
+    emailInput.addEventListener('blur', function() {
+        const email = this.value.trim();
+        if (!email) return;
+        
+        const validation = validateEmail(email);
+        
+        if (!validation.valid) {
+            showEmailWarning(validation.reason);
+        } else {
+            // Rimuovi avvisi e ripristina stile
+            const warning = document.getElementById('emailWarning');
+            if (warning) warning.remove();
+            
+            this.style.borderColor = 'rgba(80, 60, 45, 0.4)';
+            this.style.boxShadow = 'none';
+        }
+    });
+    
+    // Rimuovi errore durante digitazione
+    emailInput.addEventListener('input', function() {
+        const warning = document.getElementById('emailWarning');
+        if (warning) {
+            warning.style.opacity = '0';
+            setTimeout(() => warning.remove(), 300);
+        }
+        this.style.borderColor = 'rgba(80, 60, 45, 0.4)';
+        this.style.boxShadow = 'none';
+    });
+}
+
+        // ✅ INPUT TELEFONO INTERNAZIONALE
+const phoneInput = document.getElementById('phoneInput');
+if (phoneInput) {
+    const iti = window.intlTelInput(phoneInput, {
+        preferredCountries: ['it', 'fr', 'de', 'gb', 'us', 'ch'],
+        separateDialCode: true,
+        autoPlaceholder: 'aggressive',
+        formatOnDisplay: true,
+        nationalMode: false,
+        utilsScript: "https://cdnjs.cloudflare.com/ajax/libs/intl-tel-input/18.2.1/js/utils.min.js",
+        customContainer: "phone-input-container",
+        dropdownContainer: document.body
+    });
+    
+    // Stile custom dropdown
+    const style = document.createElement('style');
+    style.textContent = `
+        .iti {
+            width: 100%;
+        }
+        
+        .iti__flag-container {
+            background: rgba(10, 10, 10, 0.9);
+            border: 1.5px solid rgba(80, 60, 45, 0.4);
+            border-right: none;
+            border-radius: 12px 0 0 12px;
+            padding: 0;
+        }
+        
+        .iti__selected-flag {
+            background: transparent;
+            padding: 0 16px;
+        }
+        
+        .iti__selected-flag:hover,
+        .iti__selected-flag:focus {
+            background: rgba(212, 175, 55, 0.08);
+        }
+        
+        #phoneInput {
+            padding-left: 80px !important;
+            border-radius: 12px !important;
+        }
+        
+        .iti__country-list {
+            background: linear-gradient(135deg, rgba(20, 15, 12, 0.98), rgba(30, 20, 15, 0.98));
+            border: 2px solid rgba(212, 175, 55, 0.3);
+            border-radius: 12px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.8);
+            max-height: 300px;
+            margin-top: 4px;
+        }
+        
+        .iti__country {
+            padding: 12px 16px;
+            color: #f5f5f0;
+            transition: all 0.2s ease;
+        }
+        
+        .iti__country:hover {
+            background: rgba(212, 175, 55, 0.12);
+        }
+        
+        .iti__country.iti__highlight {
+            background: rgba(212, 175, 55, 0.2);
+        }
+        
+        .iti__dial-code {
+            color: #d4af37;
+        }
+        
+        .iti__divider {
+            border-bottom: 1px solid rgba(80, 60, 45, 0.3);
+            margin: 8px 0;
+        }
+    `;
+    document.head.appendChild(style);
+    
+    // Validazione numero al blur
+    phoneInput.addEventListener('blur', function() {
+        if (this.value.trim() && !iti.isValidNumber()) {
+            this.style.borderColor = '#ef4444';
+            this.style.boxShadow = '0 0 0 4px rgba(239, 68, 68, 0.15)';
+        } else {
+            this.style.borderColor = 'rgba(80, 60, 45, 0.4)';
+            this.style.boxShadow = 'none';
+        }
+    });
+    
+    // Salva istanza globalmente per recupero numero completo
+    window.phoneInputInstance = iti;
+}
+
         // Initialize calendar
         initCalendar();
     }
@@ -1705,15 +2083,52 @@ function initDistanceSelection(product) {
     // CONFERMA PRENOTAZIONE
     // ========================================
     function confirmBooking() {
-        // ✅ DICHIARAZIONE UNICA DI skuPrefix
-        const skuPrefix = bookingData.productData?.sku.split('-')[0].toUpperCase();
-        const requiresDistance = skuPrefix !== 'EX' && skuPrefix !== 'SC';
+    const skuPrefix = bookingData.productData?.sku.split('-')[0].toUpperCase();
+    const requiresDistance = skuPrefix !== 'EX' && skuPrefix !== 'SC';
+
+    // Validazione distanza
+    if (requiresDistance && !bookingData.distance) {
+        alert('Seleziona un percorso prima di procedere');
+        return;
+    }
     
-        // Validazione distanza (solo per prodotti che la richiedono)
-        if (requiresDistance && !bookingData.distance) {
-            alert('Seleziona un percorso prima di procedere');
-            return;
-        }
+    // ✅ VALIDAZIONE EMAIL
+    const emailInput = document.querySelector('input[type="email"]');
+    const email = emailInput.value.trim();
+    
+    if (!email) {
+        alert('Inserisci il tuo indirizzo email');
+        emailInput.focus();
+        return;
+    }
+    
+    const emailValidation = validateEmail(email);
+    if (!emailValidation.valid) {
+        showEmailWarning(emailValidation.reason);
+        emailInput.focus();
+        return;
+    }
+    
+    // ✅ VALIDAZIONE TELEFONO
+    const phoneInput = document.getElementById('phoneInput');
+    
+    if (!phoneInput.value.trim()) {
+        alert('Inserisci il tuo numero di telefono');
+        phoneInput.focus();
+        return;
+    }
+    
+    if (window.phoneInputInstance && !window.phoneInputInstance.isValidNumber()) {
+        phoneInput.style.borderColor = '#ef4444';
+        phoneInput.style.boxShadow = '0 0 0 4px rgba(239, 68, 68, 0.15)';
+        alert('Numero di telefono non valido. Verifica il formato.');
+        phoneInput.focus();
+        return;
+    }
+    
+    const fullPhoneNumber = window.phoneInputInstance ? 
+                            window.phoneInputInstance.getNumber() : 
+                            phoneInput.value;
     
         const date = bookingData.selectedDate;
         const time = document.getElementById('bookingTime').value;
