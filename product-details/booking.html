@@ -2327,48 +2327,451 @@ function initDistanceSelection(product) {
     // ========================================
     // CONFERMA PRENOTAZIONE
     // ========================================
-    function confirmBooking() {
-        // ✅ DICHIARAZIONE UNICA DI skuPrefix
-        const skuPrefix = bookingData.productData?.sku.split('-')[0].toUpperCase();
-        const requiresDistance = skuPrefix !== 'EX' && skuPrefix !== 'SC';
-    
-        // Validazione distanza (solo per prodotti che la richiedono)
-        if (requiresDistance && !bookingData.distance) {
-            alert('Seleziona un percorso prima di procedere');
-            return;
-        }
-    
-        const date = bookingData.selectedDate;
-        const time = document.getElementById('bookingTime').value;
-        const terms = document.getElementById('termsCheckbox').checked;
-    
-        if (!date || !time) {
-            alert('Seleziona data e orario');
-            return;
-        }
-    
-        if (!terms) {
-            alert('Accetta i termini e condizioni per procedere');
-            return;
-        }
-    
-        const formatted = date.toLocaleDateString('it-IT', {
-            day: '2-digit',
-            month: '2-digit',
-            year: 'numeric'
-        });
-    
-        const isPriceOnRequest = bookingData.productData?.typeConfig && 
-                                 !bookingData.productData.typeConfig.showDynamicPrice;
+    async function confirmBooking() {
+    const skuPrefix = bookingData.productData?.sku.split('-')[0].toUpperCase();
+    const requiresDistance = skuPrefix !== 'EX' && skuPrefix !== 'SC';
 
-        // ✅ RIUTILIZZO skuPrefix (già dichiarato sopra)
-        const showDistance = skuPrefix !== 'EX' && skuPrefix !== 'SC' && bookingData.distance;
-
-        const priceDisplay = isPriceOnRequest ? 'Su richiesta' : `€${bookingData.total.toLocaleString()}`;
-        const distanceInfo = showDistance ? `- Percorso: ${bookingData.distance} km\n` : '';
-
-        alert(`Prenotazione confermata!\n\nRiepilogo:\n- Prodotto: ${bookingData.productData.title}\n${distanceInfo}- Data: ${formatted} alle ${time}\n- Totale: ${priceDisplay}\n\nRiceverai una conferma via email.`);
+    // ✅ 1. VALIDAZIONE DISTANZA
+    if (requiresDistance && !bookingData.distance) {
+        showValidationError('Seleziona un percorso prima di procedere', 'distance');
+        return;
     }
+
+    // ✅ 2. VALIDAZIONE DATA E ORARIO
+    const date = bookingData.selectedDate;
+    const time = document.getElementById('bookingTime').value;
+    
+    if (!date) {
+        showValidationError('Seleziona una data per la tua esperienza.', 'date');
+        document.getElementById('bookingDate')?.focus();
+        return;
+    }
+    
+    if (!time) {
+        showValidationError('Seleziona un orario per la tua esperienza.', 'time');
+        document.getElementById('bookingTime')?.focus();
+        return;
+    }
+    
+    // ✅ 3. VALIDAZIONE DATI PERSONALI
+    const firstName = document.querySelector('input[placeholder="Il tuo nome"]');
+    const lastName = document.querySelector('input[placeholder="Il tuo cognome"]');
+    
+    if (!firstName || !firstName.value.trim()) {
+        showValidationError('Inserisci il tuo nome per procedere.', 'name');
+        firstName?.focus();
+        return;
+    }
+    
+    if (!lastName || !lastName.value.trim()) {
+        showValidationError('Inserisci il tuo cognome per procedere.', 'surname');
+        lastName?.focus();
+        return;
+    }
+    
+    // ✅ 4. VALIDAZIONE EMAIL
+    const emailInput = document.querySelector('input[type="email"]');
+    if (!emailInput || !emailInput.value.trim()) {
+        showEmailError('Inserisci il tuo indirizzo email per procedere.');
+        emailInput?.focus();
+        return;
+    }
+    
+    const emailValidation = validateEmail(emailInput.value.trim());
+    if (!emailValidation.valid) {
+        showEmailError(emailValidation.message);
+        emailInput.focus();
+        return;
+    }
+    
+    // ✅ 5. VALIDAZIONE TELEFONO
+    const phoneInput = document.querySelector('input[type="tel"]');
+    if (!phoneInput || !phoneInput.value.trim()) {
+        showValidationError('Inserisci il tuo numero di telefono per procedere.', 'phone');
+        phoneInput?.focus();
+        return;
+    }
+    
+    // Verifica lunghezza minima (almeno 6 cifre)
+    const phoneDigits = phoneInput.value.replace(/\D/g, '');
+    if (phoneDigits.length < 6) {
+        showValidationError('Il numero di telefono inserito non è valido. Inserisci un numero completo.', 'phone');
+        phoneInput.focus();
+        return;
+    }
+    
+    // Verifica che corrisponda alla lunghezza del paese selezionato
+    if (phoneDigits.length < selectedCountry.maxLength - 2) {
+        showValidationError(`Il numero deve contenere almeno ${selectedCountry.maxLength - 2} cifre per ${selectedCountry.country}.`, 'phone');
+        phoneInput.focus();
+        return;
+    }
+    
+    // ✅ 6. VALIDAZIONE TERMINI E CONDIZIONI
+    const terms = document.getElementById('termsCheckbox')?.checked;
+    if (!terms) {
+        showValidationError('Devi accettare i termini e condizioni per procedere con la prenotazione.', 'terms');
+        document.getElementById('termsCheckbox')?.focus();
+        return;
+    }
+    
+    // ✅ 7. PREPARAZIONE DATI PRENOTAZIONE
+    const notes = document.querySelector('textarea[placeholder="Hai richieste particolari?"]')?.value || '';
+    
+    const bookingPayload = {
+        action: 'create_booking',
+        sku: bookingData.sku,
+        productTitle: bookingData.productData.title,
+        firstName: firstName.value.trim(),
+        lastName: lastName.value.trim(),
+        email: emailInput.value.trim().toLowerCase(),
+        phone: `${selectedCountry.code} ${phoneInput.value.trim()}`,
+        phoneCountry: selectedCountry.country,
+        date: date.toISOString().split('T')[0],
+        time: time,
+        distance: bookingData.distance || 'N/A',
+        basePrice: bookingData.basePrice,
+        secondCar: bookingData.secondCar,
+        secondCarName: bookingData.secondCar ? (document.getElementById('secondCarCheckbox')?.dataset.comboName || 'N/A') : null,
+        secondCarPrice: bookingData.secondCar ? (parseInt(document.getElementById('secondCarCheckbox')?.dataset.comboPrice) || 0) : 0,
+        extraServices: bookingData.extraServices,
+        total: bookingData.total,
+        notes: notes,
+        timestamp: new Date().toISOString()
+    };
+    
+    // ✅ 8. MOSTRA LOADER E DISABILITA FORM
+    showBookingLoader();
+    disableForm();
+    
+    try {
+        // ✅ 9. INVIO DATI AL BACKEND
+        const response = await fetch(WEB_APP_URL, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded',
+            },
+            body: new URLSearchParams(bookingPayload)
+        });
+        
+        const result = await response.json();
+        
+        // ✅ 10. GESTIONE RISPOSTA
+        if (result.success) {
+            showBookingSuccess(bookingPayload);
+        } else {
+            throw new Error(result.error || 'Errore durante la prenotazione');
+        }
+        
+    } catch (error) {
+        console.error('Errore prenotazione:', error);
+        showBookingError(error.message);
+    } finally {
+        hideBookingLoader();
+        enableForm();
+    }
+}
+
+// ========================================
+// FUNZIONI UTILITY PER VALIDAZIONE
+// ========================================
+
+/**
+ * Mostra errore di validazione generico
+ */
+function showValidationError(message, field) {
+    const toast = document.createElement('div');
+    toast.style.cssText = `
+        position: fixed;
+        top: 30px;
+        right: 30px;
+        background: linear-gradient(135deg, rgba(20, 15, 12, 0.98), rgba(30, 20, 15, 0.98));
+        backdrop-filter: blur(20px);
+        color: #f5f5f0;
+        padding: 24px 32px;
+        border-radius: 16px;
+        box-shadow: 0 20px 60px rgba(239, 68, 68, 0.3), 0 0 0 1px rgba(239, 68, 68, 0.2);
+        z-index: 100000;
+        font-size: 15px;
+        max-width: 420px;
+        border: 1.5px solid rgba(239, 68, 68, 0.4);
+        animation: slideInRight 0.4s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+    `;
+    
+    toast.innerHTML = `
+        <div style="display: flex; align-items: flex-start; gap: 16px;">
+            <div style="flex-shrink: 0; width: 28px; height: 28px; background: rgba(239, 68, 68, 0.15); border-radius: 50%; display: flex; align-items: center; justify-content: center; border: 1.5px solid rgba(239, 68, 68, 0.4);">
+                <svg style="width: 16px; height: 16px; color: #ef4444;" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                </svg>
+            </div>
+            <div style="flex: 1;">
+                <div style="font-weight: 600; margin-bottom: 6px; color: #D4AF37; font-size: 14px; text-transform: uppercase; letter-spacing: 1px;">Campo Richiesto</div>
+                <div style="line-height: 1.6; color: #c9a891;">${message}</div>
+            </div>
+        </div>
+    `;
+    
+    document.body.appendChild(toast);
+    
+    setTimeout(() => {
+        toast.style.transition = 'opacity 0.4s ease, transform 0.4s ease';
+        toast.style.opacity = '0';
+        toast.style.transform = 'translateX(50px)';
+        setTimeout(() => toast.remove(), 400);
+    }, 5000);
+}
+
+/**
+ * Mostra loader durante invio prenotazione
+ */
+function showBookingLoader() {
+    const loader = document.createElement('div');
+    loader.id = 'bookingLoader';
+    loader.style.cssText = `
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100vw;
+        height: 100vh;
+        background: rgba(10, 10, 10, 0.95);
+        backdrop-filter: blur(10px);
+        z-index: 100001;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        animation: fadeIn 0.3s ease;
+    `;
+    
+    loader.innerHTML = `
+        <div style="text-align: center;">
+            <div style="width: 80px; height: 80px; border: 3px solid rgba(212, 175, 55, 0.2); border-top-color: #D4AF37; border-radius: 50%; animation: spin 1s linear infinite; margin: 0 auto 24px;"></div>
+            <div style="color: #D4AF37; font-size: 18px; font-weight: 600; letter-spacing: 2px; margin-bottom: 8px;">Conferma in Corso</div>
+            <div style="color: #c9a891; font-size: 14px;">Stiamo elaborando la tua prenotazione...</div>
+        </div>
+    `;
+    
+    document.body.appendChild(loader);
+}
+
+/**
+ * Nasconde loader
+ */
+function hideBookingLoader() {
+    const loader = document.getElementById('bookingLoader');
+    if (loader) {
+        loader.style.opacity = '0';
+        setTimeout(() => loader.remove(), 300);
+    }
+}
+
+/**
+ * Disabilita tutti i campi del form durante invio
+ */
+function disableForm() {
+    document.querySelectorAll('input, select, textarea, button').forEach(el => {
+        el.disabled = true;
+        el.style.opacity = '0.6';
+        el.style.pointerEvents = 'none';
+    });
+}
+
+/**
+ * Riabilita form
+ */
+function enableForm() {
+    document.querySelectorAll('input, select, textarea, button').forEach(el => {
+        el.disabled = false;
+        el.style.opacity = '1';
+        el.style.pointerEvents = 'auto';
+    });
+}
+
+/**
+ * Mostra messaggio di successo
+ */
+function showBookingSuccess(data) {
+    const modal = document.createElement('div');
+    modal.style.cssText = `
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100vw;
+        height: 100vh;
+        background: rgba(10, 10, 10, 0.95);
+        backdrop-filter: blur(10px);
+        z-index: 100002;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        animation: fadeIn 0.3s ease;
+    `;
+    
+    const formatted = new Date(data.date).toLocaleDateString('it-IT', {
+        day: '2-digit',
+        month: 'long',
+        year: 'numeric'
+    });
+    
+    modal.innerHTML = `
+        <div style="
+            background: linear-gradient(135deg, rgba(20, 15, 12, 0.98), rgba(30, 20, 15, 0.98));
+            backdrop-filter: blur(20px);
+            border: 2px solid rgba(34, 197, 94, 0.4);
+            border-radius: 24px;
+            padding: 48px;
+            max-width: 600px;
+            width: 90%;
+            box-shadow: 0 30px 80px rgba(0, 0, 0, 0.8);
+            animation: scaleIn 0.4s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+        ">
+            <div style="text-align: center; margin-bottom: 32px;">
+                <div style="width: 80px; height: 80px; background: rgba(34, 197, 94, 0.15); border: 2px solid rgba(34, 197, 94, 0.4); border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto 24px;">
+                    <svg style="width: 40px; height: 40px; color: #22c55e;" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"/>
+                    </svg>
+                </div>
+                <h2 style="font-size: 32px; font-weight: 700; background: linear-gradient(135deg, #D4AF37, #F4E4C1); -webkit-background-clip: text; -webkit-text-fill-color: transparent; margin-bottom: 12px;">Prenotazione Confermata!</h2>
+                <p style="color: #c9a891; font-size: 16px; line-height: 1.6;">La tua esperienza esclusiva è stata prenotata con successo.</p>
+            </div>
+            
+            <div style="background: rgba(10, 10, 10, 0.6); border: 1px solid rgba(80, 60, 45, 0.4); border-radius: 16px; padding: 24px; margin-bottom: 32px;">
+                <div style="display: grid; gap: 16px;">
+                    <div style="display: flex; justify-content: space-between; padding-bottom: 12px; border-bottom: 1px solid rgba(80, 60, 45, 0.3);">
+                        <span style="color: #a59173;">Esperienza</span>
+                        <span style="color: #f5f5f0; font-weight: 600;">${data.productTitle}</span>
+                    </div>
+                    ${data.distance !== 'N/A' ? `
+                    <div style="display: flex; justify-content: space-between; padding-bottom: 12px; border-bottom: 1px solid rgba(80, 60, 45, 0.3);">
+                        <span style="color: #a59173;">Percorso</span>
+                        <span style="color: #f5f5f0; font-weight: 600;">${data.distance} km</span>
+                    </div>
+                    ` : ''}
+                    <div style="display: flex; justify-content: space-between; padding-bottom: 12px; border-bottom: 1px solid rgba(80, 60, 45, 0.3);">
+                        <span style="color: #a59173;">Data e Orario</span>
+                        <span style="color: #f5f5f0; font-weight: 600;">${formatted} - ${data.time}</span>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; padding-top: 8px;">
+                        <span style="color: #a59173; font-size: 18px;">Totale</span>
+                        <span style="font-size: 28px; font-weight: 700; background: linear-gradient(135deg, #D4AF37, #F4E4C1); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">${formatPrice(data.total)}</span>
+                    </div>
+                </div>
+            </div>
+            
+            <div style="text-align: center;">
+                <p style="color: #c9a891; font-size: 14px; margin-bottom: 24px; line-height: 1.6;">
+                    Riceverai una email di conferma all'indirizzo <strong style="color: #D4AF37;">${data.email}</strong> con tutti i dettagli della tua prenotazione.
+                </p>
+                <button onclick="window.location.href='/'" style="
+                    background: linear-gradient(135deg, #d4af37 0%, #c9a02c 50%, #b8941f 100%);
+                    color: #0a0a0a;
+                    font-weight: 600;
+                    padding: 18px 48px;
+                    border: none;
+                    border-radius: 14px;
+                    cursor: pointer;
+                    font-size: 16px;
+                    letter-spacing: 1px;
+                    text-transform: uppercase;
+                    box-shadow: 0 4px 20px rgba(212, 175, 55, 0.3);
+                    transition: all 0.3s ease;
+                ">Torna alla Home</button>
+            </div>
+        </div>
+    `;
+    
+    document.body.appendChild(modal);
+}
+
+/**
+ * Mostra messaggio di errore
+ */
+function showBookingError(message) {
+    const modal = document.createElement('div');
+    modal.style.cssText = `
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100vw;
+        height: 100vh;
+        background: rgba(10, 10, 10, 0.95);
+        backdrop-filter: blur(10px);
+        z-index: 100002;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        animation: fadeIn 0.3s ease;
+    `;
+    
+    modal.innerHTML = `
+        <div style="
+            background: linear-gradient(135deg, rgba(20, 15, 12, 0.98), rgba(30, 20, 15, 0.98));
+            backdrop-filter: blur(20px);
+            border: 2px solid rgba(239, 68, 68, 0.4);
+            border-radius: 24px;
+            padding: 48px;
+            max-width: 500px;
+            width: 90%;
+            box-shadow: 0 30px 80px rgba(0, 0, 0, 0.8);
+            animation: scaleIn 0.4s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+        ">
+            <div style="text-align: center; margin-bottom: 32px;">
+                <div style="width: 80px; height: 80px; background: rgba(239, 68, 68, 0.15); border: 2px solid rgba(239, 68, 68, 0.4); border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto 24px;">
+                    <svg style="width: 40px; height: 40px; color: #ef4444;" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M6 18L18 6M6 6l12 12"/>
+                    </svg>
+                </div>
+                <h2 style="font-size: 28px; font-weight: 700; color: #ef4444; margin-bottom: 12px;">Errore Prenotazione</h2>
+                <p style="color: #c9a891; font-size: 15px; line-height: 1.6;">${message}</p>
+            </div>
+            
+            <div style="text-align: center;">
+                <button onclick="this.closest('div[style*=\\'position: fixed\\']').remove()" style="
+                    background: linear-gradient(135deg, #d4af37 0%, #c9a02c 50%, #b8941f 100%);
+                    color: #0a0a0a;
+                    font-weight: 600;
+                    padding: 16px 40px;
+                    border: none;
+                    border-radius: 14px;
+                    cursor: pointer;
+                    font-size: 15px;
+                    letter-spacing: 1px;
+                    text-transform: uppercase;
+                    box-shadow: 0 4px 20px rgba(212, 175, 55, 0.3);
+                    transition: all 0.3s ease;
+                ">Riprova</button>
+            </div>
+        </div>
+    `;
+    
+    document.body.appendChild(modal);
+}
+
+// Aggiungi animazioni CSS se non presenti
+if (!document.getElementById('bookingAnimations')) {
+    const style = document.createElement('style');
+    style.id = 'bookingAnimations';
+    style.textContent = `
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+        @keyframes scaleIn {
+            from {
+                opacity: 0;
+                transform: scale(0.9);
+            }
+            to {
+                opacity: 1;
+                transform: scale(1);
+            }
+        }
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+    `;
+    document.head.appendChild(style);
+}
 
     // ========================================
     // CUSTOM CALENDAR
@@ -2572,4 +2975,3 @@ function initDistanceSelection(product) {
 </script>
 </body>
 </html>
-
