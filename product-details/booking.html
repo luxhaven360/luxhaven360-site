@@ -663,6 +663,623 @@ textarea[placeholder="Hai richieste particolari?"] {
     // ========================================
     const WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbwr79RkXIEocpuOKaM6uMJqE6VFs9wjlUPvrr__FvDbDDrD2ELB1NbfrWP3BCYpHj2u/exec';
 
+        // ========================================
+// CONFIGURAZIONE PREZZI COMBO SUPERCAR
+// ========================================
+const COMBO_PRICING = {
+    // California + Huracán (entrambi gli ordini)
+    'SC-001+SC-006': {
+        km: [10, 20, 30, 60, 90, 120],
+        prices: [176, 312, 424, 784, 1096, 1368],
+        labels: ['Esperienza rapida', 'Più popolare', 'Esperienza completa', 'Tour esteso', 'Avventura lunga', 'Esperienza definitiva']
+    },
+    'SC-006+SC-001': {
+        km: [10, 20, 30, 60, 90, 120],
+        prices: [176, 312, 424, 784, 1096, 1368],
+        labels: ['Esperienza rapida', 'Più popolare', 'Esperienza completa', 'Tour esteso', 'Avventura lunga', 'Esperienza definitiva']
+    },
+    
+    // Portofino + Huracán (entrambi gli ordini)
+    'SC-002+SC-006': {
+        km: [10, 20, 30, 60, 90, 120],
+        prices: [208, 368, 528, 929, 1315, 1528],
+        labels: ['Esperienza rapida', 'Più popolare', 'Esperienza completa', 'Tour esteso', 'Avventura lunga', 'Esperienza definitiva']
+    },
+    'SC-006+SC-002': {
+        km: [10, 20, 30, 60, 90, 120],
+        prices: [208, 368, 528, 929, 1315, 1528],
+        labels: ['Esperienza rapida', 'Più popolare', 'Esperienza completa', 'Tour esteso', 'Avventura lunga', 'Esperienza definitiva']
+    },
+    
+    // 488 Spider + Huracán (entrambi gli ordini)
+    'SC-003+SC-006': {
+        km: [10, 20, 30, 60, 90, 120],
+        prices: [224, 399, 575, 1040, 1460, 1800],
+        labels: ['Esperienza rapida', 'Più popolare', 'Esperienza completa', 'Tour esteso', 'Avventura lunga', 'Esperienza definitiva']
+    },
+    'SC-006+SC-003': {
+        km: [10, 20, 30, 60, 90, 120],
+        prices: [224, 399, 575, 1040, 1460, 1800],
+        labels: ['Esperienza rapida', 'Più popolare', 'Esperienza completa', 'Tour esteso', 'Avventura lunga', 'Esperienza definitiva']
+    }
+};
+
+// ========================================
+// CONFIGURAZIONE VALIDAZIONE EMAIL
+// ========================================
+const ALLOWED_EMAIL_PROVIDERS = [
+    // Provider internazionali
+    'gmail.com', 'yahoo.com', 'outlook.com', 'hotmail.com', 'live.com',
+    'icloud.com', 'me.com', 'mac.com', 'protonmail.com', 'proton.me',
+    'aol.com', 'zoho.com', 'mail.com', 'gmx.com', 'yandex.com',
+    
+    // Provider italiani
+    'libero.it', 'virgilio.it', 'tiscali.it', 'alice.it', 'tin.it',
+    'fastwebnet.it', 'tim.it', 'vodafone.it', 'wind.it', 'tre.it',
+    'poste.it', 'email.it', 'pec.it', 'legalmail.it',
+    
+    // Provider aziendali comuni
+    'outlook.it', 'hotmail.it', 'live.it', 'msn.com'
+];
+
+const TEMP_EMAIL_PATTERNS = [
+    'tempmail', 'temp-mail', 'throwaway', 'disposable',
+    '10minutemail', '10minute', 'guerrillamail', 'guerrilla',
+    'mailinator', 'maildrop', 'sharklasers', 'getnada',
+    'trashmail', 'fakeinbox', 'yopmail', 'mintemail',
+    'dispostable', 'spamgourmet', 'mytemp', 'tempr'
+];
+
+/**
+ * Valida email con provider check
+ */
+function validateEmail(email) {
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    
+    if (!emailRegex.test(email)) {
+        return { valid: false, message: 'Il formato dell\'indirizzo email non è valido.' };
+    }
+    
+    const domain = email.split('@')[1].toLowerCase();
+    
+    // Check email temporanee
+    for (const pattern of TEMP_EMAIL_PATTERNS) {
+        if (domain.includes(pattern)) {
+            return { 
+                valid: false, 
+                message: 'Le email temporanee non sono consentite. Ti preghiamo di utilizzare un indirizzo email permanente e affidabile.' 
+            };
+        }
+    }
+    
+    // Check provider noti
+    if (!ALLOWED_EMAIL_PROVIDERS.includes(domain)) {
+        return { 
+            valid: false, 
+            message: `Il provider "${domain}" non è riconosciuto nel nostro sistema. Ti preghiamo di utilizzare un indirizzo email da un provider affidabile (es. Gmail, Outlook, Libero, Virgilio).` 
+        };
+    }
+    
+    return { valid: true };
+}
+
+/**
+ * Mostra notifica errore elegante
+ */
+function showEmailError(message) {
+    const toast = document.createElement('div');
+    toast.style.cssText = `
+        position: fixed;
+        top: 30px;
+        right: 30px;
+        background: linear-gradient(135deg, rgba(20, 15, 12, 0.98), rgba(30, 20, 15, 0.98));
+        backdrop-filter: blur(20px);
+        color: #f5f5f0;
+        padding: 24px 32px;
+        border-radius: 16px;
+        box-shadow: 0 20px 60px rgba(239, 68, 68, 0.3), 0 0 0 1px rgba(239, 68, 68, 0.2);
+        z-index: 100000;
+        font-size: 15px;
+        max-width: 420px;
+        border: 1.5px solid rgba(239, 68, 68, 0.4);
+        animation: slideInRight 0.4s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+    `;
+    
+    toast.innerHTML = `
+        <div style="display: flex; align-items: flex-start; gap: 16px;">
+            <div style="flex-shrink: 0; width: 28px; height: 28px; background: rgba(239, 68, 68, 0.15); border-radius: 50%; display: flex; align-items: center; justify-content: center; border: 1.5px solid rgba(239, 68, 68, 0.4);">
+                <svg style="width: 16px; height: 16px; color: #ef4444;" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                </svg>
+            </div>
+            <div style="flex: 1;">
+                <div style="font-weight: 600; margin-bottom: 6px; color: #D4AF37; font-size: 14px; text-transform: uppercase; letter-spacing: 1px;">Email Non Valida</div>
+                <div style="line-height: 1.6; color: #c9a891;">${message}</div>
+            </div>
+        </div>
+    `;
+    
+    // Aggiungi stile animazione
+    if (!document.getElementById('toastAnimationStyle')) {
+        const style = document.createElement('style');
+        style.id = 'toastAnimationStyle';
+        style.textContent = `
+            @keyframes slideInRight {
+                from {
+                    opacity: 0;
+                    transform: translateX(100px);
+                }
+                to {
+                    opacity: 1;
+                    transform: translateX(0);
+                }
+            }
+        `;
+        document.head.appendChild(style);
+    }
+    
+    document.body.appendChild(toast);
+    
+    // Rimuovi dopo 5 secondi
+    setTimeout(() => {
+        toast.style.transition = 'opacity 0.4s ease, transform 0.4s ease';
+        toast.style.opacity = '0';
+        toast.style.transform = 'translateX(50px)';
+        setTimeout(() => toast.remove(), 400);
+    }, 5000);
+}
+
+// ========================================
+// CONFIGURAZIONE PREFISSI INTERNAZIONALI
+// ========================================
+const COUNTRY_CODES = [
+    { code: '+39', country: 'Italia', flag: '🇮🇹', format: '### ### ####', maxLength: 10 },
+    { code: '+1', country: 'Stati Uniti', flag: '🇺🇸', format: '(###) ###-####', maxLength: 10 },
+    { code: '+44', country: 'Regno Unito', flag: '🇬🇧', format: '#### ### ####', maxLength: 10 },
+    { code: '+33', country: 'Francia', flag: '🇫🇷', format: '# ## ## ## ##', maxLength: 9 },
+    { code: '+49', country: 'Germania', flag: '🇩🇪', format: '### ########', maxLength: 11 },
+    { code: '+34', country: 'Spagna', flag: '🇪🇸', format: '### ## ## ##', maxLength: 9 },
+    { code: '+41', country: 'Svizzera', flag: '🇨🇭', format: '## ### ## ##', maxLength: 9 },
+    { code: '+43', country: 'Austria', flag: '🇦🇹', format: '#### ######', maxLength: 10 },
+    { code: '+32', country: 'Belgio', flag: '🇧🇪', format: '### ## ## ##', maxLength: 9 },
+    { code: '+31', country: 'Paesi Bassi', flag: '🇳🇱', format: '## ########', maxLength: 9 },
+    { code: '+351', country: 'Portogallo', flag: '🇵🇹', format: '### ### ###', maxLength: 9 },
+    { code: '+30', country: 'Grecia', flag: '🇬🇷', format: '### ### ####', maxLength: 10 },
+    { code: '+353', country: 'Irlanda', flag: '🇮🇪', format: '## ### ####', maxLength: 9 },
+    { code: '+45', country: 'Danimarca', flag: '🇩🇰', format: '## ## ## ##', maxLength: 8 },
+    { code: '+46', country: 'Svezia', flag: '🇸🇪', format: '## ### ## ##', maxLength: 9 },
+    { code: '+47', country: 'Norvegia', flag: '🇳🇴', format: '### ## ###', maxLength: 8 },
+    { code: '+358', country: 'Finlandia', flag: '🇫🇮', format: '## ### ####', maxLength: 9 },
+    { code: '+48', country: 'Polonia', flag: '🇵🇱', format: '### ### ###', maxLength: 9 },
+    { code: '+420', country: 'Rep. Ceca', flag: '🇨🇿', format: '### ### ###', maxLength: 9 },
+    { code: '+7', country: 'Russia', flag: '🇷🇺', format: '### ###-##-##', maxLength: 10 },
+    { code: '+86', country: 'Cina', flag: '🇨🇳', format: '### #### ####', maxLength: 11 },
+    { code: '+81', country: 'Giappone', flag: '🇯🇵', format: '## #### ####', maxLength: 10 },
+    { code: '+82', country: 'Corea del Sud', flag: '🇰🇷', format: '## #### ####', maxLength: 10 },
+    { code: '+91', country: 'India', flag: '🇮🇳', format: '##### #####', maxLength: 10 },
+    { code: '+61', country: 'Australia', flag: '🇦🇺', format: '### ### ###', maxLength: 9 },
+    { code: '+64', country: 'Nuova Zelanda', flag: '🇳🇿', format: '## ### ####', maxLength: 9 },
+    { code: '+27', country: 'Sudafrica', flag: '🇿🇦', format: '## ### ####', maxLength: 9 },
+    { code: '+55', country: 'Brasile', flag: '🇧🇷', format: '## #####-####', maxLength: 11 },
+    { code: '+54', country: 'Argentina', flag: '🇦🇷', format: '## ####-####', maxLength: 10 },
+    { code: '+52', country: 'Messico', flag: '🇲🇽', format: '## #### ####', maxLength: 10 },
+    { code: '+971', country: 'Emirati Arabi', flag: '🇦🇪', format: '## ### ####', maxLength: 9 },
+    { code: '+966', country: 'Arabia Saudita', flag: '🇸🇦', format: '## ### ####', maxLength: 9 },
+    { code: '+90', country: 'Turchia', flag: '🇹🇷', format: '### ### ####', maxLength: 10 }
+];
+
+let selectedCountry = COUNTRY_CODES[0]; // Default: Italia
+
+/**
+ * Formatta numero telefono in base al paese selezionato
+ */
+function formatPhoneNumber(value, format) {
+    // Rimuovi tutto tranne numeri
+    const numbers = value.replace(/\D/g, '');
+    
+    let formatted = '';
+    let numberIndex = 0;
+    
+    for (let i = 0; i < format.length && numberIndex < numbers.length; i++) {
+        if (format[i] === '#') {
+            formatted += numbers[numberIndex];
+            numberIndex++;
+        } else {
+            formatted += format[i];
+        }
+    }
+    
+    return formatted;
+}
+
+/**
+ * Inizializza selector prefisso telefonico
+ */
+function initPhoneSelector() {
+    const phoneInput = document.querySelector('input[type="tel"]');
+    if (!phoneInput) return;
+    
+    const container = phoneInput.parentElement;
+    
+    // Crea wrapper per input e selector
+    const wrapper = document.createElement('div');
+    wrapper.style.cssText = 'position: relative; display: flex; gap: 0;';
+    
+    // Crea selector prefisso
+    const selector = document.createElement('div');
+    selector.style.cssText = 'position: relative; z-index: 10;';
+    selector.innerHTML = `
+        <button type="button" class="country-selector-btn" style="
+            background: rgba(10, 10, 10, 0.9);
+            border: 1.5px solid rgba(80, 60, 45, 0.4);
+            border-right: none;
+            color: #f5f5f0;
+            padding: 16px 18px;
+            border-radius: 12px 0 0 12px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-family: 'Inter', sans-serif;
+            font-size: 15px;
+            white-space: nowrap;
+            min-width: 130px;
+        ">
+            <span class="selected-flag" style="font-size: 20px;">🇮🇹</span>
+            <span class="selected-code" style="font-weight: 500; color: #D4AF37;">+39</span>
+            <svg class="w-4 h-4" style="width: 14px; height: 14px; margin-left: auto; color: #c9a891; transition: transform 0.3s;" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+            </svg>
+        </button>
+        <div class="country-dropdown" style="
+            display: none;
+            position: absolute;
+            top: calc(100% + 8px);
+            left: 0;
+            background: linear-gradient(135deg, rgba(20, 15, 12, 0.98), rgba(30, 20, 15, 0.98));
+            backdrop-filter: blur(20px);
+            border: 2px solid rgba(212, 175, 55, 0.3);
+            border-radius: 16px;
+            padding: 12px;
+            z-index: 100000;
+            min-width: 320px;
+            max-height: 400px;
+            overflow-y: auto;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.8);
+        ">
+            <div style="padding: 8px 12px; margin-bottom: 8px;">
+                <input type="text" placeholder="Cerca paese..." class="country-search" style="
+                    width: 100%;
+                    background: rgba(10, 10, 10, 0.6);
+                    border: 1px solid rgba(80, 60, 45, 0.4);
+                    color: #f5f5f0;
+                    padding: 10px 14px;
+                    border-radius: 10px;
+                    font-size: 14px;
+                    outline: none;
+                    transition: all 0.3s ease;
+                " />
+            </div>
+            <div class="country-list">
+                ${COUNTRY_CODES.map(c => `
+                    <div class="country-option" data-code="${c.code}" data-format="${c.format}" data-max="${c.maxLength}" style="
+                        display: flex;
+                        align-items: center;
+                        gap: 12px;
+                        padding: 12px 14px;
+                        cursor: pointer;
+                        border-radius: 10px;
+                        transition: all 0.3s ease;
+                        margin-bottom: 4px;
+                    ">
+                        <span class="flag" style="font-size: 22px;">${c.flag}</span>
+                        <span class="country-name" style="flex: 1; color: #f5f5f0; font-size: 14px;">${c.country}</span>
+                        <span class="country-code" style="color: #D4AF37; font-weight: 600; font-size: 14px;">${c.code}</span>
+                    </div>
+                `).join('')}
+            </div>
+        </div>
+    `;
+    
+    // Aggiorna stile input telefono
+    phoneInput.style.borderRadius = '0 12px 12px 0';
+    phoneInput.style.borderLeft = 'none';
+    phoneInput.style.flex = '1';
+    phoneInput.placeholder = '123 456 7890';
+    
+    // Sostituisci struttura
+    container.insertBefore(wrapper, phoneInput);
+    wrapper.appendChild(selector);
+    wrapper.appendChild(phoneInput);
+    
+    // Event listeners
+    const btn = selector.querySelector('.country-selector-btn');
+    const dropdown = selector.querySelector('.country-dropdown');
+    const search = selector.querySelector('.country-search');
+    
+    // Toggle dropdown
+    btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const isVisible = dropdown.style.display === 'block';
+        dropdown.style.display = isVisible ? 'none' : 'block';
+        btn.querySelector('svg').style.transform = isVisible ? 'rotate(0deg)' : 'rotate(180deg)';
+        
+        if (!isVisible) {
+            search.value = '';
+            search.focus();
+            filterCountries('');
+        }
+    });
+    
+    // Chiudi dropdown al click fuori
+    document.addEventListener('click', (e) => {
+        if (!selector.contains(e.target)) {
+            dropdown.style.display = 'none';
+            btn.querySelector('svg').style.transform = 'rotate(0deg)';
+        }
+    });
+    
+    // Ricerca paese
+    search.addEventListener('input', (e) => {
+        filterCountries(e.target.value.toLowerCase());
+    });
+    
+    // Selezione paese
+    selector.querySelectorAll('.country-option').forEach(option => {
+        option.addEventListener('click', () => {
+            const code = option.dataset.code;
+            const format = option.dataset.format;
+            const maxLength = parseInt(option.dataset.max);
+            
+            selectedCountry = COUNTRY_CODES.find(c => c.code === code);
+            
+            // Aggiorna UI selector
+            btn.querySelector('.selected-flag').textContent = option.querySelector('.flag').textContent;
+            btn.querySelector('.selected-code').textContent = code;
+            
+            // Reset e focus input
+            phoneInput.value = '';
+            phoneInput.focus();
+            
+            dropdown.style.display = 'none';
+            btn.querySelector('svg').style.transform = 'rotate(0deg)';
+        });
+        
+        // Hover effect
+        option.addEventListener('mouseenter', () => {
+            option.style.background = 'rgba(212, 175, 55, 0.15)';
+            option.style.borderColor = 'rgba(212, 175, 55, 0.4)';
+        });
+        
+        option.addEventListener('mouseleave', () => {
+            option.style.background = 'transparent';
+        });
+    });
+    
+    // Formattazione in tempo reale
+    phoneInput.addEventListener('input', (e) => {
+        let value = e.target.value.replace(/\D/g, '');
+        
+        // Limita lunghezza
+        if (value.length > selectedCountry.maxLength) {
+            value = value.substring(0, selectedCountry.maxLength);
+        }
+        
+        // Applica formato
+        e.target.value = formatPhoneNumber(value, selectedCountry.format);
+    });
+    
+    // Previeni paste non numerici
+    phoneInput.addEventListener('paste', (e) => {
+        e.preventDefault();
+        const pastedText = (e.clipboardData || window.clipboardData).getData('text');
+        const numbers = pastedText.replace(/\D/g, '');
+        
+        if (numbers.length > selectedCountry.maxLength) {
+            phoneInput.value = formatPhoneNumber(numbers.substring(0, selectedCountry.maxLength), selectedCountry.format);
+        } else {
+            phoneInput.value = formatPhoneNumber(numbers, selectedCountry.format);
+        }
+    });
+    
+    // Funzione filtro paesi
+    function filterCountries(query) {
+        selector.querySelectorAll('.country-option').forEach(option => {
+            const country = option.querySelector('.country-name').textContent.toLowerCase();
+            const code = option.querySelector('.country-code').textContent.toLowerCase();
+            
+            if (country.includes(query) || code.includes(query)) {
+                option.style.display = 'flex';
+            } else {
+                option.style.display = 'none';
+            }
+        });
+    }
+}
+
+// Aggiungi stile scroll personalizzato dropdown
+const dropdownScrollStyle = document.createElement('style');
+dropdownScrollStyle.textContent = `
+    .country-dropdown::-webkit-scrollbar {
+        width: 8px;
+    }
+    .country-dropdown::-webkit-scrollbar-track {
+        background: rgba(10, 10, 10, 0.4);
+        border-radius: 10px;
+    }
+    .country-dropdown::-webkit-scrollbar-thumb {
+        background: rgba(212, 175, 55, 0.3);
+        border-radius: 10px;
+    }
+    .country-dropdown::-webkit-scrollbar-thumb:hover {
+        background: rgba(212, 175, 55, 0.5);
+    }
+    .country-search:focus {
+        border-color: #D4AF37;
+        box-shadow: 0 0 0 3px rgba(212, 175, 55, 0.15);
+    }
+    .country-selector-btn:hover {
+        border-color: rgba(212, 175, 55, 0.6);
+        background: rgba(20, 15, 12, 0.95);
+    }
+`;
+document.head.appendChild(dropdownScrollStyle);
+
+/**
+ * Genera chiave combo da due SKU (ordine-indipendente)
+ */
+function getComboKey(sku1, sku2) {
+    return `${sku1}+${sku2}`;
+}
+
+/**
+ * Verifica se la combo corrente ha prezzi custom
+ */
+function hasCustomComboPricing() {
+    if (!bookingData.secondCar || !bookingData.productData) return false;
+    
+    const mainSku = bookingData.productData.sku;
+    const comboCheckbox = document.getElementById('secondCarCheckbox');
+    
+    if (!comboCheckbox) return false;
+    
+    const comboSku = comboCheckbox.dataset.comboSku;
+    if (!comboSku) return false;
+    
+    const comboKey = getComboKey(mainSku, comboSku);
+    
+    return COMBO_PRICING.hasOwnProperty(comboKey);
+}
+
+/**
+ * Applica prezzi combo custom alla griglia distanze
+ */
+function applyComboDistancePricing() {
+    const mainSku = bookingData.productData.sku;
+    const comboCheckbox = document.getElementById('secondCarCheckbox');
+    
+    if (!comboCheckbox) return;
+    
+    const comboSku = comboCheckbox.dataset.comboSku;
+    if (!comboSku) return;
+    
+    const comboKey = getComboKey(mainSku, comboSku);
+    const comboPricing = COMBO_PRICING[comboKey];
+    
+    if (!comboPricing) {
+        console.log('⚠️ Combo non speciale, prezzi standard mantenuti');
+        return;
+    }
+    
+    console.log(`✅ Applicando prezzi combo per: ${comboKey}`);
+    
+    const distanceGrid = document.getElementById('distanceOptions');
+    if (!distanceGrid) return;
+    
+    // Salva selezione corrente
+    const currentSelection = document.querySelector('.distance-option.selected');
+    const currentKm = currentSelection ? currentSelection.dataset.km : null;
+    
+    // Rigenera griglia con prezzi combo
+    distanceGrid.innerHTML = '';
+    
+    comboPricing.km.forEach((km, index) => {
+        const price = comboPricing.prices[index];
+        const label = comboPricing.labels[index];
+        
+        const option = document.createElement('div');
+        option.className = 'distance-option';
+        option.dataset.km = km;
+        option.dataset.price = price;
+        
+        option.innerHTML = `
+            <div class="text-2xl font-bold gradient-text mb-2">${km} km</div>
+            <div class="text-xl font-semibold mb-1">${formatPrice(price)}</div>
+            <div class="text-sm" style="color: #a59173;">${label}</div>
+        `;
+        
+        distanceGrid.appendChild(option);
+    });
+    
+    // Re-bind listeners
+    initDistanceSelection(bookingData.productData);
+    
+    // Ripristina selezione se possibile, altrimenti prima opzione
+    let optionToSelect = null;
+    
+    if (currentKm) {
+        optionToSelect = distanceGrid.querySelector(`[data-km="${currentKm}"]`);
+    }
+    
+    if (!optionToSelect) {
+        optionToSelect = distanceGrid.querySelector('.distance-option');
+    }
+    
+    if (optionToSelect) {
+        optionToSelect.click();
+    }
+}
+
+/**
+ * Ripristina prezzi originali del prodotto
+ */
+function restoreOriginalDistancePricing() {
+    const product = bookingData.productData;
+    if (!product) return;
+    
+    console.log('🔄 Ripristino prezzi originali prodotto');
+    
+    const distanceGrid = document.getElementById('distanceOptions');
+    if (!distanceGrid) return;
+    
+    // Salva selezione
+    const currentSelection = document.querySelector('.distance-option.selected');
+    const currentKm = currentSelection ? currentSelection.dataset.km : null;
+    
+    // Rigenera con prezzi originali
+    distanceGrid.innerHTML = '';
+    
+    const distanceConfig = getDistanceConfigForProduct(product);
+    
+    distanceConfig.options.forEach((distance, index) => {
+        if (index < product.chilometraggioPrices.length) {
+            const price = product.chilometraggioPrices[index];
+            
+            const option = document.createElement('div');
+            option.className = 'distance-option';
+            option.dataset.km = distance.value;
+            option.dataset.price = price;
+            
+            option.innerHTML = `
+                <div class="text-2xl font-bold gradient-text mb-2">${distance.value} ${distance.unit}</div>
+                <div class="text-xl font-semibold mb-1">${formatPrice(price)}</div>
+                <div class="text-sm" style="color: #a59173;">${distance.label}</div>
+            `;
+            
+            distanceGrid.appendChild(option);
+        }
+    });
+    
+    // Re-bind listeners
+    initDistanceSelection(product);
+    
+    // Ripristina selezione
+    let optionToSelect = null;
+    
+    if (currentKm) {
+        optionToSelect = distanceGrid.querySelector(`[data-km="${currentKm}"]`);
+    }
+    
+    if (!optionToSelect) {
+        optionToSelect = distanceGrid.querySelector('.distance-option');
+    }
+    
+    if (optionToSelect) {
+        optionToSelect.click();
+    }
+}
+
     /**
  * Formatta il prezzo per booking.html
  * Output: "€1.265" (euro PRIMA del numero)
@@ -934,10 +1551,16 @@ function formatPrice(price, currency = 'EUR') {
     });
 
     // ✅ 10c. CARD SECONDA SUPERCAR DINAMICA (con nome corretto)
-    if (skuPrefix === 'SC' && product.supercarComboSku) {
+if (skuPrefix === 'SC' && product.supercarComboSku) {
     fetchProductDetails(product.supercarComboSku)
         .then(secondCar => {
             const secondCarSection = document.getElementById('secondCarSection');
+            
+            // ⭐ SALVA SKU COMBO PER LOGICA PREZZI
+            const checkbox = document.getElementById('secondCarCheckbox');
+            if (checkbox) {
+                checkbox.dataset.comboSku = product.supercarComboSku; // ← AGGIUNTO
+            }
             const isHuracanSpyder = product.title && 
                                     product.title.toLowerCase().includes('lamborghini') && 
                                     product.title.toLowerCase().includes('huracán spyder');
@@ -1370,108 +1993,108 @@ if (skuPrefix === 'SC') {
     if (isHuracanSpyder) {
         // ✅ Huracán: toggle servizi nella card combo
         if (secondCarCheckbox) {
-            secondCarCheckbox.addEventListener('change', function() {
-                bookingData.secondCar = this.checked;
-                const comboPrice = parseInt(this.dataset.comboPrice) || 1490;
-                const comboName = this.dataset.comboName || 'Seconda Supercar';
-                
-                // Toggle visibilità servizi
-                const huracanServices = document.getElementById('huracanExtraServices');
-                if (huracanServices) {
-                    huracanServices.style.display = this.checked ? 'block' : 'none';
-
-                    // ✅ AGGIUNGI QUESTO BLOCCO
-if (this.checked) {
-    // Attendi rendering DOM, poi aggiungi event listeners
-    setTimeout(() => {
-        document.querySelectorAll('.huracan-service-checkbox').forEach(cb => {
-            // Rimuovi listener duplicati clonando
-            const newCb = cb.cloneNode(true);
-            cb.parentNode.replaceChild(newCb, cb);
-            
-            // Aggiungi listener pulito
-            newCb.addEventListener('change', function() {
-                const price = parseInt(this.dataset.price);
-                const service = this.dataset.service;
-                
-                if (this.checked) {
-                    if (!bookingData.extraServices.find(s => s.service === service)) {
-                        bookingData.extraServices.push({ service, price });
-                    }
-                } else {
-                    bookingData.extraServices = bookingData.extraServices.filter(s => s.service !== service);
-                }
-                
-                updatePriceSummary();
-            });
-        });
-
-        // Aggiungi listener per passeggeri Huracán
-document.querySelectorAll('.huracan-passenger-radio').forEach(radio => {
-    radio.addEventListener('change', function() {
-        const quantity = parseInt(this.value);
-        const pricePerPassenger = 50;
-        const totalPrice = pricePerPassenger * quantity;
+    secondCarCheckbox.addEventListener('change', function() {
+        bookingData.secondCar = this.checked;
+        const comboPrice = parseInt(this.dataset.comboPrice) || 1490;
+        const comboName = this.dataset.comboName || 'Seconda Supercar';
         
-        // Rimuovi servizio passeggeri precedente
-        bookingData.extraServices = bookingData.extraServices.filter(s => s.service !== 'extra-passengers');
-        
-        // Aggiungi nuovo servizio
+        // ⭐ APPLICA/RIPRISTINA PREZZI COMBO IN TEMPO REALE
         if (this.checked) {
-            bookingData.extraServices.push({ 
-                service: 'extra-passengers', 
-                price: totalPrice,
-                quantity: quantity
-            });
+            if (hasCustomComboPricing()) {
+                console.log('🎯 Combo speciale rilevata, aggiornamento prezzi immediato');
+                applyComboDistancePricing();
+            }
+        } else {
+            // Ripristina prezzi originali
+            restoreOriginalDistancePricing();
         }
         
-        // ✅ RESET STILI LABEL (FIX PUNTO 4)
-        document.querySelectorAll('.huracan-passenger-option').forEach(lbl => {
-            lbl.style.borderColor = 'rgba(80, 60, 45, 0.4)';
-            lbl.style.background = 'rgba(20, 15, 12, 0.8)';
-        });
-        
-        // Evidenzia label selezionato
-        const selectedLabel = this.closest('.huracan-passenger-option');
-        if (selectedLabel) {
-            selectedLabel.style.borderColor = '#D4AF37';
-            selectedLabel.style.background = 'rgba(212, 175, 55, 0.12)';
+        // Toggle visibilità servizi HuracÃ¡n
+        const huracanServices = document.getElementById('huracanExtraServices');
+        if (huracanServices) {
+            huracanServices.style.display = this.checked ? 'block' : 'none';
+
+            if (this.checked) {
+                setTimeout(() => {
+                    document.querySelectorAll('.huracan-service-checkbox').forEach(cb => {
+                        const newCb = cb.cloneNode(true);
+                        cb.parentNode.replaceChild(newCb, cb);
+                        
+                        newCb.addEventListener('change', function() {
+                            const price = parseInt(this.dataset.price);
+                            const service = this.dataset.service;
+                            
+                            if (this.checked) {
+                                if (!bookingData.extraServices.find(s => s.service === service)) {
+                                    bookingData.extraServices.push({ service, price });
+                                }
+                            } else {
+                                bookingData.extraServices = bookingData.extraServices.filter(s => s.service !== service);
+                            }
+                            
+                            updatePriceSummary();
+                        });
+                    });
+
+                    document.querySelectorAll('.huracan-passenger-radio').forEach(radio => {
+                        radio.addEventListener('change', function() {
+                            const quantity = parseInt(this.value);
+                            const pricePerPassenger = 50;
+                            const totalPrice = pricePerPassenger * quantity;
+                            
+                            bookingData.extraServices = bookingData.extraServices.filter(s => s.service !== 'extra-passengers');
+                            
+                            if (this.checked) {
+                                bookingData.extraServices.push({ 
+                                    service: 'extra-passengers', 
+                                    price: totalPrice,
+                                    quantity: quantity
+                                });
+                            }
+                            
+                            document.querySelectorAll('.huracan-passenger-option').forEach(lbl => {
+                                lbl.style.borderColor = 'rgba(80, 60, 45, 0.4)';
+                                lbl.style.background = 'rgba(20, 15, 12, 0.8)';
+                            });
+                            
+                            const selectedLabel = this.closest('.huracan-passenger-option');
+                            if (selectedLabel) {
+                                selectedLabel.style.borderColor = '#D4AF37';
+                                selectedLabel.style.background = 'rgba(212, 175, 55, 0.12)';
+                            }
+                            
+                            updatePriceSummary();
+                        });
+                    });
+                }, 100);
+            }
+            
+            if (this.checked) {
+                setTimeout(() => {
+                    huracanServices.style.animation = 'fadeIn 0.4s ease';
+                }, 50);
+            }
+            
+            if (!this.checked) {
+                huracanServices.querySelectorAll('.huracan-service-checkbox').forEach(cb => {
+                    cb.checked = false;
+                });
+                bookingData.extraServices = [];
+            }
         }
+        
+        // Aggiorna riepilogo
+        document.getElementById('secondCarPrice').classList.toggle('hidden', !this.checked);
+        
+        const secondCarNameSpan = document.getElementById('secondCarName');
+        const secondCarPriceSpan = document.getElementById('secondCarPriceAmount');
+        
+        if (secondCarNameSpan) secondCarNameSpan.textContent = comboName;
+        if (secondCarPriceSpan) secondCarPriceSpan.textContent = formatPrice(comboPrice);
         
         updatePriceSummary();
     });
-});
-    }, 100);
 }
-                    
-                    // Animazione smooth
-                    if (this.checked) {
-                        setTimeout(() => {
-                            huracanServices.style.animation = 'fadeIn 0.4s ease';
-                        }, 50);
-                    }
-                    
-                    // Deseleziona servizi se unchecked
-                    if (!this.checked) {
-                        huracanServices.querySelectorAll('.huracan-service-checkbox').forEach(cb => {
-                            cb.checked = false;
-                        });
-                        bookingData.extraServices = [];
-                    }
-                }
-                
-                // Aggiorna riepilogo
-                document.getElementById('secondCarPrice').classList.toggle('hidden', !this.checked);
-                
-                const secondCarNameSpan = document.getElementById('secondCarName');
-                const secondCarPriceSpan = document.getElementById('secondCarPriceAmount');
-                
-                if (secondCarNameSpan) secondCarNameSpan.textContent = comboName;
-                if (secondCarPriceSpan) secondCarPriceSpan.textContent = formatPrice(comboPrice);
-                
-                updatePriceSummary();
-            });
-        }
     } else {
         // ✅ Altre supercar: comportamento standard
         if (secondCarCheckbox) {
