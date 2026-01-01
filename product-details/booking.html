@@ -743,6 +743,26 @@ function formatPrice(price, currency = 'EUR') {
     // INIZIALIZZAZIONE PAGINA
     // ========================================
     window.addEventListener('DOMContentLoaded', async () => {
+    // ✅ GESTIONE RITORNO DA STRIPE
+    const urlParams = new URLSearchParams(window.location.search);
+    const successParam = urlParams.get('success');
+    const sessionId = urlParams.get('session_id');
+    
+    if (successParam === 'true' && sessionId) {
+        // Mostra popup successo
+        showSuccessPopup();
+        
+        // Pulisci URL dopo 3 secondi
+        setTimeout(() => {
+            const cleanUrl = window.location.origin + window.location.pathname + '?sku=' + urlParams.get('sku');
+            window.history.replaceState({}, document.title, cleanUrl);
+            
+            // Reload per stato fresco
+            window.location.reload();
+        }, 3000);
+        
+        return; // Non continuare con inizializzazione normale
+    }
         // 1. Estrai SKU dall'URL
         const urlParams = new URLSearchParams(window.location.search);
         const sku = urlParams.get('sku');
@@ -777,6 +797,45 @@ function formatPrice(price, currency = 'EUR') {
             hidePageLoader();
         }
     });
+
+    /**
+ * Mostra popup successo prenotazione
+ */
+function showSuccessPopup() {
+    const popup = document.createElement('div');
+    popup.innerHTML = `
+        <div style="position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.9); z-index: 99999; display: flex; align-items: center; justify-content: center; animation: fadeIn 0.4s ease;">
+            <div style="background: linear-gradient(135deg, #1a1a1a, #0f0f0f); border: 2px solid #D4AF37; border-radius: 24px; padding: 50px; max-width: 550px; text-align: center; box-shadow: 0 30px 80px rgba(212, 175, 55, 0.4); animation: slideUp 0.5s ease;">
+                <div style="width: 90px; height: 90px; background: rgba(212, 175, 55, 0.15); border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto 25px; border: 3px solid #D4AF37;">
+                    <svg style="width: 50px; height: 50px; color: #D4AF37;" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7"/>
+                    </svg>
+                </div>
+                <h2 style="font-size: 32px; font-weight: 300; color: #D4AF37; margin-bottom: 15px; letter-spacing: 1px;">Prenotazione Confermata</h2>
+                <p style="font-size: 18px; color: #d1d5db; line-height: 1.7; margin-bottom: 25px;">
+                    Il pagamento è stato completato con successo.<br>
+                    Riceverai una conferma via email a breve.
+                </p>
+                <div style="height: 2px; background: linear-gradient(90deg, transparent, #D4AF37, transparent); margin: 25px 0;"></div>
+                <p style="font-size: 14px; color: #9ca3af;">
+                    Reindirizzamento in corso...
+                </p>
+            </div>
+        </div>
+        <style>
+            @keyframes fadeIn {
+                from { opacity: 0; }
+                to { opacity: 1; }
+            }
+            @keyframes slideUp {
+                from { transform: translateY(40px); opacity: 0; }
+                to { transform: translateY(0); opacity: 1; }
+            }
+        </style>
+    `;
+    
+    document.body.appendChild(popup);
+}
 
     // ========================================
     // FETCH DATI BACKEND
@@ -1943,11 +2002,65 @@ function showEmailError(message) {
         return;
     }
     
-        const formatted = date.toLocaleDateString('it-IT', {
-            day: '2-digit',
-            month: '2-digit',
-            year: 'numeric'
+         // ✅ Raccogli tutti i dati
+    const phonePrefix = document.getElementById('phonePrefix').value;
+    const phoneNumber = document.getElementById('phoneNumber').value;
+    const fullPhone = phonePrefix + ' ' + phoneNumber;
+    
+    const nome = document.querySelector('input[placeholder="Il tuo nome"]').value;
+    const cognome = document.querySelector('input[placeholder="Il tuo cognome"]').value;
+    const note = document.querySelector('textarea[placeholder="Hai richieste particolari?"]').value;
+    
+    const formattedDate = date.toLocaleDateString('it-IT', {
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric'
+    });
+    
+    // ✅ Prepara payload per Stripe
+    const checkoutData = {
+        sku: bookingData.sku,
+        productTitle: bookingData.productData.title,
+        distance: bookingData.distance || null,
+        basePrice: bookingData.basePrice,
+        secondCar: bookingData.secondCar,
+        secondCarName: bookingData.secondCar ? document.getElementById('secondCarName')?.textContent : null,
+        secondCarPrice: bookingData.secondCar ? parseFloat(document.getElementById('secondCarPriceAmount')?.textContent.replace(/[^\d,]/g, '').replace(',', '.')) || 0 : 0,
+        extraServices: bookingData.extraServices,
+        totalAmount: bookingData.total,
+        customerName: `${nome} ${cognome}`,
+        customerEmail: email,
+        customerPhone: fullPhone,
+        bookingDate: formattedDate,
+        bookingTime: time,
+        notes: note
+    };
+    
+    // ✅ Mostra loader
+    showPageLoader();
+    
+    try {
+        const response = await fetch(`${WEB_APP_URL}?action=create_bookable_checkout`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ data: JSON.stringify(checkoutData) })
         });
+        
+        const result = await response.json();
+        
+        if (result.success && result.url) {
+            // Reindirizza a Stripe Checkout
+            window.location.href = result.url;
+        } else {
+            hidePageLoader();
+            alert('Errore durante la creazione del checkout: ' + (result.error || 'Sconosciuto'));
+        }
+        
+    } catch (error) {
+        hidePageLoader();
+        console.error('Errore checkout:', error);
+        alert('Si è verificato un errore. Riprova.');
+    }
     
         const isPriceOnRequest = bookingData.productData?.typeConfig && 
                                  !bookingData.productData.typeConfig.showDynamicPrice;
