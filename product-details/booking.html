@@ -815,6 +815,169 @@ textarea[placeholder="Hai richieste particolari?"] {
     // ========================================
     const WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbwr79RkXIEocpuOKaM6uMJqE6VFs9wjlUPvrr__FvDbDDrD2ELB1NbfrWP3BCYpHj2u/exec';
 
+    // ========================================
+// GESTIONE RITORNO POST-PAGAMENTO
+// ========================================
+function checkBookingSuccess() {
+    const urlParams = new URLSearchParams(window.location.search);
+    const bookingSuccess = urlParams.get('booking_success');
+    const sessionId = urlParams.get('session_id');
+    
+    if (bookingSuccess === 'true' && sessionId) {
+        // Mostra messaggio di successo
+        showSuccessMessage();
+        
+        // Pulisci URL rimuovendo parametri di successo
+        const sku = urlParams.get('sku');
+        const cleanUrl = window.location.pathname + (sku ? `?sku=${sku}` : '');
+        
+        // Sostituisci URL senza ricaricare pagina
+        window.history.replaceState({}, document.title, cleanUrl);
+        
+        // Reset completo dello stato (come prima visita)
+        resetBookingState();
+    }
+}
+
+function showSuccessMessage() {
+    const successBanner = document.createElement('div');
+    successBanner.style.cssText = `
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        background: linear-gradient(135deg, rgba(34, 197, 94, 0.95), rgba(22, 163, 74, 0.95));
+        color: white;
+        padding: 20px;
+        text-align: center;
+        z-index: 999999;
+        box-shadow: 0 8px 32px rgba(34, 197, 94, 0.4);
+        animation: slideDown 0.5s ease;
+    `;
+    
+    successBanner.innerHTML = `
+        <div style="max-width: 800px; margin: 0 auto;">
+            <div style="font-size: 24px; font-weight: 700; margin-bottom: 8px; display: flex; align-items: center; justify-content: center; gap: 12px;">
+                <svg style="width: 32px; height: 32px;" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                </svg>
+                Prenotazione Confermata!
+            </div>
+            <div style="font-size: 16px; opacity: 0.95;">
+                Riceverai una email di conferma a breve con tutti i dettagli della tua esperienza.
+            </div>
+        </div>
+    `;
+    
+    document.body.appendChild(successBanner);
+    
+    setTimeout(() => {
+        successBanner.style.animation = 'slideUp 0.5s ease';
+        setTimeout(() => successBanner.remove(), 500);
+    }, 5000);
+}
+
+function resetBookingState() {
+    // Reset stato globale
+    bookingData = {
+        sku: bookingData.sku, // Mantieni solo SKU
+        productData: bookingData.productData, // Mantieni dati prodotto
+        distance: null,
+        basePrice: 0,
+        secondCar: false,
+        extraServices: [],
+        total: 0,
+        selectedDate: null
+    };
+    
+    // Reset UI - Distanze
+    document.querySelectorAll('.distance-option').forEach(opt => {
+        opt.classList.remove('selected');
+    });
+    
+    // Reset UI - Seconda supercar
+    const secondCarCheckbox = document.getElementById('secondCarCheckbox');
+    if (secondCarCheckbox) {
+        secondCarCheckbox.checked = false;
+        document.getElementById('secondCarPrice').classList.add('hidden');
+    }
+    
+    // Reset UI - Servizi extra
+    document.querySelectorAll('.extra-service, .huracan-service-checkbox').forEach(cb => {
+        cb.checked = false;
+    });
+    
+    // Reset UI - Passeggeri
+    document.querySelectorAll('.passenger-radio, .huracan-passenger-radio').forEach(radio => {
+        radio.checked = false;
+    });
+    
+    // Reset form dati personali
+    const firstName = document.getElementById('firstName');
+    const lastName = document.getElementById('lastName');
+    const userEmail = document.getElementById('userEmail');
+    const userPhone = document.getElementById('userPhone');
+    const userNotes = document.getElementById('userNotes');
+    const bookingDate = document.getElementById('bookingDate');
+    const bookingTime = document.getElementById('bookingTime');
+    const termsCheckbox = document.getElementById('termsCheckbox');
+    
+    if (firstName) firstName.value = '';
+    if (lastName) lastName.value = '';
+    if (userEmail) userEmail.value = '';
+    if (userPhone) userPhone.value = '';
+    if (userNotes) userNotes.value = '';
+    if (bookingDate) bookingDate.value = '';
+    if (bookingTime) bookingTime.value = '';
+    if (termsCheckbox) termsCheckbox.checked = false;
+    
+    // Ripristina paese telefono default
+    selectedCountry = COUNTRIES[0]; // Italia
+    document.getElementById('selectedFlag').textContent = '🇮🇹';
+    document.getElementById('selectedCode').textContent = '+39';
+    
+    // Nascondi servizi Huracán se visibili
+    const huracanServices = document.getElementById('huracanExtraServices');
+    if (huracanServices) {
+        huracanServices.style.display = 'none';
+    }
+    
+    // Aggiorna riepilogo prezzi
+    updatePriceSummary();
+    
+    // Scroll to top smooth
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+    
+    Logger.log('✅ Stato booking resettato completamente');
+}
+
+// Aggiungi animazioni CSS per banner successo
+const style = document.createElement('style');
+style.textContent = `
+    @keyframes slideDown {
+        from {
+            transform: translateY(-100%);
+            opacity: 0;
+        }
+        to {
+            transform: translateY(0);
+            opacity: 1;
+        }
+    }
+    
+    @keyframes slideUp {
+        from {
+            transform: translateY(0);
+            opacity: 1;
+        }
+        to {
+            transform: translateY(-100%);
+            opacity: 0;
+        }
+    }
+`;
+document.head.appendChild(style);
+        
     /**
  * Formatta il prezzo per booking.html
  * Output: "€1.265" (euro PRIMA del numero)
@@ -868,6 +1031,9 @@ function formatPrice(price, currency = 'EUR') {
     // INIZIALIZZAZIONE PAGINA
     // ========================================
     window.addEventListener('DOMContentLoaded', async () => {
+        // Controlla se si sta tornando da pagamento
+        checkBookingSuccess();
+        
         // 1. Estrai SKU dall'URL
         const urlParams = new URLSearchParams(window.location.search);
         const sku = urlParams.get('sku');
