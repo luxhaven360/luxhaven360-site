@@ -1137,19 +1137,36 @@ function getComboKey(sku1, sku2) {
  * Verifica se la combo corrente ha prezzi custom
  */
 function hasCustomComboPricing() {
-    if (!bookingData.secondCar || !bookingData.productData) return false;
+    if (!bookingData.secondCar || !bookingData.productData) {
+        console.log('❌ Combo check fallito: dati mancanti');
+        return false;
+    }
     
     const mainSku = bookingData.productData.sku;
     const comboCheckbox = document.getElementById('secondCarCheckbox');
     
-    if (!comboCheckbox) return false;
+    if (!comboCheckbox) {
+        console.log('❌ Checkbox combo non trovato');
+        return false;
+    }
     
     const comboSku = comboCheckbox.dataset.comboSku;
-    if (!comboSku) return false;
+    if (!comboSku) {
+        console.log('❌ Combo SKU non presente nel dataset');
+        return false;
+    }
     
     const comboKey = getComboKey(mainSku, comboSku);
+    const hasCombo = COMBO_PRICING.hasOwnProperty(comboKey);
     
-    return COMBO_PRICING.hasOwnProperty(comboKey);
+    console.log('🔍 Combo check:', {
+        mainSku,
+        comboSku,
+        comboKey,
+        hasCombo
+    });
+    
+    return hasCombo;
 }
 
 /**
@@ -1551,16 +1568,17 @@ function formatPrice(price, currency = 'EUR') {
     });
 
     // ✅ 10c. CARD SECONDA SUPERCAR DINAMICA (con nome corretto)
-if (skuPrefix === 'SC' && product.supercarComboSku) {
+    if (skuPrefix === 'SC' && product.supercarComboSku) {
+    // ⭐ IMPOSTA SUBITO IL COMBO SKU NEL DATASET (PRIMA DEL FETCH)
+    const checkbox = document.getElementById('secondCarCheckbox');
+    if (checkbox) {
+        checkbox.dataset.comboSku = product.supercarComboSku;
+        console.log('✅ Combo SKU impostato:', product.supercarComboSku);
+    }
+    
     fetchProductDetails(product.supercarComboSku)
         .then(secondCar => {
             const secondCarSection = document.getElementById('secondCarSection');
-            
-            // ⭐ SALVA SKU COMBO PER LOGICA PREZZI
-            const checkbox = document.getElementById('secondCarCheckbox');
-            if (checkbox) {
-                checkbox.dataset.comboSku = product.supercarComboSku; // ← AGGIUNTO
-            }
             const isHuracanSpyder = product.title && 
                                     product.title.toLowerCase().includes('lamborghini') && 
                                     product.title.toLowerCase().includes('huracán spyder');
@@ -2214,7 +2232,9 @@ document.querySelectorAll('label:has(.passenger-radio)').forEach(label => {
         }
     });
 });
-
+        // Initialize phone
+        initPhoneSelector();
+        
         // Initialize calendar
         initCalendar();
     }
