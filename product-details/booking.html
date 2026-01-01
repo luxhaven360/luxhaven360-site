@@ -1175,6 +1175,7 @@ function showSuccessPopup() {
                 if (checkbox) {
                     checkbox.dataset.comboPrice = additionalPrice;
                     checkbox.dataset.comboName = secondCar.title;
+                    checkbox.dataset.comboSku = product.supercarComboSku;
                 }
                 
                 secondCarSection.style.display = 'block';
@@ -1459,9 +1460,9 @@ if (skuPrefix === 'SC') {
         bookingData.secondCar = this.checked;
         const comboPrice = parseInt(this.dataset.comboPrice) || 1490;
         const comboName = this.dataset.comboName || 'Seconda Supercar';
-        const comboSku = this.dataset.comboSku || ''; // ✅ AGGIUNGI questo attributo nel rendering
+        const comboSku = this.dataset.comboSku || '';
         
-        // ✅ NUOVO: Controlla se è una combo speciale
+        // ✅ CHIAMA API COMBO PRICING
         if (this.checked && bookingData.sku && comboSku) {
             try {
                 const response = await fetch(
@@ -1470,7 +1471,7 @@ if (skuPrefix === 'SC') {
                 const data = await response.json();
                 
                 if (data.success && data.isSpecialCombo) {
-                    // ✅ Sostituisci km e prezzi
+                    // ✅ AGGIORNA KM E PREZZI
                     const distanceGrid = document.getElementById('distanceOptions');
                     if (distanceGrid) {
                         distanceGrid.innerHTML = '';
@@ -1501,17 +1502,15 @@ if (skuPrefix === 'SC') {
                             option.addEventListener('click', function() {
                                 document.querySelectorAll('.distance-option').forEach(opt => opt.classList.remove('selected'));
                                 this.classList.add('selected');
-                                
                                 bookingData.distance = this.dataset.km;
                                 bookingData.basePrice = parseInt(this.dataset.price);
-                                
                                 updatePriceSummary();
                             });
                             
                             distanceGrid.appendChild(option);
                         });
                         
-                        // ✅ Auto-seleziona prima opzione
+                        // Auto-seleziona prima opzione
                         const firstOption = distanceGrid.querySelector('.distance-option');
                         if (firstOption) {
                             firstOption.classList.add('selected');
@@ -1520,60 +1519,46 @@ if (skuPrefix === 'SC') {
                         }
                     }
                 }
-                
             } catch (error) {
                 console.error('Errore recupero combo pricing:', error);
             }
         } else if (!this.checked) {
-            // ✅ Ripristina prezzi originali quando deselezionato
+            // ✅ RIPRISTINA PREZZI ORIGINALI
             const distanceGrid = document.getElementById('distanceOptions');
             if (distanceGrid && bookingData.productData.chilometraggioPrices) {
                 distanceGrid.innerHTML = '';
-                
                 const distanceConfig = getDistanceConfigForProduct(bookingData.productData);
                 
                 distanceConfig.options.forEach((distance, index) => {
                     if (index < bookingData.productData.chilometraggioPrices.length) {
                         const price = bookingData.productData.chilometraggioPrices[index];
-                        
                         const option = document.createElement('div');
                         option.className = 'distance-option';
                         option.dataset.km = distance.value;
                         option.dataset.price = price;
-                        
                         option.innerHTML = `
                             <div class="text-2xl font-bold gradient-text mb-2">${distance.value} ${distance.unit}</div>
                             <div class="text-xl font-semibold mb-1">${formatPrice(price)}</div>
                             <div class="text-sm" style="color: #a59173;">${distance.label}</div>
                         `;
-                        
                         option.addEventListener('click', function() {
                             document.querySelectorAll('.distance-option').forEach(opt => opt.classList.remove('selected'));
                             this.classList.add('selected');
-                            
                             bookingData.distance = this.dataset.km;
                             bookingData.basePrice = parseInt(this.dataset.price);
-                            
                             updatePriceSummary();
                         });
-                        
                         distanceGrid.appendChild(option);
                     }
                 });
-                
                 initDistanceSelection(bookingData.productData);
             }
         }
         
-        // Toggle visibilità riepilogo seconda supercar
+        // Toggle visibilità riepilogo
         document.getElementById('secondCarPrice').classList.toggle('hidden', !this.checked);
-        
-        const secondCarNameSpan = document.getElementById('secondCarName');
-        const secondCarPriceSpan = document.getElementById('secondCarPriceAmount');
-        
-        if (secondCarNameSpan) secondCarNameSpan.textContent = comboName;
-        if (secondCarPriceSpan) secondCarPriceSpan.textContent = formatPrice(comboPrice);
-        
+        document.getElementById('secondCarName').textContent = comboName;
+        document.getElementById('secondCarPriceAmount').textContent = formatPrice(comboPrice);
         updatePriceSummary();
     });
 }
@@ -1961,7 +1946,7 @@ function showEmailError(message) {
     // ========================================
     // CONFERMA PRENOTAZIONE
     // ========================================
-    function confirmBooking() {
+    async function confirmBooking() {
     const skuPrefix = bookingData.productData?.sku.split('-')[0].toUpperCase();
     const requiresDistance = skuPrefix !== 'EX' && skuPrefix !== 'SC';
 
