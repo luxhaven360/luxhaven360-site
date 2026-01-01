@@ -578,9 +578,36 @@ textarea[placeholder="Hai richieste particolari?"] {
                             <input type="email" placeholder="tua@email.com" required>
                         </div>
                         <div>
-                            <label class="block text-sm font-medium mb-2" style="color: #c9a891;">Telefono</label>
-                            <input type="tel" placeholder="+39 123 456 7890" required>
-                        </div>
+    <label class="block text-sm font-medium mb-2" style="color: #c9a891;">Telefono</label>
+    <div style="display: flex; gap: 10px;">
+        <!-- Dropdown prefissi -->
+        <select id="phonePrefix" style="width: 140px; padding-right: 35px;">
+            <option value="+39" data-flag="🇮🇹">🇮🇹 +39</option>
+            <option value="+1" data-flag="🇺🇸">🇺🇸 +1</option>
+            <option value="+44" data-flag="🇬🇧">🇬🇧 +44</option>
+            <option value="+33" data-flag="🇫🇷">🇫🇷 +33</option>
+            <option value="+49" data-flag="🇩🇪">🇩🇪 +49</option>
+            <option value="+34" data-flag="🇪🇸">🇪🇸 +34</option>
+            <option value="+41" data-flag="🇨🇭">🇨🇭 +41</option>
+            <option value="+43" data-flag="🇦🇹">🇦🇹 +43</option>
+            <option value="+31" data-flag="🇳🇱">🇳🇱 +31</option>
+            <option value="+32" data-flag="🇧🇪">🇧🇪 +32</option>
+            <option value="+351" data-flag="🇵🇹">🇵🇹 +351</option>
+            <option value="+7" data-flag="🇷🇺">🇷🇺 +7</option>
+            <option value="+86" data-flag="🇨🇳">🇨🇳 +86</option>
+            <option value="+81" data-flag="🇯🇵">🇯🇵 +81</option>
+            <option value="+82" data-flag="🇰🇷">🇰🇷 +82</option>
+            <option value="+61" data-flag="🇦🇺">🇦🇺 +61</option>
+            <option value="+971" data-flag="🇦🇪">🇦🇪 +971</option>
+            <option value="+966" data-flag="🇸🇦">🇸🇦 +966</option>
+            <option value="+91" data-flag="🇮🇳">🇮🇳 +91</option>
+            <option value="+55" data-flag="🇧🇷">🇧🇷 +55</option>
+        </select>
+        
+        <!-- Input numero -->
+        <input type="tel" id="phoneNumber" placeholder="123 456 7890" style="flex: 1;" required>
+    </div>
+</div>
                         <div class="md:col-span-2">
                             <label class="block text-sm font-medium mb-2" style="color: #c9a891;">Note Aggiuntive (opzionale)</label>
                             <textarea rows="3" placeholder="Hai richieste particolari?"></textarea>
@@ -1370,108 +1397,128 @@ if (skuPrefix === 'SC') {
     if (isHuracanSpyder) {
         // ✅ Huracán: toggle servizi nella card combo
         if (secondCarCheckbox) {
-            secondCarCheckbox.addEventListener('change', function() {
-                bookingData.secondCar = this.checked;
-                const comboPrice = parseInt(this.dataset.comboPrice) || 1490;
-                const comboName = this.dataset.comboName || 'Seconda Supercar';
+    secondCarCheckbox.addEventListener('change', async function() {
+        bookingData.secondCar = this.checked;
+        const comboPrice = parseInt(this.dataset.comboPrice) || 1490;
+        const comboName = this.dataset.comboName || 'Seconda Supercar';
+        const comboSku = this.dataset.comboSku || ''; // ✅ AGGIUNGI questo attributo nel rendering
+        
+        // ✅ NUOVO: Controlla se è una combo speciale
+        if (this.checked && bookingData.sku && comboSku) {
+            try {
+                const response = await fetch(
+                    `${WEB_APP_URL}?action=get_combo_pricing&sku1=${bookingData.sku}&sku2=${comboSku}&t=${Date.now()}`
+                );
+                const data = await response.json();
                 
-                // Toggle visibilità servizi
-                const huracanServices = document.getElementById('huracanExtraServices');
-                if (huracanServices) {
-                    huracanServices.style.display = this.checked ? 'block' : 'none';
-
-                    // ✅ AGGIUNGI QUESTO BLOCCO
-if (this.checked) {
-    // Attendi rendering DOM, poi aggiungi event listeners
-    setTimeout(() => {
-        document.querySelectorAll('.huracan-service-checkbox').forEach(cb => {
-            // Rimuovi listener duplicati clonando
-            const newCb = cb.cloneNode(true);
-            cb.parentNode.replaceChild(newCb, cb);
-            
-            // Aggiungi listener pulito
-            newCb.addEventListener('change', function() {
-                const price = parseInt(this.dataset.price);
-                const service = this.dataset.service;
-                
-                if (this.checked) {
-                    if (!bookingData.extraServices.find(s => s.service === service)) {
-                        bookingData.extraServices.push({ service, price });
+                if (data.success && data.isSpecialCombo) {
+                    // ✅ Sostituisci km e prezzi
+                    const distanceGrid = document.getElementById('distanceOptions');
+                    if (distanceGrid) {
+                        distanceGrid.innerHTML = '';
+                        
+                        const labels = [
+                            'Esperienza rapida',
+                            'Più popolare',
+                            'Esperienza completa',
+                            'Tour esteso',
+                            'Avventura lunga',
+                            'Esperienza definitiva'
+                        ];
+                        
+                        data.km.forEach((km, index) => {
+                            const price = data.prices[index];
+                            
+                            const option = document.createElement('div');
+                            option.className = 'distance-option';
+                            option.dataset.km = km;
+                            option.dataset.price = price;
+                            
+                            option.innerHTML = `
+                                <div class="text-2xl font-bold gradient-text mb-2">${km} km</div>
+                                <div class="text-xl font-semibold mb-1">${formatPrice(price)}</div>
+                                <div class="text-sm" style="color: #a59173;">${labels[index]}</div>
+                            `;
+                            
+                            option.addEventListener('click', function() {
+                                document.querySelectorAll('.distance-option').forEach(opt => opt.classList.remove('selected'));
+                                this.classList.add('selected');
+                                
+                                bookingData.distance = this.dataset.km;
+                                bookingData.basePrice = parseInt(this.dataset.price);
+                                
+                                updatePriceSummary();
+                            });
+                            
+                            distanceGrid.appendChild(option);
+                        });
+                        
+                        // ✅ Auto-seleziona prima opzione
+                        const firstOption = distanceGrid.querySelector('.distance-option');
+                        if (firstOption) {
+                            firstOption.classList.add('selected');
+                            bookingData.distance = firstOption.dataset.km;
+                            bookingData.basePrice = parseInt(firstOption.dataset.price);
+                        }
                     }
-                } else {
-                    bookingData.extraServices = bookingData.extraServices.filter(s => s.service !== service);
                 }
                 
-                updatePriceSummary();
-            });
-        });
-
-        // Aggiungi listener per passeggeri Huracán
-document.querySelectorAll('.huracan-passenger-radio').forEach(radio => {
-    radio.addEventListener('change', function() {
-        const quantity = parseInt(this.value);
-        const pricePerPassenger = 50;
-        const totalPrice = pricePerPassenger * quantity;
-        
-        // Rimuovi servizio passeggeri precedente
-        bookingData.extraServices = bookingData.extraServices.filter(s => s.service !== 'extra-passengers');
-        
-        // Aggiungi nuovo servizio
-        if (this.checked) {
-            bookingData.extraServices.push({ 
-                service: 'extra-passengers', 
-                price: totalPrice,
-                quantity: quantity
-            });
+            } catch (error) {
+                console.error('Errore recupero combo pricing:', error);
+            }
+        } else if (!this.checked) {
+            // ✅ Ripristina prezzi originali quando deselezionato
+            const distanceGrid = document.getElementById('distanceOptions');
+            if (distanceGrid && bookingData.productData.chilometraggioPrices) {
+                distanceGrid.innerHTML = '';
+                
+                const distanceConfig = getDistanceConfigForProduct(bookingData.productData);
+                
+                distanceConfig.options.forEach((distance, index) => {
+                    if (index < bookingData.productData.chilometraggioPrices.length) {
+                        const price = bookingData.productData.chilometraggioPrices[index];
+                        
+                        const option = document.createElement('div');
+                        option.className = 'distance-option';
+                        option.dataset.km = distance.value;
+                        option.dataset.price = price;
+                        
+                        option.innerHTML = `
+                            <div class="text-2xl font-bold gradient-text mb-2">${distance.value} ${distance.unit}</div>
+                            <div class="text-xl font-semibold mb-1">${formatPrice(price)}</div>
+                            <div class="text-sm" style="color: #a59173;">${distance.label}</div>
+                        `;
+                        
+                        option.addEventListener('click', function() {
+                            document.querySelectorAll('.distance-option').forEach(opt => opt.classList.remove('selected'));
+                            this.classList.add('selected');
+                            
+                            bookingData.distance = this.dataset.km;
+                            bookingData.basePrice = parseInt(this.dataset.price);
+                            
+                            updatePriceSummary();
+                        });
+                        
+                        distanceGrid.appendChild(option);
+                    }
+                });
+                
+                initDistanceSelection(bookingData.productData);
+            }
         }
         
-        // ✅ RESET STILI LABEL (FIX PUNTO 4)
-        document.querySelectorAll('.huracan-passenger-option').forEach(lbl => {
-            lbl.style.borderColor = 'rgba(80, 60, 45, 0.4)';
-            lbl.style.background = 'rgba(20, 15, 12, 0.8)';
-        });
+        // Toggle visibilità riepilogo seconda supercar
+        document.getElementById('secondCarPrice').classList.toggle('hidden', !this.checked);
         
-        // Evidenzia label selezionato
-        const selectedLabel = this.closest('.huracan-passenger-option');
-        if (selectedLabel) {
-            selectedLabel.style.borderColor = '#D4AF37';
-            selectedLabel.style.background = 'rgba(212, 175, 55, 0.12)';
-        }
+        const secondCarNameSpan = document.getElementById('secondCarName');
+        const secondCarPriceSpan = document.getElementById('secondCarPriceAmount');
+        
+        if (secondCarNameSpan) secondCarNameSpan.textContent = comboName;
+        if (secondCarPriceSpan) secondCarPriceSpan.textContent = formatPrice(comboPrice);
         
         updatePriceSummary();
     });
-});
-    }, 100);
 }
-                    
-                    // Animazione smooth
-                    if (this.checked) {
-                        setTimeout(() => {
-                            huracanServices.style.animation = 'fadeIn 0.4s ease';
-                        }, 50);
-                    }
-                    
-                    // Deseleziona servizi se unchecked
-                    if (!this.checked) {
-                        huracanServices.querySelectorAll('.huracan-service-checkbox').forEach(cb => {
-                            cb.checked = false;
-                        });
-                        bookingData.extraServices = [];
-                    }
-                }
-                
-                // Aggiorna riepilogo
-                document.getElementById('secondCarPrice').classList.toggle('hidden', !this.checked);
-                
-                const secondCarNameSpan = document.getElementById('secondCarName');
-                const secondCarPriceSpan = document.getElementById('secondCarPriceAmount');
-                
-                if (secondCarNameSpan) secondCarNameSpan.textContent = comboName;
-                if (secondCarPriceSpan) secondCarPriceSpan.textContent = formatPrice(comboPrice);
-                
-                updatePriceSummary();
-            });
-        }
     } else {
         // ✅ Altre supercar: comportamento standard
         if (secondCarCheckbox) {
@@ -1597,6 +1644,60 @@ document.querySelectorAll('label:has(.passenger-radio)').forEach(label => {
     }
 
         /**
+ * Formattazione numero telefono in tempo reale
+ */
+function initPhoneFormatting() {
+    const phoneInput = document.getElementById('phoneNumber');
+    const prefixSelect = document.getElementById('phonePrefix');
+    
+    if (!phoneInput || !prefixSelect) return;
+    
+    phoneInput.addEventListener('input', function(e) {
+        let value = e.target.value.replace(/\D/g, ''); // Solo numeri
+        
+        // Formattazione basata sul prefisso
+        const prefix = prefixSelect.value;
+        
+        // Formattazione italiana (+39)
+        if (prefix === '+39') {
+            if (value.length > 3) {
+                value = value.substring(0, 3) + ' ' + value.substring(3);
+            }
+            if (value.length > 7) {
+                value = value.substring(0, 7) + ' ' + value.substring(7, 11);
+            }
+        }
+        // Formattazione USA/Canada (+1)
+        else if (prefix === '+1') {
+            if (value.length > 3) {
+                value = '(' + value.substring(0, 3) + ') ' + value.substring(3);
+            }
+            if (value.length > 9) {
+                value = value.substring(0, 9) + '-' + value.substring(9, 13);
+            }
+        }
+        // Formattazione UK (+44)
+        else if (prefix === '+44') {
+            if (value.length > 4) {
+                value = value.substring(0, 4) + ' ' + value.substring(4);
+            }
+            if (value.length > 9) {
+                value = value.substring(0, 9) + ' ' + value.substring(9, 13);
+            }
+        }
+        // Default: gruppi di 3 cifre
+        else {
+            value = value.match(/.{1,3}/g)?.join(' ') || value;
+        }
+        
+        e.target.value = value;
+    });
+}
+
+// Chiamala in initializeComponents()
+initPhoneFormatting();
+
+        /**
  * Inizializza selezione distanza per prodotti con chilometraggio dinamico
  */
 function initDistanceSelection(product) {
@@ -1701,33 +1802,146 @@ function initDistanceSelection(product) {
         document.getElementById('totalPrice').textContent = formatPrice(total);
     }
 
+        /**
+ * Lista provider email affidabili
+ */
+const ALLOWED_EMAIL_PROVIDERS = [
+    'gmail.com', 'yahoo.com', 'outlook.com', 'hotmail.com', 
+    'icloud.com', 'live.com', 'msn.com', 'aol.com',
+    'protonmail.com', 'zoho.com', 'mail.com', 'gmx.com',
+    'libero.it', 'virgilio.it', 'alice.it', 'tin.it',
+    'fastwebnet.it', 'tiscali.it', 'aruba.it', 'email.it',
+    'pec.it', 'legalmail.it' // PEC italiane
+];
+
+/**
+ * Domini email temporanei bloccati
+ */
+const TEMP_EMAIL_DOMAINS = [
+    'tempmail', 'throwaway', '10minute', 'guerrillamail',
+    'mailinator', 'maildrop', 'trashmail', 'fakeinbox'
+];
+
+/**
+ * Valida email avanzata
+ */
+function validateEmail(email) {
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    
+    if (!emailRegex.test(email)) {
+        return { valid: false, error: 'Formato email non valido' };
+    }
+    
+    const domain = email.split('@')[1].toLowerCase();
+    
+    // Blocca email temporanee
+    const isTemp = TEMP_EMAIL_DOMAINS.some(temp => domain.includes(temp));
+    if (isTemp) {
+        return { 
+            valid: false, 
+            error: 'Le email temporanee non sono consentite' 
+        };
+    }
+    
+    // Verifica provider affidabile
+    const isAllowed = ALLOWED_EMAIL_PROVIDERS.some(provider => domain === provider);
+    if (!isAllowed) {
+        return { 
+            valid: false, 
+            error: 'Provider email non riconosciuto. Utilizza un indirizzo Gmail, Outlook, Yahoo o altro provider affidabile.' 
+        };
+    }
+    
+    return { valid: true };
+}
+
+/**
+ * Mostra popup errore email elegante
+ */
+function showEmailError(message) {
+    // Rimuovi popup precedenti
+    const existingPopup = document.getElementById('emailErrorPopup');
+    if (existingPopup) existingPopup.remove();
+    
+    const popup = document.createElement('div');
+    popup.id = 'emailErrorPopup';
+    popup.innerHTML = `
+        <div style="position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.8); z-index: 99999; display: flex; align-items: center; justify-content: center; animation: fadeIn 0.3s ease;">
+            <div style="background: linear-gradient(135deg, #1a1a1a, #0f0f0f); border: 2px solid #ef4444; border-radius: 20px; padding: 40px; max-width: 500px; box-shadow: 0 20px 60px rgba(239, 68, 68, 0.3); animation: slideUp 0.4s ease;">
+                <div style="text-align: center; margin-bottom: 20px;">
+                    <div style="width: 70px; height: 70px; background: rgba(239, 68, 68, 0.1); border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto 20px;">
+                        <svg style="width: 35px; height: 35px; color: #ef4444;" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                        </svg>
+                    </div>
+                    <h3 style="font-size: 24px; font-weight: 600; color: #fff; margin-bottom: 10px;">Email Non Valida</h3>
+                    <p style="font-size: 16px; color: #9ca3af; line-height: 1.6;">${message}</p>
+                </div>
+                <button onclick="document.getElementById('emailErrorPopup').remove()" style="width: 100%; background: linear-gradient(135deg, #ef4444, #dc2626); color: white; border: none; padding: 15px; border-radius: 12px; font-size: 16px; font-weight: 600; cursor: pointer; transition: transform 0.2s;">
+                    Ho Capito
+                </button>
+            </div>
+        </div>
+        <style>
+            @keyframes fadeIn {
+                from { opacity: 0; }
+                to { opacity: 1; }
+            }
+            @keyframes slideUp {
+                from { transform: translateY(30px); opacity: 0; }
+                to { transform: translateY(0); opacity: 1; }
+            }
+            #emailErrorPopup button:hover {
+                transform: translateY(-2px);
+            }
+        </style>
+    `;
+    
+    document.body.appendChild(popup);
+}
+
     // ========================================
     // CONFERMA PRENOTAZIONE
     // ========================================
     function confirmBooking() {
-        // ✅ DICHIARAZIONE UNICA DI skuPrefix
-        const skuPrefix = bookingData.productData?.sku.split('-')[0].toUpperCase();
-        const requiresDistance = skuPrefix !== 'EX' && skuPrefix !== 'SC';
+    const skuPrefix = bookingData.productData?.sku.split('-')[0].toUpperCase();
+    const requiresDistance = skuPrefix !== 'EX' && skuPrefix !== 'SC';
+
+    // Validazione distanza
+    if (requiresDistance && !bookingData.distance) {
+        alert('Seleziona un percorso prima di procedere');
+        return;
+    }
+
+    // ✅ VALIDAZIONE EMAIL AVANZATA
+    const emailInput = document.querySelector('input[type="email"]');
+    const email = emailInput.value.trim();
     
-        // Validazione distanza (solo per prodotti che la richiedono)
-        if (requiresDistance && !bookingData.distance) {
-            alert('Seleziona un percorso prima di procedere');
-            return;
-        }
+    const emailValidation = validateEmail(email);
+    if (!emailValidation.valid) {
+        showEmailError(emailValidation.error);
+        emailInput.focus();
+        emailInput.style.borderColor = '#ef4444';
+        return;
+    }
     
-        const date = bookingData.selectedDate;
-        const time = document.getElementById('bookingTime').value;
-        const terms = document.getElementById('termsCheckbox').checked;
-    
-        if (!date || !time) {
-            alert('Seleziona data e orario');
-            return;
-        }
-    
-        if (!terms) {
-            alert('Accetta i termini e condizioni per procedere');
-            return;
-        }
+    // Reset bordo se valida
+    emailInput.style.borderColor = '';
+
+    // Validazione altri campi
+    const date = bookingData.selectedDate;
+    const time = document.getElementById('bookingTime').value;
+    const terms = document.getElementById('termsCheckbox').checked;
+
+    if (!date || !time) {
+        alert('Seleziona data e orario');
+        return;
+    }
+
+    if (!terms) {
+        alert('Accetta i termini e condizioni per procedere');
+        return;
+    }
     
         const formatted = date.toLocaleDateString('it-IT', {
             day: '2-digit',
