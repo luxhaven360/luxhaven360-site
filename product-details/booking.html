@@ -2584,88 +2584,77 @@ function initDistanceSelection(product) {
     const notesTextarea = document.querySelector('textarea[placeholder*="richieste"]');
     const notes = notesTextarea ? notesTextarea.value.trim() : '';
     
-    // ✅ 8. PREPARAZIONE LINE ITEMS PER STRIPE (RISTRUTTURATI)
-const lineItems = [];
+        // ✅ 8. PREPARAZIONE LINE ITEMS
+    const lineItems = [];
 
-// 📦 SEZIONE PRENOTAZIONE
-if (bookingData.secondCar) {
-    // ✅ CASO COMBO: UN SOLO LINE ITEM CON ENTRAMBE LE SUPERCAR
-    const checkbox = document.getElementById('secondCarCheckbox');
-    if (checkbox) {
-        const comboPrice = parseInt(checkbox.dataset.comboPrice) || 0;
-        const comboName = checkbox.dataset.comboName || 'Seconda Supercar';
-        const comboSku = checkbox.dataset.comboSku || '';
-        
-        // Costruisci nome combo intelligente
-        const mainCarName = bookingData.productData.title;
-        const comboFullName = `${mainCarName} + ${comboName}`;
-        
-        const totalComboPrice = bookingData.basePrice + comboPrice;
-        
+    // 📦 SEZIONE PRENOTAZIONE
+    if (bookingData.secondCar) {
+        const checkbox = document.getElementById('secondCarCheckbox');
+        if (checkbox) {
+            const comboPrice = parseInt(checkbox.dataset.comboPrice) || 0;
+            const comboName = checkbox.dataset.comboName || 'Seconda Supercar';
+            const comboSku = checkbox.dataset.comboSku || '';
+            
+            const mainCarName = bookingData.productData.title;
+            const comboFullName = `${mainCarName} + ${comboName}`;
+            const totalComboPrice = bookingData.basePrice + comboPrice;
+            
+            lineItems.push({
+                sku: `${bookingData.sku}+${comboSku}`,
+                title: `🏎 ${comboFullName}`,
+                price: totalComboPrice,
+                qty: 1,
+                currency: 'EUR',
+                image: bookingData.productData.mainImage || '',
+                // ✅ DESCRIZIONE PULITA (solo km)
+                description: bookingData.distance ? `${bookingData.distance} km` : ''
+            });
+        }
+    } else {
         lineItems.push({
-            sku: `${bookingData.sku}+${comboSku}`,
-            title: `🏁 ${comboFullName} - Combo Esclusiva`,
-            price: totalComboPrice,
+            sku: bookingData.sku,
+            title: `🏎 ${bookingData.productData.title}`,
+            price: bookingData.basePrice,
             qty: 1,
             currency: 'EUR',
             image: bookingData.productData.mainImage || '',
-            description: bookingData.distance 
-                ? `Esperienza doppia supercar - ${bookingData.distance} km`
-                : 'Esperienza doppia supercar'
+            description: bookingData.distance ? `${bookingData.distance} km` : ''
         });
     }
-} else {
-    // ✅ CASO SINGOLO: SOLO PRODOTTO PRINCIPALE
-    lineItems.push({
-        sku: bookingData.sku,
-        title: `🏁 ${bookingData.productData.title}`,
-        price: bookingData.basePrice,
-        qty: 1,
-        currency: 'EUR',
-        image: bookingData.productData.mainImage || '',
-        description: bookingData.distance 
-            ? `Esperienza esclusiva - ${bookingData.distance} km`
-            : 'Esperienza esclusiva'
-    });
-}
 
-// 🎯 SEZIONE SERVIZI AGGIUNTIVI (SE PRESENTI)
-if (bookingData.extraServices.length > 0) {
-    const serviceNames = {
-        'photo': 'Servizio Fotografico Professionale',
-        'video-hd': 'Video HD Professionale',
-        'video-360': 'Video 360° Immersivo',
-        'extra-passengers': 'Passeggeri Extra'
-    };
-    
-    bookingData.extraServices.forEach((service, index) => {
-        let serviceName = serviceNames[service.service] || service.service;
-        if (service.quantity) serviceName += ` (${service.quantity})`;
+    // 🎯 SEZIONE SERVIZI AGGIUNTIVI (SE PRESENTI)
+    if (bookingData.extraServices.length > 0) {
+        const serviceNames = {
+            'photo': 'Servizio Fotografico',
+            'video-hd': 'Video HD',
+            'video-360': 'Video 360°',
+            'extra-passengers': 'Passeggeri Extra'
+        };
         
-        // Aggiungi prefisso visivo per distinguere i servizi
-        const prefix = index === 0 ? '🎯 Servizi Aggiuntivi » ' : '» ';
-        
-        lineItems.push({
-            sku: `SVC-${service.service}`,
-            title: `${prefix}${serviceName}`,
-            price: service.price,
-            qty: 1,
-            currency: 'EUR',
-            description: 'Servizio extra selezionato'
+        bookingData.extraServices.forEach(service => {
+            let serviceName = serviceNames[service.service] || service.service;
+            if (service.quantity) serviceName += ` (${service.quantity})`;
+            
+            // ✅ PREFISSO VISIVO PER SERVIZI
+            lineItems.push({
+                sku: `SVC-${service.service}`,
+                title: `» ${serviceName}`,
+                price: service.price,
+                qty: 1,
+                currency: 'EUR',
+                description: 'servizio extra'  // ✅ MINUSCOLO
+            });
         });
-    });
-}
+    }
     
-    // ✅ 9. CREA CHECKOUT STRIPE
+    // ✅ 9. LOGICA DIFFERENZIATA PER TIPO PRODOTTO
     showBookingLoader();
     disableForm();
     
     try {
-        const checkoutData = {
-            cart: lineItems,
-            shipping: 0, // NO spedizione per prenotazioni
-            is_booking: true,
-            booking_metadata: {
+        // ✅ CASO 1: IMMOBILI (PR) - NO STRIPE, SOLO EMAIL
+        if (skuPrefix === 'PR') {
+            const bookingPayload = {
                 sku: bookingData.sku,
                 product_title: bookingData.productData.title,
                 date: date.toISOString().split('T')[0],
@@ -2676,31 +2665,70 @@ if (bookingData.extraServices.length > 0) {
                 customer_phone: `${selectedCountry.code} ${phoneInput.value.trim()}`,
                 customer_country: selectedCountry.country,
                 notes: notes,
-                second_car: bookingData.secondCar,
-                extra_services: JSON.stringify(bookingData.extraServices),
-                total: bookingData.total
-            },
-            customer_phone: `${selectedCountry.code} ${phoneInput.value.trim()}`,
-            cancel_url: window.location.href,
-            success_url: `${window.location.origin}/luxhaven360-site/success-booking.html`
-        };
-        
-        const response = await fetch(WEB_APP_URL, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-            body: new URLSearchParams({
-                action: 'create_booking_checkout',
-                data: JSON.stringify(checkoutData)
-            })
-        });
-        
-        const result = await response.json();
-        
-        if (result.success && result.url) {
-            // Reindirizza a Stripe Checkout
-            window.location.href = result.url;
-        } else {
-            throw new Error(result.error || 'Errore creazione checkout');
+                location: bookingData.productData.luogo || '',
+                total: 0  // Immobili senza prezzo
+            };
+            
+            const response = await fetch(WEB_APP_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: new URLSearchParams({
+                    action: 'send_property_booking',
+                    data: JSON.stringify(bookingPayload)
+                })
+            });
+            
+            const result = await response.json();
+            
+            if (result.success) {
+                // ✅ Redirect a success-booking.html
+                window.location.href = `${window.location.origin}/luxhaven360-site/success-booking.html?booking_id=${result.booking_id}`;
+            } else {
+                throw new Error(result.error || 'Errore invio prenotazione');
+            }
+            
+        } 
+        // ✅ CASO 2: SUPERCAR/ESPERIENZE (SC/EX) - CON STRIPE
+        else if (skuPrefix === 'SC' || skuPrefix === 'EX') {
+            const checkoutData = {
+                cart: lineItems,
+                shipping: 0,
+                is_booking: true,
+                booking_metadata: {
+                    sku: bookingData.sku,
+                    product_title: bookingData.productData.title,
+                    date: date.toISOString().split('T')[0],
+                    time: time,
+                    distance: bookingData.distance || 'N/A',
+                    customer_name: `${firstName.value.trim()} ${lastName.value.trim()}`,
+                    customer_email: emailInput.value.trim().toLowerCase(),
+                    customer_phone: `${selectedCountry.code} ${phoneInput.value.trim()}`,
+                    customer_country: selectedCountry.country,
+                    notes: notes,
+                    second_car: bookingData.secondCar,
+                    extra_services: JSON.stringify(bookingData.extraServices),
+                    total: bookingData.total
+                },
+                cancel_url: window.location.href,
+                success_url: `${window.location.origin}/luxhaven360-site/success-booking.html`
+            };
+            
+            const response = await fetch(WEB_APP_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: new URLSearchParams({
+                    action: 'create_booking_checkout',
+                    data: JSON.stringify(checkoutData)
+                })
+            });
+            
+            const result = await response.json();
+            
+            if (result.success && result.url) {
+                window.location.href = result.url;
+            } else {
+                throw new Error(result.error || 'Errore creazione checkout');
+            }
         }
         
     } catch (error) {
