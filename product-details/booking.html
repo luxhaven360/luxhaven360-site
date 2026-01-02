@@ -1948,6 +1948,9 @@ if (product.numPosti >= 4) {
         if (secondCarSection) secondCarSection.style.display = 'none';
     }
 
+    // ✅ Resetta distance a N/A per immobili
+    bookingData.distance = 'N/A';
+
     // ✅ 15. GESTIONE ESPERIENZE (EX) - Nascondi sezioni non applicabili
     if (skuPrefix === 'EX') {
         const distanceSection = document.querySelector('.glass-card:has(#distanceOptions)');
@@ -2684,7 +2687,7 @@ function initDistanceSelection(product) {
                 product_title: bookingData.productData.title,
                 date: date.toISOString().split('T')[0],
                 time: time,
-                distance: bookingData.distance || 'N/A',
+                distance: 'N/A',  // ✅ FORZATO a N/A per immobili (PR)
                 customer_name: `${firstName.value.trim()} ${lastName.value.trim()}`,
                 customer_email: emailInput.value.trim().toLowerCase(),
                 customer_phone: `${selectedCountry.code} ${phoneInput.value.trim()}`,
@@ -2720,8 +2723,24 @@ function initDistanceSelection(product) {
                 shipping: 0,
                 is_booking: true,
                 booking_metadata: {
-    sku: bookingData.sku,
-    product_title: bookingData.productData.title,
+    sku: (() => {
+        // ✅ Se combo attiva, passa SKU combinato
+        if (bookingData.secondCar) {
+            const checkbox = document.getElementById('secondCarCheckbox');
+            const comboSku = checkbox ? checkbox.dataset.comboSku : '';
+            return comboSku ? `${bookingData.sku}+${comboSku}` : bookingData.sku;
+        }
+        return bookingData.sku;
+    })(),
+    product_title: (() => {
+        // ✅ Se combo attiva, passa nome combinato
+        if (bookingData.secondCar) {
+            const checkbox = document.getElementById('secondCarCheckbox');
+            const comboName = checkbox ? checkbox.dataset.comboName : '';
+            return comboName ? `${bookingData.productData.title} + ${comboName}` : bookingData.productData.title;
+        }
+        return bookingData.productData.title;
+    })(),
     date: date.toISOString().split('T')[0],
     time: time,
     distance: bookingData.distance || 'N/A',
