@@ -2610,10 +2610,22 @@ function initDistanceSelection(product) {
         try {
             // Prepara dati per prenotazione diretta
             const directBookingData = {
-                ...bookingDetails,
-                basePrice: bookingData.basePrice,
-                numeroProdotto: bookingData.productData.numero_prodotto || 'N/A'
-            };
+    sku: bookingDetails.sku || 'N/A',
+    productTitle: bookingDetails.productTitle || 'Prodotto',
+    numeroProdotto: bookingData.productData?.numero_prodotto || 'N/A',
+    distance: bookingDetails.distance || 'N/A',
+    extraServices: bookingDetails.extraServices || [],
+    date: bookingDetails.date || new Date().toISOString().split('T')[0],
+    time: bookingDetails.time || '09:00',
+    firstName: bookingDetails.firstName || '',
+    lastName: bookingDetails.lastName || '',
+    email: bookingDetails.email || '',
+    phone: bookingDetails.phone || '',
+    country: bookingDetails.country || '',
+    notes: bookingDetails.notes || '',
+    total: bookingDetails.total || 0,
+    basePrice: bookingData.basePrice || 0
+};
             
             const response = await fetch(WEB_APP_URL, {
                 method: 'POST',
@@ -2651,83 +2663,89 @@ function initDistanceSelection(product) {
         
     } else if (skuPrefix === 'SC' || skuPrefix === 'EX') {
         // ═══════════════════════════════════════
-        // 🏎️ FLUSSO SUPERCAR / ESPERIENZE - STRIPE
+        //  FLUSSO SUPERCAR / ESPERIENZE - STRIPE
         // ═══════════════════════════════════════
         
         showBookingLoader();
         disableForm();
         
         try {
-            // ✅ COSTRUZIONE LINE ITEMS RISTRUTTURATI
-            const lineItems = [];
-            
-            // 📦 SEZIONE PRENOTAZIONE
-            if (bookingData.secondCar) {
-                // Combo Supercar
-                const checkbox = document.getElementById('secondCarCheckbox');
-                if (checkbox) {
-                    const comboPrice = parseInt(checkbox.dataset.comboPrice) || 0;
-                    const comboName = checkbox.dataset.comboName || 'Seconda Supercar';
-                    const comboSku = checkbox.dataset.comboSku || '';
-                    
-                    const mainCarName = bookingData.productData.title;
-                    const comboFullName = `${mainCarName} + ${comboName}`;
-                    const totalComboPrice = bookingData.basePrice + comboPrice;
-                    
-                    lineItems.push({
-                        sku: `${bookingData.sku}+${comboSku}`,
-                        title: `🏎 Prenotazione effettuata per: ${comboFullName}`,
-                        price: totalComboPrice,
-                        qty: 1,
-                        currency: 'EUR',
-                        image: bookingData.productData.mainImage || '',
-                        description: bookingData.distance 
-                            ? `${bookingData.distance} km`
-                            : 'Esperienza combo esclusiva'
-                    });
-                }
-            } else {
-                // Singolo prodotto
-                let titlePrefix = skuPrefix === 'SC' ? '🏎 Prenotazione effettuata per:' : '✨ Prenotazione effettuata per:';
-                
-                lineItems.push({
-                    sku: bookingData.sku,
-                    title: `${titlePrefix} ${bookingData.productData.title}`,
-                    price: bookingData.basePrice,
-                    qty: 1,
-                    currency: 'EUR',
-                    image: bookingData.productData.mainImage || '',
-                    description: bookingData.distance && skuPrefix === 'SC'
-                        ? `${bookingData.distance} km`
-                        : (skuPrefix === 'EX' ? 'Pacchetto esperienza' : 'Esperienza esclusiva')
-                });
-            }
-            
-            // 🎯 SEZIONE SERVIZI AGGIUNTIVI (solo per SC)
-            if (skuPrefix === 'SC' && bookingData.extraServices.length > 0) {
-                const serviceNames = {
-                    'photo': 'Servizio Fotografico',
-                    'video-hd': 'Video HD',
-                    'video-360': 'Video 360°',
-                    'extra-passengers': 'Passeggeri'
-                };
-                
-                bookingData.extraServices.forEach((service, index) => {
-                    let serviceName = serviceNames[service.service] || service.service;
-                    if (service.quantity) serviceName += ` - ${service.quantity} extra`;
-                    
-                    const prefix = index === 0 ? '🎁 Servizi Aggiuntivi » ' : '» ';
-                    
-                    lineItems.push({
-                        sku: `SVC-${service.service}`,
-                        title: `${prefix}${serviceName}`,
-                        price: service.price,
-                        qty: 1,
-                        currency: 'EUR',
-                        description: 'Servizio extra'
-                    });
-                });
-            }
+            // ✅ COSTRUZIONE LINE ITEMS RISTRUTTURATI (SENZA ICONE)
+const lineItems = [];
+
+// 📦 SEZIONE PRENOTAZIONE
+if (bookingData.secondCar) {
+    // Combo Supercar
+    const checkbox = document.getElementById('secondCarCheckbox');
+    if (checkbox) {
+        const comboPrice = parseInt(checkbox.dataset.comboPrice) || 0;
+        const comboName = checkbox.dataset.comboName || 'Seconda Supercar';
+        const comboSku = checkbox.dataset.comboSku || '';
+        
+        const mainCarName = bookingData.productData.title;
+        const comboFullName = `${mainCarName} + ${comboName}`;
+        const totalComboPrice = bookingData.basePrice + comboPrice;
+        
+        // ✅ DETTAGLIO IN DESCRIZIONE (GRIGIO IN STRIPE)
+        const detailDescription = bookingData.distance 
+            ? `${comboFullName} - ${bookingData.distance} km`
+            : comboFullName;
+        
+        lineItems.push({
+            sku: `${bookingData.sku}+${comboSku}`,
+            title: 'Prenotazione effettuata per:', // ✅ BIANCO, SENZA ICONE
+            price: totalComboPrice,
+            qty: 1,
+            currency: 'EUR',
+            image: bookingData.productData.mainImage || '',
+            description: detailDescription // ✅ GRIGIO, CON DETTAGLI
+        });
+    }
+} else {
+    // Singolo prodotto
+    const productDetail = bookingData.distance && skuPrefix === 'SC'
+        ? `${bookingData.productData.title} - ${bookingData.distance} km`
+        : bookingData.productData.title;
+    
+    lineItems.push({
+        sku: bookingData.sku,
+        title: 'Prenotazione effettuata per:', // ✅ BIANCO, SENZA ICONE
+        price: bookingData.basePrice,
+        qty: 1,
+        currency: 'EUR',
+        image: bookingData.productData.mainImage || '',
+        description: productDetail // ✅ GRIGIO, CON DETTAGLI
+    });
+}
+
+// 🎯 SEZIONE SERVIZI AGGIUNTIVI (solo per SC)
+if (skuPrefix === 'SC' && bookingData.extraServices.length > 0) {
+    const serviceNames = {
+        'photo': 'Servizio Fotografico',
+        'video-hd': 'Video HD',
+        'video-360': 'Video 360°',
+        'extra-passengers': 'Passeggeri'
+    };
+    
+    // ✅ CALCOLA TOTALE SERVIZI
+    const totalServices = bookingData.extraServices.reduce((sum, s) => sum + s.price, 0);
+    
+    // ✅ COSTRUISCI LISTA DETTAGLI (GRIGIO)
+    const servicesDetail = bookingData.extraServices.map(service => {
+        let serviceName = serviceNames[service.service] || service.service;
+        if (service.quantity) serviceName += ` – ${service.quantity} extra`;
+        return serviceName;
+    }).join(', ');
+    
+    lineItems.push({
+        sku: 'SVC-BUNDLE',
+        title: 'Servizi Aggiuntivi', // ✅ BIANCO, SENZA ICONE
+        price: totalServices,
+        qty: 1,
+        currency: 'EUR',
+        description: servicesDetail // ✅ GRIGIO, LISTA SERVIZI
+    });
+}
             
             // Crea checkout Stripe
             const checkoutData = {
