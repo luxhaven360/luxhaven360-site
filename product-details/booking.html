@@ -2738,19 +2738,19 @@ if (skuPrefix === 'SC' && bookingData.extraServices.length > 0) {
     
     // ✅ COSTRUISCI LISTA DETTAGLI (GRIGIO)
     const servicesDetail = bookingData.extraServices.map(service => {
-        let serviceName = serviceNames[service.service] || service.service;
-        if (service.quantity) serviceName += ` – ${service.quantity} extra`;
-        return serviceName;
-    }).join('\n');
-    
-    lineItems.push({
-        sku: 'SVC-BUNDLE',
-        title: 'Servizi Aggiuntivi', // ✅ BIANCO, SENZA ICONE
-        price: totalServices,
-        qty: 1,
-        currency: 'EUR',
-        description: servicesDetail // ✅ GRIGIO, LISTA SERVIZI
-    });
+    let serviceName = serviceNames[service.service] || service.service;
+    if (service.quantity) serviceName += ` – ${service.quantity} extra`;
+    return `• ${serviceName}`;  // ✅ Aggiungi bullet point
+}).join('<br>');  // ✅ Usa <br> invece di \n
+
+lineItems.push({
+    sku: 'SVC-BUNDLE',
+    title: 'Servizi Aggiuntivi',
+    price: totalServices,
+    qty: 1,
+    currency: 'EUR',
+    description: servicesDetail  // ✅ Stripe renderizza <br>
+});
 }
             
             // Crea checkout Stripe
@@ -2759,21 +2759,35 @@ if (skuPrefix === 'SC' && bookingData.extraServices.length > 0) {
                 shipping: 0,
                 is_booking: true,
                 booking_metadata: {
-                    sku: bookingDetails.sku,
-                    product_title: bookingDetails.productTitle,
-                    date: bookingDetails.date,
-                    time: bookingDetails.time,
-                    distance: bookingDetails.distance,
-                    customer_name: `${bookingDetails.firstName} ${bookingDetails.lastName}`,
-                    customer_email: bookingDetails.email,
-                    customer_phone: bookingDetails.phone,
-                    customer_country: bookingDetails.country,
-                    notes: bookingDetails.notes,
-                    second_car: bookingDetails.secondCar,
-                    extra_services: JSON.stringify(bookingDetails.extraServices),
-                    total: bookingDetails.total,
-                    numero_prodotto: bookingData.productData.numero_prodotto || 'N/A'
-                },
+    booking_sku: bookingDetails.sku,  // ✅ Usa naming consistente
+    booking_product: bookingDetails.productTitle,
+    booking_date: bookingDetails.date,
+    booking_time: bookingDetails.time,
+    booking_distance: bookingDetails.distance,
+    customer_name: `${bookingDetails.firstName} ${bookingDetails.lastName}`,
+    customer_email: bookingDetails.email,
+    customer_phone: bookingDetails.phone,
+    customer_country: bookingDetails.country,
+    booking_notes: bookingDetails.notes,
+    second_car: bookingDetails.secondCar,
+    
+    // ✅ AGGIUNGI SKU E NOME COMBO
+    booking_combo_sku: (() => {
+        if (bookingDetails.secondCar) {
+            const checkbox = document.getElementById('secondCarCheckbox');
+            if (checkbox) {
+                const comboSku = checkbox.dataset.comboSku;  // Es: "SC-006"
+                const comboName = checkbox.dataset.comboName;  // Es: "Lamborghini..."
+                return `${comboSku}, ${comboName}`;  // Passa entrambi
+            }
+        }
+        return '';
+    })(),
+    
+    extra_services: JSON.stringify(bookingDetails.extraServices),
+    total: bookingDetails.total,
+    numero_prodotto: bookingData.productData.numero_prodotto || 'N/A'
+},
                 customer_phone: bookingDetails.phone,
                 cancel_url: window.location.href,
                 success_url: `${window.location.origin}/luxhaven360-site/success-booking.html`
