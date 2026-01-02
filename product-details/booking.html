@@ -1004,7 +1004,7 @@ function initPhoneSelector() {
     phoneInput.style.borderLeft = '1.5px solid rgba(80, 60, 45, 0.4)';
     phoneInput.style.flex = '1';
     phoneInput.style.marginLeft = '0';
-    phoneInput.placeholder = '123 456 7890';
+    phoneInput.placeholder = selectedCountry.format.replace(/#/g, '0'); // Es: "000 000 0000" per Italia
 
     // Effetto hover coordinato
     btn.addEventListener('mouseenter', () => {
@@ -1116,6 +1116,9 @@ btn.addEventListener('click', (e) => {
             // Aggiorna UI selector
             btn.querySelector('.selected-flag').textContent = option.querySelector('.flag').textContent;
             btn.querySelector('.selected-code').textContent = code;
+
+            // Aggiorna placeholder con formattazione del paese
+            phoneInput.placeholder = format.replace(/#/g, '0');
             
             // Reset e focus input
             phoneInput.value = '';
@@ -2143,35 +2146,58 @@ if (skuPrefix === 'SC') {
                     });
 
                     document.querySelectorAll('.huracan-passenger-radio').forEach(radio => {
-                        radio.addEventListener('change', function() {
-                            const quantity = parseInt(this.value);
-                            const pricePerPassenger = 50;
-                            const totalPrice = pricePerPassenger * quantity;
-                            
-                            bookingData.extraServices = bookingData.extraServices.filter(s => s.service !== 'extra-passengers');
-                            
-                            if (this.checked) {
-                                bookingData.extraServices.push({ 
-                                    service: 'extra-passengers', 
-                                    price: totalPrice,
-                                    quantity: quantity
-                                });
-                            }
-                            
-                            document.querySelectorAll('.huracan-passenger-option').forEach(lbl => {
-                                lbl.style.borderColor = 'rgba(80, 60, 45, 0.4)';
-                                lbl.style.background = 'rgba(20, 15, 12, 0.8)';
-                            });
-                            
-                            const selectedLabel = this.closest('.huracan-passenger-option');
-                            if (selectedLabel) {
-                                selectedLabel.style.borderColor = '#D4AF37';
-                                selectedLabel.style.background = 'rgba(212, 175, 55, 0.12)';
-                            }
-                            
-                            updatePriceSummary();
-                        });
-                    });
+    radio.addEventListener('click', function(e) {
+        const quantity = parseInt(this.value);
+        const pricePerPassenger = 50;
+        const totalPrice = pricePerPassenger * quantity;
+        
+        // ✅ NUOVO: Se già selezionato, deseleziona
+        if (this.dataset.wasChecked === 'true') {
+            this.checked = false;
+            this.dataset.wasChecked = 'false';
+            
+            bookingData.extraServices = bookingData.extraServices.filter(s => s.service !== 'extra-passengers');
+            
+            document.querySelectorAll('.huracan-passenger-option').forEach(lbl => {
+                lbl.style.borderColor = 'rgba(80, 60, 45, 0.4)';
+                lbl.style.background = 'rgba(20, 15, 12, 0.8)';
+            });
+            
+            updatePriceSummary();
+            return;
+        }
+        
+        // Rimuovi precedenti
+        bookingData.extraServices = bookingData.extraServices.filter(s => s.service !== 'extra-passengers');
+        
+        // Aggiungi nuovo
+        bookingData.extraServices.push({ 
+            service: 'extra-passengers', 
+            price: totalPrice,
+            quantity: quantity
+        });
+        
+        // Marca selezione
+        document.querySelectorAll('.huracan-passenger-radio').forEach(r => {
+            r.dataset.wasChecked = 'false';
+        });
+        this.dataset.wasChecked = 'true';
+        
+        // Reset stili
+        document.querySelectorAll('.huracan-passenger-option').forEach(lbl => {
+            lbl.style.borderColor = 'rgba(80, 60, 45, 0.4)';
+            lbl.style.background = 'rgba(20, 15, 12, 0.8)';
+        });
+        
+        const selectedLabel = this.closest('.huracan-passenger-option');
+        if (selectedLabel) {
+            selectedLabel.style.borderColor = '#D4AF37';
+            selectedLabel.style.background = 'rgba(212, 175, 55, 0.12)';
+        }
+        
+        updatePriceSummary();
+    });
+});
                 }, 100);
             }
             
@@ -2282,35 +2308,57 @@ setTimeout(() => {
 }, 600); // Attendi rendering completo
 
         // ✅ Gestione Passeggeri Extra (radio buttons)
-document.querySelectorAll('.passenger-radio').forEach(radio => {
-    radio.addEventListener('change', function() {
+        document.querySelectorAll('.passenger-radio').forEach(radio => {
+    radio.addEventListener('click', function(e) {
         const quantity = parseInt(this.value);
         const pricePerPassenger = 50;
         const totalPrice = pricePerPassenger * quantity;
+        
+        // ✅ NUOVO: Se già selezionato, deseleziona
+        if (this.dataset.wasChecked === 'true') {
+            this.checked = false;
+            this.dataset.wasChecked = 'false';
+            
+            // Rimuovi servizio passeggeri
+            bookingData.extraServices = bookingData.extraServices.filter(s => s.service !== 'extra-passengers');
+            
+            // Reset stili tutti i label
+            document.querySelectorAll('label:has(.passenger-radio)').forEach(lbl => {
+                lbl.style.borderColor = 'rgba(212, 175, 55, 0.3)';
+                lbl.style.background = 'rgba(212, 175, 55, 0.08)';
+            });
+            
+            updatePriceSummary();
+            return;
+        }
         
         // Rimuovi eventuali servizi passeggeri precedenti
         bookingData.extraServices = bookingData.extraServices.filter(s => s.service !== 'extra-passengers');
         
         // Aggiungi nuovo servizio
-        if (this.checked) {
-    // ✅ RESET STILI TUTTI I LABEL
-    document.querySelectorAll('label:has(.passenger-radio)').forEach(lbl => {
-        lbl.style.borderColor = 'rgba(212, 175, 55, 0.3)';
-        lbl.style.background = 'rgba(212, 175, 55, 0.08)';
-    });
-    
-    // Evidenzia label selezionato
-    const selectedLabel = this.closest('label');
-    if (selectedLabel) {
-        selectedLabel.style.borderColor = '#D4AF37';
-        selectedLabel.style.background = 'rgba(212, 175, 55, 0.18)';
-    }
-    
-    bookingData.extraServices.push({ 
-                service: 'extra-passengers', 
-                price: totalPrice,
-                quantity: quantity
-            });
+        bookingData.extraServices.push({ 
+            service: 'extra-passengers', 
+            price: totalPrice,
+            quantity: quantity
+        });
+        
+        // Marca questo come selezionato, gli altri no
+        document.querySelectorAll('.passenger-radio').forEach(r => {
+            r.dataset.wasChecked = 'false';
+        });
+        this.dataset.wasChecked = 'true';
+        
+        // ✅ Reset stili tutti i label
+        document.querySelectorAll('label:has(.passenger-radio)').forEach(lbl => {
+            lbl.style.borderColor = 'rgba(212, 175, 55, 0.3)';
+            lbl.style.background = 'rgba(212, 175, 55, 0.08)';
+        });
+        
+        // Evidenzia label selezionato
+        const selectedLabel = this.closest('label');
+        if (selectedLabel) {
+            selectedLabel.style.borderColor = '#D4AF37';
+            selectedLabel.style.background = 'rgba(212, 175, 55, 0.18)';
         }
         
         updatePriceSummary();
@@ -2534,58 +2582,112 @@ function initDistanceSelection(product) {
         return;
     }
     
-    // ✅ 7. PREPARAZIONE DATI PRENOTAZIONE
-    const notes = document.querySelector('textarea[placeholder="Hai richieste particolari?"]')?.value || '';
+    // ✅ 7. PREPARAZIONE LINE ITEMS PER STRIPE
+    const lineItems = [];
     
-    const bookingPayload = {
-        action: 'create_booking',
+    // Item 1: Prodotto principale con chilometraggio
+    lineItems.push({
         sku: bookingData.sku,
-        productTitle: bookingData.productData.title,
-        firstName: firstName.value.trim(),
-        lastName: lastName.value.trim(),
-        email: emailInput.value.trim().toLowerCase(),
-        phone: `${selectedCountry.code} ${phoneInput.value.trim()}`,
-        phoneCountry: selectedCountry.country,
-        date: date.toISOString().split('T')[0],
-        time: time,
-        distance: bookingData.distance || 'N/A',
-        basePrice: bookingData.basePrice,
-        secondCar: bookingData.secondCar,
-        secondCarName: bookingData.secondCar ? (document.getElementById('secondCarCheckbox')?.dataset.comboName || 'N/A') : null,
-        secondCarPrice: bookingData.secondCar ? (parseInt(document.getElementById('secondCarCheckbox')?.dataset.comboPrice) || 0) : 0,
-        extraServices: bookingData.extraServices,
-        total: bookingData.total,
-        notes: notes,
-        timestamp: new Date().toISOString()
-    };
+        title: bookingData.productData.title,
+        price: bookingData.basePrice,
+        qty: 1,
+        currency: 'EUR',
+        image: bookingData.productData.mainImage || '',
+        description: `${bookingData.productData.title}${bookingData.distance ? ` - ${bookingData.distance} km` : ''}`
+    });
     
-    // ✅ 8. MOSTRA LOADER E DISABILITA FORM
+    // Item 2: Seconda Supercar (se presente)
+    if (bookingData.secondCar) {
+        const checkbox = document.getElementById('secondCarCheckbox');
+        if (checkbox) {
+            const comboPrice = parseInt(checkbox.dataset.comboPrice) || 0;
+            const comboName = checkbox.dataset.comboName || 'Seconda Supercar';
+            const comboSku = checkbox.dataset.comboSku || '';
+            
+            lineItems.push({
+                sku: comboSku,
+                title: comboName,
+                price: comboPrice,
+                qty: 1,
+                currency: 'EUR',
+                image: '',
+                description: comboName
+            });
+        }
+    }
+    
+    // Item 3: Servizi aggiuntivi
+    bookingData.extraServices.forEach(service => {
+        const serviceNames = {
+            'photo': 'Servizio Fotografico Professionale',
+            'video-hd': 'Video HD Professionale',
+            'video-360': 'Video 360° Immersivo',
+            'extra-passengers': 'Passeggeri Extra'
+        };
+        
+        let serviceName = serviceNames[service.service] || service.service;
+        if (service.quantity) serviceName += ` (${service.quantity})`;
+        
+        lineItems.push({
+            sku: `SVC-${service.service}`,
+            title: serviceName,
+            price: service.price,
+            qty: 1,
+            currency: 'EUR',
+            description: serviceName
+        });
+    });
+    
+    // ✅ 8. CREA CHECKOUT STRIPE
     showBookingLoader();
     disableForm();
     
     try {
-        // ✅ 9. INVIO DATI AL BACKEND
+        const checkoutData = {
+            cart: lineItems,
+            shipping: 0, // NO spedizione per prenotazioni
+            is_booking: true,
+            booking_metadata: {
+                sku: bookingData.sku,
+                product_title: bookingData.productData.title,
+                date: date.toISOString().split('T')[0],
+                time: time,
+                distance: bookingData.distance || 'N/A',
+                customer_name: `${firstName.value.trim()} ${lastName.value.trim()}`,
+                customer_email: emailInput.value.trim().toLowerCase(),
+                customer_phone: `${selectedCountry.code} ${phoneInput.value.trim()}`,
+                customer_country: selectedCountry.country,
+                notes: notes,
+                second_car: bookingData.secondCar,
+                extra_services: JSON.stringify(bookingData.extraServices),
+                total: bookingData.total
+            },
+            customer_phone: `${selectedCountry.code} ${phoneInput.value.trim()}`,
+            cancel_url: window.location.href,
+            success_url: `${window.location.origin}/luxhaven360-site/success-booking.html`
+        };
+        
         const response = await fetch(WEB_APP_URL, {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/x-www-form-urlencoded',
-            },
-            body: new URLSearchParams(bookingPayload)
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: new URLSearchParams({
+                action: 'create_booking_checkout',
+                data: JSON.stringify(checkoutData)
+            })
         });
         
         const result = await response.json();
         
-        // ✅ 10. GESTIONE RISPOSTA
-        if (result.success) {
-            showBookingSuccess(bookingPayload);
+        if (result.success && result.url) {
+            // Reindirizza a Stripe Checkout
+            window.location.href = result.url;
         } else {
-            throw new Error(result.error || 'Errore durante la prenotazione');
+            throw new Error(result.error || 'Errore creazione checkout');
         }
         
     } catch (error) {
-        console.error('Errore prenotazione:', error);
-        showBookingError(error.message);
-    } finally {
+        console.error('Errore checkout:', error);
+        showBookingError('Si è verificato un errore durante la creazione del checkout. Riprova.');
         hideBookingLoader();
         enableForm();
     }
