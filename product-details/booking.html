@@ -2584,61 +2584,77 @@ function initDistanceSelection(product) {
     const notesTextarea = document.querySelector('textarea[placeholder*="richieste"]');
     const notes = notesTextarea ? notesTextarea.value.trim() : '';
     
-    // ✅ 8. PREPARAZIONE LINE ITEMS PER STRIPE
-    const lineItems = [];
-    
-    // Item 1: Prodotto principale con chilometraggio
+    // ✅ 8. PREPARAZIONE LINE ITEMS PER STRIPE (RISTRUTTURATI)
+const lineItems = [];
+
+// 📦 SEZIONE PRENOTAZIONE
+if (bookingData.secondCar) {
+    // ✅ CASO COMBO: UN SOLO LINE ITEM CON ENTRAMBE LE SUPERCAR
+    const checkbox = document.getElementById('secondCarCheckbox');
+    if (checkbox) {
+        const comboPrice = parseInt(checkbox.dataset.comboPrice) || 0;
+        const comboName = checkbox.dataset.comboName || 'Seconda Supercar';
+        const comboSku = checkbox.dataset.comboSku || '';
+        
+        // Costruisci nome combo intelligente
+        const mainCarName = bookingData.productData.title;
+        const comboFullName = `${mainCarName} + ${comboName}`;
+        
+        const totalComboPrice = bookingData.basePrice + comboPrice;
+        
+        lineItems.push({
+            sku: `${bookingData.sku}+${comboSku}`,
+            title: `🏁 ${comboFullName} - Combo Esclusiva`,
+            price: totalComboPrice,
+            qty: 1,
+            currency: 'EUR',
+            image: bookingData.productData.mainImage || '',
+            description: bookingData.distance 
+                ? `Esperienza doppia supercar - ${bookingData.distance} km`
+                : 'Esperienza doppia supercar'
+        });
+    }
+} else {
+    // ✅ CASO SINGOLO: SOLO PRODOTTO PRINCIPALE
     lineItems.push({
         sku: bookingData.sku,
-        title: bookingData.productData.title,
+        title: `🏁 ${bookingData.productData.title}`,
         price: bookingData.basePrice,
         qty: 1,
         currency: 'EUR',
         image: bookingData.productData.mainImage || '',
-        description: `${bookingData.productData.title}${bookingData.distance ? ` - ${bookingData.distance} km` : ''}`
+        description: bookingData.distance 
+            ? `Esperienza esclusiva - ${bookingData.distance} km`
+            : 'Esperienza esclusiva'
     });
+}
+
+// 🎯 SEZIONE SERVIZI AGGIUNTIVI (SE PRESENTI)
+if (bookingData.extraServices.length > 0) {
+    const serviceNames = {
+        'photo': 'Servizio Fotografico Professionale',
+        'video-hd': 'Video HD Professionale',
+        'video-360': 'Video 360° Immersivo',
+        'extra-passengers': 'Passeggeri Extra'
+    };
     
-    // Item 2: Seconda Supercar (se presente)
-    if (bookingData.secondCar) {
-        const checkbox = document.getElementById('secondCarCheckbox');
-        if (checkbox) {
-            const comboPrice = parseInt(checkbox.dataset.comboPrice) || 0;
-            const comboName = checkbox.dataset.comboName || 'Seconda Supercar';
-            const comboSku = checkbox.dataset.comboSku || '';
-            
-            lineItems.push({
-                sku: comboSku,
-                title: comboName,
-                price: comboPrice,
-                qty: 1,
-                currency: 'EUR',
-                image: '',
-                description: comboName
-            });
-        }
-    }
-    
-    // Item 3: Servizi aggiuntivi
-    bookingData.extraServices.forEach(service => {
-        const serviceNames = {
-            'photo': 'Servizio Fotografico Professionale',
-            'video-hd': 'Video HD Professionale',
-            'video-360': 'Video 360° Immersivo',
-            'extra-passengers': 'Passeggeri Extra'
-        };
-        
+    bookingData.extraServices.forEach((service, index) => {
         let serviceName = serviceNames[service.service] || service.service;
         if (service.quantity) serviceName += ` (${service.quantity})`;
         
+        // Aggiungi prefisso visivo per distinguere i servizi
+        const prefix = index === 0 ? '🎯 Servizi Aggiuntivi » ' : '» ';
+        
         lineItems.push({
             sku: `SVC-${service.service}`,
-            title: serviceName,
+            title: `${prefix}${serviceName}`,
             price: service.price,
             qty: 1,
             currency: 'EUR',
-            description: serviceName
+            description: 'Servizio extra selezionato'
         });
     });
+}
     
     // ✅ 9. CREA CHECKOUT STRIPE
     showBookingLoader();
