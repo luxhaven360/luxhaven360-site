@@ -2581,21 +2581,23 @@ function initDistanceSelection(product) {
 
     // ✅ 7. PREPARAZIONE DATI COMUNI
     const bookingDetails = {
-        sku: bookingData.sku,
-        productTitle: bookingData.productData.title,
-        date: date.toISOString().split('T')[0],
-        time: time,
-        distance: bookingData.distance || 'N/A',
-        firstName: firstName.value.trim(),
-        lastName: lastName.value.trim(),
-        email: emailInput.value.trim().toLowerCase(),
-        phone: `${selectedCountry.code} ${phoneInput.value.trim()}`,
-        country: selectedCountry.country,
-        notes: notes,
-        secondCar: bookingData.secondCar,
-        extraServices: bookingData.extraServices,
-        total: bookingData.total
-    };
+    sku: bookingData.sku,
+    productTitle: bookingData.productData.title,
+    numeroProdotto: bookingData.productData.numero_prodotto || 'N/A', // ✅ AGGIUNTO
+    date: date.toISOString().split('T')[0],
+    time: time,
+    distance: bookingData.distance || 'N/A',
+    firstName: firstName.value.trim(),
+    lastName: lastName.value.trim(),
+    email: emailInput.value.trim().toLowerCase(),
+    phone: `${selectedCountry.code} ${phoneInput.value.trim()}`,
+    country: selectedCountry.country,
+    notes: notes,
+    secondCar: bookingData.secondCar,
+    extraServices: bookingData.extraServices,
+    total: bookingData.total,
+    basePrice: bookingData.basePrice || 0 // ✅ AGGIUNTO
+};
 
     // 🔀 BIFORCAZIONE FLUSSO IN BASE A SKU PREFIX
     
@@ -2676,12 +2678,12 @@ if (result.success) {
         disableForm();
         
         try {
-            // ✅ COSTRUZIONE LINE ITEMS RISTRUTTURATI (SENZA ICONE)
+            // ✅ COSTRUZIONE LINE ITEMS RISTRUTTURATI
 const lineItems = [];
 
-// 📦 SEZIONE PRENOTAZIONE
+// 📦 SEZIONE 1: PRODOTTO PRINCIPALE (o combo)
 if (bookingData.secondCar) {
-    // Combo Supercar
+    // --- COMBO SUPERCAR ---
     const checkbox = document.getElementById('secondCarCheckbox');
     if (checkbox) {
         const comboPrice = parseInt(checkbox.dataset.comboPrice) || 0;
@@ -2689,68 +2691,90 @@ if (bookingData.secondCar) {
         const comboSku = checkbox.dataset.comboSku || '';
         
         const mainCarName = bookingData.productData.title;
-        const comboFullName = `${mainCarName} + ${comboName}`;
         const totalComboPrice = bookingData.basePrice + comboPrice;
         
-        // ✅ DETTAGLIO IN DESCRIZIONE (GRIGIO IN STRIPE)
-        const detailDescription = bookingData.distance 
-            ? `${comboFullName} - ${bookingData.distance} km`
-            : comboFullName;
+        // TITLE (bianco in Stripe)
+        const comboTitle = `${mainCarName} + ${comboName}`;
+        
+        // DESCRIPTION (grigio in Stripe - solo km)
+        const kmDescription = bookingData.distance ? `${bookingData.distance} km` : '';
         
         lineItems.push({
-            sku: `${bookingData.sku}+${comboSku}`,
-            title: comboFullName, // ✅ "Ferrari + Lamborghini"
-            price: totalComboPrice,
-            qty: 1,
-            currency: 'EUR',
-            image: bookingData.productData.mainImage || '',
-            description: detailDescription // ✅ GRIGIO, CON DETTAGLI
+            price_data: {
+                currency: 'eur',
+                product_data: {
+                    name: comboTitle,
+                    description: kmDescription,
+                    images: bookingData.productData.mainImage ? [bookingData.productData.mainImage] : [],
+                    metadata: {
+                        sku: `${bookingData.sku}+${comboSku}`,
+                        booking_item: 'true'
+                    }
+                },
+                unit_amount: Math.round(totalComboPrice * 100)
+            },
+            quantity: 1
         });
     }
 } else {
-    // Singolo prodotto
-    const productDetail = bookingData.distance && skuPrefix === 'SC'
-        ? `${bookingData.productData.title} - ${bookingData.distance} km`
-        : bookingData.productData.title;
+    // --- SINGOLO PRODOTTO ---
+    const productTitle = bookingData.productData.title;
+    
+    // DESCRIPTION (grigio - solo km se SC)
+    const kmDescription = (bookingData.distance && skuPrefix === 'SC') 
+        ? `${bookingData.distance} km` 
+        : '';
     
     lineItems.push({
-        sku: bookingData.sku,
-        title: bookingData.productData.title, // ✅ BIANCO, SENZA ICONE
-        price: bookingData.basePrice,
-        qty: 1,
-        currency: 'EUR',
-        image: bookingData.productData.mainImage || '',
-        description: productDetail // ✅ GRIGIO, CON DETTAGLI
+        price_data: {
+            currency: 'eur',
+            product_data: {
+                name: productTitle,
+                description: kmDescription,
+                images: bookingData.productData.mainImage ? [bookingData.productData.mainImage] : [],
+                metadata: {
+                    sku: bookingData.sku,
+                    booking_item: 'true'
+                }
+            },
+            unit_amount: Math.round(bookingData.basePrice * 100)
+        },
+        quantity: 1
     });
 }
 
-// 🎯 SEZIONE SERVIZI AGGIUNTIVI (solo per SC)
+// 🎯 SEZIONE 2: SERVIZI AGGIUNTIVI (righe separate, solo per SC)
 if (skuPrefix === 'SC' && bookingData.extraServices.length > 0) {
     const serviceNames = {
         'photo': 'Servizio Fotografico',
         'video-hd': 'Video HD',
         'video-360': 'Video 360°',
-        'extra-passengers': 'Passeggeri'
+        'extra-passengers': 'Passeggeri Extra'
     };
     
-    // ✅ CALCOLA TOTALE SERVIZI
-    const totalServices = bookingData.extraServices.reduce((sum, s) => sum + s.price, 0);
-    
-    // ✅ COSTRUISCI LISTA DETTAGLI (GRIGIO)
-    const servicesDetail = bookingData.extraServices.map(service => {
-    let serviceName = serviceNames[service.service] || service.service;
-    if (service.quantity) serviceName += ` – ${service.quantity} extra`;
-    return `• ${serviceName}`;  // ✅ Aggiungi bullet point
-}).join('<br>');  // ✅ Usa <br> invece di \n
-
-lineItems.push({
-    sku: 'SVC-BUNDLE',
-    title: 'Servizi Aggiuntivi',
-    price: totalServices,
-    qty: 1,
-    currency: 'EUR',
-    description: servicesDetail  // ✅ Stripe renderizza <br>
-});
+    bookingData.extraServices.forEach(service => {
+        let serviceName = serviceNames[service.service] || service.service;
+        
+        // Aggiungi quantità per passeggeri
+        if (service.service === 'extra-passengers' && service.quantity) {
+            serviceName += ` (${service.quantity})`;
+        }
+        
+        lineItems.push({
+            price_data: {
+                currency: 'eur',
+                product_data: {
+                    name: serviceName,
+                    metadata: {
+                        service_type: service.service,
+                        booking_item: 'true'
+                    }
+                },
+                unit_amount: Math.round(service.price * 100)
+            },
+            quantity: 1
+        });
+    });
 }
             
             // Crea checkout Stripe
