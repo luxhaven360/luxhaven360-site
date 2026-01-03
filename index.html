@@ -346,9 +346,34 @@ window.addEventListener('pageshow', function(event) {
     if (event.persisted) {
         console.log('📱 Pagina ripristinata da cache (bfcache)');
         
-        // Ripristina il filtro se era attivo
-        restoreShopFilterIfNeeded();
-        restoreBookableFilters();
+        // ✅ STRATEGIA: Aspetta che i prodotti siano caricati prima di ripristinare i filtri
+        const waitForProducts = setInterval(() => {
+            const hasProducts = document.querySelectorAll('.card[data-sku]').length > 0;
+            
+            if (hasProducts) {
+                clearInterval(waitForProducts);
+                
+                console.log('✅ Prodotti trovati, ripristino filtri');
+                restoreShopFilterIfNeeded();
+                restoreBookableFilters();
+            }
+        }, 100); // Check ogni 100ms
+        
+        // Timeout di sicurezza: se dopo 3 secondi non trova prodotti, ricarica
+        setTimeout(() => {
+            clearInterval(waitForProducts);
+            
+            const hasProducts = document.querySelectorAll('.card[data-sku]').length > 0;
+            
+            if (!hasProducts) {
+                console.log('⚠️ Prodotti non trovati dopo timeout, ricarico dinamicamente');
+                initDynamicProducts().then(() => {
+                    console.log('✅ Prodotti ricaricati, applico filtri');
+                    restoreShopFilterIfNeeded();
+                    restoreBookableFilters();
+                });
+            }
+        }, 3000);
     }
 });
 
@@ -606,6 +631,7 @@ window.addEventListener('pageshow', function(event) {
     </script>
 </body>
 </html>
+
 
 
 
