@@ -5,6 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Prenota il Tuo Test Drive</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <!-- ✅ Flag Icons CSS per bandiere SVG cross-platform -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/lipis/flag-icons@7.2.3/css/flag-icons.min.css"/>
     <script>
         // Suppress Tailwind CDN warning
         tailwind.config = {
@@ -960,6 +962,17 @@ function showEmailError(message) {
 // ========================================
 // CONFIGURAZIONE PREFISSI INTERNAZIONALI
 // ========================================
+
+// Mappatura emoji bandiere → codici ISO 3166-1 alpha-2 (per Flag Icons CSS)
+const FLAG_EMOJI_TO_ISO = {
+    '🇮🇹': 'it', '🇺🇸': 'us', '🇬🇧': 'gb', '🇫🇷': 'fr', '🇩🇪': 'de', '🇪🇸': 'es',
+    '🇨🇭': 'ch', '🇦🇹': 'at', '🇧🇪': 'be', '🇳🇱': 'nl', '🇵🇹': 'pt', '🇬🇷': 'gr',
+    '🇮🇪': 'ie', '🇩🇰': 'dk', '🇸🇪': 'se', '🇳🇴': 'no', '🇫🇮': 'fi', '🇵🇱': 'pl',
+    '🇨🇿': 'cz', '🇷🇺': 'ru', '🇨🇳': 'cn', '🇯🇵': 'jp', '🇰🇷': 'kr', '🇮🇳': 'in',
+    '🇦🇺': 'au', '🇳🇿': 'nz', '🇿🇦': 'za', '🇧🇷': 'br', '🇦🇷': 'ar', '🇲🇽': 'mx',
+    '🇦🇪': 'ae', '🇸🇦': 'sa', '🇹🇷': 'tr'
+};
+        
 const COUNTRY_CODES = [
     { code: '+39', country: 'Italia', flag: '🇮🇹', format: '### ### ####', maxLength: 10 },
     { code: '+1', country: 'Stati Uniti', flag: '🇺🇸', format: '(###) ###-####', maxLength: 10 },
@@ -1039,30 +1052,32 @@ function initPhoneSelector() {
     
     // Crea selector con solo il button
     selector.innerHTML = `
-        <button type="button" class="country-selector-btn" style="
-            background: rgba(10, 10, 10, 0.9);
-            border: 1.5px solid rgba(80, 60, 45, 0.4);
-            border-right: none;
-            color: #f5f5f0;
-            padding: 16px 18px;
-            border-radius: 12px 0 0 12px;
-            cursor: pointer;
-            transition: all 0.3s ease;
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            font-family: 'Inter', sans-serif;
-            font-size: 15px;
-            white-space: nowrap;
-            min-width: 135px;
-        ">
-            <span class="selected-flag" style="font-size: 24px; line-height: 1; display: inline-flex !important; align-items: center; justify-content: center; width: 28px; height: 28px; flex-shrink: 0;">🇮🇹</span>
-            <span class="selected-code" style="font-weight: 600; color: #D4AF37; font-size: 15px; line-height: 1; display: inline-flex; align-items: center; height: 28px; margin-left: 4px;">+39</span>
-            <svg class="w-4 h-4" style="width: 14px; height: 14px; margin-left: auto; color: #c9a891; transition: transform 0.3s;" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
-            </svg>
-        </button>
-    `;
+    <button type="button" class="country-selector-btn" style="
+        background: rgba(10, 10, 10, 0.9);
+        border: 1.5px solid rgba(80, 60, 45, 0.4);
+        border-right: none;
+        color: #f5f5f0;
+        padding: 16px 18px;
+        border-radius: 12px 0 0 12px;
+        cursor: pointer;
+        transition: all 0.3s ease;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        font-family: 'Inter', sans-serif;
+        font-size: 15px;
+        white-space: nowrap;
+        min-width: 135px;
+    ">
+        <span class="flag-icon-container">
+            <span class="fi fi-it"></span>
+        </span>
+        <span class="selected-code" style="font-weight: 600; color: #D4AF37; font-size: 15px; line-height: 1; display: inline-flex; align-items: center;">+39</span>
+        <svg class="w-4 h-4" style="width: 14px; height: 14px; margin-left: auto; color: #c9a891; transition: transform 0.3s;" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+        </svg>
+    </button>
+`;
 
     // Crea dropdown SEPARATO e appendilo al body
     const dropdown = document.createElement('div');
@@ -1083,38 +1098,43 @@ function initPhoneSelector() {
     `;
 
     dropdown.innerHTML = `
-        <div style="padding: 8px 12px; margin-bottom: 8px;">
-            <input type="text" placeholder="Cerca paese..." class="country-search" style="
-                width: 100%;
-                background: rgba(10, 10, 10, 0.6);
-                border: 1px solid rgba(80, 60, 45, 0.4);
-                color: #f5f5f0;
-                padding: 10px 14px;
+    <div style="padding: 8px 12px; margin-bottom: 8px;">
+        <input type="text" placeholder="Cerca paese..." class="country-search" style="
+            width: 100%;
+            background: rgba(10, 10, 10, 0.6);
+            border: 1px solid rgba(80, 60, 45, 0.4);
+            color: #f5f5f0;
+            padding: 10px 14px;
+            border-radius: 10px;
+            font-size: 14px;
+            outline: none;
+            transition: all 0.3s ease;
+        " />
+    </div>
+    <div class="country-list">
+        ${COUNTRY_CODES.map(c => {
+            const isoCode = FLAG_EMOJI_TO_ISO[c.flag] || 'xx';
+            return `
+            <div class="country-option" data-code="${c.code}" data-format="${c.format}" data-max="${c.maxLength}" data-iso="${isoCode}" style="
+                display: flex;
+                align-items: center;
+                gap: 12px;
+                padding: 12px 14px;
+                cursor: pointer;
                 border-radius: 10px;
-                font-size: 14px;
-                outline: none;
                 transition: all 0.3s ease;
-            " />
-        </div>
-        <div class="country-list">
-            ${COUNTRY_CODES.map(c => `
-                <div class="country-option" data-code="${c.code}" data-format="${c.format}" data-max="${c.maxLength}" style="
-                    display: flex;
-                    align-items: center;
-                    gap: 12px;
-                    padding: 12px 14px;
-                    cursor: pointer;
-                    border-radius: 10px;
-                    transition: all 0.3s ease;
-                    margin-bottom: 4px;
-                ">
-                    <span class="flag" style="font-size: 24px; display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px; flex-shrink: 0;">${c.flag}</span>
-                    <span class="country-name" style="flex: 1; color: #f5f5f0; font-size: 14px;">${c.country}</span>
-                    <span class="country-code" style="color: #D4AF37; font-weight: 600; font-size: 14px;">${c.code}</span>
-                </div>
-            `).join('')}
-        </div>
-    `;
+                margin-bottom: 4px;
+            ">
+                <span class="flag-icon-container">
+                    <span class="fi fi-${isoCode}"></span>
+                </span>
+                <span class="country-name" style="flex: 1; color: #f5f5f0; font-size: 14px;">${c.country}</span>
+                <span class="country-code" style="color: #D4AF37; font-weight: 600; font-size: 14px;">${c.code}</span>
+            </div>
+        `;
+        }).join('')}
+    </div>
+`;
 
     document.body.appendChild(dropdown);
     
@@ -1233,17 +1253,22 @@ btn.addEventListener('click', (e) => {
     });
     
     // Selezione paese
-    dropdown.querySelectorAll('.country-option').forEach(option => {
-        option.addEventListener('click', () => {
-            const code = option.dataset.code;
-            const format = option.dataset.format;
-            const maxLength = parseInt(option.dataset.max);
-            
-            selectedCountry = COUNTRY_CODES.find(c => c.code === code);
-            
-            // Aggiorna UI selector
-            btn.querySelector('.selected-flag').textContent = option.querySelector('.flag').textContent;
-            btn.querySelector('.selected-code').textContent = code;
+dropdown.querySelectorAll('.country-option').forEach(option => {
+    option.addEventListener('click', () => {
+        const code = option.dataset.code;
+        const format = option.dataset.format;
+        const maxLength = parseInt(option.dataset.max);
+        const isoCode = option.dataset.iso;
+        
+        selectedCountry = COUNTRY_CODES.find(c => c.code === code);
+        
+        // ✅ Aggiorna UI selector con bandiera SVG
+        const btnFlagContainer = btn.querySelector('.flag-icon-container');
+        if (btnFlagContainer) {
+            btnFlagContainer.innerHTML = `<span class="fi fi-${isoCode}"></span>`;
+        }
+        
+        btn.querySelector('.selected-code').textContent = code;
 
             // Aggiorna placeholder con formattazione del paese
             phoneInput.placeholder = format.replace(/#/g, '0');
@@ -1326,62 +1351,73 @@ dropdownScrollStyle.textContent = `
     }
 
     /* ===================================
-   🌍 FIX BANDIERE VISIBILI SU DESKTOP
+   🌍 BANDIERE SVG (Flag Icons CSS)
    =================================== */
 
-/* Forza rendering emoji bandiere su tutti i dispositivi */
-.selected-flag,
-.country-option .flag {
-    font-family: "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji", sans-serif !important;
-    font-style: normal !important;
-    font-weight: normal !important;
-    line-height: 1 !important;
-    text-rendering: optimizeLegibility;
-    -webkit-font-smoothing: antialiased;
-    -moz-osx-font-smoothing: grayscale;
-}
-
-/* Assicura dimensione bandiera nel button */
-.country-selector-btn .selected-flag {
-    font-size: 22px !important;
+/* Container bandiera nel button */
+.country-selector-btn .flag-icon-container {
     display: inline-flex !important;
-    align-items: center !important;
-    justify-content: center !important;
+    align-items: center;
+    justify-content: center;
     width: 28px !important;
     height: 28px !important;
+    flex-shrink: 0;
+    overflow: hidden;
+    border-radius: 4px; /* Arrotonda leggermente i bordi */
 }
 
-/* Bandiere nel dropdown */
-.country-option .flag {
+/* Bandiera SVG nel button */
+.country-selector-btn .fi {
     font-size: 24px !important;
+    line-height: 1 !important;
+    width: 28px !important;
+    height: 21px !important; /* Proporzione 4:3 standard */
+    display: block !important;
+}
+
+/* Container bandiera nel dropdown */
+.country-option .flag-icon-container {
     display: inline-flex !important;
-    align-items: center !important;
-    justify-content: center !important;
-    width: 30px !important;
-    height: 30px !important;
-    flex-shrink: 0 !important;
+    align-items: center;
+    justify-content: center;
+    width: 32px !important;
+    height: 32px !important;
+    flex-shrink: 0;
+    overflow: hidden;
+    border-radius: 4px;
 }
 
-/* Desktop: assicura visibilità */
-@media (min-width: 769px) {
-    .selected-flag,
-    .country-option .flag {
-        font-size: 24px !important;
-        opacity: 1 !important;
-        visibility: visible !important;
-    }
+/* Bandiera SVG nel dropdown */
+.country-option .fi {
+    font-size: 28px !important;
+    line-height: 1 !important;
+    width: 32px !important;
+    height: 24px !important;
+    display: block !important;
 }
 
-/* Mobile: mantieni dimensioni originali */
+/* Responsive mobile */
 @media (max-width: 768px) {
-    .country-selector-btn .selected-flag {
-        font-size: 20px !important;
+    .country-selector-btn .flag-icon-container {
+        width: 24px !important;
+        height: 24px !important;
     }
     
-    .country-option .flag {
-        font-size: 22px !important;
+    .country-selector-btn .fi {
+        width: 24px !important;
+        height: 18px !important;
     }
-}
+    
+    .country-option .flag-icon-container {
+        width: 28px !important;
+        height: 28px !important;
+    }
+    
+    .country-option .fi {
+        width: 28px !important;
+        height: 21px !important;
+    }
+}    
 
     .country-search:focus {
         border-color: #D4AF37;
