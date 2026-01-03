@@ -1909,8 +1909,10 @@ if (skuPrefix === 'SC') {
         `;
     });
 
-    // ✅ 10c. CARD SECONDA SUPERCAR DINAMICA (con nome corretto)
-    if (skuPrefix === 'SC' && product.supercarComboSku) {
+    // ✅ 10c. CARD SECONDA SUPERCAR DINAMICA (SKIP se già combo)
+const isExistingCombo = product.isExistingCombo === true || product.sku.includes('+');
+
+if (skuPrefix === 'SC' && product.supercarComboSku && !isExistingCombo) {
     // ⭐ IMPOSTA SUBITO IL COMBO SKU NEL DATASET (PRIMA DEL FETCH)
     const checkbox = document.getElementById('secondCarCheckbox');
     if (checkbox) {
@@ -2088,82 +2090,92 @@ if (skuPrefix === 'SC') {
         if (secondCarSection) secondCarSection.style.display = 'none';
     }
 
-    // ✅ 11. GESTIONE SERVIZI AGGIUNTIVI (NUOVA LOGICA UI)
-    if (skuPrefix === 'SC') {
-        const isHuracanSpyder = product.title && 
-                                product.title.toLowerCase().includes('lamborghini') && 
-                                product.title.toLowerCase().includes('huracán spyder');
-        
-        const extraServicesSection = document.getElementById('extraServicesSection');
-        const extraServicesContainer = document.getElementById('extraServicesContainer');
-        
-        if (!isHuracanSpyder) {
-            // ✅ Per tutte le SC tranne Huracán: mostra servizi sempre
-            if (extraServicesSection && extraServicesContainer) {
-                extraServicesContainer.innerHTML = '';
-                
-                // Aggiungi checkbox servizi standard
-                const services = [
-                    { id: 'photo', label: 'Servizio Fotografico Professionale', price: 290, desc: 'Su una vettura a scelta' },
-                    { id: 'video-hd', label: 'Video HD Professionale', price: 490, desc: 'Disponibile su entrambe le vetture' },
-                    { id: 'video-360', label: 'Video 360° Immersivo', price: 690, desc: 'Su una vettura (marchi diversi)' }
-                ];
-                
-                services.forEach(service => {
-                    const checkbox = document.createElement('label');
-                    checkbox.className = 'checkbox-container';
-                    checkbox.innerHTML = `
-                       <input type="checkbox" class="extra-service" data-price="${service.price}" data-service="${service.id}">
-                       <div>
-                          <div class="font-semibold mb-1">${service.label}</div>
-                          <div class="text-sm" style="color: #a59173;">+${formatPrice(service.price)} - ${service.desc}</div>
-                       </div>
-                    `;
-                    extraServicesContainer.appendChild(checkbox);
-                });
-                
-                // ✅ Aggiungi passeggeri se 4 posti (con scelta quantità)
-if (product.numPosti >= 4) {
-    const maxExtraPassengers = product.numPosti - 2;
-    const pricePerPassenger = 50;
+    // ✅ 11. GESTIONE SERVIZI AGGIUNTIVI (LOGICA COMBO MIGLIORATA)
+if (skuPrefix === 'SC') {
+    const isHuracanSpyder = product.title && 
+                            product.title.toLowerCase().includes('lamborghini') && 
+                            product.title.toLowerCase().includes('huracán spyder');
     
-    const passengerContainer = document.createElement('div');
-    passengerContainer.className = 'checkbox-container';
-    passengerContainer.style.display = 'block';
-    passengerContainer.innerHTML = `
-        <div>
-            <div class="font-semibold mb-3">Passeggeri Extra</div>
-            <div style="display: flex; gap: 15px; margin-top: 15px;">
-                <label style="display: flex; align-items: center; gap: 10px; cursor: pointer; padding: 12px 20px; background: rgba(212, 175, 55, 0.08); border: 2px solid rgba(212, 175, 55, 0.3); border-radius: 10px; transition: all 0.3s ease; flex: 1;">
-                    <input type="radio" name="extraPassengers" value="1" class="passenger-radio" style="width: 18px; height: 18px; accent-color: #D4AF37; cursor: pointer;">
-                    <div>
-                        <div style="font-size: 14px; font-weight: 600; color: #fff;">1 Passeggero</div>
-                        <div style="font-size: 12px; color: #a59173;">+${formatPrice(pricePerPassenger)}</div>
-                    </div>
-                </label>
-                <label style="display: flex; align-items: center; gap: 10px; cursor: pointer; padding: 12px 20px; background: rgba(212, 175, 55, 0.08); border: 2px solid rgba(212, 175, 55, 0.3); border-radius: 10px; transition: all 0.3s ease; flex: 1;">
-                    <input type="radio" name="extraPassengers" value="2" class="passenger-radio" style="width: 18px; height: 18px; accent-color: #D4AF37; cursor: pointer;">
-                    <div>
-                        <div style="font-size: 14px; font-weight: 600; color: #fff;">${maxExtraPassengers} Passeggeri</div>
-                        <div style="font-size: 12px; color: #a59173;">+${formatPrice(pricePerPassenger * maxExtraPassengers)}</div>
-                    </div>
-                </label>
-            </div>
-        </div>
-    `;
-    extraServicesContainer.appendChild(passengerContainer);
-}
+    // ✅ NUOVO: Rileva combo esistenti (SKU con "+")
+    const isExistingCombo = product.isExistingCombo === true || product.sku.includes('+');
+    
+    const extraServicesSection = document.getElementById('extraServicesSection');
+    const extraServicesContainer = document.getElementById('extraServicesContainer');
+    
+    // ✅ Mostra servizi se:
+    // 1. NON è Huracán (servizi sempre visibili)
+    // 2. È combo esistente (servizi sempre visibili)
+    const shouldShowServices = !isHuracanSpyder || isExistingCombo;
+    
+    if (shouldShowServices) {
+        if (extraServicesSection && extraServicesContainer) {
+            extraServicesContainer.innerHTML = '';
+            
+            // Aggiungi checkbox servizi standard
+            const services = [
+                { id: 'photo', label: 'Servizio Fotografico Professionale', price: 290, desc: 'Su una vettura a scelta' },
+                { id: 'video-hd', label: 'Video HD Professionale', price: 490, desc: 'Disponibile su entrambe le vetture' },
+                { id: 'video-360', label: 'Video 360° Immersivo', price: 690, desc: 'Su una vettura (marchi diversi)' }
+            ];
+            
+            services.forEach(service => {
+                const checkbox = document.createElement('label');
+                checkbox.className = 'checkbox-container';
+                checkbox.innerHTML = `
+                   <input type="checkbox" class="extra-service" data-price="${service.price}" data-service="${service.id}">
+                   <div>
+                      <div class="font-semibold mb-1">${service.label}</div>
+                      <div class="text-sm" style="color: #a59173;">+${formatPrice(service.price)} - ${service.desc}</div>
+                   </div>
+                `;
+                extraServicesContainer.appendChild(checkbox);
+            });
+            
+            // ✅ Aggiungi passeggeri se 4 posti
+            if (product.numPosti >= 4) {
+                const maxExtraPassengers = product.numPosti - 2;
+                const pricePerPassenger = 50;
                 
-                extraServicesSection.style.display = 'block';
+                const passengerContainer = document.createElement('div');
+                passengerContainer.className = 'checkbox-container';
+                passengerContainer.style.display = 'block';
+                passengerContainer.innerHTML = `
+                    <div>
+                        <div class="font-semibold mb-3">Passeggeri Extra</div>
+                        <div style="display: flex; gap: 15px; margin-top: 15px;">
+                            <label style="display: flex; align-items: center; gap: 10px; cursor: pointer; padding: 12px 20px; background: rgba(212, 175, 55, 0.08); border: 2px solid rgba(212, 175, 55, 0.3); border-radius: 10px; transition: all 0.3s ease; flex: 1;">
+                                <input type="radio" name="extraPassengers" value="1" class="passenger-radio" style="width: 18px; height: 18px; accent-color: #D4AF37; cursor: pointer;">
+                                <div>
+                                    <div style="font-size: 14px; font-weight: 600; color: #fff;">1 Passeggero</div>
+                                    <div style="font-size: 12px; color: #a59173;">+${formatPrice(pricePerPassenger)}</div>
+                                </div>
+                            </label>
+                            <label style="display: flex; align-items: center; gap: 10px; cursor: pointer; padding: 12px 20px; background: rgba(212, 175, 55, 0.08); border: 2px solid rgba(212, 175, 55, 0.3); border-radius: 10px; transition: all 0.3s ease; flex: 1;">
+                                <input type="radio" name="extraPassengers" value="2" class="passenger-radio" style="width: 18px; height: 18px; accent-color: #D4AF37; cursor: pointer;">
+                                <div>
+                                    <div style="font-size: 14px; font-weight: 600; color: #fff;">${maxExtraPassengers} Passeggeri</div>
+                                    <div style="font-size: 12px; color: #a59173;">+${formatPrice(pricePerPassenger * maxExtraPassengers)}</div>
+                                </div>
+                            </label>
+                        </div>
+                    </div>
+                `;
+                extraServicesContainer.appendChild(passengerContainer);
             }
-        } else {
-            // ✅ Huracán Spyder: nasconde servizi (saranno mostrati dal checkbox combo)
-            if (extraServicesSection) extraServicesSection.style.display = 'none';
+            
+            extraServicesSection.style.display = 'block';
+            
+            // ✅ LOG per debug
+            console.log(`✅ Servizi mostrati per ${isExistingCombo ? 'COMBO ESISTENTE' : 'supercar singola'}`);
         }
     } else {
-        const extraServicesSection = document.getElementById('extraServicesSection');
+        // Nasconde servizi (solo per Huracán NON combo)
         if (extraServicesSection) extraServicesSection.style.display = 'none';
     }
+} else {
+    const extraServicesSection = document.getElementById('extraServicesSection');
+    if (extraServicesSection) extraServicesSection.style.display = 'none';
+}
 
     // ✅ 12. AGGIORNA NOME PRODOTTO NEL RIEPILOGO (SIDEBAR)
     const summaryTitle = document.querySelector('.summary-product-title');
