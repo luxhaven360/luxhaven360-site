@@ -2,44 +2,62 @@
 
 // Navigation
 function showSection(sectionId) {
-    document.querySelectorAll('.section, .hero').forEach(s => s.classList.remove('active'));
+    console.log(`🔀 Cambio sezione: ${sectionId}`);
     
+    // ✅ STEP 1: NASCONDI TUTTE LE SEZIONI E HERO
+    document.querySelectorAll('.section, .hero').forEach(s => {
+        s.classList.remove('active');
+        s.style.display = 'none'; // ✅ FORZA NASCONDIMENTO
+    });
+    
+    // ✅ STEP 2: MOSTRA SOLO LA SEZIONE RICHIESTA
     if (sectionId === 'home') {
-        document.querySelector('.hero').style.display = 'flex';
+        const hero = document.querySelector('.hero');
+        if (hero) {
+            hero.style.display = 'flex';
+            hero.classList.add('active');
+        }
     } else {
-        document.querySelector('.hero').style.display = 'none';
-        const el = document.getElementById(sectionId);
-        if (el) el.classList.add('active');
-
-        // ✅ FORZA VISUALIZZAZIONE (fix per bfcache)
-    if (el) {
-        el.style.display = 'block';
-        el.style.opacity = '1';
-    }
+        // Nascondi hero se si va su altra sezione
+        const hero = document.querySelector('.hero');
+        if (hero) {
+            hero.style.display = 'none';
+            hero.classList.remove('active');
+        }
         
-        // Mostra filtro categorie se già caricate
-if (sectionId === 'shop') {
-    const filterContainer = document.getElementById('categoryFilterContainer');
-    if (filterContainer && document.querySelector('.category-pill')) {
-        filterContainer.style.display = 'block';
-    }
-}
-
+        // Mostra la sezione target
+        const el = document.getElementById(sectionId);
+        if (el) {
+            el.classList.add('active');
+            el.style.display = 'block';
+            el.style.opacity = '1';
+        }
+        
+        // ✅ MOSTRA FILTRO CATEGORIE SE SHOP
+        if (sectionId === 'shop') {
+            const filterContainer = document.getElementById('categoryFilterContainer');
+            if (filterContainer && document.querySelector('.category-pill')) {
+                filterContainer.style.display = 'block';
+            }
+        }
+        
         // ✅ RIPRISTINA FILTRI IMMOBILI/SUPERCAR AL CAMBIO SEZIONE
-if (sectionId === 'properties' || sectionId === 'supercars') {
-    console.log(`🔄 Cambio sezione: ${sectionId}, ripristino filtri`);
-    setTimeout(() => {
-        restoreBookableFilters();
-    }, 300); // Attendi che le card siano visibili
-}
+        if (sectionId === 'properties' || sectionId === 'supercars') {
+            console.log(`🔄 Cambio sezione: ${sectionId}, ripristino filtri`);
+            setTimeout(() => {
+                restoreBookableFilters();
+            }, 300);
+        }
     }
     
-    // Close mobile menu
+    // ✅ CHIUDI MENU MOBILE
     const navLinks = document.getElementById('navLinks');
     if (navLinks) navLinks.classList.remove('active');
     
-    // Scroll to top
+    // ✅ SCROLL TO TOP
     window.scrollTo({ top: 0, behavior: 'smooth' });
+    
+    console.log(`✅ Sezione "${sectionId}" attiva`);
 }
 
 function toggleMenu() {
@@ -961,6 +979,7 @@ function resetCategoryFilter() {
         });
     }
 }
+
 
 
 
