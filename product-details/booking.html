@@ -1839,37 +1839,60 @@ if (product.images && product.images.length > 0) {
     }
 
     // ✅ 10a. CHILOMETRAGGIO DINAMICO (SOLO SUPERCAR)
-    const skuPrefix = product.sku.split('-')[0].toUpperCase();
+const skuPrefix = product.sku.split('-')[0].toUpperCase();
 
-    if (skuPrefix === 'SC' && product.chilometraggioPrices && product.chilometraggioPrices.length > 0) {
-        const distanceGrid = document.getElementById('distanceOptions');
-        if (distanceGrid) {
-            distanceGrid.innerHTML = '';
-            
-            const distanceConfig = getDistanceConfigForProduct(product);
-            
-            distanceConfig.options.forEach((distance, index) => {
-                if (index < product.chilometraggioPrices.length) {
-                    const price = product.chilometraggioPrices[index];
-                    
-                    const option = document.createElement('div');
-                    option.className = 'distance-option';
-                    option.dataset.km = distance.value;
-                    option.dataset.price = price;
-                    
-                    option.innerHTML = `
-                        <div class="text-2xl font-bold gradient-text mb-2">${distance.value} ${distance.unit}</div>
-                        <div class="text-xl font-semibold mb-1">${formatPrice(price)}</div>
-                        <div class="text-sm" style="color: #a59173;">${distance.label}</div>
-                    `;
-                    
-                    distanceGrid.appendChild(option);
-                }
-            });
-            
-            initDistanceSelection(product);
-        }
+if (skuPrefix === 'SC') {
+    const distanceGrid = document.getElementById('distanceOptions');
+    if (!distanceGrid) return;
+    
+    distanceGrid.innerHTML = '';
+    
+    // 🆕 RILEVA SE COMBO (doppia supercar)
+    const isCombo = product.sku.includes(' + ') || product.sku.includes('+');
+    
+    // 🆕 USA PREZZI COMBO SE DISPONIBILI, ALTRIMENTI NORMALI
+    const prices = (isCombo && product.comboPrices && product.comboPrices.length > 0) 
+        ? product.comboPrices 
+        : product.chilometraggioPrices;
+    
+    if (!prices || prices.length === 0) {
+        console.warn('⚠️ Prezzi non disponibili per questa supercar');
+        return;
     }
+    
+    // 🆕 CONFIGURAZIONE KM STANDARD PER TUTTE LE SUPERCAR (anche combo)
+    const kmOptions = [
+        { value: 10, label: 'Esperienza rapida' },
+        { value: 20, label: 'Più popolare' },
+        { value: 30, label: 'Esperienza completa' },
+        { value: 60, label: 'Tour esteso' },
+        { value: 70, label: 'Avventura lunga' },
+        { value: 120, label: 'Esperienza definitiva' }
+    ];
+    
+    kmOptions.forEach((distance, index) => {
+        if (index < prices.length) {
+            const price = prices[index];
+            
+            const option = document.createElement('div');
+            option.className = 'distance-option';
+            option.dataset.km = distance.value;
+            option.dataset.price = price;
+            
+            option.innerHTML = `
+                <div class="text-2xl font-bold gradient-text mb-2">${distance.value} km</div>
+                <div class="text-xl font-semibold mb-1">${formatPrice(price)}</div>
+                <div class="text-sm" style="color: #a59173;">${distance.label}</div>
+            `;
+            
+            distanceGrid.appendChild(option);
+        }
+    });
+    
+    initDistanceSelection(product);
+    
+    console.log(`🏎️ Prezzi ${isCombo ? 'COMBO' : 'SINGOLA'} caricati:`, prices);
+}
     
     // ✅ 10b. BENEFIT NEL RIEPILOGO (restanti)
     const summaryBenefits = document.querySelector('.summary-benefits');
