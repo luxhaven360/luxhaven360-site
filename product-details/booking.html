@@ -2808,6 +2808,7 @@ window.addEventListener('focus', function() {
             if (loader && window.location.href.includes('booking.html')) {
                 hideBookingLoader();
                 enableForm();
+                reapplyExperienceLock(); // ✅ AGGIUNGI QUESTA RIGA
                 
                 showValidationError(
                     'Checkout annullato. Puoi modificare i dati e riprovare quando vuoi.',
@@ -2818,6 +2819,21 @@ window.addEventListener('focus', function() {
         }, 500);
     }
 });
+
+        /**
+ * 📅 Formatta data per invio backend SENZA conversioni timezone
+ * Risolve problema shift -1 giorno causato da toISOString()
+ */
+function formatDateForBooking(date) {
+    if (!date) return '';
+    
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    
+    // Formato: "yyyy-MM-dd" senza conversione UTC
+    return `${year}-${month}-${day}`;
+}
 
     // ========================================
     // CONFERMA PRENOTAZIONE
@@ -3025,7 +3041,7 @@ if (bookingData.secondCar) {
             const bookingPayload = {
                 sku: bookingData.sku,
                 product_title: bookingData.productData.title,
-                date: date.toISOString().split('T')[0],
+                date: formatDateForBooking(date),
                 time: time,
                 distance: 'N/A',  // ✅ FORZATO a N/A per immobili (PR)
                 customer_name: `${firstName.value.trim()} ${lastName.value.trim()}`,
@@ -3081,7 +3097,7 @@ if (bookingData.secondCar) {
         }
         return bookingData.productData.title;
     })(),
-    date: date.toISOString().split('T')[0],
+    date: formatDateForBooking(date),
     time: time,
     distance: bookingData.distance || 'N/A',
     customer_name: `${firstName.value.trim()} ${lastName.value.trim()}`,
@@ -3231,11 +3247,68 @@ function disableForm() {
  * Riabilita form
  */
 function enableForm() {
+    const isExperience = bookingData.productData && 
+                        bookingData.productData.sku.toUpperCase().startsWith('EX');
+    
     document.querySelectorAll('input, select, textarea, button').forEach(el => {
+        // ✅ NON riabilitare data/orario per esperienze
+        if (isExperience && (el.id === 'bookingDate' || el.id === 'bookingTime')) {
+            return; // Mantiene il blocco
+        }
+        
         el.disabled = false;
         el.style.opacity = '1';
         el.style.pointerEvents = 'auto';
     });
+}
+
+/**
+ * 🔒 Ri-applica il blocco data/orario per esperienze dopo ritorno da checkout
+ */
+function reapplyExperienceLock() {
+    const isExperience = bookingData.productData && 
+                        bookingData.productData.sku.toUpperCase().startsWith('EX');
+    
+    if (!isExperience) return;
+    
+    console.log('🔒 Ri-applicazione blocco esperienze dopo ritorno checkout');
+    
+    const dateInput = document.getElementById('bookingDate');
+    const timeSelect = document.getElementById('bookingTime');
+    const calendar = document.getElementById('customCalendar');
+    
+    // Blocca campo data
+    if (dateInput) {
+        dateInput.disabled = true;
+        dateInput.readOnly = true;
+        dateInput.style.cursor = 'not-allowed';
+        dateInput.style.opacity = '0.7';
+        dateInput.style.pointerEvents = 'none'; // ✅ IMPEDISCE QUALSIASI CLICK
+        
+        // Previeni apertura calendario anche se qualcuno tenta di forzare
+        dateInput.onclick = (e) => { 
+            e.preventDefault(); 
+            e.stopPropagation(); 
+            return false;
+        };
+        dateInput.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+        }, true); // Capture phase per bloccare prima
+    }
+    
+    // Blocca select orario
+    if (timeSelect) {
+        timeSelect.disabled = true;
+        timeSelect.style.cursor = 'not-allowed';
+        timeSelect.style.opacity = '0.7';
+        timeSelect.style.pointerEvents = 'none'; // ✅ IMPEDISCE APERTURA DROPDOWN
+    }
+    
+    // Chiudi calendario se aperto
+    if (calendar) {
+        calendar.style.display = 'none';
+    }
 }
 
 /**
@@ -3830,11 +3903,18 @@ function handleExperienceDateLock(product) {
         }
         
         // Disabilita input
-        dateInput.disabled = true;
-        dateInput.readOnly = true;
-        dateInput.style.cursor = 'not-allowed';
-        dateInput.style.opacity = '0.7';
-        dateInput.style.background = 'rgba(30, 30, 30, 0.6)';
+dateInput.disabled = true;
+dateInput.readOnly = true;
+dateInput.style.cursor = 'not-allowed';
+dateInput.style.opacity = '0.7';
+dateInput.style.background = 'rgba(30, 30, 30, 0.6)';
+dateInput.style.pointerEvents = 'none'; // ✅ AGGIUNGI QUESTA RIGA
+
+// ✅ AGGIUNGI: Previeni click in capture phase
+dateInput.addEventListener('click', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+}, true);
         
         // Nascondi icona calendario
         const dateIcon = dateInput.parentElement?.querySelector('.date-icon');
@@ -3874,10 +3954,11 @@ function handleExperienceDateLock(product) {
         }
         
         // Disabilita select
-        timeSelect.disabled = true;
-        timeSelect.style.cursor = 'not-allowed';
-        timeSelect.style.opacity = '0.7';
-        timeSelect.style.background = 'rgba(30, 30, 30, 0.6)';
+timeSelect.disabled = true;
+timeSelect.style.cursor = 'not-allowed';
+timeSelect.style.opacity = '0.7';
+timeSelect.style.background = 'rgba(30, 30, 30, 0.6)';
+timeSelect.style.pointerEvents = 'none'; // ✅ AGGIUNGI QUESTA RIGA
         
         // Aggiungi tooltip
         const timeContainer = timeSelect.parentElement;
