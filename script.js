@@ -18,6 +18,14 @@ if (sectionId === 'shop') {
         filterContainer.style.display = 'block';
     }
 }
+
+        // ✅ RIPRISTINA FILTRI IMMOBILI/SUPERCAR AL CAMBIO SEZIONE
+if (sectionId === 'properties' || sectionId === 'supercars') {
+    console.log(`🔄 Cambio sezione: ${sectionId}, ripristino filtri`);
+    setTimeout(() => {
+        restoreBookableFilters();
+    }, 300); // Attendi che le card siano visibili
+}
     }
     
     // Close mobile menu
@@ -521,26 +529,52 @@ function resetSupercarFilter() {
 }
 
 /**
- * Ripristina filtri salvati (dopo pageshow/bfcache)
+ * Ripristina filtri salvati (dopo pageshow/bfcache o inizializzazione)
  */
 function restoreBookableFilters() {
-    // Ripristina filtro immobili
-    const savedPropertyFilter = localStorage.getItem('lh360_active_property_filter');
-    if (savedPropertyFilter) {
-        const targetPill = document.querySelector(`.filter-pill[data-property-type="${savedPropertyFilter}"]`);
-        if (targetPill) {
-            setTimeout(() => filterProperties(savedPropertyFilter, targetPill), 200);
-        }
-    }
+    console.log('🔄 restoreBookableFilters chiamata');
     
-    // Ripristina filtro supercar
-    const savedSupercarFilter = localStorage.getItem('lh360_active_supercar_filter');
-    if (savedSupercarFilter) {
-        const targetPill = document.querySelector(`.filter-pill[data-supercar-type="${savedSupercarFilter}"]`);
-        if (targetPill) {
-            setTimeout(() => filterSupercars(savedSupercarFilter, targetPill), 200);
+    // ✅ ATTENDI CHE LE CARD SIANO CARICATE
+    const checkInterval = setInterval(() => {
+        const propertyCards = document.querySelectorAll('#propertiesGrid .card[data-sku]');
+        const supercarCards = document.querySelectorAll('#supercarsGrid .card[data-sku]');
+        
+        const hasPropertyCards = propertyCards.length > 0;
+        const hasSupercarCards = supercarCards.length > 0;
+        
+        console.log(`🔍 Check cards: Properties=${propertyCards.length}, Supercars=${supercarCards.length}`);
+        
+        // Aspetta che ALMENO UNA delle due griglie sia popolata
+        if (hasPropertyCards || hasSupercarCards) {
+            clearInterval(checkInterval);
+            
+            // ✅ RIPRISTINA FILTRO IMMOBILI
+            const savedPropertyFilter = localStorage.getItem('lh360_active_property_filter');
+            if (savedPropertyFilter && hasPropertyCards) {
+                console.log(`✅ Ripristino filtro Immobili: ${savedPropertyFilter}`);
+                const targetPill = document.querySelector(`.filter-pill[data-property-type="${savedPropertyFilter}"]`);
+                if (targetPill) {
+                    setTimeout(() => filterProperties(savedPropertyFilter, targetPill), 200);
+                }
+            }
+            
+            // ✅ RIPRISTINA FILTRO SUPERCAR
+            const savedSupercarFilter = localStorage.getItem('lh360_active_supercar_filter');
+            if (savedSupercarFilter && hasSupercarCards) {
+                console.log(`✅ Ripristino filtro Supercar: ${savedSupercarFilter}`);
+                const targetPill = document.querySelector(`.filter-pill[data-supercar-type="${savedSupercarFilter}"]`);
+                if (targetPill) {
+                    setTimeout(() => filterSupercars(savedSupercarFilter, targetPill), 200);
+                }
+            }
         }
-    }
+    }, 150); // Controlla ogni 150ms
+    
+    // Timeout di sicurezza (max 5 secondi)
+    setTimeout(() => {
+        clearInterval(checkInterval);
+        console.log('⏱️ Timeout ripristino filtri');
+    }, 5000);
 }
 
 /**
@@ -901,6 +935,7 @@ function resetCategoryFilter() {
         });
     }
 }
+
 
 
 
