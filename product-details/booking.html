@@ -2818,18 +2818,37 @@ const isExperience = skuPrefix === 'EX';
 let date = bookingData.selectedDate;
 const time = document.getElementById('bookingTime').value;
 
-// ✅ Per esperienze con data fissa, usa la data dal prodotto
-if (isExperience && !date && bookingData.productData.data_esperienza) {
+// ✅ NUOVO: Per esperienze con data fissa, usa la data dal prodotto
+if (isExperience && bookingData.productData?.data_esperienza) {
   try {
-    date = new Date(bookingData.productData.data_esperienza);
-    bookingData.selectedDate = date;
-    Logger.log('✅ Data esperienza recuperata dal prodotto');
+    // Parsing robusto della data esperienza
+    const dataEsperienza = bookingData.productData.data_esperienza;
+    
+    // Se è già una stringa ISO, usala
+    if (typeof dataEsperienza === 'string') {
+      // Formato: "YYYY-MM-DD" o "DD/MM/YYYY"
+      if (dataEsperienza.includes('-')) {
+        date = new Date(dataEsperienza + 'T00:00:00');
+      } else if (dataEsperienza.includes('/')) {
+        const parts = dataEsperienza.split('/');
+        date = new Date(parts[2], parts[1] - 1, parts[0]); // YYYY, MM-1, DD
+      }
+    } else if (dataEsperienza instanceof Date) {
+      date = dataEsperienza;
+    }
+    
+    // Verifica validità
+    if (date && !isNaN(date.getTime())) {
+      bookingData.selectedDate = date;
+      Logger.log(`✅ Data esperienza recuperata: ${date.toISOString()}`);
+    }
   } catch (e) {
     Logger.log('⚠️ Errore parsing data esperienza: ' + e);
   }
 }
 
-if (!date) {
+// ✅ VALIDAZIONE: Solo se NON è esperienza con data fissa
+if (!date && !(isExperience && bookingData.productData?.data_esperienza)) {
   showValidationError('Seleziona una data per la tua esperienza.', 'date');
   document.getElementById('bookingDate')?.focus();
   return;
