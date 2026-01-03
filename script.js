@@ -298,6 +298,251 @@ if (isProperty) {
     return card;
 }
 
+// =========================================
+// FILTRI IMMOBILI E SUPERCAR
+// =========================================
+
+let activePropertyFilter = null;
+let activeSupercarFilter = null;
+
+/**
+ * Estrae il tipo di proprietà dallo SKU
+ * @param {string} sku - Es: "PR-001-V", "PR-145-C"
+ * @returns {string} - 'V', 'C', 'A', o null
+ */
+function extractPropertyTypeFromSKU(sku) {
+    if (!sku || typeof sku !== 'string') return null;
+    
+    // Format: PR-XXX-T dove T = tipo (V, C, A)
+    const match = sku.match(/^PR-\d+-([VCA])$/i);
+    return match ? match[1].toUpperCase() : null;
+}
+
+/**
+ * Determina se una supercar è combo (doppia)
+ * @param {string} sku - Es: "SC-001 + SC-006" o "SC-003"
+ * @returns {string} - 'combo' o 'single'
+ */
+function getSupercarType(sku) {
+    if (!sku || typeof sku !== 'string') return 'single';
+    
+    // Combo se contiene " + "
+    return sku.includes(' + ') || sku.includes('+') ? 'combo' : 'single';
+}
+
+/**
+ * Inizializza filtri immobili
+ */
+function initPropertyFilters(products) {
+    const container = document.getElementById('propertyFilterContainer');
+    if (!container) return;
+    
+    // Conta prodotti per tipo
+    const counts = { V: 0, C: 0, A: 0 };
+    
+    products.forEach(p => {
+        const type = extractPropertyTypeFromSKU(p.sku);
+        if (type && counts.hasOwnProperty(type)) {
+            counts[type]++;
+        }
+    });
+    
+    // Aggiorna contatori UI
+    document.querySelectorAll('.filter-pill[data-property-type]').forEach(pill => {
+        const type = pill.dataset.propertyType;
+        const countSpan = pill.querySelector('.pill-count');
+        if (countSpan) countSpan.textContent = counts[type] || 0;
+        
+        // Click handler
+        pill.addEventListener('click', () => filterProperties(type, pill));
+    });
+    
+    // Reset button
+    const resetBtn = document.getElementById('propertyResetBtn');
+    if (resetBtn) {
+        resetBtn.addEventListener('click', resetPropertyFilter);
+    }
+    
+    container.style.display = 'block';
+}
+
+/**
+ * Filtra immobili per tipo
+ */
+function filterProperties(type, pillElement) {
+    activePropertyFilter = type;
+    localStorage.setItem('lh360_active_property_filter', type);
+    
+    // UI pills
+    document.querySelectorAll('.filter-pill[data-property-type]').forEach(p => p.classList.remove('active'));
+    if (pillElement) pillElement.classList.add('active');
+    
+    // Mostra reset
+    const resetBtn = document.getElementById('propertyResetBtn');
+    if (resetBtn) resetBtn.style.display = 'inline-flex';
+    
+    // Filtra cards
+    const grid = document.getElementById('propertiesGrid');
+    if (!grid) return;
+    
+    const cards = grid.querySelectorAll('.card');
+    let visibleCount = 0;
+    
+    cards.forEach(card => {
+        const cardSku = card.dataset.sku || card.querySelector('button')?.dataset?.sku;
+        const cardType = extractPropertyTypeFromSKU(cardSku);
+        
+        if (cardType === type) {
+            card.style.display = 'block';
+            card.style.animation = 'fadeIn 0.5s ease';
+            visibleCount++;
+        } else {
+            card.style.display = 'none';
+        }
+    });
+    
+    console.log(`🏰 Filtro Immobili: ${type} → ${visibleCount} risultati`);
+    grid.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+/**
+ * Reset filtro immobili
+ */
+function resetPropertyFilter() {
+    activePropertyFilter = null;
+    localStorage.removeItem('lh360_active_property_filter');
+    
+    document.querySelectorAll('.filter-pill[data-property-type]').forEach(p => p.classList.remove('active'));
+    
+    const resetBtn = document.getElementById('propertyResetBtn');
+    if (resetBtn) resetBtn.style.display = 'none';
+    
+    const grid = document.getElementById('propertiesGrid');
+    if (grid) {
+        grid.querySelectorAll('.card').forEach(card => {
+            card.style.display = 'block';
+            card.style.animation = 'fadeIn 0.5s ease';
+        });
+    }
+}
+
+/**
+ * Inizializza filtri supercar
+ */
+function initSupercarFilters(products) {
+    const container = document.getElementById('supercarFilterContainer');
+    if (!container) return;
+    
+    // Conta prodotti per tipo
+    const counts = { single: 0, combo: 0 };
+    
+    products.forEach(p => {
+        const type = getSupercarType(p.sku);
+        counts[type]++;
+    });
+    
+    // Aggiorna contatori UI
+    document.querySelectorAll('.filter-pill[data-supercar-type]').forEach(pill => {
+        const type = pill.dataset.supercarType;
+        const countSpan = pill.querySelector('.pill-count');
+        if (countSpan) countSpan.textContent = counts[type] || 0;
+        
+        // Click handler
+        pill.addEventListener('click', () => filterSupercars(type, pill));
+    });
+    
+    // Reset button
+    const resetBtn = document.getElementById('supercarResetBtn');
+    if (resetBtn) {
+        resetBtn.addEventListener('click', resetSupercarFilter);
+    }
+    
+    container.style.display = 'block';
+}
+
+/**
+ * Filtra supercar per tipo
+ */
+function filterSupercars(type, pillElement) {
+    activeSupercarFilter = type;
+    localStorage.setItem('lh360_active_supercar_filter', type);
+    
+    // UI pills
+    document.querySelectorAll('.filter-pill[data-supercar-type]').forEach(p => p.classList.remove('active'));
+    if (pillElement) pillElement.classList.add('active');
+    
+    // Mostra reset
+    const resetBtn = document.getElementById('supercarResetBtn');
+    if (resetBtn) resetBtn.style.display = 'inline-flex';
+    
+    // Filtra cards
+    const grid = document.getElementById('supercarsGrid');
+    if (!grid) return;
+    
+    const cards = grid.querySelectorAll('.card');
+    let visibleCount = 0;
+    
+    cards.forEach(card => {
+        const cardSku = card.dataset.sku || card.querySelector('button')?.dataset?.sku;
+        const cardType = getSupercarType(cardSku);
+        
+        if (cardType === type) {
+            card.style.display = 'block';
+            card.style.animation = 'fadeIn 0.5s ease';
+            visibleCount++;
+        } else {
+            card.style.display = 'none';
+        }
+    });
+    
+    console.log(`🏎️ Filtro Supercar: ${type} → ${visibleCount} risultati`);
+    grid.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+/**
+ * Reset filtro supercar
+ */
+function resetSupercarFilter() {
+    activeSupercarFilter = null;
+    localStorage.removeItem('lh360_active_supercar_filter');
+    
+    document.querySelectorAll('.filter-pill[data-supercar-type]').forEach(p => p.classList.remove('active'));
+    
+    const resetBtn = document.getElementById('supercarResetBtn');
+    if (resetBtn) resetBtn.style.display = 'none';
+    
+    const grid = document.getElementById('supercarsGrid');
+    if (grid) {
+        grid.querySelectorAll('.card').forEach(card => {
+            card.style.display = 'block';
+            card.style.animation = 'fadeIn 0.5s ease';
+        });
+    }
+}
+
+/**
+ * Ripristina filtri salvati (dopo pageshow/bfcache)
+ */
+function restoreBookableFilters() {
+    // Ripristina filtro immobili
+    const savedPropertyFilter = localStorage.getItem('lh360_active_property_filter');
+    if (savedPropertyFilter) {
+        const targetPill = document.querySelector(`.filter-pill[data-property-type="${savedPropertyFilter}"]`);
+        if (targetPill) {
+            setTimeout(() => filterProperties(savedPropertyFilter, targetPill), 200);
+        }
+    }
+    
+    // Ripristina filtro supercar
+    const savedSupercarFilter = localStorage.getItem('lh360_active_supercar_filter');
+    if (savedSupercarFilter) {
+        const targetPill = document.querySelector(`.filter-pill[data-supercar-type="${savedSupercarFilter}"]`);
+        if (targetPill) {
+            setTimeout(() => filterSupercars(savedSupercarFilter, targetPill), 200);
+        }
+    }
+}
+
 /**
  * NUOVA FUNZIONE UNIFICATA (Fetch API)
  * Scarica prodotti SHOP + BOOKABLE e li distribuisce nelle sezioni
@@ -343,22 +588,40 @@ async function initDynamicProducts(retryCount = 0) {
         }
 
         // === 4b. RENDERING PRODOTTI BOOKABLE (properties, supercars, stays) ===
-        if (bookableData.success && bookableData.products) {
-            bookableData.products.forEach(prod => {
-                const targetSection = SECTIONS.find(s => s.id === prod.category);
-                
-                if (targetSection && grids[targetSection.id]) {
-                    prod.sectionName = targetSection.id;
-                    
-                    // ✅ USA mainImage per card
-                    prod.icon = prod.mainImage || '📦';
-                    
-                    const card = createProductCard(prod, targetSection.defaultCta);
-                    grids[targetSection.id].appendChild(card);
-                    countBySection[targetSection.id] = (countBySection[targetSection.id] || 0) + 1;
-                }
-            });
+if (bookableData.success && bookableData.products) {
+    const propertyProducts = [];
+    const supercarProducts = [];
+    
+    bookableData.products.forEach(prod => {
+        const targetSection = SECTIONS.find(s => s.id === prod.category);
+        
+        if (targetSection && grids[targetSection.id]) {
+            prod.sectionName = targetSection.id;
+            prod.icon = prod.mainImage || '📦';
+            
+            const card = createProductCard(prod, targetSection.defaultCta);
+            
+            // ✅ AGGIUNGI SKU COME DATA ATTRIBUTE
+            card.dataset.sku = prod.sku;
+            
+            grids[targetSection.id].appendChild(card);
+            countBySection[targetSection.id] = (countBySection[targetSection.id] || 0) + 1;
+            
+            // ✅ RACCOGLI PRODOTTI PER FILTRI
+            if (prod.category === 'properties') propertyProducts.push(prod);
+            if (prod.category === 'supercars') supercarProducts.push(prod);
         }
+    });
+    
+    // ✅ INIZIALIZZA FILTRI
+    if (propertyProducts.length > 0) {
+        initPropertyFilters(propertyProducts);
+    }
+    
+    if (supercarProducts.length > 0) {
+        initSupercarFilters(supercarProducts);
+    }
+}
 
         // 5. Gestione sezioni vuote
         SECTIONS.forEach(section => {
@@ -638,6 +901,7 @@ function resetCategoryFilter() {
         });
     }
 }
+
 
 
 
