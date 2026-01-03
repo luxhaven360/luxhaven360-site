@@ -2376,58 +2376,68 @@ if (skuPrefix === 'SC') {
                         });
                     });
 
-                    document.querySelectorAll('.huracan-passenger-radio').forEach(radio => {
-    radio.addEventListener('click', function(e) {
-        const quantity = parseInt(this.value);
-        const pricePerPassenger = 50;
-        const totalPrice = pricePerPassenger * quantity;
-        
-        // ✅ NUOVO: Se già selezionato, deseleziona
-        if (this.dataset.wasChecked === 'true') {
-            this.checked = false;
-            this.dataset.wasChecked = 'false';
-            
-            bookingData.extraServices = bookingData.extraServices.filter(s => s.service !== 'extra-passengers');
-            
-            document.querySelectorAll('.huracan-passenger-option').forEach(lbl => {
-                lbl.style.borderColor = 'rgba(80, 60, 45, 0.4)';
-                lbl.style.background = 'rgba(20, 15, 12, 0.8)';
-            });
-            
-            updatePriceSummary();
-            return;
-        }
-        
-        // Rimuovi precedenti
-        bookingData.extraServices = bookingData.extraServices.filter(s => s.service !== 'extra-passengers');
-        
-        // Aggiungi nuovo
-        bookingData.extraServices.push({ 
-            service: 'extra-passengers', 
-            price: totalPrice,
-            quantity: quantity
-        });
-        
-        // Marca selezione
-        document.querySelectorAll('.huracan-passenger-radio').forEach(r => {
-            r.dataset.wasChecked = 'false';
-        });
-        this.dataset.wasChecked = 'true';
-        
-        // Reset stili
-        document.querySelectorAll('.huracan-passenger-option').forEach(lbl => {
-            lbl.style.borderColor = 'rgba(80, 60, 45, 0.4)';
-            lbl.style.background = 'rgba(20, 15, 12, 0.8)';
-        });
-        
-        const selectedLabel = this.closest('.huracan-passenger-option');
-        if (selectedLabel) {
-            selectedLabel.style.borderColor = '#D4AF37';
-            selectedLabel.style.background = 'rgba(212, 175, 55, 0.12)';
-        }
-        
-        updatePriceSummary();
+                    // ✅ NUOVO: Clona anche i radio per rimuovere listener duplicati
+document.querySelectorAll('.huracan-passenger-radio').forEach(radio => {
+  // Clona il radio e il suo parent label per evitare conflitti
+  const label = radio.closest('.huracan-passenger-option');
+  if (!label) return;
+  
+  const newLabel = label.cloneNode(true);
+  label.parentNode.replaceChild(newLabel, label);
+  
+  const newRadio = newLabel.querySelector('.huracan-passenger-radio');
+  
+  newRadio.addEventListener('click', function(e) {
+    const quantity = parseInt(this.value);
+    const pricePerPassenger = 50;
+    const totalPrice = pricePerPassenger * quantity;
+    
+    // ✅ NUOVO: Se già selezionato, deseleziona
+    if (this.dataset.wasChecked === 'true') {
+      this.checked = false;
+      this.dataset.wasChecked = 'false';
+      
+      bookingData.extraServices = bookingData.extraServices.filter(s => s.service !== 'extra-passengers');
+      
+      document.querySelectorAll('.huracan-passenger-option').forEach(lbl => {
+        lbl.style.borderColor = 'rgba(80, 60, 45, 0.4)';
+        lbl.style.background = 'rgba(20, 15, 12, 0.8)';
+      });
+      
+      updatePriceSummary();
+      return;
+    }
+    
+    // Rimuovi precedenti
+    bookingData.extraServices = bookingData.extraServices.filter(s => s.service !== 'extra-passengers');
+    
+    // Aggiungi nuovo
+    bookingData.extraServices.push({ 
+      service: 'extra-passengers', 
+      price: totalPrice,
+      quantity: quantity
     });
+    
+    // Marca selezione
+    document.querySelectorAll('.huracan-passenger-radio').forEach(r => {
+      r.dataset.wasChecked = 'false';
+    });
+    this.dataset.wasChecked = 'true';
+    
+    // Reset stili
+    document.querySelectorAll('.huracan-passenger-option').forEach(lbl => {
+      lbl.style.borderColor = 'rgba(80, 60, 45, 0.4)';
+      lbl.style.background = 'rgba(20, 15, 12, 0.8)';
+    });
+    
+    const selectedLabel = this.closest('.huracan-passenger-option');
+    if (selectedLabel) {
+      selectedLabel.style.borderColor = '#D4AF37';
+      selectedLabel.style.background = 'rgba(212, 175, 55, 0.12)';
+    }
+    
+    updatePriceSummary();
+  });
 });
                 }, 100);
             }
@@ -2803,14 +2813,29 @@ window.addEventListener('focus', function() {
     }
 
     // ✅ 2. VALIDAZIONE DATA E ORARIO
-    const date = bookingData.selectedDate;
-    const time = document.getElementById('bookingTime').value;
-    
-    if (!date) {
-        showValidationError('Seleziona una data per la tua esperienza.', 'date');
-        document.getElementById('bookingDate')?.focus();
-        return;
-    }
+    // ✅ CODICE NUOVO (gestisce esperienze con data fissa)
+const skuPrefix = bookingData.productData?.sku.split('-')[0].toUpperCase();
+const isExperience = skuPrefix === 'EX';
+
+let date = bookingData.selectedDate;
+const time = document.getElementById('bookingTime').value;
+
+// ✅ Per esperienze con data fissa, usa la data dal prodotto
+if (isExperience && !date && bookingData.productData.data_esperienza) {
+  try {
+    date = new Date(bookingData.productData.data_esperienza);
+    bookingData.selectedDate = date;
+    Logger.log('✅ Data esperienza recuperata dal prodotto');
+  } catch (e) {
+    Logger.log('⚠️ Errore parsing data esperienza: ' + e);
+  }
+}
+
+if (!date) {
+  showValidationError('Seleziona una data per la tua esperienza.', 'date');
+  document.getElementById('bookingDate')?.focus();
+  return;
+}
     
     if (!time) {
         showValidationError('Seleziona un orario per la tua esperienza.', 'time');
@@ -3717,6 +3742,17 @@ function handleExperienceDateLock(product) {
     
         // Imposta valore fisso
         dateInput.value = formattedDate;
+
+// ✅ NUOVO: Imposta bookingData.selectedDate automaticamente
+try {
+  const dateObj = new Date(product.data_esperienza);
+  if (!isNaN(dateObj.getTime())) {
+    bookingData.selectedDate = dateObj;
+    Logger.log(`✅ Data esperienza impostata: ${dateObj}`);
+  }
+} catch (e) {
+  Logger.log('⚠️ Errore parsing data esperienza: ' + e);
+}
         
         // Disabilita input
         dateInput.disabled = true;
