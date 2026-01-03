@@ -2180,15 +2180,35 @@ if (product.numPosti >= 4) {
     bookingData.distance = 'N/A';
 
     // ✅ 15. GESTIONE ESPERIENZE (EX) - Nascondi sezioni non applicabili
-    if (skuPrefix === 'EX') {
-        const distanceSection = document.querySelector('.glass-card:has(#distanceOptions)');
-        if (distanceSection) distanceSection.style.display = 'none';
+if (skuPrefix === 'EX') {
+    const distanceSection = document.querySelector('.glass-card:has(#distanceOptions)');
+    if (distanceSection) distanceSection.style.display = 'none';
 
-        const secondCarSection = document.getElementById('secondCarSection');
-        if (secondCarSection) secondCarSection.style.display = 'none';
+    const secondCarSection = document.getElementById('secondCarSection');
+    if (secondCarSection) secondCarSection.style.display = 'none';
 
-        bookingData.basePrice = product.price || 0;
+    const extraServicesSection = document.getElementById('extraServicesSection');
+    if (extraServicesSection) extraServicesSection.style.display = 'none';
+
+    // ✅ IMPORTANTE: Setta distance a N/A per esperienze
+    bookingData.distance = 'N/A';
+    
+    // ✅ Setta prezzo base da prodotto
+    bookingData.basePrice = product.price || 0;
+    
+    // ✅ NUOVO: Auto-setta data e orario se presenti nel prodotto
+    if (product.data_esperienza) {
+        try {
+            const expDate = new Date(product.data_esperienza);
+            if (!isNaN(expDate.getTime())) {
+                bookingData.selectedDate = expDate;
+                console.log(`✅ Data esperienza auto-impostata: ${expDate.toISOString()}`);
+            }
+        } catch (e) {
+            console.warn('⚠️ Data esperienza non valida:', product.data_esperienza);
+        }
     }
+}
 
     // ✅ 16. GESTIONE SUPERCAR (SC) - Usa prezzo base prodotto
     if (skuPrefix === 'SC') {
@@ -2816,49 +2836,48 @@ window.addEventListener('focus', function() {
 const isExperience = skuPrefix === 'EX';
 
 let date = bookingData.selectedDate;
-const time = document.getElementById('bookingTime').value;
+const time = document.getElementById('bookingTime')?.value;
 
-// ✅ NUOVO: Per esperienze con data fissa, usa la data dal prodotto
+// ✅ Per esperienze con data fissa, usa la data dal prodotto
 if (isExperience && bookingData.productData?.data_esperienza) {
   try {
-    // Parsing robusto della data esperienza
     const dataEsperienza = bookingData.productData.data_esperienza;
     
-    // Se è già una stringa ISO, usala
     if (typeof dataEsperienza === 'string') {
-      // Formato: "YYYY-MM-DD" o "DD/MM/YYYY"
       if (dataEsperienza.includes('-')) {
         date = new Date(dataEsperienza + 'T00:00:00');
       } else if (dataEsperienza.includes('/')) {
         const parts = dataEsperienza.split('/');
-        date = new Date(parts[2], parts[1] - 1, parts[0]); // YYYY, MM-1, DD
+        date = new Date(parts[2], parts[1] - 1, parts[0]);
       }
     } else if (dataEsperienza instanceof Date) {
       date = dataEsperienza;
     }
     
-    // Verifica validità
     if (date && !isNaN(date.getTime())) {
       bookingData.selectedDate = date;
-      Logger.log(`✅ Data esperienza recuperata: ${date.toISOString()}`);
+      console.log(`✅ Data esperienza recuperata: ${date.toISOString()}`);
     }
   } catch (e) {
-    Logger.log('⚠️ Errore parsing data esperienza: ' + e);
+    console.error('⚠️ Errore parsing data esperienza:', e);
   }
 }
 
-// ✅ VALIDAZIONE: Solo se NON è esperienza con data fissa
-if (!date && !(isExperience && bookingData.productData?.data_esperienza)) {
+// ✅ VALIDAZIONE: Permetti prenotazione se è esperienza con data bloccata
+const isFixedDateExperience = isExperience && bookingData.productData?.data_esperienza;
+
+if (!date && !isFixedDateExperience) {
   showValidationError('Seleziona una data per la tua esperienza.', 'date');
   document.getElementById('bookingDate')?.focus();
   return;
 }
-    
-    if (!time) {
-        showValidationError('Seleziona un orario per la tua esperienza.', 'time');
-        document.getElementById('bookingTime')?.focus();
-        return;
-    }
+
+// ✅ Validazione orario (permetti se esperienza con orario bloccato)
+if (!time) {
+  showValidationError('Seleziona un orario per la tua esperienza.', 'time');
+  document.getElementById('bookingTime')?.focus();
+  return;
+}
     
     // ✅ 3. VALIDAZIONE DATI PERSONALI
     const firstName = document.querySelector('input[placeholder="Il tuo nome"]');
@@ -3699,47 +3718,81 @@ function updateImageCounter() {
 // ===================================
 
 /**
- * Formatta la data esperienza in formato italiano (dd/MM/yyyy)
+ * Formatta la data esperienza in formato italiano (dd/MM/yyyy) - VERSIONE ROBUSTA
  */
 function formatExperienceDate(dateValue) {
-    if (!dateValue) return '';
+    if (!dateValue) return 'Data da confermare';
     
-    let dateObj;
-    
-    // Se è già una stringa in formato corretto, ritornala
-    if (typeof dateValue === 'string' && dateValue.match(/^\d{2}\/\d{2}\/\d{4}$/)) {
-        return dateValue;
+    // Caso 1: È già una stringa formattata
+    if (typeof dateValue === 'string') {
+        const trimmed = dateValue.trim();
+        
+        // Se è già dd/MM/yyyy
+        if (trimmed.match(/^\d{2}\/\d{2}\/\d{4}$/)) {
+            return trimmed;
+        }
+        
+        // Se contiene "GMT" o timestamp, prova a parsare
+        if (trimmed.includes('GMT') || trimmed.includes('T')) {
+            try {
+                const date = new Date(trimmed);
+                if (!isNaN(date.getTime())) {
+                    const day = String(date.getDate()).padStart(2, '0');
+                    const month = String(date.getMonth() + 1).padStart(2, '0');
+                    const year = date.getFullYear();
+                    return `${day}/${month}/${year}`;
+                }
+            } catch (e) {
+                console.warn('Errore parsing data stringa:', e);
+            }
+        }
+        
+        // Se è ISO date (YYYY-MM-DD)
+        if (trimmed.match(/^\d{4}-\d{2}-\d{2}/)) {
+            try {
+                const date = new Date(trimmed + 'T00:00:00');
+                const day = String(date.getDate()).padStart(2, '0');
+                const month = String(date.getMonth() + 1).padStart(2, '0');
+                const year = date.getFullYear();
+                return `${day}/${month}/${year}`;
+            } catch (e) {
+                console.warn('Errore parsing ISO date:', e);
+            }
+        }
+        
+        // Fallback: ritorna stringa originale se non parsabile
+        return trimmed;
     }
     
-    // Se è un oggetto Date
+    // Caso 2: È un oggetto Date
     if (dateValue instanceof Date) {
-        dateObj = dateValue;
-    } 
-    // Se è una stringa ISO o altro formato
-    else if (typeof dateValue === 'string') {
-        dateObj = new Date(dateValue);
-    } 
-    // Altrimenti prova a convertire
-    else {
-        dateObj = new Date(dateValue);
+        if (isNaN(dateValue.getTime())) return 'Data da confermare';
+        
+        const day = String(dateValue.getDate()).padStart(2, '0');
+        const month = String(dateValue.getMonth() + 1).padStart(2, '0');
+        const year = dateValue.getFullYear();
+        return `${day}/${month}/${year}`;
     }
     
-    // Verifica validità
-    if (isNaN(dateObj.getTime())) {
-        console.error('⚠️ Data esperienza non valida:', dateValue);
-        return String(dateValue); // Fallback: ritorna valore originale
+    // Caso 3: Prova conversione generica
+    try {
+        const date = new Date(dateValue);
+        if (!isNaN(date.getTime())) {
+            const day = String(date.getDate()).padStart(2, '0');
+            const month = String(date.getMonth() + 1).padStart(2, '0');
+            const year = date.getFullYear();
+            return `${day}/${month}/${year}`;
+        }
+    } catch (e) {
+        console.warn('Errore conversione data:', e);
     }
     
-    // Formatta in dd/MM/yyyy
-    const day = String(dateObj.getDate()).padStart(2, '0');
-    const month = String(dateObj.getMonth() + 1).padStart(2, '0');
-    const year = dateObj.getFullYear();
-    
-    return `${day}/${month}/${year}`;
+    // Fallback finale
+    return 'Data da confermare';
 }
         
 /**
- * Gestisce il blocco di data e orario per prodotti "ESPERIENZE" (SKU "EX")
+ * 🔒 BLOCCO DATA/ORARIO PER ESPERIENZE (SKU "EX") - VERSIONE ROBUSTA
  */
 function handleExperienceDateLock(product) {
     // Controlla se è un prodotto "ESPERIENZE"
@@ -3753,23 +3806,28 @@ function handleExperienceDateLock(product) {
     const timeSelect = document.getElementById('bookingTime');
     
     // === BLOCCO DATA ===
-    if (dateInput && product.data_esperienza) {
-        // ✅ Formatta data in formato italiano (dd/MM/yyyy)
-        const formattedDate = formatExperienceDate(product.data_esperienza);
-    
-        // Imposta valore fisso
-        dateInput.value = formattedDate;
-
-// ✅ NUOVO: Imposta bookingData.selectedDate automaticamente
-try {
-  const dateObj = new Date(product.data_esperienza);
-  if (!isNaN(dateObj.getTime())) {
-    bookingData.selectedDate = dateObj;
-    Logger.log(`✅ Data esperienza impostata: ${dateObj}`);
-  }
-} catch (e) {
-  Logger.log('⚠️ Errore parsing data esperienza: ' + e);
-}
+    if (dateInput) {
+        // ✅ GESTIONE ROBUSTA: Usa data da prodotto o placeholder
+        if (product.data_esperienza) {
+            try {
+                const formattedDate = formatExperienceDate(product.data_esperienza);
+                dateInput.value = formattedDate;
+                
+                // ✅ Imposta anche bookingData.selectedDate
+                const dateObj = new Date(product.data_esperienza);
+                if (!isNaN(dateObj.getTime())) {
+                    bookingData.selectedDate = dateObj;
+                    console.log(`✅ Data esperienza impostata: ${dateObj}`);
+                }
+            } catch (e) {
+                console.warn('⚠️ Errore formattazione data esperienza:', e);
+                dateInput.value = 'Data da confermare';
+            }
+        } else {
+            // Fallback se data mancante
+            dateInput.value = 'Data da confermare';
+            console.warn('⚠️ Data esperienza mancante dal prodotto');
+        }
         
         // Disabilita input
         dateInput.disabled = true;
@@ -3779,34 +3837,41 @@ try {
         dateInput.style.background = 'rgba(30, 30, 30, 0.6)';
         
         // Nascondi icona calendario
-        const dateIcon = dateInput.parentElement.querySelector('.date-icon');
+        const dateIcon = dateInput.parentElement?.querySelector('.date-icon');
         if (dateIcon) dateIcon.style.display = 'none';
         
         // Disabilita apertura calendario
-        dateInput.removeEventListener('click', () => {});
         dateInput.onclick = null;
         
-        // Aggiungi tooltip esplicativo
-        const tooltip = document.createElement('div');
-        tooltip.style.cssText = `
-            font-size: 11px;
-            color: #D4AF37;
-            margin-top: 6px;
-            font-weight: 500;
-            letter-spacing: 0.5px;
-        `;
-        tooltip.textContent = '📅 Data fissa per questa esperienza';
-        dateInput.parentElement.appendChild(tooltip);
-        
-        console.log('✅ Data bloccata:', product.data_esperienza);
+        // Aggiungi tooltip
+        const dateContainer = dateInput.parentElement;
+        if (dateContainer && !dateContainer.querySelector('.experience-date-tooltip')) {
+            const tooltip = document.createElement('div');
+            tooltip.className = 'experience-date-tooltip';
+            tooltip.style.cssText = `
+                font-size: 11px;
+                color: #D4AF37;
+                margin-top: 6px;
+                font-weight: 500;
+                letter-spacing: 0.5px;
+            `;
+            tooltip.textContent = '📅 Data fissa per questa esperienza';
+            dateContainer.appendChild(tooltip);
+        }
     }
     
     // === BLOCCO ORARIO ===
-    if (timeSelect && product.orari && product.orari.length > 0) {
-        const fixedTime = product.orari[0]; // Usa il primo orario disponibile
-        
-        // Pre-seleziona orario
-        timeSelect.value = fixedTime;
+    if (timeSelect) {
+        // ✅ GESTIONE ROBUSTA: Usa orari da prodotto o fallback
+        if (product.orari && Array.isArray(product.orari) && product.orari.length > 0) {
+            const fixedTime = product.orari[0]; // Primo orario disponibile
+            timeSelect.value = fixedTime;
+            console.log(`✅ Orario bloccato: ${fixedTime}`);
+        } else {
+            console.warn('⚠️ Orari mancanti dal prodotto, mantieni selezione manuale');
+            // Non bloccare se mancano orari
+            return;
+        }
         
         // Disabilita select
         timeSelect.disabled = true;
@@ -3815,18 +3880,20 @@ try {
         timeSelect.style.background = 'rgba(30, 30, 30, 0.6)';
         
         // Aggiungi tooltip
-        const tooltip = document.createElement('div');
-        tooltip.style.cssText = `
-            font-size: 11px;
-            color: #D4AF37;
-            margin-top: 6px;
-            font-weight: 500;
-            letter-spacing: 0.5px;
-        `;
-        tooltip.textContent = '🕐 Orario fisso per questa esperienza';
-        timeSelect.parentElement.appendChild(tooltip);
-        
-        console.log('✅ Orario bloccato:', fixedTime);
+        const timeContainer = timeSelect.parentElement;
+        if (timeContainer && !timeContainer.querySelector('.experience-time-tooltip')) {
+            const tooltip = document.createElement('div');
+            tooltip.className = 'experience-time-tooltip';
+            tooltip.style.cssText = `
+                font-size: 11px;
+                color: #D4AF37;
+                margin-top: 6px;
+                font-weight: 500;
+                letter-spacing: 0.5px;
+            `;
+            tooltip.textContent = '🕐 Orario fisso per questa esperienza';
+            timeContainer.appendChild(tooltip);
+        }
     }
 
     // === NASCONDI TESTO PRENOTAZIONE ===
@@ -3834,7 +3901,7 @@ try {
     if (adviceText) {
         adviceText.style.display = 'none';
         console.log('✅ Testo prenotazione nascosto per esperienza');
-    }  
+    }
 }
 </script>
 </body>
