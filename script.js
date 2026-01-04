@@ -45,7 +45,6 @@ function showSection(sectionId) {
         if (sectionId === 'properties' || sectionId === 'supercars') {
             console.log(`🔄 Cambio sezione: ${sectionId}, ripristino filtri`);
             setTimeout(() => {
-                restoreBookableFilters();
             }, 300);
         }
     }
@@ -569,75 +568,6 @@ function resetSupercarFilter() {
 }
 
 /**
- * Ripristina filtri salvati con retry intelligente
- */
-function restoreBookableFilters() {
-    console.log('🔄 restoreBookableFilters chiamata');
-    
-    let attempts = 0;
-    const maxAttempts = 20; // Max 3 secondi (20 × 150ms)
-    
-    const checkInterval = setInterval(() => {
-        attempts++;
-        
-        const propertyCards = document.querySelectorAll('#propertiesGrid .card[data-sku]');
-        const supercarCards = document.querySelectorAll('#supercarsGrid .card[data-sku]');
-        
-        const hasPropertyCards = propertyCards.length > 0;
-        const hasSupercarCards = supercarCards.length > 0;
-        
-        console.log(`🔍 Tentativo ${attempts}/${maxAttempts}: Properties=${propertyCards.length}, Supercars=${supercarCards.length}`);
-        
-        // ✅ CONDIZIONE DI SUCCESSO: Almeno una griglia popolata
-        if (hasPropertyCards || hasSupercarCards) {
-            clearInterval(checkInterval);
-            console.log('✅ Card trovate, applico filtri');
-            
-            // ✅ RIPRISTINA FILTRO IMMOBILI
-            const savedPropertyFilter = localStorage.getItem('lh360_active_property_filter');
-            if (savedPropertyFilter && hasPropertyCards) {
-                console.log(`✅ Ripristino filtro Immobili: ${savedPropertyFilter}`);
-                
-                const targetPill = document.querySelector(`.filter-pill[data-property-type="${savedPropertyFilter}"]`);
-                if (targetPill) {
-                    // ✅ APPLICA IL FILTRO DIRETTAMENTE (no click simulation)
-                    setTimeout(() => {
-                        filterProperties(savedPropertyFilter, targetPill);
-                        console.log('✅ Filtro Immobili applicato');
-                    }, 200);
-                } else {
-                    console.warn('⚠️ Pill Immobili non trovata');
-                }
-            }
-            
-            // ✅ RIPRISTINA FILTRO SUPERCAR
-            const savedSupercarFilter = localStorage.getItem('lh360_active_supercar_filter');
-            if (savedSupercarFilter && hasSupercarCards) {
-                console.log(`✅ Ripristino filtro Supercar: ${savedSupercarFilter}`);
-                
-                const targetPill = document.querySelector(`.filter-pill[data-supercar-type="${savedSupercarFilter}"]`);
-                if (targetPill) {
-                    setTimeout(() => {
-                        filterSupercars(savedSupercarFilter, targetPill);
-                        console.log('✅ Filtro Supercar applicato');
-                    }, 200);
-                } else {
-                    console.warn('⚠️ Pill Supercar non trovata');
-                }
-            }
-            
-            return; // Esci con successo
-        }
-        
-        // ✅ TIMEOUT: Se supera i tentativi, fermati
-        if (attempts >= maxAttempts) {
-            clearInterval(checkInterval);
-            console.warn('⏱️ Timeout ripristino filtri (card non trovate)');
-        }
-    }, 150); // Check ogni 150ms
-}
-
-/**
  * NUOVA FUNZIONE UNIFICATA (Fetch API)
  * Scarica prodotti SHOP + BOOKABLE e li distribuisce nelle sezioni
  */
@@ -1069,6 +999,7 @@ function resetCategoryFilter() {
         });
     }
 }
+
 
 
 
