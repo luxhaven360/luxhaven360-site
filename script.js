@@ -415,8 +415,6 @@ function filterProperties(type, pillElement) {
     // Mostra reset
     const resetBtn = document.getElementById('propertyResetBtn');
     if (resetBtn) resetBtn.style.display = 'inline-flex';
-    
-    // Filtra cards
     if (!grid) return;
     
     const cards = grid.querySelectorAll('.card');
@@ -519,7 +517,8 @@ function filterSupercars(type, pillElement) {
     const resetBtn = document.getElementById('supercarResetBtn');
     if (resetBtn) resetBtn.style.display = 'inline-flex';
     
-    // Filtra cards
+    // ❌ RIMUOVI QUESTA RIGA (grid è già dichiarata sopra!)
+    // const grid = document.getElementById('supercarsGrid');
     if (!grid) return;
     
     const cards = grid.querySelectorAll('.card');
@@ -1008,6 +1007,7 @@ function resetCategoryFilter() {
         });
     }
 }
+
 
 
 
