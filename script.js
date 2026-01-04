@@ -40,13 +40,6 @@ function showSection(sectionId) {
                 filterContainer.style.display = 'block';
             }
         }
-        
-        // ✅ RIPRISTINA FILTRI IMMOBILI/SUPERCAR AL CAMBIO SEZIONE
-        if (sectionId === 'properties' || sectionId === 'supercars') {
-            console.log(`🔄 Cambio sezione: ${sectionId}, ripristino filtri`);
-            setTimeout(() => {
-            }, 300);
-        }
     }
     
     // ✅ CHIUDI MENU MOBILE
@@ -999,6 +992,7 @@ function resetCategoryFilter() {
         });
     }
 }
+
 
 
 
