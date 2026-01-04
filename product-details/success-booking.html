@@ -366,6 +366,25 @@
     </style>
 </head>
 <body>
+    <!-- ✨ Loader Premium -->
+<div id="pageLoader" style="position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: linear-gradient(135deg, rgba(10,10,10,0.98), rgba(20,15,12,0.95)); z-index: 999999; display: flex; align-items: center; justify-content: center; backdrop-filter: blur(15px);">
+    <div style="text-align: center;">
+        <!-- Spinner elegante multi-layer -->
+        <div style="position: relative; width: 100px; height: 100px; margin: 0 auto 30px;">
+            <div style="position: absolute; width: 100%; height: 100%; border: 3px solid rgba(212, 175, 55, 0.1); border-radius: 50%;"></div>
+            <div style="position: absolute; width: 100%; height: 100%; border: 3px solid transparent; border-top-color: #D4AF37; border-radius: 50%; animation: spin 1.2s cubic-bezier(0.68, -0.55, 0.265, 1.55) infinite;"></div>
+            <div style="position: absolute; width: 70%; height: 70%; top: 15%; left: 15%; border: 2px solid transparent; border-top-color: rgba(212, 175, 55, 0.5); border-radius: 50%; animation: spin 0.8s linear infinite reverse;"></div>
+        </div>
+        
+        <!-- Testo elegante -->
+        <div style="color: #D4AF37; font-size: 20px; font-weight: 600; letter-spacing: 3px; margin-bottom: 12px; font-family: 'Cormorant Garamond', serif;">Caricamento</div>
+        <div style="color: #c9a891; font-size: 15px; font-weight: 300; letter-spacing: 1px;">Recupero dettagli prenotazione...</div>
+        
+        <!-- Decorazione dorata -->
+        <div style="margin-top: 25px; height: 1px; width: 60px; background: linear-gradient(90deg, transparent, #D4AF37, transparent); margin-left: auto; margin-right: auto;"></div>
+    </div>
+</div>
+    
     <div class="container">
         <div class="confirmation-card">
             <div class="category-indicator" id="categoryBadge">Immobili</div>
@@ -428,7 +447,7 @@
     
     <script>
         // ========================================
-// 📡 RECUPERO DATI DINAMICI DA STRIPE
+// 🔡 RECUPERO DATI DINAMICI DA STRIPE
 // ========================================
 const WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbwr79RkXIEocpuOKaM6uMJqE6VFs9wjlUPvrr__FvDbDDrD2ELB1NbfrWP3BCYpHj2u/exec';
 
@@ -439,54 +458,55 @@ const sessionId = urlParams.get('session_id');
 if (!sessionId) {
   console.error('❌ Session ID mancante nell\'URL');
   alert('Errore: dati prenotazione non disponibili');
+  hideLoader();
 }
 
-// Mostra loader durante il caricamento
-document.body.style.cursor = 'wait';
-
-// Chiamata API per recuperare dettagli booking
-fetch(`${WEB_APP_URL}?action=get_booking_details&session_id=${sessionId}`)
-  .then(response => response.json())
-  .then(data => {
-    document.body.style.cursor = 'default';
-    
-    if (!data.success) {
-      throw new Error(data.error || 'Errore recupero dati');
+/**
+ * Nasconde il loader con transizione fluida
+ */
+function hideLoader() {
+    const loader = document.getElementById('pageLoader');
+    if (loader) {
+        loader.style.opacity = '0';
+        loader.style.transition = 'opacity 0.4s ease';
+        setTimeout(() => loader.remove(), 400);
     }
+}
+
+/**
+ * Imposta immagine prodotto come sfondo con overlay scuro
+ */
+function setProductBackground(imageUrl) {
+    if (!imageUrl) return;
     
-    console.log('✅ Dati booking ricevuti:', data);
-    
-    // ✅ AGGIORNA UI CON DATI REALI
-    document.getElementById('categoryBadge').textContent = data.category;
-    document.getElementById('serviceType').textContent = data.service;
-    document.getElementById('bookingDate').textContent = data.date;
-    document.getElementById('bookingPeriod').textContent = data.period;
-    document.getElementById('totalAmount').textContent = data.amount;
-    document.getElementById('bookingCode').textContent = data.code;
-    
-    // ✅ AGGIORNA TESTO "PROSSIMI PASSI" IN BASE ALLA CATEGORIA
-    updateNextStepsMessage(data.category);
-    
-  })
-  .catch(error => {
-    document.body.style.cursor = 'default';
-    console.error('❌ Errore caricamento dati:', error);
-    
-    // Mostra messaggio di errore elegante
-    document.querySelector('.confirmation-card').innerHTML = `
-      <div style="text-align: center; padding: 60px 40px;">
-        <div style="font-size: 48px; margin-bottom: 20px;">⚠️</div>
-        <h2 style="color: #ef4444; margin-bottom: 15px;">Errore Caricamento Dati</h2>
-        <p style="color: #a1a1aa; margin-bottom: 30px;">
-          Impossibile recuperare i dettagli della prenotazione.<br>
-          Ti preghiamo di contattare il supporto.
-        </p>
-        <button class="btn btn-primary" onclick="window.location.href='/'">
-          <span style="position: relative; z-index: 2;">Torna alla Home</span>
-        </button>
-      </div>
+    // Crea overlay scuro per leggibilità
+    const overlay = document.createElement('div');
+    overlay.style.cssText = `
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(10, 10, 10, 0.80);
+        backdrop-filter: blur(8px);
+        z-index: 1;
     `;
-  });
+    document.body.insertBefore(overlay, document.body.firstChild);
+    
+    // Imposta immagine di sfondo
+    document.body.style.backgroundImage = `url('${imageUrl}')`;
+    document.body.style.backgroundSize = 'cover';
+    document.body.style.backgroundPosition = 'center';
+    document.body.style.backgroundRepeat = 'no-repeat';
+    document.body.style.backgroundAttachment = 'fixed';
+    
+    // Assicura che container sia sopra overlay
+    const container = document.querySelector('.container');
+    if (container) {
+        container.style.position = 'relative';
+        container.style.zIndex = '10';
+    }
+}
 
 /**
  * Aggiorna il messaggio "Prossimi Passi" in base alla categoria
@@ -505,6 +525,56 @@ function updateNextStepsMessage(category) {
     infoSection.textContent = message;
   }
 }
+
+// ✅ Chiamata API per recuperare dettagli
+fetch(`${WEB_APP_URL}?action=get_booking_details&session_id=${sessionId}`)
+  .then(response => response.json())
+  .then(data => {
+    if (!data.success) {
+      throw new Error(data.error || 'Errore recupero dati');
+    }
+    
+    console.log('✅ Dati booking ricevuti:', data);
+    
+    // ✅ AGGIORNA UI CON DATI REALI
+    document.getElementById('categoryBadge').textContent = data.category;
+    document.getElementById('serviceType').textContent = data.service;
+    document.getElementById('bookingDate').textContent = data.date;
+    document.getElementById('bookingPeriod').textContent = data.time || '—';  // ✅ MOSTRA ORARIO (non period)
+    document.getElementById('totalAmount').textContent = data.amount;  // ✅ GIÀ FORMATTATO CORRETTAMENTE
+    document.getElementById('bookingCode').textContent = data.code;  // ✅ NUMERO PRODOTTO (non SKU)
+    
+    // ✅ Aggiorna testo "Prossimi Passi"
+    updateNextStepsMessage(data.category);
+    
+    // ✅ Imposta sfondo con immagine prodotto
+    if (data.productImage) {
+        setProductBackground(data.productImage);
+    }
+    
+    // ✅ Nascondi loader dopo caricamento completo
+    hideLoader();
+    
+  })
+  .catch(error => {
+    console.error('❌ Errore caricamento dati:', error);
+    hideLoader();
+    
+    // Mostra messaggio di errore elegante
+    document.querySelector('.confirmation-card').innerHTML = `
+      <div style="text-align: center; padding: 60px 40px;">
+        <div style="font-size: 48px; margin-bottom: 20px;">⚠️</div>
+        <h2 style="color: #ef4444; margin-bottom: 15px;">Errore Caricamento Dati</h2>
+        <p style="color: #a1a1aa; margin-bottom: 30px;">
+          Impossibile recuperare i dettagli della prenotazione.<br>
+          Ti preghiamo di contattare il supporto.
+        </p>
+        <button class="btn btn-primary" onclick="window.location.href='/'">
+          <span style="position: relative; z-index: 2;">Torna alla Home</span>
+        </button>
+      </div>
+    `;
+  });
 
 function handleViewDetails() {
   console.log('Visualizzazione dettagli prenotazione...');
