@@ -565,20 +565,27 @@ function resetSupercarFilter() {
  * Scarica prodotti SHOP + BOOKABLE e li distribuisce nelle sezioni
  */
  async function initDynamicProducts(retryCount = 0) {
-    // 1. Imposta loader su tutte le griglie
+    // ✅ 1. PULIZIA FORZATA DI TUTTE LE GRIGLIE (SEMPRE, anche su retry)
     const grids = {};
     SECTIONS.forEach(section => {
         const gridEl = document.getElementById(section.gridId);
         if (gridEl) {
-            if (retryCount === 0) {
-                gridEl.innerHTML = '<div class="loading"><div class="lh-ring"></div><br>Caricamento prodotti...</div>';
-            }
+            // ✅ Pulisci SEMPRE per evitare duplicazioni (anche su bfcache restore)
+            gridEl.innerHTML = '';
+            gridEl.style.opacity = '0';
             grids[section.id] = gridEl;
         }
     });
+    
+    // 2. Mostra loader solo al primo tentativo
+    if (retryCount === 0) {
+        Object.values(grids).forEach(g => {
+            g.innerHTML = '<div class="loading"><div class="lh-ring"></div><br>Caricamento prodotti...</div>';
+        });
+    }
 
     try {
-        // === 2. CHIAMATE PARALLELE (shop + bookable) ===
+        // === 3. CHIAMATE PARALLELE (shop + bookable) ===
         const shopPromise = fetch(`${WEB_APP_URL}?action=get_products&category=shop&t=${Date.now()}&r=${retryCount}`)
             .then(res => res.json());
         
@@ -586,12 +593,6 @@ function resetSupercarFilter() {
             .then(res => res.json());
 
         const [shopData, bookableData] = await Promise.all([shopPromise, bookablePromise]);
-
-        // 3. Pulizia griglie
-        Object.values(grids).forEach(g => {
-            g.innerHTML = '';
-            g.style.opacity = '0';
-        });
 
         const countBySection = {};
         
@@ -995,6 +996,7 @@ function resetCategoryFilter() {
         });
     }
 }
+
 
 
 
