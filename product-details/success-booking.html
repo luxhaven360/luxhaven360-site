@@ -519,58 +519,68 @@
     
     <script>
         // ========================================
-// 📡 SISTEMA DI POLLING INTELLIGENTE
+// 📡 SISTEMA DI RECUPERO DATI UNIFICATO
 // ========================================
 const WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbwr79RkXIEocpuOKaM6uMJqE6VFs9wjlUPvrr__FvDbDDrD2ELB1NbfrWP3BCYpHj2u/exec';
 
 const urlParams = new URLSearchParams(window.location.search);
-const sessionId = urlParams.get('session_id');
+const sessionId = urlParams.get('session_id');    // 💳 Stripe (Supercar/Esperienze)
+const bookingId = urlParams.get('booking_id');    // 🏠 Ordine diretto (Immobili)
 
-if (!sessionId) {
-  console.error('❌ Session ID mancante nell\'URL');
+// 🎯 DETERMINA MODALITÀ
+const isStripeBooking = !!sessionId;
+const isDirectBooking = !!bookingId;
+
+if (!isStripeBooking && !isDirectBooking) {
+  console.error('❌ Parametri mancanti nell\'URL');
   showError('Errore: dati prenotazione non disponibili');
 }
 
+console.log(`🎯 Modalità: ${isStripeBooking ? 'Stripe' : 'Diretta'}`);
+console.log(`📋 ID: ${isStripeBooking ? sessionId : bookingId}`);
+
 // 🎯 Configurazione Polling
 const POLLING_CONFIG = {
-  maxAttempts: 10,        // Massimo 10 tentativi
-  intervalMs: 2000,       // Ogni 2 secondi
-  timeoutMs: 20000        // Timeout totale 20 secondi
+  maxAttempts: 10,
+  intervalMs: 2000,
+  timeoutMs: 20000
 };
 
 let pollingAttempt = 0;
 let pollingInterval = null;
 let startTime = Date.now();
 
-// 🎨 Messaggi progressivi per UX
+// 🎨 Messaggi progressivi
 const progressMessages = [
-  { message: 'Verifica pagamento', subtitle: 'Conferma sicura della transazione...' },
+  { message: 'Verifica prenotazione', subtitle: 'Controllo disponibilità e conferma...' },
   { message: 'Generazione codice', subtitle: 'Creazione identificativo univoco...' },
   { message: 'Preparazione dettagli', subtitle: 'Finalizzazione prenotazione...' },
   { message: 'Quasi pronto', subtitle: 'Ultimi controlli di sicurezza...' }
 ];
 
 /**
- * Aggiorna UI del loader con messaggio progressivo
+ * Aggiorna UI loader
  */
 function updateLoaderProgress(attempt) {
   const messageIndex = Math.min(Math.floor(attempt / 2.5), progressMessages.length - 1);
   const currentMsg = progressMessages[messageIndex];
   
-  document.getElementById('loaderMessage').textContent = currentMsg.message;
-  document.getElementById('loaderSubtitle').textContent = currentMsg.subtitle;
+  const msgEl = document.getElementById('loaderMessage');
+  const subEl = document.getElementById('loaderSubtitle');
+  if (msgEl) msgEl.textContent = currentMsg.message;
+  if (subEl) subEl.textContent = currentMsg.subtitle;
   
-  // Aggiorna progress bar (massimo 90% durante polling)
   const progress = Math.min((attempt / POLLING_CONFIG.maxAttempts) * 90, 90);
-  document.getElementById('progressBar').style.width = progress + '%';
+  const progressBar = document.getElementById('progressBar');
+  if (progressBar) progressBar.style.width = progress + '%';
   
-  // Anima i dots del timer
   const dots = '.'.repeat((attempt % 3) + 1);
-  document.getElementById('timerDots').textContent = dots;
+  const timerEl = document.getElementById('timerDots');
+  if (timerEl) timerEl.textContent = dots;
 }
 
 /**
- * Mostra messaggio di errore elegante
+ * Mostra errore elegante
  */
 function showError(message) {
   hideLoader();
@@ -583,9 +593,9 @@ function showError(message) {
           <line x1="12" y1="16" x2="12.01" y2="16"></line>
         </svg>
       </div>
-      <h2 style="color: #ef4444; margin-bottom: 15px; font-family: 'Cormorant Garamond', serif;">Errore Temporaneo</h2>
-      <p style="color: #a1a1aa; margin-bottom: 30px; line-height: 1.6;">${message}</p>
-      <button class="btn btn-primary" onclick="location.reload()">
+      <h2 style="color: #ef4444; margin-bottom: 15px; font-family: 'Cormorant Garamond', serif; font-size: 1.8rem;">Errore Temporaneo</h2>
+      <p style="color: #a1a1aa; margin-bottom: 30px; line-height: 1.6; font-size: 15px;">${message}</p>
+      <button class="btn btn-primary" onclick="location.reload()" style="padding: 14px 35px; font-size: 14px;">
         <span style="position: relative; z-index: 2;">Ricarica Pagina</span>
       </button>
     </div>
@@ -593,13 +603,13 @@ function showError(message) {
 }
 
 /**
- * Nasconde loader con animazione fluida
+ * Nasconde loader
  */
 function hideLoader() {
   const loader = document.getElementById('pageLoader');
   if (loader) {
-    // Progress bar a 100%
-    document.getElementById('progressBar').style.width = '100%';
+    const progressBar = document.getElementById('progressBar');
+    if (progressBar) progressBar.style.width = '100%';
     
     setTimeout(() => {
       loader.style.opacity = '0';
@@ -610,7 +620,7 @@ function hideLoader() {
 }
 
 /**
- * Imposta immagine prodotto come sfondo
+ * Imposta sfondo
  */
 function setProductBackground(imageUrl) {
   if (!imageUrl) return;
@@ -635,12 +645,12 @@ function setProductBackground(imageUrl) {
 }
 
 /**
- * Aggiorna messaggio "Prossimi Passi"
+ * Aggiorna messaggio prossimi passi
  */
 function updateNextStepsMessage(category) {
   const messagesMap = {
     'SUPERCAR': 'Un nostro consulente ti contatterà entro 24 ore per confermare i dettagli dell\'esperienza di guida.',
-    'IMMOBILI': 'Un nostro consulente immobiliare ti contatterà entro 24-48 ore per confermare l\'appuntamento.',
+    'IMMOBILI': 'Un nostro consulente immobiliare ti contatterà entro 24-48 ore per confermare l\'appuntamento e fornirti tutti i dettagli necessari.',
     'ESPERIENZE': 'Il nostro team ti contatterà per assicurarsi che ogni aspetto dell\'esperienza sia perfetto.'
   };
   
@@ -650,15 +660,22 @@ function updateNextStepsMessage(category) {
 }
 
 /**
- * Popola UI con dati prenotazione
+ * Popola UI
  */
 function populateBookingData(data) {
-  document.getElementById('categoryBadge').textContent = data.category;
-  document.getElementById('serviceType').textContent = data.service;
-  document.getElementById('bookingDate').textContent = data.date;
-  document.getElementById('bookingPeriod').textContent = data.time || '—';
-  document.getElementById('totalAmount').textContent = data.amount;
-  document.getElementById('bookingCode').textContent = data.code;
+  const elements = {
+    categoryBadge: data.category,
+    serviceType: data.service,
+    bookingDate: data.date,
+    bookingPeriod: data.time || '—',
+    totalAmount: data.amount,
+    bookingCode: data.code
+  };
+  
+  Object.keys(elements).forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.textContent = elements[id];
+  });
   
   updateNextStepsMessage(data.category);
   
@@ -668,19 +685,45 @@ function populateBookingData(data) {
 }
 
 /**
- * Chiamata API con retry
+ * 💳 Fetch da Stripe (Supercar/Esperienze)
+ */
+async function fetchBookingDetailsFromStripe() {
+  const response = await fetch(`${WEB_APP_URL}?action=get_booking_details&session_id=${sessionId}`);
+  const data = await response.json();
+  
+  if (!data.success) {
+    throw new Error(data.error || 'Errore recupero dati Stripe');
+  }
+  
+  return data;
+}
+
+/**
+ * 🏠 Fetch da Numero Ordine (Immobili)
+ */
+async function fetchBookingDetailsFromOrder() {
+  const response = await fetch(`${WEB_APP_URL}?action=get_booking_details_by_order&order_number=${bookingId}`);
+  const data = await response.json();
+  
+  if (!data.success) {
+    throw new Error(data.error || 'Errore recupero dati prenotazione');
+  }
+  
+  return data;
+}
+
+/**
+ * 🔄 Fetch unificato
  */
 async function fetchBookingDetails() {
   try {
-    const response = await fetch(`${WEB_APP_URL}?action=get_booking_details&session_id=${sessionId}`);
-    const data = await response.json();
-    
-    if (!data.success) {
-      throw new Error(data.error || 'Errore recupero dati');
+    if (isStripeBooking) {
+      return await fetchBookingDetailsFromStripe();
+    } else if (isDirectBooking) {
+      return await fetchBookingDetailsFromOrder();
+    } else {
+      throw new Error('Modalità non riconosciuta');
     }
-    
-    return data;
-    
   } catch (error) {
     console.error('❌ Errore fetch:', error);
     throw error;
@@ -688,7 +731,7 @@ async function fetchBookingDetails() {
 }
 
 /**
- * Loop di polling principale
+ * 🔄 Loop polling
  */
 async function startPolling() {
   pollingAttempt++;
@@ -699,29 +742,25 @@ async function startPolling() {
   try {
     const data = await fetchBookingDetails();
     
-    // ✅ Verifica se i dati sono completi
+    // ✅ Verifica dati completi
     if (!data.isProcessing && data.code && data.code !== 'IN ELABORAZIONE' && data.code !== 'N/A') {
       console.log('✅ Dati completi ricevuti:', data);
       clearInterval(pollingInterval);
       
-      // Popola UI
       populateBookingData(data);
-      
-      // Nascondi loader
       hideLoader();
       return;
     }
     
-    // ⏳ Dati ancora in elaborazione
-    console.log('⏳ Numero prodotto ancora in elaborazione:', data.code);
+    // ⏳ Ancora in elaborazione
+    console.log('⏳ Numero prodotto in elaborazione:', data.code);
     
     // Verifica timeout
     const elapsed = Date.now() - startTime;
     if (elapsed >= POLLING_CONFIG.timeoutMs || pollingAttempt >= POLLING_CONFIG.maxAttempts) {
-      console.warn('⏰ Timeout raggiunto, mostro dati parziali');
+      console.warn('⏰ Timeout raggiunto');
       clearInterval(pollingInterval);
       
-      // Mostra comunque la pagina con placeholder
       populateBookingData(data);
       hideLoader();
       return;
@@ -730,25 +769,24 @@ async function startPolling() {
   } catch (error) {
     console.error('❌ Errore polling:', error);
     
-    // In caso di errore, continua polling se non ha raggiunto il limite
     if (pollingAttempt >= POLLING_CONFIG.maxAttempts) {
       clearInterval(pollingInterval);
-      showError('Impossibile recuperare i dettagli della prenotazione. Contatta il supporto.');
+      showError('Impossibile recuperare i dettagli della prenotazione.<br>Per assistenza, contatta il supporto clienti.');
     }
   }
 }
 
 // 🚀 Avvia polling
-console.log('🚀 Avvio sistema di polling intelligente');
-startPolling(); // Prima chiamata immediata
+console.log('🚀 Avvio sistema di polling');
+startPolling();
 pollingInterval = setInterval(startPolling, POLLING_CONFIG.intervalMs);
 
-// 🛡️ Timeout di sicurezza assoluto (25 secondi)
+// 🛡️ Timeout assoluto
 setTimeout(() => {
   if (pollingInterval) {
     console.warn('🛑 Timeout assoluto raggiunto');
     clearInterval(pollingInterval);
-    showError('Tempo massimo di attesa superato. Ricarica la pagina o contatta il supporto.');
+    showError('Tempo massimo di attesa superato.<br>Ricarica la pagina o contatta il supporto.');
   }
 }, 25000);
 
