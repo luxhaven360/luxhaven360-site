@@ -954,17 +954,22 @@ function filterShopByCategory(categoryName, pillElement) {
   if (resetBtn) resetBtn.style.display = 'inline-flex';
   
   // ✅ FILTRO IMMEDIATO USANDO DATA ATTRIBUTE
-  const cards = shopGrid.querySelectorAll('.card');
-  cards.forEach(card => {
-    const cardCategory = card.dataset.shopCategory || '';
-    
-    if (cardCategory === categoryName) {
-      card.style.display = 'block';
-      card.style.animation = 'fadeIn 0.5s ease';
-    } else {
-      card.style.display = 'none';
-    }
-  });
+const cards = shopGrid.querySelectorAll('.card');
+let visibleCount = 0;
+
+cards.forEach(card => {
+  const cardCategory = card.dataset.shopCategory || '';
+  
+  if (cardCategory === categoryName) {
+    card.style.display = 'block';
+    card.style.animation = 'fadeIn 0.5s ease';
+    visibleCount++;
+  } else {
+    card.style.display = 'none';
+  }
+});
+
+console.log(`🏷️ Filtro SHOP: ${categoryName} → ${visibleCount} prodotti visibili`);
   
   // ✅ MOSTRA LA GRIGLIA DOPO AVER FILTRATO
   shopGrid.style.transition = 'opacity 0.4s ease';
@@ -999,6 +1004,7 @@ function resetCategoryFilter() {
         });
     }
 }
+
 
 
 
