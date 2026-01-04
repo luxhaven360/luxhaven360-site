@@ -417,7 +417,6 @@ function filterProperties(type, pillElement) {
     if (resetBtn) resetBtn.style.display = 'inline-flex';
     
     // Filtra cards
-    const grid = document.getElementById('propertiesGrid');
     if (!grid) return;
     
     const cards = grid.querySelectorAll('.card');
@@ -521,7 +520,6 @@ function filterSupercars(type, pillElement) {
     if (resetBtn) resetBtn.style.display = 'inline-flex';
     
     // Filtra cards
-    const grid = document.getElementById('supercarsGrid');
     if (!grid) return;
     
     const cards = grid.querySelectorAll('.card');
@@ -1010,6 +1008,7 @@ function resetCategoryFilter() {
         });
     }
 }
+
 
 
 
