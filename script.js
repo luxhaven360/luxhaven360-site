@@ -415,6 +415,7 @@ function filterProperties(type, pillElement) {
     // Mostra reset
     const resetBtn = document.getElementById('propertyResetBtn');
     if (resetBtn) resetBtn.style.display = 'inline-flex';
+    
     if (!grid) return;
     
     const cards = grid.querySelectorAll('.card');
@@ -435,13 +436,13 @@ function filterProperties(type, pillElement) {
     
     console.log(`🏰 Filtro Immobili: ${type} → ${visibleCount} risultati`);
 
-// ⬇️ MOSTRA GRID CON ANIMAZIONE
-grid.style.transition = 'opacity 0.4s ease';
-grid.style.opacity = '1';
+    // ✅ MOSTRA GRID DOPO FILTRO
+    grid.style.transition = 'opacity 0.4s ease';
+    grid.style.opacity = '1';
 
-setTimeout(() => {
-    grid.scrollIntoView({ behavior: 'smooth', block: 'start' });
-}, 200);
+    setTimeout(() => {
+        grid.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 100);
 }
 
 /**
@@ -517,8 +518,6 @@ function filterSupercars(type, pillElement) {
     const resetBtn = document.getElementById('supercarResetBtn');
     if (resetBtn) resetBtn.style.display = 'inline-flex';
     
-    // ❌ RIMUOVI QUESTA RIGA (grid è già dichiarata sopra!)
-    // const grid = document.getElementById('supercarsGrid');
     if (!grid) return;
     
     const cards = grid.querySelectorAll('.card');
@@ -539,13 +538,13 @@ function filterSupercars(type, pillElement) {
     
     console.log(`🏎️ Filtro Supercar: ${type} → ${visibleCount} risultati`);
 
-// ⬇️ MOSTRA GRID CON ANIMAZIONE
-grid.style.transition = 'opacity 0.4s ease';
-grid.style.opacity = '1';
+    // ✅ MOSTRA GRID DOPO FILTRO
+    grid.style.transition = 'opacity 0.4s ease';
+    grid.style.opacity = '1';
 
-setTimeout(() => {
-    grid.scrollIntoView({ behavior: 'smooth', block: 'start' });
-}, 200);
+    setTimeout(() => {
+        grid.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 100);
 }
 
 /**
@@ -728,13 +727,21 @@ SECTIONS.forEach(section => {
     }
 });
 
-// 6. MOSTRA griglie con animazione DOPO aver applicato eventuali filtri salvati
-setTimeout(() => {
-    Object.values(grids).forEach(g => {
-        g.style.transition = 'opacity 0.3s ease';
-        g.style.opacity = '1';
-    });
-}, 100);
+// 6. ✅ CONTROLLA SE CI SONO FILTRI ATTIVI PRIMA DI MOSTRARE LE GRIGLIE
+const hasActiveShopFilter = localStorage.getItem('lh360_active_shop_filter');
+const hasActivePropertyFilter = localStorage.getItem('lh360_active_property_filter');
+const hasActiveSupercarFilter = localStorage.getItem('lh360_active_supercar_filter');
+
+// Se NON ci sono filtri attivi, mostra subito le griglie
+if (!hasActiveShopFilter && !hasActivePropertyFilter && !hasActiveSupercarFilter) {
+    setTimeout(() => {
+        Object.values(grids).forEach(g => {
+            g.style.transition = 'opacity 0.3s ease';
+            g.style.opacity = '1';
+        });
+    }, 100);
+}
+// Altrimenti, le griglie verranno mostrate DOPO l'applicazione dei filtri
 
     } catch (error) {
         console.warn(`Tentativo ${retryCount + 1} fallito:`, error);
@@ -967,7 +974,7 @@ function filterShopByCategory(categoryName, pillElement) {
   const resetBtn = document.getElementById('filterResetBtn');
   if (resetBtn) resetBtn.style.display = 'inline-flex';
   
-  // ✅ FILTRO IMMEDIATO USANDO DATA ATTRIBUTE (no chiamate async)
+  // ✅ FILTRO IMMEDIATO USANDO DATA ATTRIBUTE
   const cards = shopGrid.querySelectorAll('.card');
   cards.forEach(card => {
     const cardCategory = card.dataset.shopCategory || '';
@@ -980,8 +987,14 @@ function filterShopByCategory(categoryName, pillElement) {
     }
   });
   
+  // ✅ MOSTRA LA GRIGLIA DOPO AVER FILTRATO
+  shopGrid.style.transition = 'opacity 0.4s ease';
+  shopGrid.style.opacity = '1';
+  
   // Scroll smooth al grid
-  shopGrid.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  setTimeout(() => {
+    shopGrid.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, 100);
 }
 
 /**
@@ -1007,6 +1020,7 @@ function resetCategoryFilter() {
         });
     }
 }
+
 
 
 
