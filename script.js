@@ -726,11 +726,14 @@ if (bookableData.success && bookableData.products) {
         if (retryCount < 2) {
             const delay = 1500 * (retryCount + 1);
             console.log(`Riprovo tra ${delay}ms...`);
-            setTimeout(() => {
-                initDynamicProducts(retryCount + 1);
-            }, delay);
+            return new Promise((resolve) => {
+                setTimeout(() => {
+                    initDynamicProducts(retryCount + 1).then(resolve).catch(resolve);
+                }, delay);
+            });
         } else {
             showErrorInAllGrids();
+            return Promise.reject(error);
         }
     }
 }
@@ -996,6 +999,7 @@ function resetCategoryFilter() {
         });
     }
 }
+
 
 
 
