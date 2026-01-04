@@ -176,124 +176,119 @@ function createProductCard(prod, defaultCta) {
 
     // ✅ AGGIUNGI CATEGORIA COME DATA ATTRIBUTE PER FILTRO IMMEDIATO
     if (prod.shopCategory) {
-        card.dataset.shopCategory = prod.shopCategory;
-        console.log(`🏷️ Card creata: ${prod.title} → Categoria: ${prod.shopCategory}`);
-    }
-
-    // attach sku as data attribute if present (utile per filters)
-    if (prod.sku) {
-        card.dataset.sku = prod.sku;
-    }
+  card.dataset.shopCategory = prod.shopCategory;
+  console.log(`🏷️ Card creata: ${prod.title} → Categoria: ${prod.shopCategory}`);
+}
 
     // title
     const title = el('h3', { class: 'card-title' }, [document.createTextNode(prod.title || 'Untitled')]);
     card.appendChild(title);
 
     // desc: usa briefDesc per card index
-    const descText = prod.briefDesc || prod.desc || '';
-    const desc = el('p', { class: 'card-desc' }, [document.createTextNode(descText)]);
-    card.appendChild(desc);
+const descText = prod.briefDesc || prod.desc || '';
+const desc = el('p', { class: 'card-desc' }, [document.createTextNode(descText)]);
+card.appendChild(desc);
 
     // GESTIONE PREZZO SPECIALE PER IMMOBILI
     const isProperty = prod.category === 'properties';
     const isSupercarOrExperience = prod.category === 'supercars' || prod.category === 'stays';
 
-    if (isProperty) {
-        // Design premium per IMMOBILI: prezzo su richiesta
+if (isProperty) {
+    // Design premium per IMMOBILI: prezzo su richiesta
+    const priceContainer = el('div', { 
+        class: 'property-price-container',
+        style: `
+            margin: 1.5rem 0;
+            padding: 1.5rem;
+            background: linear-gradient(135deg, rgba(212, 175, 55, 0.08), rgba(255, 215, 0, 0.05));
+            border: 1px solid rgba(212, 175, 55, 0.3);
+            border-radius: 12px;
+            text-align: center;
+        `
+    });
+    
+    const priceSymbol = el('div', { 
+        style: `
+            font-size: 2.5rem;
+            font-weight: 300;
+            background: linear-gradient(135deg, #D4AF37, #FFD700);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            letter-spacing: 2px;
+            margin-bottom: 0.5rem;
+        `
+    }, [document.createTextNode('€ —')]);
+    
+    const priceLabel = el('div', { 
+        style: `
+            font-size: 0.9rem;
+            color: #c9a891;
+            letter-spacing: 2px;
+            text-transform: uppercase;
+            font-weight: 500;
+        `
+    }, [document.createTextNode('Su Richiesta')]);
+    
+    priceContainer.appendChild(priceSymbol);
+    priceContainer.appendChild(priceLabel);
+    card.appendChild(priceContainer);
+    
+    // Badge esclusivo per IMMOBILI
+    card.classList.add('property-premium-card');
+} else {
+    // Logica normale per SUPERCAR/ESPERIENZE/SHOP
+    const hasDiscount = prod.discountPrice && prod.discountPrice < prod.price;
+
+    if (hasDiscount) {
+        // ... codice esistente prezzo scontato ...
         const priceContainer = el('div', { 
-            class: 'property-price-container',
-            style: `
-                margin: 1.5rem 0;
-                padding: 1.5rem;
-                background: linear-gradient(135deg, rgba(212, 175, 55, 0.08), rgba(255, 215, 0, 0.05));
-                border: 1px solid rgba(212, 175, 55, 0.3);
-                border-radius: 12px;
-                text-align: center;
-            `
+            style: 'display: flex; flex-direction: column; gap: 0.5rem; margin-bottom: 1rem;' 
         });
         
-        const priceSymbol = el('div', { 
-            style: `
-                font-size: 2.5rem;
-                font-weight: 300;
-                background: linear-gradient(135deg, #D4AF37, #FFD700);
-                -webkit-background-clip: text;
-                -webkit-text-fill-color: transparent;
-                background-clip: text;
-                letter-spacing: 2px;
-                margin-bottom: 0.5rem;
-            `
-        }, [document.createTextNode('€ —')]);
+        const originalPrice = el('div', { 
+            style: 'font-size: 1rem; color: #71717a; text-decoration: line-through; font-weight: 300;' 
+        }, [document.createTextNode(formatPrice(prod.price, prod.currency || 'EUR'))]);
+        priceContainer.appendChild(originalPrice);
         
-        const priceLabel = el('div', { 
-            style: `
-                font-size: 0.9rem;
-                color: #c9a891;
-                letter-spacing: 2px;
-                text-transform: uppercase;
-                font-weight: 500;
-            `
-        }, [document.createTextNode('Su Richiesta')]);
+        const discountRow = el('div', { 
+            style: 'display: flex; align-items: center; gap: 0.75rem;' 
+        });
         
-        priceContainer.appendChild(priceSymbol);
-        priceContainer.appendChild(priceLabel);
+        const discountedPrice = el('div', { 
+            style: `font-size: 1.75rem; font-weight: 700; letter-spacing: 0.02em; 
+                    background: linear-gradient(135deg, #D4AF37, #FFD700);
+                    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+                    background-clip: text;` 
+        }, [document.createTextNode(formatPrice(prod.discountPrice, prod.currency || 'EUR'))]);
+        discountRow.appendChild(discountedPrice);
+        
+        const discountPercent = Math.round(((prod.price - prod.discountPrice) / prod.price) * 100);
+        const badge = el('span', { 
+            style: `display: inline-block; background: linear-gradient(135deg, #D4AF37, #FFD700);
+                    color: #09090b; padding: 0.375rem 0.875rem; border-radius: 2rem;
+                    font-size: 0.875rem; font-weight: 600; letter-spacing: 0.05em;
+                    box-shadow: 0 4px 12px rgba(212, 175, 55, 0.3);` 
+        }, [document.createTextNode(`-${discountPercent}%`)]);
+        discountRow.appendChild(badge);
+        
+        priceContainer.appendChild(discountRow);
         card.appendChild(priceContainer);
-        
-        // Badge esclusivo per IMMOBILI
-        card.classList.add('property-premium-card');
     } else {
-        // Logica normale per SUPERCAR/ESPERIENZE/SHOP
-        const hasDiscount = prod.discountPrice && prod.discountPrice < prod.price;
-
-        if (hasDiscount) {
-            // ... codice esistente prezzo scontato ...
-            const priceContainer = el('div', { 
-                style: 'display: flex; flex-direction: column; gap: 0.5rem; margin-bottom: 1rem;' 
-            });
-            
-            const originalPrice = el('div', { 
-                style: 'font-size: 1rem; color: #71717a; text-decoration: line-through; font-weight: 300;' 
-            }, [document.createTextNode(formatPrice(prod.price, prod.currency || 'EUR'))]);
-            priceContainer.appendChild(originalPrice);
-            
-            const discountRow = el('div', { 
-                style: 'display: flex; align-items: center; gap: 0.75rem;' 
-            });
-            
-            const discountedPrice = el('div', { 
-                style: `font-size: 1.75rem; font-weight: 700; letter-spacing: 0.02em; 
-                        background: linear-gradient(135deg, #D4AF37, #FFD700);
-                        -webkit-background-clip: text; -webkit-text-fill-color: transparent;
-                        background-clip: text;` 
-            }, [document.createTextNode(formatPrice(prod.discountPrice, prod.currency || 'EUR'))]);
-            discountRow.appendChild(discountedPrice);
-            
-            const discountPercent = Math.round(((prod.price - prod.discountPrice) / prod.price) * 100);
-            const badge = el('span', { 
-                style: `display: inline-block; background: linear-gradient(135deg, #D4AF37, #FFD700);
-                        color: #09090b; padding: 0.375rem 0.875rem; border-radius: 2rem;
-                        font-size: 0.875rem; font-weight: 600; letter-spacing: 0.05em;
-                        box-shadow: 0 4px 12px rgba(212, 175, 55, 0.3);` 
-            }, [document.createTextNode(`-${discountPercent}%`)]);
-            discountRow.appendChild(badge);
-            
-            priceContainer.appendChild(discountRow);
-            card.appendChild(priceContainer);
-        } else {
-            // Prezzo normale con formattazione italiana
-            let priceDisplay;
-            if (prod.price != null && prod.price > 0) {
-                priceDisplay = formatPrice(prod.price, prod.currency || 'EUR');
-            } else {
-                priceDisplay = prod.price_text || 'Contattaci';
-            }
-            
-            const priceText = el('div', { class: 'card-price' }, [
-                document.createTextNode(priceDisplay)
-            ]);
-            card.appendChild(priceText);
-        }
+    // Prezzo normale con formattazione italiana
+    let priceDisplay;
+    if (prod.price != null && prod.price > 0) {
+        priceDisplay = formatPrice(prod.price, prod.currency || 'EUR');
+    } else {
+        priceDisplay = prod.price_text || 'Contattaci';
     }
+    
+    const priceText = el('div', { class: 'card-price' }, [
+        document.createTextNode(priceDisplay)
+    ]);
+    card.appendChild(priceText);
+}
+}
 
     // button area
     const btn = el('button', { class: 'btn', style: 'margin-top: 1.5rem; width: 100%;' }, [document.createTextNode(prod.cta || defaultCta || 'Scopri')]);
@@ -306,30 +301,30 @@ function createProductCard(prod, defaultCta) {
 
     // on click behaviour
     btn.addEventListener('click', (e) => {
-        e.preventDefault();
-        showLoader();
+    e.preventDefault();
+    showLoader();
+    
+    const sku = btn.dataset.sku || '';
+    const skuPrefix = sku.split('-')[0].toUpperCase();
+    
+    // ✅ Prodotti prenotabili → booking.html
+    if (['SC', 'PR', 'EX'].includes(skuPrefix)) {
+        window.location.href = `product-details/booking.html?sku=${encodeURIComponent(sku)}`;
+    } 
+    // ✅ Prodotti shop → pdp-products.html
+    else {
+        try {
+            localStorage.setItem('lh360_last_product', JSON.stringify({ sku: sku, title: btn.dataset.title, ts: Date.now() }));
+            localStorage.setItem('lh360_selected_sku', sku);
+        } catch (e) {}
         
-        const sku = btn.dataset.sku || '';
-        const skuPrefix = sku.split('-')[0].toUpperCase();
-        
-        // ✅ Prodotti prenotabili → booking.html
-        if (['SC', 'PR', 'EX'].includes(skuPrefix)) {
-            window.location.href = `product-details/booking.html?sku=${encodeURIComponent(sku)}`;
-        } 
-        // ✅ Prodotti shop → pdp-products.html
-        else {
-            try {
-                localStorage.setItem('lh360_last_product', JSON.stringify({ sku: sku, title: btn.dataset.title, ts: Date.now() }));
-                localStorage.setItem('lh360_selected_sku', sku);
-            } catch (e) {}
-            
-            setTimeout(() => {
-                const base = 'product-details/pdp-products.html';
-                const section = encodeURIComponent(prod.sectionName || prod.category || 'shop');
-                window.location.href = `${base}?sku=${encodeURIComponent(sku)}&section=${section}`;
-            }, 500);
-        }
-    });
+        setTimeout(() => {
+            const base = 'product-details/pdp-products.html';
+            const section = encodeURIComponent(prod.sectionName || prod.category || 'shop');
+            window.location.href = `${base}?sku=${encodeURIComponent(sku)}&section=${section}`;
+        }, 500);
+    }
+});
 
     card.appendChild(btn);
     return card;
@@ -593,7 +588,7 @@ function restoreBookableFilters() {
                     setTimeout(() => {
                         filterProperties(savedPropertyFilter, targetPill);
                         console.log('✅ Filtro Immobili applicato');
-                    }, 150);
+                    }, 200);
                 } else {
                     console.warn('⚠️ Pill Immobili non trovata');
                 }
@@ -609,7 +604,7 @@ function restoreBookableFilters() {
                     setTimeout(() => {
                         filterSupercars(savedSupercarFilter, targetPill);
                         console.log('✅ Filtro Supercar applicato');
-                    }, 150);
+                    }, 200);
                 } else {
                     console.warn('⚠️ Pill Supercar non trovata');
                 }
@@ -627,129 +622,9 @@ function restoreBookableFilters() {
 }
 
 /**
- * Applica i filtri salvati ad una card prima di appenderla,
- * così eviti il "flash" di tutte le card al ritorno indietro.
- */
-function applySavedFiltersToCard(card, prod) {
-    try {
-        // Shop category filter
-        const savedShopFilter = localStorage.getItem('lh360_active_shop_filter');
-        if (savedShopFilter && prod.sectionName === 'shop') {
-            const cat = card.dataset.shopCategory || prod.shopCategory || '';
-            if (cat !== savedShopFilter) {
-                card.style.display = 'none';
-                return; // già nascosta, non serve controllare altro
-            } else {
-                card.style.display = 'block';
-                return;
-            }
-        }
-
-        // Properties filter
-        const savedPropertyFilter = localStorage.getItem('lh360_active_property_filter');
-        if (savedPropertyFilter && prod.sectionName === 'properties') {
-            const sku = prod.sku || card.dataset.sku || '';
-            const type = extractPropertyTypeFromSKU(sku);
-            if (type !== savedPropertyFilter) {
-                card.style.display = 'none';
-                return;
-            } else {
-                card.style.display = 'block';
-                return;
-            }
-        }
-
-        // Supercars filter
-        const savedSupercarFilter = localStorage.getItem('lh360_active_supercar_filter');
-        if (savedSupercarFilter && prod.sectionName === 'supercars') {
-            const sku = prod.sku || card.dataset.sku || '';
-            const type = getSupercarType(sku);
-            if (type !== savedSupercarFilter) {
-                card.style.display = 'none';
-                return;
-            } else {
-                card.style.display = 'block';
-                return;
-            }
-        }
-
-        // Se non ci sono filtri salvati per questa sezione, mostra la card
-        card.style.display = 'block';
-    } catch (e) {
-        console.warn('Errore applySavedFiltersToCard', e);
-        card.style.display = 'block';
-    }
-}
-
-/**
  * NUOVA FUNZIONE UNIFICATA (Fetch API)
  * Scarica prodotti SHOP + BOOKABLE e li distribuisce nelle sezioni
  */
-let _introProgressInterval = null;
-let _introProgressValue = 0;
-
-/** Imposta la larghezza della progress bar e se è 100% rimuove il loader immediatamente */
-function setIntroProgress(value) {
-    _introProgressValue = Math.min(100, Math.max(0, Math.round(value)));
-    const intro = document.getElementById('intro-loader') || document.getElementById('luxhaven-loader');
-    if (!intro) return;
-    const fill = intro.querySelector('.lh-progress-fill');
-    if (!fill) return;
-    // transizione fluida (CSS dovrebbe avere transition on width)
-    fill.style.width = `${_introProgressValue}%`;
-    // Se raggiunge 100, chiudi il loader subito
-    if (_introProgressValue >= 100) {
-        // micro delay per permettere la transition ma rimuovere subito
-        setTimeout(() => {
-            hideIntroLoaderImmediately();
-        }, 180);
-    }
-}
-
-/** Avvia una simulazione "safeguard" per avanzare la barra fino al 70% finché i fetch non terminano */
-function startIntroProgressSimulation() {
-    clearInterval(_introProgressInterval);
-    _introProgressValue = 0;
-    setIntroProgress(0);
-    _introProgressInterval = setInterval(() => {
-        // incrementa più velocemente all'inizio e più lentamente vicino al 70
-        if (_introProgressValue < 70) {
-            const inc = (_introProgressValue < 50) ? 6 : 2;
-            setIntroProgress(_introProgressValue + inc);
-        } else {
-            // stop increment quando raggiunge 70
-            _introProgressValue = 70;
-            setIntroProgress(_introProgressValue);
-            clearInterval(_introProgressInterval);
-        }
-    }, 180);
-}
-
-/** Ferma la simulazione (se presente) */
-function stopIntroProgressSimulation() {
-    if (_introProgressInterval) {
-        clearInterval(_introProgressInterval);
-        _introProgressInterval = null;
-    }
-}
-
-// Funzione helper per mostrare l'errore grafico
-function showErrorInAllGrids() {
-    SECTIONS.forEach(section => {
-        const gridEl = document.getElementById(section.gridId);
-        if (gridEl) {
-            gridEl.innerHTML = `
-                <div class="error-container" style="grid-column: 1/-1; text-align: center; padding: 3rem 1rem;">
-                    <div style="color: #ff6b6b; font-size: 1.5rem; margin-bottom: 1rem;">⚠️</div>
-                    <div style="color: #fafafa; margin-bottom: 1.5rem;">Impossibile caricare i prodotti.</div>
-                    <button onclick="window.location.reload()" class="btn" style="background: #D4AF37; color: #000; border:none; padding: 0.8rem 1.5rem; cursor: pointer;">
-                        Ricarica Pagina
-                    </button>
-                </div>`;
-        }
-    });
-}
-
 async function initDynamicProducts(retryCount = 0) {
     // 1. Imposta loader su tutte le griglie
     const grids = {};
@@ -762,9 +637,6 @@ async function initDynamicProducts(retryCount = 0) {
             grids[section.id] = gridEl;
         }
     });
-
-    // Avvia simulazione progress bar (JS controlla la width)
-    startIntroProgressSimulation();
 
     try {
         // === 2. CHIAMATE PARALLELE (shop + bookable) ===
@@ -787,10 +659,6 @@ async function initDynamicProducts(retryCount = 0) {
                 if (prod.category === 'shop' && grids.shop) {
                     prod.sectionName = 'shop';
                     const card = createProductCard(prod, 'Acquista');
-
-                    // Applica filtri salvati *prima* di appendere per evitare lampi
-                    applySavedFiltersToCard(card, prod);
-
                     grids.shop.appendChild(card);
                     countBySection.shop = (countBySection.shop || 0) + 1;
                 }
@@ -798,43 +666,40 @@ async function initDynamicProducts(retryCount = 0) {
         }
 
         // === 4b. RENDERING PRODOTTI BOOKABLE (properties, supercars, stays) ===
-        if (bookableData.success && bookableData.products) {
-            const propertyProducts = [];
-            const supercarProducts = [];
+if (bookableData.success && bookableData.products) {
+    const propertyProducts = [];
+    const supercarProducts = [];
+    
+    bookableData.products.forEach(prod => {
+        const targetSection = SECTIONS.find(s => s.id === prod.category);
+        
+        if (targetSection && grids[targetSection.id]) {
+            prod.sectionName = targetSection.id;
+            prod.icon = prod.mainImage || '📦';
             
-            bookableData.products.forEach(prod => {
-                const targetSection = SECTIONS.find(s => s.id === prod.category);
-                
-                if (targetSection && grids[targetSection.id]) {
-                    prod.sectionName = targetSection.id;
-                    prod.icon = prod.mainImage || '📦';
-                    
-                    const card = createProductCard(prod, targetSection.defaultCta);
-                    
-                    // ✅ AGGIUNGI SKU COME DATA ATTRIBUTE
-                    card.dataset.sku = prod.sku || '';
-                    
-                    // Applica filtri salvati PRIMA di appendere
-                    applySavedFiltersToCard(card, prod);
-                    
-                    grids[targetSection.id].appendChild(card);
-                    countBySection[targetSection.id] = (countBySection[targetSection.id] || 0) + 1;
-                    
-                    // ✅ RACCOGLI PRODOTTI PER FILTRI
-                    if (prod.category === 'properties') propertyProducts.push(prod);
-                    if (prod.category === 'supercars') supercarProducts.push(prod);
-                }
-            });
+            const card = createProductCard(prod, targetSection.defaultCta);
             
-            // ✅ INIZIALIZZA FILTRI
-            if (propertyProducts.length > 0) {
-                initPropertyFilters(propertyProducts);
-            }
+            // ✅ AGGIUNGI SKU COME DATA ATTRIBUTE
+            card.dataset.sku = prod.sku;
             
-            if (supercarProducts.length > 0) {
-                initSupercarFilters(supercarProducts);
-            }
+            grids[targetSection.id].appendChild(card);
+            countBySection[targetSection.id] = (countBySection[targetSection.id] || 0) + 1;
+            
+            // ✅ RACCOGLI PRODOTTI PER FILTRI
+            if (prod.category === 'properties') propertyProducts.push(prod);
+            if (prod.category === 'supercars') supercarProducts.push(prod);
         }
+    });
+    
+    // ✅ INIZIALIZZA FILTRI
+    if (propertyProducts.length > 0) {
+        initPropertyFilters(propertyProducts);
+    }
+    
+    if (supercarProducts.length > 0) {
+        initSupercarFilters(supercarProducts);
+    }
+}
 
         // 5. Gestione sezioni vuote
         SECTIONS.forEach(section => {
@@ -842,10 +707,6 @@ async function initDynamicProducts(retryCount = 0) {
                 grids[section.id].innerHTML = `<div class="empty" style="grid-column: 1/-1; text-align: center; padding: 3rem; opacity: 0.5;">Nessun prodotto disponibile al momento.</div>`;
             }
         });
-
-        // Ora che i dati sono renderizzati, porta la progress bar al 100% e rimuovi il loader IMMEDIATAMENTE
-        stopIntroProgressSimulation();
-        setIntroProgress(100);
 
     } catch (error) {
         console.warn(`Tentativo ${retryCount + 1} fallito:`, error);
@@ -859,13 +720,27 @@ async function initDynamicProducts(retryCount = 0) {
             }, delay);
         } else {
             showErrorInAllGrids();
-            stopIntroProgressSimulation();
-            // Assicura che il loader venga chiuso anche in caso di errore
-            setIntroProgress(100);
         }
     }
 }
 
+// Funzione helper per mostrare l'errore grafico
+function showErrorInAllGrids() {
+    SECTIONS.forEach(section => {
+        const gridEl = document.getElementById(section.gridId);
+        if (gridEl) {
+            gridEl.innerHTML = `
+                <div class="error-container" style="grid-column: 1/-1; text-align: center; padding: 3rem 1rem;">
+                    <div style="color: #ff6b6b; font-size: 1.5rem; margin-bottom: 1rem;">⚠️</div>
+                    <div style="color: #fafafa; margin-bottom: 1.5rem;">Impossibile caricare i prodotti.</div>
+                    <button onclick="window.location.reload()" class="btn" style="background: #D4AF37; color: #000; border:none; padding: 0.8rem 1.5rem; cursor: pointer;">
+                        Ricarica Pagina
+                    </button>
+                </div>`;
+        }
+    });
+}
+                                     
 // --- LOADER UTILITIES ---
 
 // Inietta l'HTML del loader se non esiste
@@ -895,31 +770,15 @@ function injectLoader() {
     document.body.insertAdjacentHTML('beforeend', loaderHTML);
 }
 
-// Nasconde immediatamente il loader intro (usato al caricamento della pagina)
-function hideIntroLoaderImmediately() {
-    // Potrebbe esserci l'intro con id 'intro-loader' (index.html) o il loader dinamico 'luxhaven-loader'
-    const intro = document.getElementById('intro-loader') || document.getElementById('luxhaven-loader');
-    if (!intro) return;
-
-    // Se c'è una transizione css, usiamo opacity rapida, poi rimozione dal DOM/display none
-    intro.style.transition = 'opacity 0.12s linear';
-    intro.style.opacity = '0';
-    document.body.style.overflow = ''; // ripristina scroll
-
-    setTimeout(() => {
-        try {
-            // Rimuoviamo fisicamente l'elemento per evitare overlay persistenti
-            if (intro.parentNode) intro.parentNode.removeChild(intro);
-        } catch (e) {
-            intro.style.display = 'none';
-        }
-    }, 160);
-}
-
 // Nuova funzione per nascondere immediatamente il loader (fix per back-forward cache)
-// mantiene compatibilità con il vecchio nome hideLoaderImmediately (se era usato altrove)
 function hideLoaderImmediately() {
-    hideIntroLoaderImmediately();
+    const loader = document.getElementById('luxhaven-loader');
+    if (loader) {
+        loader.style.opacity = '0';
+        setTimeout(() => {
+            loader.style.display = 'none';
+        }, 500); // Tempo per transizione
+    }
 }
 
 // Aggiungi listener per nascondere loader su pageshow (quando si torna indietro) e load
@@ -929,29 +788,32 @@ window.addEventListener('pageshow', (event) => {
         // Nascondi eventuali loader dinamici
         hideLoaderImmediately();
         
-        // Non mostriamo l'intro loader lungo: ricarichiamo i prodotti e assicuriamo i filtri
-        initDynamicProducts().then(() => {
-            // nothing else needed: initDynamicProducts si occupa di chiudere il loader quando ha finito
-        }).catch(() => {});
+        // Mostra il loader intro originale
+        const introLoader = document.getElementById('intro-loader');
+        if (introLoader) {
+            introLoader.style.display = 'flex';
+            introLoader.style.opacity = '1';
+            document.body.style.overflow = 'hidden';
+            
+            // Ricarica i prodotti e poi nascondi il loader
+            initDynamicProducts().then(() => {
+                setTimeout(() => {
+                    introLoader.style.opacity = '0';
+                    document.body.style.overflow = '';
+                    setTimeout(() => {
+                        introLoader.style.display = 'none';
+                    }, 400);
+                }, 800);
+            });
+        }
     } else {
-        // Se non è stato ripristinato da cache, nascondi loader dinamico (se presente)
         hideLoaderImmediately();
     }
 });
 
-window.addEventListener('load', () => {
-    // All'evento load non facciamo fade lento: rimuoviamo subito eventuale loader intro
-    hideLoaderImmediately();
+window.addEventListener('load', hideLoaderImmediately);
 
-    // E avviamo il caricamento dinamico dei prodotti
-    // (Chiamalo qui se non viene chiamato altrove)
-    setTimeout(() => {
-        initDynamicProducts();
-        loadShopCategories && loadShopCategories();
-    }, 60); // piccolo ritardo per permettere paint iniziale
-});
-
-// Mostra il loader (per navigazioni verso dettagli ecc.)
+// Mostra il loader
 function showLoader() {
     injectLoader();
     const loader = document.getElementById('luxhaven-loader');
@@ -973,7 +835,7 @@ function hideLoader() {
         loader.classList.remove('visible');
         // Rimuovi dal DOM dopo la transizione per pulizia (opzionale)
         setTimeout(() => {
-            try { loader.remove(); } catch (e) {}
+            // loader.remove(); // Decommenta se vuoi rimuoverlo completamente
         }, 500);
     }
 }
@@ -1063,35 +925,35 @@ function renderCategoryFilter(categories) {
  * Filtra i prodotti dello shop per categoria
  */
 function filterShopByCategory(categoryName, pillElement) {
-    const shopGrid = document.getElementById('shopGrid');
-    if (!shopGrid) return;
+  const shopGrid = document.getElementById('shopGrid');
+  if (!shopGrid) return;
+  
+  currentShopCategory = categoryName;
+  localStorage.setItem('lh360_active_shop_filter', categoryName);
+  
+  // Aggiorna UI pills
+  document.querySelectorAll('.category-pill').forEach(p => p.classList.remove('active'));
+  if (pillElement) pillElement.classList.add('active');
+  
+  // Mostra pulsante reset
+  const resetBtn = document.getElementById('filterResetBtn');
+  if (resetBtn) resetBtn.style.display = 'inline-flex';
+  
+  // ✅ FILTRO IMMEDIATO USANDO DATA ATTRIBUTE (no chiamate async)
+  const cards = shopGrid.querySelectorAll('.card');
+  cards.forEach(card => {
+    const cardCategory = card.dataset.shopCategory || '';
     
-    currentShopCategory = categoryName;
-    localStorage.setItem('lh360_active_shop_filter', categoryName);
-    
-    // Aggiorna UI pills
-    document.querySelectorAll('.category-pill').forEach(p => p.classList.remove('active'));
-    if (pillElement) pillElement.classList.add('active');
-    
-    // Mostra pulsante reset
-    const resetBtn = document.getElementById('filterResetBtn');
-    if (resetBtn) resetBtn.style.display = 'inline-flex';
-    
-    // ✅ FILTRO IMMEDIATO USANDO DATA ATTRIBUTE (no chiamate async)
-    const cards = shopGrid.querySelectorAll('.card');
-    cards.forEach(card => {
-        const cardCategory = card.dataset.shopCategory || '';
-        
-        if (cardCategory === categoryName) {
-            card.style.display = 'block';
-            card.style.animation = 'fadeIn 0.5s ease';
-        } else {
-            card.style.display = 'none';
-        }
-    });
-    
-    // Scroll smooth al grid
-    shopGrid.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    if (cardCategory === categoryName) {
+      card.style.display = 'block';
+      card.style.animation = 'fadeIn 0.5s ease';
+    } else {
+      card.style.display = 'none';
+    }
+  });
+  
+  // Scroll smooth al grid
+  shopGrid.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
 /**
