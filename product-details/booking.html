@@ -1865,23 +1865,24 @@ if (skuPrefix === 'SC') {
     const kmOptions = distanceConfig.options;
     
    kmOptions.forEach((distance, index) => {
-        if (index < prices.length) {
-            const price = prices[index];
-            
-            const option = document.createElement('div');
-            option.className = 'distance-option';
-            option.dataset.km = distance.value;
-            option.dataset.price = price;
-            
-            option.innerHTML = `
-                <div class="text-2xl font-bold gradient-text mb-2">${distance.value} ${distance.unit}</div>
-                <div class="text-xl font-semibold mb-1">${formatPrice(price)}</div>
-                <div class="text-sm" style="color: #a59173;">${distance.label}</div>
-            `;
-            
-            distanceGrid.appendChild(option);
-        }
-    });
+    if (index < prices.length) {
+        const price = prices[index];
+        
+        const option = document.createElement('div');
+        option.className = 'distance-option';
+        option.dataset.km = distance.value;
+        option.dataset.price = price;
+        option.dataset.unit = distance.unit; // ✅ AGGIUNGI UNITÀ
+        
+        option.innerHTML = `
+            <div class="text-2xl font-bold gradient-text mb-2">${distance.value} ${distance.unit}</div>
+            <div class="text-xl font-semibold mb-1">${formatPrice(price)}</div>
+            <div class="text-sm" style="color: #a59173;">${distance.label}</div>
+        `;
+        
+        distanceGrid.appendChild(option);
+    }
+});
     
     initDistanceSelection(product);
     
@@ -2715,13 +2716,15 @@ function initDistanceSelection(product) {
             document.querySelectorAll('.distance-option').forEach(opt => opt.classList.remove('selected'));
             this.classList.add('selected');
             
-            bookingData.distance = this.dataset.km;
+            // ✅ SALVA ANCHE L'UNITÀ DI MISURA
+            const value = this.dataset.km;
+            const unit = this.dataset.unit || 'km'; // Default: km
             
-            // Per SC ed EX, non sovrascrivere il prezzo base con quello della distanza
-            if (skuPrefix !== 'SC' && skuPrefix !== 'EX') {
-                bookingData.basePrice = parseInt(this.dataset.price);
-            } else {
-                // Per SC, aggiorna il prezzo base con quello selezionato
+            // Formato: "10 km" o "20 min"
+            bookingData.distance = `${value} ${unit}`;
+            
+            // Per SC, aggiorna il prezzo base con quello selezionato
+            if (skuPrefix === 'SC' || skuPrefix === 'EX') {
                 bookingData.basePrice = parseInt(this.dataset.price);
             }
             
@@ -2733,7 +2736,10 @@ function initDistanceSelection(product) {
     const firstOption = document.querySelector('.distance-option');
     if (firstOption) {
         firstOption.classList.add('selected');
-        bookingData.distance = firstOption.dataset.km;
+        
+        const value = firstOption.dataset.km;
+        const unit = firstOption.dataset.unit || 'km';
+        bookingData.distance = `${value} ${unit}`;
         
         if (skuPrefix === 'SC' || skuPrefix === 'EX') {
             bookingData.basePrice = parseInt(firstOption.dataset.price);
