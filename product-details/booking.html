@@ -2276,46 +2276,60 @@ if (skuPrefix === 'EX') {
 
     /**
  * Determina configurazione chilometraggio in base a SKU e Nome Prodotto
- * ✅ PRIORITÀ: Combo dirette usano km standard (tranne quelle in COMBO_PRICING)
+ * ✅ LOGICA CORRETTA:
+ * - Combo specifiche (California/Portofino/488 + Huracán) → km personalizzati (90)
+ * - Altre combo → km default (70)
+ * - Singole auto → configurazione specifica o default
  */
 function getDistanceConfigForProduct(product) {
     const sku = product.sku.toUpperCase();
     const title = product.title.toLowerCase();
     
-    // 🔥 CASO 0: COMBO DIRETTE (SKU con "+") - PRIORITÀ MASSIMA
+    // 🔥 CASO 1: COMBO DIRETTE (SKU con "+") - PRIORITÀ MASSIMA
     const isCombo = sku.includes('+');
     
     if (isCombo) {
         // Normalizza SKU per check (rimuovi spazi)
         const normalizedSku = sku.replace(/\s+/g, '');
         
-        // Verifica se ha prezzi custom in COMBO_PRICING
+        // ✅ Verifica se è una delle 3 combo specifiche in COMBO_PRICING
         const hasCustomPricing = Object.keys(COMBO_PRICING).some(key => {
             const normalizedKey = key.replace(/\s+/g, '');
             return normalizedKey === normalizedSku;
         });
         
         if (hasCustomPricing) {
-            console.log(`🎯 Combo con prezzi custom: ${sku}, uso configurazione da COMBO_PRICING`);
-            // COMBO_PRICING gestisce già i km, ritorna config standard
+            // 🎯 COMBO SPECIALI (California/Portofino/488 + Huracán) → km personalizzati
+            console.log(`🎯 Combo speciale rilevata: ${sku}, uso km personalizzati (90)`);
+            return {
+                options: [
+                    { value: 10, unit: 'km', label: 'Esperienza rapida' },
+                    { value: 20, unit: 'km', label: 'Più popolare' },
+                    { value: 30, unit: 'km', label: 'Esperienza completa' },
+                    { value: 60, unit: 'km', label: 'Tour esteso' },
+                    { value: 90, unit: 'km', label: 'Avventura lunga' },
+                    { value: 120, unit: 'km', label: 'Esperienza definitiva' }
+                ]
+            };
+        } else {
+            // 🔗 ALTRE COMBO → km default
+            console.log(`🔗 Combo standard rilevata: ${sku}, uso km default (70)`);
+            return {
+                options: [
+                    { value: 10, unit: 'km', label: 'Esperienza rapida' },
+                    { value: 20, unit: 'km', label: 'Più popolare' },
+                    { value: 30, unit: 'km', label: 'Esperienza completa' },
+                    { value: 60, unit: 'km', label: 'Tour esteso' },
+                    { value: 70, unit: 'km', label: 'Avventura lunga' },
+                    { value: 120, unit: 'km', label: 'Esperienza definitiva' }
+                ]
+            };
         }
-        
-        // ✅ TUTTE LE COMBO (custom o meno) usano km standard
-        console.log(`🔗 Combo rilevata: ${sku}, uso km standard`);
-        return {
-            options: [
-                { value: 10, unit: 'km', label: 'Esperienza rapida' },
-                { value: 20, unit: 'km', label: 'Più popolare' },
-                { value: 30, unit: 'km', label: 'Esperienza completa' },
-                { value: 60, unit: 'km', label: 'Tour esteso' },
-                { value: 90, unit: 'km', label: 'Avventura lunga' },
-                { value: 120, unit: 'km', label: 'Esperienza definitiva' }
-            ]
-        };
     }
     
-    // Caso 1: Ferrari 458 Spider (SOLO SE NON È COMBO)
+    // 🚗 CASO 2: Ferrari 458 Spider (SOLO SE NON È COMBO)
     if (title.includes('ferrari 458 spider')) {
+        console.log('🏎️ Ferrari 458 Spider, uso km custom');
         return {
             options: [
                 { value: 9, unit: 'km', label: 'Esperienza rapida' },
@@ -2328,8 +2342,9 @@ function getDistanceConfigForProduct(product) {
         };
     }
     
-    // Caso 2: McLaren 720s Performance (SOLO SE NON È COMBO)
+    // 🚗 CASO 3: McLaren 720s Performance (SOLO SE NON È COMBO)
     if (title.includes('mclaren 720s')) {
+        console.log('🏎️ McLaren 720s, uso minuti');
         return {
             options: [
                 { value: 10, unit: 'min', label: 'Esperienza rapida' },
@@ -2342,7 +2357,8 @@ function getDistanceConfigForProduct(product) {
         };
     }
     
-    // Default: km standard
+    // 🔹 CASO 4: Default (km standard con 70)
+    console.log('📍 Configurazione default, uso km standard (70)');
     return {
         options: [
             { value: 10, unit: 'km', label: 'Esperienza rapida' },
