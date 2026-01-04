@@ -577,22 +577,67 @@ function resetSupercarFilter() {
         }
     });
     
-    // 2. Mostra loader solo al primo tentativo
-    if (retryCount === 0) {
-        Object.values(grids).forEach(g => {
-            g.innerHTML = '<div class="loading"><div class="lh-ring"></div><br>Caricamento prodotti...</div>';
-        });
-    }
+   // 2. Mostra loader solo al primo tentativo
+if (retryCount === 0) {
+    Object.values(grids).forEach(g => {
+        g.innerHTML = '<div class="loading"><div class="lh-ring"></div><br>Caricamento prodotti...</div>';
+    });
+}
+
+// ✅ DEBUG: Verifica URL API
+console.log('🔗 URL API:', WEB_APP_URL);
+console.log('📡 Tentativo caricamento #' + (retryCount + 1));
 
     try {
-        // === 3. CHIAMATE PARALLELE (shop + bookable) ===
-        const shopPromise = fetch(`${WEB_APP_URL}?action=get_products&category=shop&t=${Date.now()}&r=${retryCount}`)
-            .then(res => res.json());
-        
-        const bookablePromise = fetch(`${WEB_APP_URL}?action=get_bookable_products&category=all&t=${Date.now()}&r=${retryCount}`)
-            .then(res => res.json());
+    // ✅ TIMEOUT DI SICUREZZA: Rimuovi loader dopo 15 secondi se bloccato
+    const safetyTimeout = setTimeout(() => {
+        console.error('⚠️ TIMEOUT: Loader rimosso forzatamente dopo 15 secondi');
+        Object.values(grids).forEach(g => {
+            if (g.innerHTML.includes('Caricamento prodotti')) {
+                g.innerHTML = `
+                    <div class="error-container" style="grid-column: 1/-1; text-align: center; padding: 3rem 1rem;">
+                        <div style="color: #ff6b6b; font-size: 1.5rem; margin-bottom: 1rem;">⏱️</div>
+                        <div style="color: #fafafa; margin-bottom: 1rem;">Caricamento troppo lento</div>
+                        <div style="color: #a1a1aa; font-size: 0.9rem; margin-bottom: 1.5rem;">
+                            Controlla la connessione e riprova
+                        </div>
+                        <button onclick="window.location.reload()" class="btn" style="background: #D4AF37; color: #000; border:none; padding: 0.8rem 1.5rem; cursor: pointer;">
+                            Ricarica Pagina
+                        </button>
+                    </div>`;
+            }
+        });
+    }, 15000); // 15 secondi
 
-        const [shopData, bookableData] = await Promise.all([shopPromise, bookablePromise]);
+    // === 3. CHIAMATE PARALLELE (shop + bookable) ===
+    console.log('📥 Inizio fetch API...');
+    
+    const shopPromise = fetch(`${WEB_APP_URL}?action=get_products&category=shop&t=${Date.now()}&r=${retryCount}`)
+        .then(res => {
+            console.log('✅ Shop API risposta:', res.status);
+            return res.json();
+        })
+        .catch(err => {
+            console.error('❌ Shop API errore:', err);
+            throw err;
+        });
+    
+    const bookablePromise = fetch(`${WEB_APP_URL}?action=get_bookable_products&category=all&t=${Date.now()}&r=${retryCount}`)
+        .then(res => {
+            console.log('✅ Bookable API risposta:', res.status);
+            return res.json();
+        })
+        .catch(err => {
+            console.error('❌ Bookable API errore:', err);
+            throw err;
+        });
+
+    const [shopData, bookableData] = await Promise.all([shopPromise, bookablePromise]);
+    
+    // ✅ DISATTIVA IL TIMEOUT DI SICUREZZA (dati ricevuti)
+    clearTimeout(safetyTimeout);
+    
+    console.log('📦 Dati ricevuti - Shop:', shopData.products?.length || 0, 'Bookable:', bookableData.products?.length || 0);
 
         const countBySection = {};
         
@@ -721,21 +766,23 @@ if (bookableData.success && bookableData.products) {
         });
 
     } catch (error) {
-        console.warn(`Tentativo ${retryCount + 1} fallito:`, error);
+    console.error('❌ ERRORE CRITICO in initDynamicProducts:', error);
+    console.error('Stack trace:', error.stack);
 
-        if (retryCount < 2) {
-            const delay = 1500 * (retryCount + 1);
-            console.log(`Riprovo tra ${delay}ms...`);
-            return new Promise((resolve) => {
-                setTimeout(() => {
-                    initDynamicProducts(retryCount + 1).then(resolve).catch(resolve);
-                }, delay);
-            });
-        } else {
-            showErrorInAllGrids();
-            return Promise.reject(error);
-        }
+    if (retryCount < 2) {
+        const delay = 1500 * (retryCount + 1);
+        console.log(`🔄 Riprovo tra ${delay}ms... (tentativo ${retryCount + 2}/3)`);
+        return new Promise((resolve) => {
+            setTimeout(() => {
+                initDynamicProducts(retryCount + 1).then(resolve).catch(resolve);
+            }, delay);
+        });
+    } else {
+        console.error('💥 TUTTI I TENTATIVI FALLITI - Mostro errore');
+        showErrorInAllGrids();
+        return Promise.reject(error);
     }
+}
 }
 
 // Funzione helper per mostrare l'errore grafico
@@ -1004,6 +1051,7 @@ function resetCategoryFilter() {
         });
     }
 }
+
 
 
 
