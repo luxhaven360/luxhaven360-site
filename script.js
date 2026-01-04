@@ -40,6 +40,14 @@ function showSection(sectionId) {
                 filterContainer.style.display = 'block';
             }
         }
+        
+        // ✅ RIPRISTINA FILTRI IMMOBILI/SUPERCAR AL CAMBIO SEZIONE
+        if (sectionId === 'properties' || sectionId === 'supercars') {
+            console.log(`🔄 Cambio sezione: ${sectionId}, ripristino filtri`);
+            setTimeout(() => {
+                restoreBookableFilters();
+            }, 300);
+        }
     }
     
     // ✅ CHIUDI MENU MOBILE
@@ -394,9 +402,6 @@ function initPropertyFilters(products) {
  * Filtra immobili per tipo
  */
 function filterProperties(type, pillElement) {
-    const grid = document.getElementById('propertiesGrid');
-    if (grid) grid.style.opacity = '0';
-    
     activePropertyFilter = type;
     localStorage.setItem('lh360_active_property_filter', type);
     
@@ -408,6 +413,8 @@ function filterProperties(type, pillElement) {
     const resetBtn = document.getElementById('propertyResetBtn');
     if (resetBtn) resetBtn.style.display = 'inline-flex';
     
+    // Filtra cards
+    const grid = document.getElementById('propertiesGrid');
     if (!grid) return;
     
     const cards = grid.querySelectorAll('.card');
@@ -427,14 +434,7 @@ function filterProperties(type, pillElement) {
     });
     
     console.log(`🏰 Filtro Immobili: ${type} → ${visibleCount} risultati`);
-
-    // ✅ MOSTRA GRID DOPO FILTRO
-    grid.style.transition = 'opacity 0.4s ease';
-    grid.style.opacity = '1';
-
-    setTimeout(() => {
-        grid.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    }, 100);
+    grid.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
 /**
@@ -496,9 +496,6 @@ function initSupercarFilters(products) {
  * Filtra supercar per tipo
  */
 function filterSupercars(type, pillElement) {
-    const grid = document.getElementById('supercarsGrid');
-    if (grid) grid.style.opacity = '0';
-    
     activeSupercarFilter = type;
     localStorage.setItem('lh360_active_supercar_filter', type);
     
@@ -510,6 +507,8 @@ function filterSupercars(type, pillElement) {
     const resetBtn = document.getElementById('supercarResetBtn');
     if (resetBtn) resetBtn.style.display = 'inline-flex';
     
+    // Filtra cards
+    const grid = document.getElementById('supercarsGrid');
     if (!grid) return;
     
     const cards = grid.querySelectorAll('.card');
@@ -529,14 +528,7 @@ function filterSupercars(type, pillElement) {
     });
     
     console.log(`🏎️ Filtro Supercar: ${type} → ${visibleCount} risultati`);
-
-    // ✅ MOSTRA GRID DOPO FILTRO
-    grid.style.transition = 'opacity 0.4s ease';
-    grid.style.opacity = '1';
-
-    setTimeout(() => {
-        grid.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    }, 100);
+    grid.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
 /**
@@ -561,120 +553,119 @@ function resetSupercarFilter() {
 }
 
 /**
+ * Ripristina filtri salvati con retry intelligente
+ */
+function restoreBookableFilters() {
+    console.log('🔄 restoreBookableFilters chiamata');
+    
+    let attempts = 0;
+    const maxAttempts = 20; // Max 3 secondi (20 × 150ms)
+    
+    const checkInterval = setInterval(() => {
+        attempts++;
+        
+        const propertyCards = document.querySelectorAll('#propertiesGrid .card[data-sku]');
+        const supercarCards = document.querySelectorAll('#supercarsGrid .card[data-sku]');
+        
+        const hasPropertyCards = propertyCards.length > 0;
+        const hasSupercarCards = supercarCards.length > 0;
+        
+        console.log(`🔍 Tentativo ${attempts}/${maxAttempts}: Properties=${propertyCards.length}, Supercars=${supercarCards.length}`);
+        
+        // ✅ CONDIZIONE DI SUCCESSO: Almeno una griglia popolata
+        if (hasPropertyCards || hasSupercarCards) {
+            clearInterval(checkInterval);
+            console.log('✅ Card trovate, applico filtri');
+            
+            // ✅ RIPRISTINA FILTRO IMMOBILI
+            const savedPropertyFilter = localStorage.getItem('lh360_active_property_filter');
+            if (savedPropertyFilter && hasPropertyCards) {
+                console.log(`✅ Ripristino filtro Immobili: ${savedPropertyFilter}`);
+                
+                const targetPill = document.querySelector(`.filter-pill[data-property-type="${savedPropertyFilter}"]`);
+                if (targetPill) {
+                    // ✅ APPLICA IL FILTRO DIRETTAMENTE (no click simulation)
+                    setTimeout(() => {
+                        filterProperties(savedPropertyFilter, targetPill);
+                        console.log('✅ Filtro Immobili applicato');
+                    }, 200);
+                } else {
+                    console.warn('⚠️ Pill Immobili non trovata');
+                }
+            }
+            
+            // ✅ RIPRISTINA FILTRO SUPERCAR
+            const savedSupercarFilter = localStorage.getItem('lh360_active_supercar_filter');
+            if (savedSupercarFilter && hasSupercarCards) {
+                console.log(`✅ Ripristino filtro Supercar: ${savedSupercarFilter}`);
+                
+                const targetPill = document.querySelector(`.filter-pill[data-supercar-type="${savedSupercarFilter}"]`);
+                if (targetPill) {
+                    setTimeout(() => {
+                        filterSupercars(savedSupercarFilter, targetPill);
+                        console.log('✅ Filtro Supercar applicato');
+                    }, 200);
+                } else {
+                    console.warn('⚠️ Pill Supercar non trovata');
+                }
+            }
+            
+            return; // Esci con successo
+        }
+        
+        // ✅ TIMEOUT: Se supera i tentativi, fermati
+        if (attempts >= maxAttempts) {
+            clearInterval(checkInterval);
+            console.warn('⏱️ Timeout ripristino filtri (card non trovate)');
+        }
+    }, 150); // Check ogni 150ms
+}
+
+/**
  * NUOVA FUNZIONE UNIFICATA (Fetch API)
  * Scarica prodotti SHOP + BOOKABLE e li distribuisce nelle sezioni
  */
- async function initDynamicProducts(retryCount = 0) {
-    // ✅ 1. PULIZIA FORZATA DI TUTTE LE GRIGLIE (SEMPRE, anche su retry)
+async function initDynamicProducts(retryCount = 0) {
+    // 1. Imposta loader su tutte le griglie
     const grids = {};
     SECTIONS.forEach(section => {
         const gridEl = document.getElementById(section.gridId);
         if (gridEl) {
-            // ✅ Pulisci SEMPRE per evitare duplicazioni (anche su bfcache restore)
-            gridEl.innerHTML = '';
-            gridEl.style.opacity = '0';
+            if (retryCount === 0) {
+                gridEl.innerHTML = '<div class="loading"><div class="lh-ring"></div><br>Caricamento prodotti...</div>';
+            }
             grids[section.id] = gridEl;
         }
     });
-    
-   // 2. Mostra loader solo al primo tentativo
-if (retryCount === 0) {
-    Object.values(grids).forEach(g => {
-        g.innerHTML = '<div class="loading"><div class="lh-ring"></div><br>Caricamento prodotti...</div>';
-    });
-}
-
-// ✅ DEBUG: Verifica URL API
-console.log('🔗 URL API:', WEB_APP_URL);
-console.log('📡 Tentativo caricamento #' + (retryCount + 1));
 
     try {
-    // ✅ TIMEOUT DI SICUREZZA: Rimuovi loader dopo 15 secondi se bloccato
-    const safetyTimeout = setTimeout(() => {
-        console.error('⚠️ TIMEOUT: Loader rimosso forzatamente dopo 15 secondi');
-        Object.values(grids).forEach(g => {
-            if (g.innerHTML.includes('Caricamento prodotti')) {
-                g.innerHTML = `
-                    <div class="error-container" style="grid-column: 1/-1; text-align: center; padding: 3rem 1rem;">
-                        <div style="color: #ff6b6b; font-size: 1.5rem; margin-bottom: 1rem;">⏱️</div>
-                        <div style="color: #fafafa; margin-bottom: 1rem;">Caricamento troppo lento</div>
-                        <div style="color: #a1a1aa; font-size: 0.9rem; margin-bottom: 1.5rem;">
-                            Controlla la connessione e riprova
-                        </div>
-                        <button onclick="window.location.reload()" class="btn" style="background: #D4AF37; color: #000; border:none; padding: 0.8rem 1.5rem; cursor: pointer;">
-                            Ricarica Pagina
-                        </button>
-                    </div>`;
-            }
-        });
-    }, 15000); // 15 secondi
+        // === 2. CHIAMATE PARALLELE (shop + bookable) ===
+        const shopPromise = fetch(`${WEB_APP_URL}?action=get_products&category=shop&t=${Date.now()}&r=${retryCount}`)
+            .then(res => res.json());
+        
+        const bookablePromise = fetch(`${WEB_APP_URL}?action=get_bookable_products&category=all&t=${Date.now()}&r=${retryCount}`)
+            .then(res => res.json());
 
-    // === 3. CHIAMATE PARALLELE (shop + bookable) ===
-    console.log('📥 Inizio fetch API...');
-    
-    const shopPromise = fetch(`${WEB_APP_URL}?action=get_products&category=shop&t=${Date.now()}&r=${retryCount}`)
-        .then(res => {
-            console.log('✅ Shop API risposta:', res.status);
-            return res.json();
-        })
-        .catch(err => {
-            console.error('❌ Shop API errore:', err);
-            throw err;
-        });
-    
-    const bookablePromise = fetch(`${WEB_APP_URL}?action=get_bookable_products&category=all&t=${Date.now()}&r=${retryCount}`)
-        .then(res => {
-            console.log('✅ Bookable API risposta:', res.status);
-            return res.json();
-        })
-        .catch(err => {
-            console.error('❌ Bookable API errore:', err);
-            throw err;
-        });
+        const [shopData, bookableData] = await Promise.all([shopPromise, bookablePromise]);
 
-    const [shopData, bookableData] = await Promise.all([shopPromise, bookablePromise]);
-    
-    // ✅ DISATTIVA IL TIMEOUT DI SICUREZZA (dati ricevuti)
-    clearTimeout(safetyTimeout);
-    
-    console.log('📦 Dati ricevuti - Shop:', shopData.products?.length || 0, 'Bookable:', bookableData.products?.length || 0);
+        // 3. Pulizia griglie
+        Object.values(grids).forEach(g => g.innerHTML = '');
 
         const countBySection = {};
-        
-        // ✅ LEGGI FILTRI ATTIVI PRIMA DI RENDERIZZARE
-        const activeShopFilter = localStorage.getItem('lh360_active_shop_filter');
-        const activePropertyFilter = localStorage.getItem('lh360_active_property_filter');
-        const activeSupercarFilter = localStorage.getItem('lh360_active_supercar_filter');
 
-        // === 4a. RENDERING PRODOTTI SHOP CON FILTRO PRE-APPLICATO ===
+        // === 4a. RENDERING PRODOTTI SHOP ===
         if (shopData.success && shopData.products) {
             shopData.products.forEach(prod => {
                 if (prod.category === 'shop' && grids.shop) {
                     prod.sectionName = 'shop';
                     const card = createProductCard(prod, 'Acquista');
-                    
-                    // ✅ APPLICA FILTRO IMMEDIATAMENTE
-                    if (activeShopFilter && prod.shopCategory !== activeShopFilter) {
-                        card.style.display = 'none';
-                    }
-                    
                     grids.shop.appendChild(card);
                     countBySection.shop = (countBySection.shop || 0) + 1;
                 }
             });
-            
-            // ✅ RIPRISTINA UI DEL FILTRO SE ATTIVO
-            if (activeShopFilter) {
-                const targetPill = document.querySelector(`.category-pill[data-category="${activeShopFilter}"]`);
-                if (targetPill) {
-                    targetPill.classList.add('active');
-                    const resetBtn = document.getElementById('filterResetBtn');
-                    if (resetBtn) resetBtn.style.display = 'inline-flex';
-                }
-            }
         }
 
-        // === 4b. RENDERING PRODOTTI BOOKABLE CON FILTRI PRE-APPLICATI ===
+        // === 4b. RENDERING PRODOTTI BOOKABLE (properties, supercars, stays) ===
 if (bookableData.success && bookableData.products) {
     const propertyProducts = [];
     const supercarProducts = [];
@@ -687,68 +678,26 @@ if (bookableData.success && bookableData.products) {
             prod.icon = prod.mainImage || '📦';
             
             const card = createProductCard(prod, targetSection.defaultCta);
+            
+            // ✅ AGGIUNGI SKU COME DATA ATTRIBUTE
             card.dataset.sku = prod.sku;
-            
-            // ✅ RACCOGLI PRODOTTI PER CONTEGGIO FILTRI (UNA SOLA VOLTA!)
-            if (prod.category === 'properties') {
-                propertyProducts.push(prod);
-                
-                // Applica filtro se attivo
-                if (activePropertyFilter) {
-                    const cardType = extractPropertyTypeFromSKU(prod.sku);
-                    if (cardType !== activePropertyFilter) {
-                        card.style.display = 'none';
-                    }
-                }
-            }
-            
-            if (prod.category === 'supercars') {
-                supercarProducts.push(prod);
-                
-                // Applica filtro se attivo
-                if (activeSupercarFilter) {
-                    const cardType = getSupercarType(prod.sku);
-                    if (cardType !== activeSupercarFilter) {
-                        card.style.display = 'none';
-                    }
-                }
-            }
-            
-            // ✅ ESPERIENZE: SEMPRE VISIBILI (nessun filtro)
-            if (prod.category === 'stays') {
-                card.style.display = 'block';
-            }
             
             grids[targetSection.id].appendChild(card);
             countBySection[targetSection.id] = (countBySection[targetSection.id] || 0) + 1;
+            
+            // ✅ RACCOGLI PRODOTTI PER FILTRI
+            if (prod.category === 'properties') propertyProducts.push(prod);
+            if (prod.category === 'supercars') supercarProducts.push(prod);
         }
     });
     
-    // ✅ INIZIALIZZA FILTRI E RIPRISTINA UI
+    // ✅ INIZIALIZZA FILTRI
     if (propertyProducts.length > 0) {
         initPropertyFilters(propertyProducts);
-        
-        if (activePropertyFilter) {
-            const targetPill = document.querySelector(`.filter-pill[data-property-type="${activePropertyFilter}"]`);
-            if (targetPill) {
-                targetPill.classList.add('active');
-                const resetBtn = document.getElementById('propertyResetBtn');
-                if (resetBtn) resetBtn.style.display = 'inline-flex';
-            }
-        }
     }
     
     if (supercarProducts.length > 0) {
         initSupercarFilters(supercarProducts);
-        
-        if (activeSupercarFilter) {
-            const targetPill = document.querySelector(`.filter-pill[data-supercar-type="${activeSupercarFilter}"]`);
-            if (targetPill) {
-                targetPill.classList.add('active');
-                const resetBtn = document.getElementById('supercarResetBtn');
-                if (resetBtn) resetBtn.style.display = 'inline-flex';
-            }
-        }
     }
 }
 
@@ -759,30 +708,20 @@ if (bookableData.success && bookableData.products) {
             }
         });
 
-        // 6. ✅ MOSTRA TUTTE LE GRIGLIE IMMEDIATAMENTE
-        Object.values(grids).forEach(g => {
-            g.style.transition = 'opacity 0.3s ease';
-            g.style.opacity = '1';
-        });
-
     } catch (error) {
-    console.error('❌ ERRORE CRITICO in initDynamicProducts:', error);
-    console.error('Stack trace:', error.stack);
+        console.warn(`Tentativo ${retryCount + 1} fallito:`, error);
 
-    if (retryCount < 2) {
-        const delay = 1500 * (retryCount + 1);
-        console.log(`🔄 Riprovo tra ${delay}ms... (tentativo ${retryCount + 2}/3)`);
-        return new Promise((resolve) => {
+        // Logica di retry
+        if (retryCount < 2) {
+            const delay = 1500 * (retryCount + 1);
+            console.log(`Riprovo tra ${delay}ms...`);
             setTimeout(() => {
-                initDynamicProducts(retryCount + 1).then(resolve).catch(resolve);
+                initDynamicProducts(retryCount + 1);
             }, delay);
-        });
-    } else {
-        console.error('💥 TUTTI I TENTATIVI FALLITI - Mostro errore');
-        showErrorInAllGrids();
-        return Promise.reject(error);
+        } else {
+            showErrorInAllGrids();
+        }
     }
-}
 }
 
 // Funzione helper per mostrare l'errore grafico
@@ -1000,32 +939,21 @@ function filterShopByCategory(categoryName, pillElement) {
   const resetBtn = document.getElementById('filterResetBtn');
   if (resetBtn) resetBtn.style.display = 'inline-flex';
   
-  // ✅ FILTRO IMMEDIATO USANDO DATA ATTRIBUTE
-const cards = shopGrid.querySelectorAll('.card');
-let visibleCount = 0;
-
-cards.forEach(card => {
-  const cardCategory = card.dataset.shopCategory || '';
-  
-  if (cardCategory === categoryName) {
-    card.style.display = 'block';
-    card.style.animation = 'fadeIn 0.5s ease';
-    visibleCount++;
-  } else {
-    card.style.display = 'none';
-  }
-});
-
-console.log(`🏷️ Filtro SHOP: ${categoryName} → ${visibleCount} prodotti visibili`);
-  
-  // ✅ MOSTRA LA GRIGLIA DOPO AVER FILTRATO
-  shopGrid.style.transition = 'opacity 0.4s ease';
-  shopGrid.style.opacity = '1';
+  // ✅ FILTRO IMMEDIATO USANDO DATA ATTRIBUTE (no chiamate async)
+  const cards = shopGrid.querySelectorAll('.card');
+  cards.forEach(card => {
+    const cardCategory = card.dataset.shopCategory || '';
+    
+    if (cardCategory === categoryName) {
+      card.style.display = 'block';
+      card.style.animation = 'fadeIn 0.5s ease';
+    } else {
+      card.style.display = 'none';
+    }
+  });
   
   // Scroll smooth al grid
-  setTimeout(() => {
-    shopGrid.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  }, 100);
+  shopGrid.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
 /**
@@ -1051,25 +979,3 @@ function resetCategoryFilter() {
         });
     }
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
