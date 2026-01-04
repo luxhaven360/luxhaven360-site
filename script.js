@@ -402,6 +402,9 @@ function initPropertyFilters(products) {
  * Filtra immobili per tipo
  */
 function filterProperties(type, pillElement) {
+    const grid = document.getElementById('propertiesGrid');
+    if (grid) grid.style.opacity = '0';
+    
     activePropertyFilter = type;
     localStorage.setItem('lh360_active_property_filter', type);
     
@@ -434,7 +437,14 @@ function filterProperties(type, pillElement) {
     });
     
     console.log(`🏰 Filtro Immobili: ${type} → ${visibleCount} risultati`);
+
+// ⬇️ MOSTRA GRID CON ANIMAZIONE
+grid.style.transition = 'opacity 0.4s ease';
+grid.style.opacity = '1';
+
+setTimeout(() => {
     grid.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}, 200);
 }
 
 /**
@@ -496,6 +506,9 @@ function initSupercarFilters(products) {
  * Filtra supercar per tipo
  */
 function filterSupercars(type, pillElement) {
+    const grid = document.getElementById('supercarsGrid');
+    if (grid) grid.style.opacity = '0';
+    
     activeSupercarFilter = type;
     localStorage.setItem('lh360_active_supercar_filter', type);
     
@@ -528,7 +541,14 @@ function filterSupercars(type, pillElement) {
     });
     
     console.log(`🏎️ Filtro Supercar: ${type} → ${visibleCount} risultati`);
+
+// ⬇️ MOSTRA GRID CON ANIMAZIONE
+grid.style.transition = 'opacity 0.4s ease';
+grid.style.opacity = '1';
+
+setTimeout(() => {
     grid.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}, 200);
 }
 
 /**
@@ -990,6 +1010,7 @@ function resetCategoryFilter() {
         });
     }
 }
+
 
 
 
