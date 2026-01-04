@@ -629,79 +629,82 @@ function resetSupercarFilter() {
         }
 
         // === 4b. RENDERING PRODOTTI BOOKABLE CON FILTRI PRE-APPLICATI ===
-        if (bookableData.success && bookableData.products) {
-            const propertyProducts = [];
-            const supercarProducts = [];
+if (bookableData.success && bookableData.products) {
+    const propertyProducts = [];
+    const supercarProducts = [];
+    
+    bookableData.products.forEach(prod => {
+        const targetSection = SECTIONS.find(s => s.id === prod.category);
+        
+        if (targetSection && grids[targetSection.id]) {
+            prod.sectionName = targetSection.id;
+            prod.icon = prod.mainImage || '📦';
             
-            bookableData.products.forEach(prod => {
-                const targetSection = SECTIONS.find(s => s.id === prod.category);
-                
-                if (targetSection && grids[targetSection.id]) {
-                    prod.sectionName = targetSection.id;
-                    prod.icon = prod.mainImage || '📦';
-                    
-                    const card = createProductCard(prod, targetSection.defaultCta);
-                    card.dataset.sku = prod.sku;
-                    
-                    // ✅ APPLICA FILTRO IMMOBILI IMMEDIATAMENTE
-                    if (prod.category === 'properties' && activePropertyFilter) {
-                        const cardType = extractPropertyTypeFromSKU(prod.sku);
-                        if (cardType !== activePropertyFilter) {
-                            card.style.display = 'none';
-                        }
-                        propertyProducts.push(prod);
-                    }
-                    
-                    // ✅ APPLICA FILTRO SUPERCAR IMMEDIATAMENTE
-                    if (prod.category === 'supercars' && activeSupercarFilter) {
-                        const cardType = getSupercarType(prod.sku);
-                        if (cardType !== activeSupercarFilter) {
-                            card.style.display = 'none';
-                        }
-                        supercarProducts.push(prod);
-                    }
-                    
-                    // ✅ ESPERIENZE: SEMPRE VISIBILI (nessun filtro)
-                    if (prod.category === 'stays') {
-                        card.style.display = 'block';
-                    }
-                    
-                    // Aggiungi prodotti per conteggio filtri
-                    if (prod.category === 'properties') propertyProducts.push(prod);
-                    if (prod.category === 'supercars') supercarProducts.push(prod);
-                    
-                    grids[targetSection.id].appendChild(card);
-                    countBySection[targetSection.id] = (countBySection[targetSection.id] || 0) + 1;
-                }
-            });
+            const card = createProductCard(prod, targetSection.defaultCta);
+            card.dataset.sku = prod.sku;
             
-            // ✅ INIZIALIZZA FILTRI E RIPRISTINA UI
-            if (propertyProducts.length > 0) {
-                initPropertyFilters(propertyProducts);
+            // ✅ RACCOGLI PRODOTTI PER CONTEGGIO FILTRI (UNA SOLA VOLTA!)
+            if (prod.category === 'properties') {
+                propertyProducts.push(prod);
                 
+                // Applica filtro se attivo
                 if (activePropertyFilter) {
-                    const targetPill = document.querySelector(`.filter-pill[data-property-type="${activePropertyFilter}"]`);
-                    if (targetPill) {
-                        targetPill.classList.add('active');
-                        const resetBtn = document.getElementById('propertyResetBtn');
-                        if (resetBtn) resetBtn.style.display = 'inline-flex';
+                    const cardType = extractPropertyTypeFromSKU(prod.sku);
+                    if (cardType !== activePropertyFilter) {
+                        card.style.display = 'none';
                     }
                 }
             }
             
-            if (supercarProducts.length > 0) {
-                initSupercarFilters(supercarProducts);
+            if (prod.category === 'supercars') {
+                supercarProducts.push(prod);
                 
+                // Applica filtro se attivo
                 if (activeSupercarFilter) {
-                    const targetPill = document.querySelector(`.filter-pill[data-supercar-type="${activeSupercarFilter}"]`);
-                    if (targetPill) {
-                        targetPill.classList.add('active');
-                        const resetBtn = document.getElementById('supercarResetBtn');
-                        if (resetBtn) resetBtn.style.display = 'inline-flex';
+                    const cardType = getSupercarType(prod.sku);
+                    if (cardType !== activeSupercarFilter) {
+                        card.style.display = 'none';
                     }
                 }
+            }
+            
+            // ✅ ESPERIENZE: SEMPRE VISIBILI (nessun filtro)
+            if (prod.category === 'stays') {
+                card.style.display = 'block';
+            }
+            
+            grids[targetSection.id].appendChild(card);
+            countBySection[targetSection.id] = (countBySection[targetSection.id] || 0) + 1;
+        }
+    });
+    
+    // ✅ INIZIALIZZA FILTRI E RIPRISTINA UI
+    if (propertyProducts.length > 0) {
+        initPropertyFilters(propertyProducts);
+        
+        if (activePropertyFilter) {
+            const targetPill = document.querySelector(`.filter-pill[data-property-type="${activePropertyFilter}"]`);
+            if (targetPill) {
+                targetPill.classList.add('active');
+                const resetBtn = document.getElementById('propertyResetBtn');
+                if (resetBtn) resetBtn.style.display = 'inline-flex';
             }
         }
+    }
+    
+    if (supercarProducts.length > 0) {
+        initSupercarFilters(supercarProducts);
+        
+        if (activeSupercarFilter) {
+            const targetPill = document.querySelector(`.filter-pill[data-supercar-type="${activeSupercarFilter}"]`);
+            if (targetPill) {
+                targetPill.classList.add('active');
+                const resetBtn = document.getElementById('supercarResetBtn');
+                if (resetBtn) resetBtn.style.display = 'inline-flex';
+            }
+        }
+    }
+}
 
         // 5. Gestione sezioni vuote
         SECTIONS.forEach(section => {
@@ -992,6 +995,7 @@ function resetCategoryFilter() {
         });
     }
 }
+
 
 
 
