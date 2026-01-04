@@ -648,10 +648,13 @@ async function initDynamicProducts(retryCount = 0) {
 
         const [shopData, bookableData] = await Promise.all([shopPromise, bookablePromise]);
 
-        // 3. Pulizia griglie
-        Object.values(grids).forEach(g => g.innerHTML = '');
+        // 3. Pulizia griglie + NASCONDI temporaneamente per evitare flash
+Object.values(grids).forEach(g => {
+    g.innerHTML = '';
+    g.style.opacity = '0'; // ⬅️ AGGIUNGI
+});
 
-        const countBySection = {};
+const countBySection = {};
 
         // === 4a. RENDERING PRODOTTI SHOP ===
         if (shopData.success && shopData.products) {
@@ -702,11 +705,19 @@ if (bookableData.success && bookableData.products) {
 }
 
         // 5. Gestione sezioni vuote
-        SECTIONS.forEach(section => {
-            if (!countBySection[section.id] && grids[section.id]) {
-                grids[section.id].innerHTML = `<div class="empty" style="grid-column: 1/-1; text-align: center; padding: 3rem; opacity: 0.5;">Nessun prodotto disponibile al momento.</div>`;
-            }
-        });
+SECTIONS.forEach(section => {
+    if (!countBySection[section.id] && grids[section.id]) {
+        grids[section.id].innerHTML = `<div class="empty" style="grid-column: 1/-1; text-align: center; padding: 3rem; opacity: 0.5;">Nessun prodotto disponibile al momento.</div>`;
+    }
+});
+
+// 6. MOSTRA griglie con animazione DOPO aver applicato eventuali filtri salvati
+setTimeout(() => {
+    Object.values(grids).forEach(g => {
+        g.style.transition = 'opacity 0.3s ease';
+        g.style.opacity = '1';
+    });
+}, 100);
 
     } catch (error) {
         console.warn(`Tentativo ${retryCount + 1} fallito:`, error);
@@ -979,6 +990,7 @@ function resetCategoryFilter() {
         });
     }
 }
+
 
 
 
