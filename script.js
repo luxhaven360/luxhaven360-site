@@ -139,6 +139,55 @@ function createProductCard(prod, defaultCta) {
     // container
     const card = el('div', { class: 'card' });
 
+    // ========================================
+// ✅ GESTIONE STATI ESPERIENZE (SOLO EX)
+// ========================================
+const isExperience = prod.category === 'stays';
+let experienceClass = '';
+let disableBooking = false;
+let badgeHtml = '';
+
+if (isExperience) {
+  // CASO 1: Esperienza SCADUTA
+  if (prod.isScaduta) {
+    experienceClass = 'experience-expired';
+    disableBooking = true;
+    badgeHtml = `
+      <div class="experience-badge badge-expired">
+        <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+        </svg>
+        <span>Esperienza Conclusa</span>
+      </div>`;
+  } 
+  // CASO 2: Esperienza PRESTO DISPONIBILE / IN ARRIVO
+  else if (prod.stato === 'Presto Disponibile' || prod.stato === 'In Arrivo') {
+    experienceClass = 'experience-coming-soon';
+    badgeHtml = `
+      <div class="experience-badge badge-coming-soon">
+        <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+        </svg>
+        <span>Presto Disponibile</span>
+      </div>`;
+  }
+  // CASO 3: Esperienza NUOVA (ex-presto disponibile)
+  else if (prod.isNuova) {
+    badgeHtml = `
+      <div class="experience-badge badge-new">
+        <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z"/>
+        </svg>
+        <span>Nuovo</span>
+      </div>`;
+  }
+  
+  // Aggiungi classe CSS alla card
+  if (experienceClass) {
+    card.classList.add(experienceClass);
+  }
+}
+
     // 🆕 APPLICA FILTRI IMMEDIATAMENTE DURANTE LA CREAZIONE
     const savedShopFilter = localStorage.getItem('lh360_active_shop_filter');
     const savedPropertyFilter = localStorage.getItem('lh360_active_property_filter');
@@ -205,6 +254,10 @@ function createProductCard(prod, defaultCta) {
     }
     
     card.appendChild(imageContainer);
+    // ✅ Aggiungi badge se esperienza
+    if (badgeHtml) {
+        imageContainer.innerHTML += badgeHtml;
+    }
 
     // Aggiungi categoria come data attribute
     if (prod.shopCategory) {
@@ -328,15 +381,22 @@ function createProductCard(prod, defaultCta) {
     if (prod.action) btn.dataset.action = prod.action;
 
     btn.addEventListener('click', (e) => {
-        e.preventDefault();
-        showLoader();
-        
-        const sku = btn.dataset.sku || '';
-        const skuPrefix = sku.split('-')[0].toUpperCase();
-        
-        if (['SC', 'PR', 'EX'].includes(skuPrefix)) {
-            window.location.href = `product-details/booking.html?sku=${encodeURIComponent(sku)}`;
-        } else {
+  e.preventDefault();
+  
+  // ✅ BLOCCA PRENOTAZIONE SE ESPERIENZA SCADUTA
+  if (disableBooking) {
+    showValidationError('Questa esperienza è conclusa e non è più prenotabile.', 'expired');
+    return;
+  }
+  
+  showLoader();
+  
+  const sku = btn.dataset.sku || '';
+  const skuPrefix = sku.split('-')[0].toUpperCase();
+  
+  if (['SC', 'PR', 'EX'].includes(skuPrefix)) {
+    window.location.href = `product-details/booking.html?sku=${encodeURIComponent(sku)}`;
+  } else {
             try {
                 localStorage.setItem('lh360_last_product', JSON.stringify({ sku: sku, title: btn.dataset.title, ts: Date.now() }));
                 localStorage.setItem('lh360_selected_sku', sku);
@@ -1162,6 +1222,7 @@ function closeErrorMessage() {
         errorDiv.style.display = 'none';
     }, 500);
 }
+
 
 
 
