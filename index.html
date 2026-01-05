@@ -399,64 +399,34 @@ window.addEventListener('pageshow', function(event) {
         fetchActiveOrdersFromAPI(trackingIcon);
     }
 
-    function fetchActiveOrdersFromAPI(icon) {
-    const callbackName = 'handleActiveOrdersCount_' + Date.now();
-    const script = document.createElement('script');
-    script.src = `${WEB_APP_URL}?get_active_count=1&callback=${callbackName}&t=${Date.now()}`;
-    
-    // ✅ TIMEOUT RIDOTTO: 2 secondi invece di 8
-    const timeout = setTimeout(() => { 
-        console.warn('⏱️ Timeout API tracking icon (2s)');
-        cleanupScript(); 
-    }, 2000); // ⬅️ RIDOTTO DA 8000 A 2000
-
-    // ✅ DEFINISCI CALLBACK PRIMA DI AGGIUNGERE LO SCRIPT
-    window[callbackName] = function(response) {
-        clearTimeout(timeout);
+    async function fetchActiveOrdersFromAPI(icon) {
+    try {
+        const response = await fetch(`${WEB_APP_URL}?get_active_count=1&t=${Date.now()}`, {
+            method: 'GET',
+            headers: {
+                'Accept': 'application/json'
+            }
+        });
         
-        if (response && typeof response.count === 'number') {
-            if (response.count > 0) {
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
+        }
+        
+        const data = await response.json();
+        
+        if (data && typeof data.count === 'number') {
+            if (data.count > 0) {
                 icon.style.display = 'inline-flex';
-                console.log('📦 Tracking Icon: Attivata da API (Ordini: ' + response.count + ')');
+                console.log('📦 Tracking Icon: Attivata da API (Ordini: ' + data.count + ')');
             } else {
                 icon.style.display = 'none';
                 clearAllLocalOrderData();
             }
         }
-
-        cleanupScript();
-    };
-
-    script.onerror = () => {
-        console.warn('❌ Errore caricamento script tracking icon');
-        clearTimeout(timeout);
-        cleanupScript();
-    };
-
-    function cleanupScript() {
-        try { 
-            if (script && script.parentNode) {
-                document.body.removeChild(script); 
-            }
-        } catch (e) {
-            console.warn('Cleanup script error:', e);
-        }
-        try { 
-            delete window[callbackName]; 
-        } catch (e) {}
-    }
-
-    // ✅ GESTIONE ERRORE SE IL BODY NON È PRONTO
-    try {
-        if (document.body) {
-            document.body.appendChild(script);
-        } else {
-            console.warn('⚠️ Body non pronto per script tracking');
-            cleanupScript();
-        }
-    } catch (e) {
-        console.error('Errore append script:', e);
-        cleanupScript();
+        
+    } catch (error) {
+        console.warn('⚠️ Errore API tracking icon:', error);
+        // Fallback: usa solo check locale
     }
 }
 
@@ -646,4 +616,5 @@ window.addEventListener('pageshow', function(event) {
     </script>
 </body>
 </html>
+
 
