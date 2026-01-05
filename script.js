@@ -395,12 +395,12 @@ if (prod.category === 'shop' && hasAvailability) {
       </svg>
     `;
     badgeText = availability === 1 ? 'Ultimo Pezzo' : `Ultimi ${availability} Pezzi`;
-  } else if (availability <= 10) {
+ } else if (availability <= 10) {
     // LIMITATO (4-10 pezzi)
     badgeClass += ' status-limited';
     badgeIcon = `
       <svg class="badge-icon" width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
       </svg>
     `;
     badgeText = `${availability} Disponibili`;
@@ -1504,5 +1504,6 @@ function showValidationError(message, type) {
     if (overlay.parentNode) overlay.remove();
   }, 5000);
 }
+
 
 
