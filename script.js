@@ -428,6 +428,7 @@ if (prod.category === 'shop' && hasAvailability) {
         ${badgeIcon}
         <span class="badge-text">${badgeText}</span>
       </div>
+      ${isLimitedEdition ? '<div class="badge-subtitle">Edizione Limitata</div>' : ''}
     `;
     
     card.appendChild(availabilityBadge);
@@ -1504,4 +1505,3 @@ function showValidationError(message, type) {
     if (overlay.parentNode) overlay.remove();
   }, 5000);
 }
-
