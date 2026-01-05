@@ -734,24 +734,47 @@ if (bookableData.success && bookableData.products) {
     const supercarProducts = [];
     
     bookableData.products.forEach(prod => {
-        const targetSection = SECTIONS.find(s => s.id === prod.category);
-        
-        if (targetSection && grids[targetSection.id]) {
-            prod.sectionName = targetSection.id;
-            prod.icon = prod.mainImage || '📦';
-            
-            const card = createProductCard(prod, targetSection.defaultCta);
-            
-            // ✅ AGGIUNGI SKU COME DATA ATTRIBUTE
-            card.dataset.sku = prod.sku;
-            
-            grids[targetSection.id].appendChild(card);
-            countBySection[targetSection.id] = (countBySection[targetSection.id] || 0) + 1;
-            
-            // ✅ RACCOGLI PRODOTTI PER FILTRI
-            if (prod.category === 'properties') propertyProducts.push(prod);
-            if (prod.category === 'supercars') supercarProducts.push(prod);
+        // ✅ VALIDAZIONE RIGIDA: Verifica che la categoria sia corretta
+        if (!prod.category || typeof prod.category !== 'string') {
+            console.warn('⚠️ Prodotto senza categoria valida:', prod);
+            return; // Salta questo prodotto
         }
+        
+        // ✅ NORMALIZZA LA CATEGORIA (rimuovi spazi extra)
+        const normalizedCategory = prod.category.toLowerCase().trim();
+        
+        // ✅ TROVA LA SEZIONE TARGET USANDO LA CATEGORIA NORMALIZZATA
+        const targetSection = SECTIONS.find(s => s.id === normalizedCategory);
+        
+        if (!targetSection) {
+            console.warn(`⚠️ Categoria sconosciuta: "${prod.category}" per prodotto:`, prod.title);
+            return; // Salta questo prodotto
+        }
+        
+        // ✅ VERIFICA CHE LA GRIGLIA ESISTA
+        if (!grids[targetSection.id]) {
+            console.warn(`⚠️ Griglia non trovata per sezione: ${targetSection.id}`);
+            return;
+        }
+        
+        // ✅ DOPPIO CHECK: Verifica che stiamo inserendo nella griglia corretta
+        console.log(`✅ Inserisco "${prod.title}" in sezione: ${targetSection.id} (categoria: ${prod.category})`);
+        
+        prod.sectionName = targetSection.id;
+        prod.icon = prod.mainImage || '📦';
+        
+        const card = createProductCard(prod, targetSection.defaultCta);
+        
+        // ✅ AGGIUNGI SKU E CATEGORIA COME DATA ATTRIBUTE PER DEBUG
+        card.dataset.sku = prod.sku;
+        card.dataset.productCategory = normalizedCategory; // Per debug
+        
+        grids[targetSection.id].appendChild(card);
+        countBySection[targetSection.id] = (countBySection[targetSection.id] || 0) + 1;
+        
+        // ✅ RACCOGLI PRODOTTI PER FILTRI
+        if (normalizedCategory === 'properties') propertyProducts.push(prod);
+        if (normalizedCategory === 'supercars') supercarProducts.push(prod);
     });
     
     // ✅ INIZIALIZZA FILTRI
@@ -778,6 +801,15 @@ SECTIONS.forEach(section => {
             if (heroElement) {
                 heroElement.style.display = 'block';
                 heroElement.style.animation = 'fadeIn 1s ease';
+                
+                // ✅ FORZA IL PLAY DEL VIDEO
+                const videoElement = heroElement.querySelector('.empty-hero-video');
+                if (videoElement) {
+                    videoElement.load(); // Ricarica il video
+                    videoElement.play().catch(err => {
+                        console.log('Autoplay video bloccato:', err);
+                    });
+                }
             }
             
             // Nascondi filtri se presenti
@@ -1270,4 +1302,5 @@ function closeErrorMessage() {
         errorDiv.style.display = 'none';
     }, 500);
 }
+
 
