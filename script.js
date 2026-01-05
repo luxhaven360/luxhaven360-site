@@ -693,7 +693,7 @@ function generatePropertiesEmptyState() {
             <!-- Hero Video -->
             <div class="empty-hero-video">
                 <video autoplay loop muted playsinline>
-                    <source src="https://cdn.pixabay.com/video/2022/11/07/137726-768672513_large.mp4" type="video/mp4">
+                    <source src="https://drive.google.com/file/d/1YNcXiojpHYae3HilwlAM1p3gnWLPpE9c/view?usp=sharing" type="video/mp4">
                 </video>
             </div>
             
@@ -1327,4 +1327,5 @@ function closeErrorMessage() {
         errorDiv.style.display = 'none';
     }, 500);
 }
+
 
