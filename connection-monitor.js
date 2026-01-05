@@ -1,18 +1,22 @@
 /**
- * LuxHaven360 - Connection Monitor v2 (FIXED)
- * Fix: CORS, notifica verde, gestione errori migliorata
+ * LuxHaven360 - Connection Monitor v3 (OPTIMIZED)
+ * ✨ Miglioramenti:
+ * - Check intelligente: avvisa rapidamente solo se connessione davvero lenta
+ * - Ridotti falsi positivi al primo caricamento
+ * - Notifica verde solo per riconnessioni reali
  */
 
 class LuxHavenConnectionMonitor {
     constructor() {
         this.isOnline = navigator.onLine;
         this.connectionQuality = 'unknown';
-        this.previousQuality = 'unknown'; // ⭐ NUOVO: traccia stato precedente
+        this.previousQuality = 'unknown';
         this.hasShownWarning = false;
         this.checkInterval = null;
         this.retryAttempts = 0;
         this.maxRetries = 3;
-        this.wasOffline = false; // ⭐ NUOVO: flag per tracciare se eravamo offline
+        this.wasOffline = false;
+        this.initialCheckDone = false; // 🆕 Flag per primo check
         
         this.init();
     }
@@ -22,10 +26,19 @@ class LuxHavenConnectionMonitor {
         window.addEventListener('online', () => this.handleOnline());
         window.addEventListener('offline', () => this.handleOffline());
         
-        // Check iniziale (silenzioso al primo caricamento)
+        // ✅ STRATEGIA OTTIMIZZATA:
+        // 1. Check iniziale silenzioso (evita flash avvisi)
         this.checkConnection(true);
         
-        // Check periodico ogni 30 secondi
+        // 2. Check di conferma dopo 3s (mostra avviso se problema persiste)
+        setTimeout(() => {
+            if (this.isOnline && !this.initialCheckDone) {
+                this.checkConnection(false);
+                this.initialCheckDone = true;
+            }
+        }, 3000);
+        
+        // 3. Check periodico ogni 30 secondi
         this.checkInterval = setInterval(() => {
             if (this.isOnline) {
                 this.checkConnection();
@@ -44,7 +57,8 @@ class LuxHavenConnectionMonitor {
     }
 
     /**
-     * ⭐ FIXED: Verifica connessione con endpoint affidabile (no CORS)
+     * ✅ Verifica connessione con endpoint affidabile (no CORS)
+     * @param {boolean} silent - Se true, non mostra avvisi (usato al primo caricamento)
      */
     async checkConnection(silent = false) {
         if (!navigator.onLine) {
@@ -55,10 +69,10 @@ class LuxHavenConnectionMonitor {
         try {
             const startTime = performance.now();
             
-            // ✅ FIX: Uso favicon.ico di Google (piccolo, veloce, no CORS)
+            // Test ping a Google favicon (piccolo, veloce, no CORS)
             const response = await fetch('https://www.google.com/favicon.ico', {
                 method: 'HEAD',
-                mode: 'no-cors', // ⭐ Evita errori CORS
+                mode: 'no-cors',
                 cache: 'no-cache',
                 signal: AbortSignal.timeout(5000)
             });
@@ -66,9 +80,6 @@ class LuxHavenConnectionMonitor {
             const endTime = performance.now();
             const latency = endTime - startTime;
 
-            // ⭐ Con mode: 'no-cors', response.ok è sempre false ma type sarà 'opaque' se successo
-            // Quindi basiamoci solo sulla latenza se non abbiamo errori
-            
             // Determina qualità in base a latenza
             let quality;
             if (latency < 500) {
@@ -80,10 +91,23 @@ class LuxHavenConnectionMonitor {
             }
 
             this.updateConnectionStatus(quality, silent);
+            
+            // 🆕 CHECK INTELLIGENTE: Se primo check silenzioso rileva problema,
+            // rifai check dopo 2s per confermare e mostrare avviso
+            if (silent && !this.initialCheckDone && (quality === 'fair' || quality === 'poor')) {
+                console.log(`⚠️ Primo check: connessione ${quality} (latenza: ${latency.toFixed(0)}ms). Verifico tra 2s...`);
+                setTimeout(() => {
+                    if (this.isOnline && !this.initialCheckDone) {
+                        this.checkConnection(false); // Check NON silenzioso
+                        this.initialCheckDone = true;
+                    }
+                }, 2000);
+            }
+            
             this.retryAttempts = 0;
             
         } catch (error) {
-            // ⭐ Gestione errori silenziosa (no console spam)
+            // Gestione errori silenziosa (no console spam)
             if (!silent) {
                 console.debug('Connection check:', error.message);
             }
@@ -98,13 +122,13 @@ class LuxHavenConnectionMonitor {
     }
 
     /**
-     * ⭐ FIXED: Aggiorna stato e gestisce notifica riconnessione
+     * ✅ Aggiorna stato e gestisce notifica riconnessione
      */
     updateConnectionStatus(quality, silent = false) {
         this.previousQuality = this.connectionQuality;
         this.connectionQuality = quality;
 
-        // ⭐ FIX: Traccia se eravamo offline
+        // Traccia se eravamo offline
         if (quality === 'offline') {
             this.wasOffline = true;
         }
@@ -125,16 +149,16 @@ class LuxHavenConnectionMonitor {
             // Rimuovi avvisi se connessione migliora
             this.hideAllWarnings();
             
-            // ⭐ FIX: Mostra notifica SOLO se eravamo davvero offline
-            if (this.wasOffline && (this.previousQuality === 'offline' || this.previousQuality === 'unknown')) {
+            // ✅ Mostra notifica SOLO se eravamo davvero offline
+            if (this.wasOffline && this.previousQuality === 'offline') {
                 this.showReconnectedNotification();
-                this.wasOffline = false; // Reset flag
+                this.wasOffline = false;
             }
         }
     }
 
     /**
-     * ⭐ FIXED: Gestisce evento ritorno online
+     * ✅ Gestisce evento ritorno online
      */
     handleOnline() {
         this.isOnline = true;
@@ -143,7 +167,7 @@ class LuxHavenConnectionMonitor {
         // Check immediato quando torniamo online
         setTimeout(() => {
             this.checkConnection();
-        }, 500); // Piccolo delay per stabilizzazione
+        }, 500);
     }
 
     /**
@@ -220,7 +244,7 @@ class LuxHavenConnectionMonitor {
     }
 
     /**
-     * ⭐ FIXED: Mostra notifica breve di riconnessione
+     * ✅ Mostra notifica breve di riconnessione (verde)
      */
     showReconnectedNotification() {
         console.log('✅ Mostro notifica riconnessione');
@@ -275,7 +299,7 @@ class LuxHavenConnectionMonitor {
     }
 
     /**
-     * ⭐ FIXED: Intercetta fetch con gestione errori migliorata
+     * ✅ Intercetta fetch con gestione errori migliorata
      */
     monitorFetchCalls() {
         const originalFetch = window.fetch;
@@ -292,15 +316,15 @@ class LuxHavenConnectionMonitor {
                 
                 return response;
             } catch (error) {
-                // ⭐ Log silenzioso per errori di rete
+                // Log silenzioso per errori di rete
                 console.debug('Fetch intercepted error:', error.message);
                 
                 // Incrementa tentativi
                 self.retryAttempts++;
                 
-                // Se troppi fallimenti, verifica connessione (silenzioso)
+                // Se troppi fallimenti, verifica connessione
                 if (self.retryAttempts >= 2) {
-                    self.checkConnection(true);
+                    self.checkConnection(false); // NON silenzioso
                 }
                 
                 // Se offline, mostra errore
@@ -324,7 +348,7 @@ class LuxHavenConnectionMonitor {
     }
 }
 
-// ⭐ Inizializza monitor globale
+// ✅ Inizializza monitor globale
 let luxConnectionMonitor;
 
 // Init quando DOM pronto
