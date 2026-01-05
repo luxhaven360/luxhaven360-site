@@ -764,12 +764,49 @@ if (bookableData.success && bookableData.products) {
     }
 }
 
-        // 5. Gestione sezioni vuote
-        SECTIONS.forEach(section => {
-            if (!countBySection[section.id] && grids[section.id]) {
-                grids[section.id].innerHTML = `<div class="empty" style="grid-column: 1/-1; text-align: center; padding: 3rem; opacity: 0.5;">Nessun prodotto disponibile al momento.</div>`;
+        // 5. Gestione sezioni vuote con Hero Premium
+SECTIONS.forEach(section => {
+    if (!countBySection[section.id] && grids[section.id]) {
+        // Sezioni con hero premium
+        if (section.id === 'properties' || section.id === 'stays') {
+            // Nascondi griglia
+            grids[section.id].style.display = 'none';
+            
+            // Mostra hero premium
+            const heroId = section.id === 'properties' ? 'propertiesEmptyHero' : 'staysEmptyHero';
+            const heroElement = document.getElementById(heroId);
+            if (heroElement) {
+                heroElement.style.display = 'block';
+                heroElement.style.animation = 'fadeIn 1s ease';
             }
-        });
+            
+            // Nascondi filtri se presenti
+            if (section.id === 'properties') {
+                const filterContainer = document.getElementById('propertyFilterContainer');
+                if (filterContainer) filterContainer.style.display = 'none';
+            }
+            if (section.id === 'supercars') {
+                const filterContainer = document.getElementById('supercarFilterContainer');
+                if (filterContainer) filterContainer.style.display = 'none';
+            }
+        } else {
+            // Altre sezioni: messaggio generico
+            grids[section.id].innerHTML = `<div class="empty" style="grid-column: 1/-1; text-align: center; padding: 3rem; opacity: 0.5;">Nessun prodotto disponibile al momento.</div>`;
+        }
+    } else if (grids[section.id]) {
+        // Se ci sono prodotti, nascondi l'hero premium (se era visibile)
+        if (section.id === 'properties') {
+            const heroElement = document.getElementById('propertiesEmptyHero');
+            if (heroElement) heroElement.style.display = 'none';
+            grids[section.id].style.display = 'grid';
+        }
+        if (section.id === 'stays') {
+            const heroElement = document.getElementById('staysEmptyHero');
+            if (heroElement) heroElement.style.display = 'none';
+            grids[section.id].style.display = 'grid';
+        }
+    }
+});
 
     } catch (error) {
         console.warn(`Tentativo ${retryCount + 1} fallito:`, error);
@@ -1233,3 +1270,4 @@ function closeErrorMessage() {
         errorDiv.style.display = 'none';
     }, 500);
 }
+
