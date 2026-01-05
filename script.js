@@ -189,6 +189,12 @@ function createProductCard(prod, defaultCta) {
     // container
     const card = el('div', { class: 'card' });
 
+    // ✨ IDENTIFICA CARD LIMITED EDITIONS
+const isLimitedEdition = prod.shopCategory === 'Limited Editions';
+if (isLimitedEdition) {
+    card.classList.add('limited-edition-card');
+}
+
   // ========================================
 // ✅ GESTIONE STATI ESPERIENZE (SOLO EX)
 // ========================================
@@ -327,16 +333,6 @@ if (isExperience) {
     
     // Aggiungi SKU come data attribute
     card.dataset.sku = prod.sku;
-
-    // 🏆 IDENTIFICAZIONE LIMITED EDITIONS
-if (prod.shopCategory === 'Limited Editions') {
-    card.classList.add('limited-edition-card');
-    
-    // Aggiungi contatore limitato (se disponibile nel foglio)
-    if (prod.limitedCount) {
-        card.dataset.limitedCount = prod.limitedCount; // es: "15/50"
-    }
-}
 
     // title
     const title = el('h3', { class: 'card-title' }, [document.createTextNode(prod.title || 'Untitled')]);
@@ -1385,4 +1381,3 @@ function closeErrorMessage() {
         errorDiv.style.display = 'none';
     }, 500);
 }
-
