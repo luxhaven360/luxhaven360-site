@@ -972,4 +972,189 @@ function resetCategoryFilter() {
     }
 }
 
+// =========================================
+// GESTIONE FORM CONTATTI
+// =========================================
+
+/**
+ * Provider email validi (aziendali e personali conosciuti)
+ */
+const VALID_EMAIL_PROVIDERS = [
+    // Provider professionali
+    'gmail.com', 'outlook.com', 'hotmail.com', 'yahoo.com', 'icloud.com',
+    'protonmail.com', 'zoho.com', 'aol.com', 'mail.com', 'gmx.com',
+    // Domini aziendali italiani comuni
+    'libero.it', 'virgilio.it', 'tiscali.it', 'alice.it', 'tin.it',
+    'fastwebnet.it', 'email.it', 'live.it', 'msn.com', 'me.com',
+    // Domini internazionali
+    'yandex.com', 'mail.ru', 'qq.com', '163.com', 'web.de'
+];
+
+/**
+ * Domini email temporanei da bloccare
+ */
+const TEMP_EMAIL_DOMAINS = [
+    'tempmail.com', 'guerrillamail.com', '10minutemail.com', 'throwaway.email',
+    'mailinator.com', 'maildrop.cc', 'temp-mail.org', 'getnada.com',
+    'trashmail.com', 'fakeinbox.com', 'dispostable.com', 'yopmail.com',
+    'mailnesia.com', 'mintemail.com', 'mytemp.email', 'tempinbox.com'
+];
+
+/**
+ * Valida formato email base
+ */
+function isValidEmailFormat(email) {
+    const regex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    return regex.test(email);
+}
+
+/**
+ * Verifica se il dominio è un provider conosciuto o aziendale
+ */
+function isValidEmailDomain(email) {
+    const domain = email.split('@')[1].toLowerCase();
+    
+    // Blocca email temporanee
+    if (TEMP_EMAIL_DOMAINS.includes(domain)) {
+        return { valid: false, reason: 'Email temporanea non consentita' };
+    }
+    
+    // Accetta provider conosciuti
+    if (VALID_EMAIL_PROVIDERS.includes(domain)) {
+        return { valid: true };
+    }
+    
+    // Accetta domini aziendali custom (hanno almeno un punto dopo @)
+    const parts = domain.split('.');
+    if (parts.length >= 2 && parts[parts.length - 1].length >= 2) {
+        // Verifica che non sia un dominio sospetto
+        const topLevelDomain = parts[parts.length - 1];
+        const validTLDs = ['com', 'it', 'net', 'org', 'eu', 'co', 'uk', 'de', 'fr', 'es', 'io', 'tech', 'biz', 'info'];
+        
+        if (validTLDs.includes(topLevelDomain)) {
+            return { valid: true };
+        }
+    }
+    
+    return { valid: false, reason: 'Provider email non riconosciuto. Utilizza un indirizzo aziendale o un provider conosciuto.' };
+}
+
+/**
+ * Gestisce l'invio del form contatti
+ */
+async function handleContactSubmit(event) {
+    event.preventDefault();
+    
+    // Recupera valori
+    const form = document.getElementById('contactForm');
+    const name = document.getElementById('name').value.trim();
+    const email = document.getElementById('email').value.trim().toLowerCase();
+    const interest = document.getElementById('interest').value;
+    const message = document.getElementById('message').value.trim();
+    
+    // Validazione base
+    if (!name || !email || !message) {
+        showContactError('Compila tutti i campi obbligatori');
+        return;
+    }
+    
+    // Validazione formato email
+    if (!isValidEmailFormat(email)) {
+        showContactError('Formato email non valido');
+        return;
+    }
+    
+    // Validazione dominio email
+    const domainCheck = isValidEmailDomain(email);
+    if (!domainCheck.valid) {
+        showContactError(domainCheck.reason);
+        return;
+    }
+    
+    // Mostra loader
+    const submitBtn = form.querySelector('button[type="submit"]');
+    const originalText = submitBtn.textContent;
+    submitBtn.textContent = 'Invio in corso...';
+    submitBtn.disabled = true;
+    
+    try {
+        // Prepara dati
+        const contactData = {
+            name: name,
+            email: email,
+            interest: interest,
+            message: message,
+            timestamp: new Date().toISOString()
+        };
+        
+        // Invia a Google Apps Script
+        const response = await fetch(`${WEB_APP_URL}?action=send_contact_request`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(contactData)
+        });
+        
+        const result = await response.json();
+        
+        if (result.success) {
+            // Reset form
+            form.reset();
+            
+            // Mostra messaggio di successo
+            showContactSuccess();
+        } else {
+            throw new Error(result.error || 'Errore invio richiesta');
+        }
+        
+    } catch (error) {
+        console.error('Errore invio form contatti:', error);
+        showContactError('Errore durante l\'invio. Riprova tra qualche istante.');
+    } finally {
+        submitBtn.textContent = originalText;
+        submitBtn.disabled = false;
+    }
+}
+
+/**
+ * Mostra messaggio di successo premium
+ */
+function showContactSuccess() {
+    const successDiv = document.getElementById('contactSuccessMessage');
+    successDiv.style.display = 'block';
+    successDiv.style.animation = 'fadeIn 0.5s ease';
+}
+
+/**
+ * Mostra messaggio di errore premium
+ */
+function showContactError(errorText) {
+    const errorDiv = document.getElementById('contactErrorMessage');
+    const errorTextEl = document.getElementById('errorText');
+    
+    errorTextEl.textContent = errorText;
+    errorDiv.style.display = 'block';
+    errorDiv.style.animation = 'fadeIn 0.5s ease';
+}
+
+/**
+ * Chiude messaggio di successo
+ */
+function closeSuccessMessage() {
+    const successDiv = document.getElementById('contactSuccessMessage');
+    successDiv.style.animation = 'fadeOut 0.5s ease';
+    setTimeout(() => {
+        successDiv.style.display = 'none';
+    }, 500);
+}
+
+/**
+ * Chiude messaggio di errore
+ */
+function closeErrorMessage() {
+    const errorDiv = document.getElementById('contactErrorMessage');
+    errorDiv.style.animation = 'fadeOut 0.5s ease';
+    setTimeout(() => {
+        errorDiv.style.display = 'none';
+    }, 500);
+}
 
