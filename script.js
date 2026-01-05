@@ -685,6 +685,92 @@ function restoreBookableFilters() {
 }
 
 /**
+ * 🏰 Empty State Premium - IMMOBILI
+ */
+function generatePropertiesEmptyState() {
+    return `
+        <div class="premium-empty-state">
+            <!-- Hero Video -->
+            <div class="empty-hero-video">
+                <video autoplay loop muted playsinline>
+                    <source src="https://cdn.pixabay.com/video/2022/11/07/137726-768672513_large.mp4" type="video/mp4">
+                </video>
+            </div>
+            
+            <!-- Content Editoriale -->
+            <div class="empty-content-wrapper">
+                <h2 class="empty-main-title">Immobili Selezionati.<br>Non Cataloghi.</h2>
+                
+                <div class="empty-divider"></div>
+                
+                <p class="empty-subtitle">Curatela, non quantità.</p>
+                
+                <p class="empty-body-text">
+                    LuxHaven360 presenta una collezione in continua curatela di <strong>ville</strong>, 
+                    <strong>residenze storiche</strong> e <strong>proprietà iconiche</strong>. 
+                    Ogni immobile viene scelto per valore architettonico, contesto territoriale 
+                    e potenziale esperienziale.
+                    <br><br>
+                    Le prime proprietà saranno presentate a breve.
+                </p>
+                
+                <p class="empty-cta-text">Vuoi ricevere un alert alla pubblicazione?</p>
+                
+                <button class="empty-contact-btn" onclick="showSection('contact')">
+                    <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/>
+                    </svg>
+                    Contattaci
+                </button>
+            </div>
+        </div>
+    `;
+}
+
+/**
+ * 🎭 Empty State Premium - ESPERIENZE
+ */
+function generateExperiencesEmptyState() {
+    return `
+        <div class="premium-empty-state">
+            <!-- Hero Video -->
+            <div class="empty-hero-video">
+                <video autoplay loop muted playsinline>
+                    <source src="https://cdn.pixabay.com/video/2023/04/21/159429-820009298_large.mp4" type="video/mp4">
+                </video>
+            </div>
+            
+            <!-- Content Editoriale -->
+            <div class="empty-content-wrapper">
+                <h2 class="empty-main-title">Esperienze Esclusive<br>su Misura</h2>
+                
+                <div class="empty-divider"></div>
+                
+                <p class="empty-subtitle">Ogni esperienza è un racconto sensoriale.</p>
+                
+                <p class="empty-body-text">
+                    Dal <strong>tramonto in supercar</strong> sulle colline toscane, 
+                    ai <strong>fine settimana in dimore storiche</strong> con concierge dedicato. 
+                    Ogni esperienza LuxHaven360 è pensata per chi cerca l'eccezionale, 
+                    non il convenzionale.
+                    <br><br>
+                    Siamo in fase di curatela delle prime esperienze esclusive.
+                </p>
+                
+                <p class="empty-cta-text">Vuoi essere tra i primi a scoprirle?</p>
+                
+                <button class="empty-contact-btn" onclick="showSection('contact')">
+                    <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/>
+                    </svg>
+                    Ricevi Aggiornamenti
+                </button>
+            </div>
+        </div>
+    `;
+}
+
+/**
  * NUOVA FUNZIONE UNIFICATA (Fetch API)
  * Scarica prodotti SHOP + BOOKABLE e li distribuisce nelle sezioni
  */
@@ -764,12 +850,20 @@ if (bookableData.success && bookableData.products) {
     }
 }
 
-        // 5. Gestione sezioni vuote
-        SECTIONS.forEach(section => {
-            if (!countBySection[section.id] && grids[section.id]) {
-                grids[section.id].innerHTML = `<div class="empty" style="grid-column: 1/-1; text-align: center; padding: 3rem; opacity: 0.5;">Nessun prodotto disponibile al momento.</div>`;
-            }
-        });
+        // 5. Gestione sezioni vuote CON EMPTY STATE PREMIUM
+SECTIONS.forEach(section => {
+    if (!countBySection[section.id] && grids[section.id]) {
+        // Genera empty state premium per Immobili e Esperienze
+        if (section.id === 'properties') {
+            grids[section.id].innerHTML = generatePropertiesEmptyState();
+        } else if (section.id === 'stays') {
+            grids[section.id].innerHTML = generateExperiencesEmptyState();
+        } else {
+            // Per altre sezioni (shop, supercars) mantieni messaggio semplice
+            grids[section.id].innerHTML = `<div class="empty" style="grid-column: 1/-1; text-align: center; padding: 3rem; opacity: 0.5;">Nessun prodotto disponibile al momento.</div>`;
+        }
+    }
+});
 
     } catch (error) {
         console.warn(`Tentativo ${retryCount + 1} fallito:`, error);
@@ -1233,3 +1327,4 @@ function closeErrorMessage() {
         errorDiv.style.display = 'none';
     }, 500);
 }
+
