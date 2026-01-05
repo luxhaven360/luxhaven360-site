@@ -424,16 +424,14 @@ if (prod.category === 'shop' && hasAvailability) {
   if (badgeClass) {
     const availabilityBadge = el('div', { class: badgeClass });
     availabilityBadge.innerHTML = `
-      <div class="badge-content">
-        ${badgeIcon}
-        <span class="badge-text">${badgeText}</span>
-      </div>
-      ${isLimitedEdition ? '<div class="badge-subtitle">Edizione Limitata</div>' : ''}
+      ${badgeIcon}
+      <span class="badge-text">${badgeText}</span>
     `;
     
-    card.appendChild(availabilityBadge);
+    // ✅ INSERISCI BADGE DENTRO L'IMMAGINE (non nella card)
+    imageContainer.appendChild(availabilityBadge);
     console.log('✅ Badge creato:', badgeText);
-  }
+}
 }
 
 // GESTIONE PREZZO
@@ -1505,6 +1503,7 @@ function showValidationError(message, type) {
     if (overlay.parentNode) overlay.remove();
   }, 5000);
 }
+
 
 
 
