@@ -347,6 +347,34 @@ if (prod.shopCategory === 'Limited Editions') {
     const desc = el('p', { class: 'card-desc' }, [document.createTextNode(descText)]);
     card.appendChild(desc);
 
+// ✅ NUOVO: Badge disponibilità per prodotti SHOP
+if (prod.category === 'shop' && typeof prod.availability === 'number') {
+  const availabilityBadge = el('div', { 
+    class: 'availability-badge' + (prod.availability === 0 ? ' out-of-stock' : prod.availability <= 5 ? ' low-stock' : '')
+  });
+  
+  if (prod.availability === 0) {
+    availabilityBadge.innerHTML = `
+      <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+      </svg>
+      <span>Esaurito</span>
+    `;
+  } else if (prod.availability <= 5) {
+    availabilityBadge.innerHTML = `
+      <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+      </svg>
+      <span>Ultimi ${prod.availability} pezzi</span>
+    `;
+  }
+  
+  card.appendChild(availabilityBadge);
+}
+
+// GESTIONE PREZZO
+const isProperty = prod.category === 'properties';
+
     // GESTIONE PREZZO
     const isProperty = prod.category === 'properties';
 
@@ -457,6 +485,12 @@ if (prod.shopCategory === 'Limited Editions') {
   // ✅ BLOCCA PRENOTAZIONE SE ESPERIENZA SCADUTA
   if (disableBooking) {
     showValidationError('Questa esperienza è conclusa e non è più prenotabile.', 'expired');
+    return;
+  }
+  
+  // ✅ NUOVO: Blocca acquisto se prodotto esaurito
+  if (prod.category === 'shop' && prod.availability === 0) {
+    showValidationError('Questo prodotto è attualmente esaurito.', 'out-of-stock');
     return;
   }
   
@@ -1384,4 +1418,29 @@ function closeErrorMessage() {
     setTimeout(() => {
         errorDiv.style.display = 'none';
     }, 500);
+}
+
+/**
+ * Mostra messaggio di errore per validazione (esaurito, esperienza scaduta, ecc.)
+ */
+function showValidationError(message, type) {
+  const overlay = document.createElement('div');
+  overlay.className = 'validation-error-overlay';
+  overlay.innerHTML = `
+    <div class="validation-error-card ${type}">
+      <div class="validation-error-icon">⚠️</div>
+      <h3 class="validation-error-title">Operazione Non Disponibile</h3>
+      <p class="validation-error-text">${message}</p>
+      <button class="btn btn-primary" onclick="this.closest('.validation-error-overlay').remove()">
+        Ho Capito
+      </button>
+    </div>
+  `;
+  
+  document.body.appendChild(overlay);
+  
+  // Auto-remove dopo 5 secondi
+  setTimeout(() => {
+    if (overlay.parentNode) overlay.remove();
+  }, 5000);
 }
