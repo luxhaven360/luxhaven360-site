@@ -740,10 +740,9 @@ function restoreBookableFilters() {
 function generatePropertiesEmptyState() {
     return `
         <div class="premium-empty-state">
-            <!-- Hero Video -->
             <div class="empty-hero-video">
                 <video autoplay loop muted playsinline webkit-playsinline>
-                    <source src="https://drive.google.com/uc?export=download&id=1YNcXiojpHYae3HilwlAM1p3gnWLPpE9c" type="video/mp4">
+                    <source src="assets/videos/immobili.mp4" type="video/mp4">
                 </video>
             </div>
             
@@ -1377,6 +1376,7 @@ function closeErrorMessage() {
         errorDiv.style.display = 'none';
     }, 500);
 }
+
 
 
 
