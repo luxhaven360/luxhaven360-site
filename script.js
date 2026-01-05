@@ -245,6 +245,10 @@ if (isExperience) {
         };
         
         imageContainer.appendChild(img);
+            // ✅ Aggiungi badge se esperienza
+            if (badgeHtml) {
+               imageContainer.innerHTML += badgeHtml;
+            }
     } else {
         imageContainer.textContent = prod.icon || '📦';
         imageContainer.style.display = 'flex';
@@ -254,10 +258,6 @@ if (isExperience) {
     }
     
     card.appendChild(imageContainer);
-    // ✅ Aggiungi badge se esperienza
-    if (badgeHtml) {
-        imageContainer.innerHTML += badgeHtml;
-    }
 
     // Aggiungi categoria come data attribute
     if (prod.shopCategory) {
@@ -1222,6 +1222,7 @@ function closeErrorMessage() {
         errorDiv.style.display = 'none';
     }, 500);
 }
+
 
 
 
