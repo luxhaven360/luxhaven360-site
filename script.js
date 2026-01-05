@@ -1088,11 +1088,15 @@ async function handleContactSubmit(event) {
         };
         
         // Invia a Google Apps Script
-        const response = await fetch(`${WEB_APP_URL}?action=send_contact_request`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(contactData)
-        });
+        const params = new URLSearchParams({
+    action: 'send_contact_request',
+    ...contactData
+});
+
+const response = await fetch(`${WEB_APP_URL}?${params.toString()}`, {
+    method: 'GET',
+    headers: { 'Accept': 'application/json' }
+});
         
         const result = await response.json();
         
@@ -1157,4 +1161,5 @@ function closeErrorMessage() {
         errorDiv.style.display = 'none';
     }, 500);
 }
+
 
