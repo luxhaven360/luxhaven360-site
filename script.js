@@ -1,16 +1,24 @@
-// --- Nav & UI (tuo script esistente mantenuto e ampliato) ---
-
 // Navigation
 function showSection(sectionId) {
     console.log(`🔀 Cambio sezione: ${sectionId}`);
     
-    // ✅ STEP 1: NASCONDI TUTTE LE SEZIONI E HERO
+    // ✅ STEP 1: NASCONDI TUTTE LE SEZIONI, HERO E GRIGLIE
     document.querySelectorAll('.section, .hero').forEach(s => {
         s.classList.remove('active');
-        s.style.display = 'none'; // ✅ FORZA NASCONDIMENTO
+        s.style.display = 'none';
     });
     
-    // ✅ STEP 2: MOSTRA SOLO LA SEZIONE RICHIESTA
+    // ✅ STEP 2: NASCONDI TUTTI GLI HERO PREMIUM E LE GRIGLIE
+    document.querySelectorAll('.empty-hero-container').forEach(hero => {
+        hero.style.display = 'none';
+    });
+    
+    // ✅ NASCONDI TUTTE LE GRIGLIE DI PRODOTTI
+    document.querySelectorAll('.grid').forEach(grid => {
+        grid.style.display = 'none';
+    });
+    
+    // ✅ STEP 3: MOSTRA SOLO LA SEZIONE RICHIESTA
     if (sectionId === 'home') {
         const hero = document.querySelector('.hero');
         if (hero) {
@@ -31,6 +39,48 @@ function showSection(sectionId) {
             el.classList.add('active');
             el.style.display = 'block';
             el.style.opacity = '1';
+            
+            // ✅ MOSTRA SOLO LA GRIGLIA DELLA SEZIONE ATTIVA
+            const gridId = `${sectionId}Grid`;
+            const activeGrid = document.getElementById(gridId);
+            
+            if (activeGrid) {
+                // Verifica se ci sono prodotti nella griglia
+                const hasProducts = activeGrid.querySelectorAll('.card').length > 0;
+                
+                if (hasProducts) {
+                    // Mostra la griglia con prodotti
+                    activeGrid.style.display = 'grid';
+                    console.log(`✅ Griglia "${gridId}" mostrata con prodotti`);
+                } else {
+                    // Nascondi la griglia vuota
+                    activeGrid.style.display = 'none';
+                    
+                    // ✅ MOSTRA HERO PREMIUM SE DISPONIBILE
+                    const heroMap = {
+                        'properties': 'propertiesEmptyHero',
+                        'stays': 'staysEmptyHero'
+                    };
+                    
+                    if (heroMap[sectionId]) {
+                        const heroElement = document.getElementById(heroMap[sectionId]);
+                        if (heroElement) {
+                            heroElement.style.display = 'block';
+                            
+                            // ✅ CARICA E RIPRODUCI IL VIDEO
+                            const videoElement = heroElement.querySelector('.empty-hero-video');
+                            if (videoElement) {
+                                console.log('🎬 Caricamento video per sezione vuota');
+                                videoElement.load();
+                                videoElement.play().catch(err => {
+                                    console.log('⚠️ Autoplay video bloccato dal browser');
+                                });
+                            }
+                            console.log(`✅ Hero premium "${heroMap[sectionId]}" attivato`);
+                        }
+                    }
+                }
+            }
         }
         
         // ✅ MOSTRA FILTRO CATEGORIE SE SHOP
@@ -1302,5 +1352,6 @@ function closeErrorMessage() {
         errorDiv.style.display = 'none';
     }, 500);
 }
+
 
 
