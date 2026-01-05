@@ -200,7 +200,7 @@
         const WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbwr79RkXIEocpuOKaM6uMJqE6VFs9wjlUPvrr__FvDbDDrD2ELB1NbfrWP3BCYpHj2u/exec';
 
     // ✅ FUNZIONE DI INIZIALIZZAZIONE
-function initializePage() {
+    function initializePage() {
     const introLoader = document.getElementById('intro-loader');
     const progressBar = document.querySelector('.intro-progress-fill');
     
@@ -252,12 +252,14 @@ function initializePage() {
     const hash = window.location.hash.substring(1);
     if (hash && typeof showSection === 'function') showSection(hash);
     
-    updateCartIcon();
-    updateTrackingIcon();
-    
-    // ✅ RIPRISTINA FILTRI SE ATTIVI
-    restoreShopFilterIfNeeded();
-    restoreBookableFilters(); // ✅ AGGIUNTO: Ripristina anche filtri immobili e supercar
+    // ✅ CHIAMATE ASINCRONE CHE NON BLOCCANO IL LOADER
+    // Queste vengono eseguite in background DOPO che il loader è già nascosto
+    setTimeout(() => {
+        updateCartIcon();
+        updateTrackingIcon();
+        restoreShopFilterIfNeeded();
+        restoreBookableFilters();
+    }, 100); // ⬅️ RITARDO DI 100ms per non bloccare il rendering
 }
 
 // ✅ NUOVA FUNZIONE SEMPLIFICATA: Ripristina filtro shop (ora le card sono già filtrate)
@@ -366,44 +368,65 @@ window.addEventListener('pageshow', function(event) {
     }
 
     function fetchActiveOrdersFromAPI(icon) {
-        const callbackName = 'handleActiveOrdersCount_' + Date.now();
-        const script = document.createElement('script');
-        // Aggiunta parametro cache-buster 't' per evitare cache browser
-        script.src = `${WEB_APP_URL}?get_active_count=1&callback=${callbackName}&t=${Date.now()}`;
+    const callbackName = 'handleActiveOrdersCount_' + Date.now();
+    const script = document.createElement('script');
+    script.src = `${WEB_APP_URL}?get_active_count=1&callback=${callbackName}&t=${Date.now()}`;
+    
+    // ✅ TIMEOUT RIDOTTO: 2 secondi invece di 8
+    const timeout = setTimeout(() => { 
+        console.warn('⏱️ Timeout API tracking icon (2s)');
+        cleanupScript(); 
+    }, 2000); // ⬅️ RIDOTTO DA 8000 A 2000
+
+    // ✅ DEFINISCI CALLBACK PRIMA DI AGGIUNGERE LO SCRIPT
+    window[callbackName] = function(response) {
+        clearTimeout(timeout);
         
-        const timeout = setTimeout(() => { cleanupScript(); }, 8000);
-
-        window[callbackName] = function(response) {
-            clearTimeout(timeout);
-            
-            if (response && typeof response.count === 'number') {
-                if (response.count > 0) {
-                    // RIMOSSO IL BLOCCO "isDesktop": Se count > 0, mostra sempre
-                    icon.style.display = 'inline-flex';
-                    console.log('📦 Tracking Icon: Attivata da API (Ordini: ' + response.count + ')');
-                } else {
-                    // Se l'API dice 0, nascondi e pulisci
-                    icon.style.display = 'none';
-                    clearAllLocalOrderData();
-                }
+        if (response && typeof response.count === 'number') {
+            if (response.count > 0) {
+                icon.style.display = 'inline-flex';
+                console.log('📦 Tracking Icon: Attivata da API (Ordini: ' + response.count + ')');
+            } else {
+                icon.style.display = 'none';
+                clearAllLocalOrderData();
             }
-
-            cleanupScript();
-        };
-
-        script.onerror = () => {
-            clearTimeout(timeout);
-            cleanupScript();
-            // In caso di errore rete, ci fidiamo dello stato locale (se era visibile, resta visibile)
-        };
-
-        function cleanupScript() {
-            try { if (script.parentNode) document.body.removeChild(script); } catch (e) {}
-            try { delete window[callbackName]; } catch (e) {}
         }
 
-        document.body.appendChild(script);
+        cleanupScript();
+    };
+
+    script.onerror = () => {
+        console.warn('❌ Errore caricamento script tracking icon');
+        clearTimeout(timeout);
+        cleanupScript();
+    };
+
+    function cleanupScript() {
+        try { 
+            if (script && script.parentNode) {
+                document.body.removeChild(script); 
+            }
+        } catch (e) {
+            console.warn('Cleanup script error:', e);
+        }
+        try { 
+            delete window[callbackName]; 
+        } catch (e) {}
     }
+
+    // ✅ GESTIONE ERRORE SE IL BODY NON È PRONTO
+    try {
+        if (document.body) {
+            document.body.appendChild(script);
+        } else {
+            console.warn('⚠️ Body non pronto per script tracking');
+            cleanupScript();
+        }
+    } catch (e) {
+        console.error('Errore append script:', e);
+        cleanupScript();
+    }
+}
 
         function clearAllLocalOrderData() {
             localStorage.removeItem('lh360_pending_order');
@@ -591,4 +614,5 @@ window.addEventListener('pageshow', function(event) {
     </script>
 </body>
 </html>
+
 
