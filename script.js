@@ -189,10 +189,6 @@ function createProductCard(prod, defaultCta) {
     // container
     const card = el('div', { class: 'card' });
 
-    if (prod.shopCategory === 'Limited Editions') {
-    card.classList.add('limited-edition-card');
-}
-
   // ========================================
 // ✅ GESTIONE STATI ESPERIENZE (SOLO EX)
 // ========================================
@@ -1379,9 +1375,3 @@ function closeErrorMessage() {
         errorDiv.style.display = 'none';
     }, 500);
 }
-
-
-
-
-
-
