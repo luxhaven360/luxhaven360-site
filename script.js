@@ -352,29 +352,88 @@ if (prod.shopCategory === 'Limited Editions') {
     const desc = el('p', { class: 'card-desc' }, [document.createTextNode(descText)]);
     card.appendChild(desc);
 
-// ✅ NUOVO: Badge disponibilità per prodotti SHOP
-if (prod.category === 'shop' && typeof prod.availability === 'number') {
-  const availabilityBadge = el('div', { 
-    class: 'availability-badge' + (prod.availability === 0 ? ' out-of-stock' : prod.availability <= 5 ? ' low-stock' : '')
-  });
+// ========================================
+// 🏆 BADGE DISPONIBILITÀ PREMIUM
+// Mostra SEMPRE per Limited Editions
+// ========================================
+const isLimitedEdition = prod.shopCategory === 'Limited Editions';
+const hasAvailability = typeof prod.availability === 'number' && prod.availability !== null;
+
+// Debug log per verificare i dati
+console.log('🔍 Debug Card:', {
+  sku: prod.sku,
+  title: prod.title,
+  category: prod.shopCategory,
+  isLimited: isLimitedEdition,
+  availability: prod.availability,
+  hasAvailability: hasAvailability
+});
+
+if (prod.category === 'shop' && hasAvailability) {
+  const availability = prod.availability;
   
-  if (prod.availability === 0) {
-    availabilityBadge.innerHTML = `
-      <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+  // Determina stato e stile
+  let badgeClass = 'availability-badge-premium';
+  let badgeIcon = '';
+  let badgeText = '';
+  
+  if (availability === 0) {
+    // ESAURITO
+    badgeClass += ' status-sold-out';
+    badgeIcon = `
+      <svg class="badge-icon" width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
       </svg>
-      <span>Esaurito</span>
     `;
-  } else if (prod.availability <= 5) {
-    availabilityBadge.innerHTML = `
-      <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    badgeText = 'Esaurito';
+  } else if (availability <= 3) {
+    // CRITICO (≤3 pezzi)
+    badgeClass += ' status-critical';
+    badgeIcon = `
+      <svg class="badge-icon" width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
       </svg>
-      <span>Ultimi ${prod.availability} pezzi</span>
     `;
+    badgeText = availability === 1 ? 'Ultimo Pezzo' : `Ultimi ${availability} Pezzi`;
+  } else if (availability <= 10) {
+    // LIMITATO (4-10 pezzi)
+    badgeClass += ' status-limited';
+    badgeIcon = `
+      <svg class="badge-icon" width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+      </svg>
+    `;
+    badgeText = `${availability} Disponibili`;
+  } else {
+    // DISPONIBILE (>10 pezzi) - Solo per Limited Editions
+    if (isLimitedEdition) {
+      badgeClass += ' status-available';
+      badgeIcon = `
+        <svg class="badge-icon" width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+        </svg>
+      `;
+      badgeText = `${availability} Disponibili`;
+    } else {
+      // Per prodotti normali con >10 pezzi, non mostrare badge
+      badgeClass = null;
+    }
   }
   
-  card.appendChild(availabilityBadge);
+  // Crea il badge solo se necessario
+  if (badgeClass) {
+    const availabilityBadge = el('div', { class: badgeClass });
+    availabilityBadge.innerHTML = `
+      <div class="badge-content">
+        ${badgeIcon}
+        <span class="badge-text">${badgeText}</span>
+      </div>
+      ${isLimitedEdition ? '<div class="badge-subtitle">Edizione Limitata</div>' : ''}
+    `;
+    
+    card.appendChild(availabilityBadge);
+    console.log('✅ Badge creato:', badgeText);
+  }
 }
 
 // GESTIONE PREZZO
@@ -1446,6 +1505,7 @@ function showValidationError(message, type) {
     if (overlay.parentNode) overlay.remove();
   }, 5000);
 }
+
 
 
 
