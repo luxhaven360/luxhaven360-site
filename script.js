@@ -380,9 +380,6 @@ if (prod.category === 'shop' && typeof prod.availability === 'number') {
 // GESTIONE PREZZO
 const isProperty = prod.category === 'properties';
 
-    // GESTIONE PREZZO
-    const isProperty = prod.category === 'properties';
-
     if (isProperty) {
         // Design premium per IMMOBILI
         const priceContainer = el('div', { 
@@ -1449,4 +1446,5 @@ function showValidationError(message, type) {
     if (overlay.parentNode) overlay.remove();
   }, 5000);
 }
+
 
