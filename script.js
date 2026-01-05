@@ -326,7 +326,12 @@ if (isExperience) {
     }
     
     // Aggiungi SKU come data attribute
-    card.dataset.sku = prod.sku;
+card.dataset.sku = prod.sku;
+
+// ✅ NUOVO: Aggiungi disponibilità come data attribute
+if (typeof prod.availability === 'number') {
+  card.dataset.availability = prod.availability;
+}
 
     // 🏆 IDENTIFICAZIONE LIMITED EDITIONS
 if (prod.shopCategory === 'Limited Editions') {
@@ -1444,3 +1449,4 @@ function showValidationError(message, type) {
     if (overlay.parentNode) overlay.remove();
   }, 5000);
 }
+
