@@ -1,24 +1,16 @@
+// --- Nav & UI (tuo script esistente mantenuto e ampliato) ---
+
 // Navigation
 function showSection(sectionId) {
     console.log(`🔀 Cambio sezione: ${sectionId}`);
     
-    // ✅ STEP 1: NASCONDI TUTTE LE SEZIONI, HERO E GRIGLIE
+    // ✅ STEP 1: NASCONDI TUTTE LE SEZIONI E HERO
     document.querySelectorAll('.section, .hero').forEach(s => {
         s.classList.remove('active');
-        s.style.display = 'none';
+        s.style.display = 'none'; // ✅ FORZA NASCONDIMENTO
     });
     
-    // ✅ STEP 2: NASCONDI TUTTI GLI HERO PREMIUM E LE GRIGLIE
-    document.querySelectorAll('.empty-hero-container').forEach(hero => {
-        hero.style.display = 'none';
-    });
-    
-    // ✅ NASCONDI TUTTE LE GRIGLIE DI PRODOTTI
-    document.querySelectorAll('.grid').forEach(grid => {
-        grid.style.display = 'none';
-    });
-    
-    // ✅ STEP 3: MOSTRA SOLO LA SEZIONE RICHIESTA
+    // ✅ STEP 2: MOSTRA SOLO LA SEZIONE RICHIESTA
     if (sectionId === 'home') {
         const hero = document.querySelector('.hero');
         if (hero) {
@@ -39,48 +31,6 @@ function showSection(sectionId) {
             el.classList.add('active');
             el.style.display = 'block';
             el.style.opacity = '1';
-            
-            // ✅ MOSTRA SOLO LA GRIGLIA DELLA SEZIONE ATTIVA
-            const gridId = `${sectionId}Grid`;
-            const activeGrid = document.getElementById(gridId);
-            
-            if (activeGrid) {
-                // Verifica se ci sono prodotti nella griglia
-                const hasProducts = activeGrid.querySelectorAll('.card').length > 0;
-                
-                if (hasProducts) {
-                    // Mostra la griglia con prodotti
-                    activeGrid.style.display = 'grid';
-                    console.log(`✅ Griglia "${gridId}" mostrata con prodotti`);
-                } else {
-                    // Nascondi la griglia vuota
-                    activeGrid.style.display = 'none';
-                    
-                    // ✅ MOSTRA HERO PREMIUM SE DISPONIBILE
-                    const heroMap = {
-                        'properties': 'propertiesEmptyHero',
-                        'stays': 'staysEmptyHero'
-                    };
-                    
-                    if (heroMap[sectionId]) {
-                        const heroElement = document.getElementById(heroMap[sectionId]);
-                        if (heroElement) {
-                            heroElement.style.display = 'block';
-                            
-                            // ✅ CARICA E RIPRODUCI IL VIDEO
-                            const videoElement = heroElement.querySelector('.empty-hero-video');
-                            if (videoElement) {
-                                console.log('🎬 Caricamento video per sezione vuota');
-                                videoElement.load();
-                                videoElement.play().catch(err => {
-                                    console.log('⚠️ Autoplay video bloccato dal browser');
-                                });
-                            }
-                            console.log(`✅ Hero premium "${heroMap[sectionId]}" attivato`);
-                        }
-                    }
-                }
-            }
         }
         
         // ✅ MOSTRA FILTRO CATEGORIE SE SHOP
@@ -784,47 +734,24 @@ if (bookableData.success && bookableData.products) {
     const supercarProducts = [];
     
     bookableData.products.forEach(prod => {
-        // ✅ VALIDAZIONE RIGIDA: Verifica che la categoria sia corretta
-        if (!prod.category || typeof prod.category !== 'string') {
-            console.warn('⚠️ Prodotto senza categoria valida:', prod);
-            return; // Salta questo prodotto
+        const targetSection = SECTIONS.find(s => s.id === prod.category);
+        
+        if (targetSection && grids[targetSection.id]) {
+            prod.sectionName = targetSection.id;
+            prod.icon = prod.mainImage || '📦';
+            
+            const card = createProductCard(prod, targetSection.defaultCta);
+            
+            // ✅ AGGIUNGI SKU COME DATA ATTRIBUTE
+            card.dataset.sku = prod.sku;
+            
+            grids[targetSection.id].appendChild(card);
+            countBySection[targetSection.id] = (countBySection[targetSection.id] || 0) + 1;
+            
+            // ✅ RACCOGLI PRODOTTI PER FILTRI
+            if (prod.category === 'properties') propertyProducts.push(prod);
+            if (prod.category === 'supercars') supercarProducts.push(prod);
         }
-        
-        // ✅ NORMALIZZA LA CATEGORIA (rimuovi spazi extra)
-        const normalizedCategory = prod.category.toLowerCase().trim();
-        
-        // ✅ TROVA LA SEZIONE TARGET USANDO LA CATEGORIA NORMALIZZATA
-        const targetSection = SECTIONS.find(s => s.id === normalizedCategory);
-        
-        if (!targetSection) {
-            console.warn(`⚠️ Categoria sconosciuta: "${prod.category}" per prodotto:`, prod.title);
-            return; // Salta questo prodotto
-        }
-        
-        // ✅ VERIFICA CHE LA GRIGLIA ESISTA
-        if (!grids[targetSection.id]) {
-            console.warn(`⚠️ Griglia non trovata per sezione: ${targetSection.id}`);
-            return;
-        }
-        
-        // ✅ DOPPIO CHECK: Verifica che stiamo inserendo nella griglia corretta
-        console.log(`✅ Inserisco "${prod.title}" in sezione: ${targetSection.id} (categoria: ${prod.category})`);
-        
-        prod.sectionName = targetSection.id;
-        prod.icon = prod.mainImage || '📦';
-        
-        const card = createProductCard(prod, targetSection.defaultCta);
-        
-        // ✅ AGGIUNGI SKU E CATEGORIA COME DATA ATTRIBUTE PER DEBUG
-        card.dataset.sku = prod.sku;
-        card.dataset.productCategory = normalizedCategory; // Per debug
-        
-        grids[targetSection.id].appendChild(card);
-        countBySection[targetSection.id] = (countBySection[targetSection.id] || 0) + 1;
-        
-        // ✅ RACCOGLI PRODOTTI PER FILTRI
-        if (normalizedCategory === 'properties') propertyProducts.push(prod);
-        if (normalizedCategory === 'supercars') supercarProducts.push(prod);
     });
     
     // ✅ INIZIALIZZA FILTRI
@@ -837,53 +764,12 @@ if (bookableData.success && bookableData.products) {
     }
 }
 
-        // 5. Gestione sezioni vuote con Hero Premium
-SECTIONS.forEach(section => {
-    const gridElement = grids[section.id];
-    if (!gridElement) return;
-    
-    const hasProducts = countBySection[section.id] > 0;
-    
-    if (!hasProducts) {
-        // ✅ NASCONDI LA GRIGLIA VUOTA
-        gridElement.style.display = 'none';
-        
-        // ✅ PREPARA HERO PREMIUM (ma non mostrarlo ancora)
-        if (section.id === 'properties' || section.id === 'stays') {
-            const heroId = section.id === 'properties' ? 'propertiesEmptyHero' : 'staysEmptyHero';
-            const heroElement = document.getElementById(heroId);
-            if (heroElement) {
-                // Non mostrarlo ancora, sarà showSection() a farlo
-                heroElement.style.display = 'none';
-                console.log(`📦 Hero "${heroId}" pronto (nascosto)`);
+        // 5. Gestione sezioni vuote
+        SECTIONS.forEach(section => {
+            if (!countBySection[section.id] && grids[section.id]) {
+                grids[section.id].innerHTML = `<div class="empty" style="grid-column: 1/-1; text-align: center; padding: 3rem; opacity: 0.5;">Nessun prodotto disponibile al momento.</div>`;
             }
-            
-            // ✅ NASCONDI I FILTRI
-            if (section.id === 'properties') {
-                const filterContainer = document.getElementById('propertyFilterContainer');
-                if (filterContainer) filterContainer.style.display = 'none';
-            }
-        } else {
-            // Altre sezioni: messaggio generico
-            gridElement.innerHTML = `<div class="empty" style="grid-column: 1/-1; text-align: center; padding: 3rem; opacity: 0.5;">Nessun prodotto disponibile al momento.</div>`;
-            gridElement.style.display = 'grid'; // Mostra la griglia con il messaggio
-        }
-    } else {
-        // ✅ CI SONO PRODOTTI: Nascondi hero e prepara griglia
-        if (section.id === 'properties') {
-            const heroElement = document.getElementById('propertiesEmptyHero');
-            if (heroElement) heroElement.style.display = 'none';
-        }
-        if (section.id === 'stays') {
-            const heroElement = document.getElementById('staysEmptyHero');
-            if (heroElement) heroElement.style.display = 'none';
-        }
-        
-        // La griglia sarà mostrata da showSection() se la sezione è attiva
-        gridElement.style.display = 'none'; // Nascosta di default
-        console.log(`✅ Griglia "${section.gridId}" pronta con ${countBySection[section.id]} prodotti`);
-    }
-});
+        });
 
     } catch (error) {
         console.warn(`Tentativo ${retryCount + 1} fallito:`, error);
@@ -1347,7 +1233,3 @@ function closeErrorMessage() {
         errorDiv.style.display = 'none';
     }, 500);
 }
-
-
-
-
