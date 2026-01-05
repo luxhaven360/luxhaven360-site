@@ -839,54 +839,49 @@ if (bookableData.success && bookableData.products) {
 
         // 5. Gestione sezioni vuote con Hero Premium
 SECTIONS.forEach(section => {
-    if (!countBySection[section.id] && grids[section.id]) {
-        // Sezioni con hero premium
+    const gridElement = grids[section.id];
+    if (!gridElement) return;
+    
+    const hasProducts = countBySection[section.id] > 0;
+    
+    if (!hasProducts) {
+        // ✅ NASCONDI LA GRIGLIA VUOTA
+        gridElement.style.display = 'none';
+        
+        // ✅ PREPARA HERO PREMIUM (ma non mostrarlo ancora)
         if (section.id === 'properties' || section.id === 'stays') {
-            // Nascondi griglia
-            grids[section.id].style.display = 'none';
-            
-            // Mostra hero premium
             const heroId = section.id === 'properties' ? 'propertiesEmptyHero' : 'staysEmptyHero';
             const heroElement = document.getElementById(heroId);
             if (heroElement) {
-                heroElement.style.display = 'block';
-                heroElement.style.animation = 'fadeIn 1s ease';
-                
-                // ✅ FORZA IL PLAY DEL VIDEO
-                const videoElement = heroElement.querySelector('.empty-hero-video');
-                if (videoElement) {
-                    videoElement.load(); // Ricarica il video
-                    videoElement.play().catch(err => {
-                        console.log('Autoplay video bloccato:', err);
-                    });
-                }
+                // Non mostrarlo ancora, sarà showSection() a farlo
+                heroElement.style.display = 'none';
+                console.log(`📦 Hero "${heroId}" pronto (nascosto)`);
             }
             
-            // Nascondi filtri se presenti
+            // ✅ NASCONDI I FILTRI
             if (section.id === 'properties') {
                 const filterContainer = document.getElementById('propertyFilterContainer');
                 if (filterContainer) filterContainer.style.display = 'none';
             }
-            if (section.id === 'supercars') {
-                const filterContainer = document.getElementById('supercarFilterContainer');
-                if (filterContainer) filterContainer.style.display = 'none';
-            }
         } else {
             // Altre sezioni: messaggio generico
-            grids[section.id].innerHTML = `<div class="empty" style="grid-column: 1/-1; text-align: center; padding: 3rem; opacity: 0.5;">Nessun prodotto disponibile al momento.</div>`;
+            gridElement.innerHTML = `<div class="empty" style="grid-column: 1/-1; text-align: center; padding: 3rem; opacity: 0.5;">Nessun prodotto disponibile al momento.</div>`;
+            gridElement.style.display = 'grid'; // Mostra la griglia con il messaggio
         }
-    } else if (grids[section.id]) {
-        // Se ci sono prodotti, nascondi l'hero premium (se era visibile)
+    } else {
+        // ✅ CI SONO PRODOTTI: Nascondi hero e prepara griglia
         if (section.id === 'properties') {
             const heroElement = document.getElementById('propertiesEmptyHero');
             if (heroElement) heroElement.style.display = 'none';
-            grids[section.id].style.display = 'grid';
         }
         if (section.id === 'stays') {
             const heroElement = document.getElementById('staysEmptyHero');
             if (heroElement) heroElement.style.display = 'none';
-            grids[section.id].style.display = 'grid';
         }
+        
+        // La griglia sarà mostrata da showSection() se la sezione è attiva
+        gridElement.style.display = 'none'; // Nascosta di default
+        console.log(`✅ Griglia "${section.gridId}" pronta con ${countBySection[section.id]} prodotti`);
     }
 });
 
@@ -1352,6 +1347,7 @@ function closeErrorMessage() {
         errorDiv.style.display = 'none';
     }, 500);
 }
+
 
 
 
