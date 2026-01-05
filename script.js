@@ -1233,10 +1233,3 @@ function closeErrorMessage() {
         errorDiv.style.display = 'none';
     }, 500);
 }
-
-
-
-
-
-
-
