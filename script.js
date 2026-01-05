@@ -997,7 +997,8 @@ const TEMP_EMAIL_DOMAINS = [
     'tempmail.com', 'guerrillamail.com', '10minutemail.com', 'throwaway.email',
     'mailinator.com', 'maildrop.cc', 'temp-mail.org', 'getnada.com',
     'trashmail.com', 'fakeinbox.com', 'dispostable.com', 'yopmail.com',
-    'mailnesia.com', 'mintemail.com', 'mytemp.email', 'tempinbox.com'
+    'mailnesia.com', 'mintemail.com', 'mytemp.email', 'tempinbox.com',
+    'gavrom.com', 'emaxasp.com', 'cameltok.com', '24faw.com'
 ];
 
 /**
@@ -1161,5 +1162,6 @@ function closeErrorMessage() {
         errorDiv.style.display = 'none';
     }, 500);
 }
+
 
 
