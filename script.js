@@ -1,16 +1,19 @@
-// --- Nav & UI (tuo script esistente mantenuto e ampliato) ---
-
-// Navigation
 function showSection(sectionId) {
     console.log(`🔀 Cambio sezione: ${sectionId}`);
     
-    // ✅ STEP 1: NASCONDI TUTTE LE SEZIONI E HERO
-    document.querySelectorAll('.section, .hero').forEach(s => {
-        s.classList.remove('active');
-        s.style.display = 'none'; // ✅ FORZA NASCONDIMENTO
+    // ✅ STEP 1: PAUSA TUTTI I VIDEO ATTIVI (cleanup)
+    document.querySelectorAll('video').forEach(video => {
+        video.pause();
+        video.currentTime = 0; // Reset al frame iniziale
     });
     
-    // ✅ STEP 2: MOSTRA SOLO LA SEZIONE RICHIESTA
+    // ✅ STEP 2: NASCONDI TUTTE LE SEZIONI E HERO
+    document.querySelectorAll('.section, .hero').forEach(s => {
+        s.classList.remove('active');
+        s.style.display = 'none';
+    });
+    
+    // ✅ STEP 3: MOSTRA SOLO LA SEZIONE RICHIESTA
     if (sectionId === 'home') {
         const hero = document.querySelector('.hero');
         if (hero) {
@@ -31,6 +34,11 @@ function showSection(sectionId) {
             el.classList.add('active');
             el.style.display = 'block';
             el.style.opacity = '1';
+            
+            // ✅ NUOVO: Avvia video nella sezione appena aperta
+            setTimeout(() => {
+                playVideosInSection(el);
+            }, 100); // Piccolo delay per garantire rendering
         }
         
         // ✅ MOSTRA FILTRO CATEGORIE SE SHOP
@@ -58,6 +66,48 @@ function showSection(sectionId) {
     window.scrollTo({ top: 0, behavior: 'smooth' });
     
     console.log(`✅ Sezione "${sectionId}" attiva`);
+}
+
+/**
+ * 🎬 Avvia automaticamente tutti i video in una sezione
+ * @param {HTMLElement} section - Elemento DOM della sezione
+ */
+function playVideosInSection(section) {
+    if (!section) return;
+    
+    const videos = section.querySelectorAll('video');
+    
+    videos.forEach(video => {
+        // Reset video
+        video.currentTime = 0;
+        
+        // Imposta attributi per autoplay (sicurezza cross-browser)
+        video.muted = true;
+        video.playsInline = true;
+        
+        // Prova ad avviare il video
+        const playPromise = video.play();
+        
+        if (playPromise !== undefined) {
+            playPromise
+                .then(() => {
+                    console.log('✅ Video avviato:', video.src);
+                })
+                .catch(error => {
+                    console.warn('⚠️ Autoplay bloccato dal browser:', error);
+                    
+                    // Fallback: Tentativo di play al primo click/touch dell'utente
+                    const playOnInteraction = () => {
+                        video.play().catch(e => console.error('Play fallito:', e));
+                        document.removeEventListener('click', playOnInteraction);
+                        document.removeEventListener('touchstart', playOnInteraction);
+                    };
+                    
+                    document.addEventListener('click', playOnInteraction, { once: true });
+                    document.addEventListener('touchstart', playOnInteraction, { once: true });
+                });
+        }
+    });
 }
 
 function toggleMenu() {
@@ -692,8 +742,8 @@ function generatePropertiesEmptyState() {
         <div class="premium-empty-state">
             <!-- Hero Video -->
             <div class="empty-hero-video">
-                <video autoplay loop muted playsinline>
-                    <source src="https://drive.google.com/file/d/1YNcXiojpHYae3HilwlAM1p3gnWLPpE9c/view?usp=sharing" type="video/mp4">
+                <video autoplay loop muted playsinline webkit-playsinline>
+                    <source src="https://drive.google.com/uc?export=download&id=1YNcXiojpHYae3HilwlAM1p3gnWLPpE9c" type="video/mp4">
                 </video>
             </div>
             
@@ -735,8 +785,8 @@ function generateExperiencesEmptyState() {
         <div class="premium-empty-state">
             <!-- Hero Video -->
             <div class="empty-hero-video">
-                <video autoplay loop muted playsinline>
-                    <source src="https://cdn.pixabay.com/video/2023/04/21/159429-820009298_large.mp4" type="video/mp4">
+                <video autoplay loop muted playsinline webkit-playsinline>
+                    <source src="https://drive.google.com/uc?export=download&id=1YNcXiojpHYae3HilwlAM1p3gnWLPpE9c" type="video/mp4">
                 </video>
             </div>
             
@@ -1327,5 +1377,6 @@ function closeErrorMessage() {
         errorDiv.style.display = 'none';
     }, 500);
 }
+
 
 
