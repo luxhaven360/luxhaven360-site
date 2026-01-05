@@ -139,7 +139,7 @@ function createProductCard(prod, defaultCta) {
     // container
     const card = el('div', { class: 'card' });
 
-    // ========================================
+  // ========================================
 // ✅ GESTIONE STATI ESPERIENZE (SOLO EX)
 // ========================================
 const isExperience = prod.category === 'stays';
@@ -148,6 +148,11 @@ let disableBooking = false;
 let badgeHtml = '';
 
 if (isExperience) {
+  // ✅ NORMALIZZA STATO PER CONFRONTO ROBUSTO
+  const statoNormalized = (prod.statoNormalized || prod.stato || '').toLowerCase().replace(/\s+/g, ' ');
+  
+  console.log(`🎯 Esperienza: ${prod.title} - Stato originale: "${prod.stato}" - Normalizzato: "${statoNormalized}"`);
+  
   // CASO 1: Esperienza SCADUTA
   if (prod.isScaduta) {
     experienceClass = 'experience-expired';
@@ -159,9 +164,10 @@ if (isExperience) {
         </svg>
         <span>Esperienza Conclusa</span>
       </div>`;
+    console.log(`  → Applicato: SCADUTA`);
   } 
-  // CASO 2: Esperienza PRESTO DISPONIBILE / IN ARRIVO
-  else if (prod.stato === 'Presto Disponibile' || prod.stato === 'In Arrivo') {
+  // CASO 2: Esperienza PRESTO DISPONIBILE / IN ARRIVO (CONFRONTO NORMALIZZATO)
+  else if (statoNormalized === 'presto disponibile' || statoNormalized === 'in arrivo') {
     experienceClass = 'experience-coming-soon';
     badgeHtml = `
       <div class="experience-badge badge-coming-soon">
@@ -170,8 +176,9 @@ if (isExperience) {
         </svg>
         <span>Presto Disponibile</span>
       </div>`;
+    console.log(`  → Applicato: PRESTO DISPONIBILE`);
   }
-  // CASO 3: Esperienza NUOVA (ex-presto disponibile)
+  // CASO 3: Esperienza NUOVA (ex-presto disponibili)
   else if (prod.isNuova) {
     badgeHtml = `
       <div class="experience-badge badge-new">
@@ -180,6 +187,9 @@ if (isExperience) {
         </svg>
         <span>Nuovo</span>
       </div>`;
+    console.log(`  → Applicato: NUOVO`);
+  } else {
+    console.log(`  → Nessun badge applicato (stato: "${statoNormalized}")`);
   }
   
   // Aggiungi classe CSS alla card
@@ -1223,6 +1233,7 @@ function closeErrorMessage() {
         errorDiv.style.display = 'none';
     }, 500);
 }
+
 
 
 
