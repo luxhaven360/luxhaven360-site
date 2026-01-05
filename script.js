@@ -139,20 +139,53 @@ function createProductCard(prod, defaultCta) {
     // container
     const card = el('div', { class: 'card' });
 
+    // 🆕 APPLICA FILTRI IMMEDIATAMENTE DURANTE LA CREAZIONE
+    const savedShopFilter = localStorage.getItem('lh360_active_shop_filter');
+    const savedPropertyFilter = localStorage.getItem('lh360_active_property_filter');
+    const savedSupercarFilter = localStorage.getItem('lh360_active_supercar_filter');
+    
+    let shouldHide = false;
+    
+    // Filtro SHOP
+    if (savedShopFilter && prod.category === 'shop') {
+        if (prod.shopCategory !== savedShopFilter) {
+            shouldHide = true;
+        }
+    }
+    
+    // Filtro PROPERTIES
+    if (savedPropertyFilter && prod.category === 'properties') {
+        const propType = extractPropertyTypeFromSKU(prod.sku);
+        if (propType !== savedPropertyFilter) {
+            shouldHide = true;
+        }
+    }
+    
+    // Filtro SUPERCARS
+    if (savedSupercarFilter && prod.category === 'supercars') {
+        const supercarType = getSupercarType(prod.sku);
+        if (supercarType !== savedSupercarFilter) {
+            shouldHide = true;
+        }
+    }
+    
+    // Applica nascondimento IMMEDIATO
+    if (shouldHide) {
+        card.style.display = 'none';
+    }
+
     // image/icon
     const imageContainer = el('div', { class: 'card-image' });
     
-    // Controlla che il link sia presente e sia un URL Drive valido
     if (prod.icon && typeof prod.icon === 'string' && prod.icon.includes('drive.google.com')) {
         const img = el('img', { 
             src: prod.icon, 
             alt: prod.title, 
             style: 'width:100%; height:100%; object-fit:cover; transition: transform 0.5s ease;',
             loading: 'lazy',
-            referrerpolicy: 'no-referrer' // <--- DEVE ESSERE QUI!
+            referrerpolicy: 'no-referrer'
         });
         
-        // Fallback se l'immagine non carica (dovrebbe essere solo il tuo "pacchetto" 📦)
         img.onerror = function() {
             this.style.display = 'none';
             imageContainer.textContent = '📦';
@@ -164,7 +197,6 @@ function createProductCard(prod, defaultCta) {
         
         imageContainer.appendChild(img);
     } else {
-        // Se non c'è un URL drive valido (es. icona base "📦")
         imageContainer.textContent = prod.icon || '📦';
         imageContainer.style.display = 'flex';
         imageContainer.style.alignItems = 'center';
@@ -174,157 +206,149 @@ function createProductCard(prod, defaultCta) {
     
     card.appendChild(imageContainer);
 
-    // ✅ AGGIUNGI CATEGORIA COME DATA ATTRIBUTE PER FILTRO IMMEDIATO
+    // Aggiungi categoria come data attribute
     if (prod.shopCategory) {
-  card.dataset.shopCategory = prod.shopCategory;
-  console.log(`🏷️ Card creata: ${prod.title} → Categoria: ${prod.shopCategory}`);
-}
+        card.dataset.shopCategory = prod.shopCategory;
+    }
+    
+    // Aggiungi SKU come data attribute
+    card.dataset.sku = prod.sku;
 
     // title
     const title = el('h3', { class: 'card-title' }, [document.createTextNode(prod.title || 'Untitled')]);
     card.appendChild(title);
 
-    // desc: usa briefDesc per card index
-const descText = prod.briefDesc || prod.desc || '';
-const desc = el('p', { class: 'card-desc' }, [document.createTextNode(descText)]);
-card.appendChild(desc);
+    // desc
+    const descText = prod.briefDesc || prod.desc || '';
+    const desc = el('p', { class: 'card-desc' }, [document.createTextNode(descText)]);
+    card.appendChild(desc);
 
-    // GESTIONE PREZZO SPECIALE PER IMMOBILI
+    // GESTIONE PREZZO
     const isProperty = prod.category === 'properties';
-    const isSupercarOrExperience = prod.category === 'supercars' || prod.category === 'stays';
 
-if (isProperty) {
-    // Design premium per IMMOBILI: prezzo su richiesta
-    const priceContainer = el('div', { 
-        class: 'property-price-container',
-        style: `
-            margin: 1.5rem 0;
-            padding: 1.5rem;
-            background: linear-gradient(135deg, rgba(212, 175, 55, 0.08), rgba(255, 215, 0, 0.05));
-            border: 1px solid rgba(212, 175, 55, 0.3);
-            border-radius: 12px;
-            text-align: center;
-        `
-    });
-    
-    const priceSymbol = el('div', { 
-        style: `
-            font-size: 2.5rem;
-            font-weight: 300;
-            background: linear-gradient(135deg, #D4AF37, #FFD700);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            background-clip: text;
-            letter-spacing: 2px;
-            margin-bottom: 0.5rem;
-        `
-    }, [document.createTextNode('€ —')]);
-    
-    const priceLabel = el('div', { 
-        style: `
-            font-size: 0.9rem;
-            color: #c9a891;
-            letter-spacing: 2px;
-            text-transform: uppercase;
-            font-weight: 500;
-        `
-    }, [document.createTextNode('Su Richiesta')]);
-    
-    priceContainer.appendChild(priceSymbol);
-    priceContainer.appendChild(priceLabel);
-    card.appendChild(priceContainer);
-    
-    // Badge esclusivo per IMMOBILI
-    card.classList.add('property-premium-card');
-} else {
-    // Logica normale per SUPERCAR/ESPERIENZE/SHOP
-    const hasDiscount = prod.discountPrice && prod.discountPrice < prod.price;
-
-    if (hasDiscount) {
-        // ... codice esistente prezzo scontato ...
+    if (isProperty) {
+        // Design premium per IMMOBILI
         const priceContainer = el('div', { 
-            style: 'display: flex; flex-direction: column; gap: 0.5rem; margin-bottom: 1rem;' 
+            class: 'property-price-container',
+            style: `
+                margin: 1.5rem 0;
+                padding: 1.5rem;
+                background: linear-gradient(135deg, rgba(212, 175, 55, 0.08), rgba(255, 215, 0, 0.05));
+                border: 1px solid rgba(212, 175, 55, 0.3);
+                border-radius: 12px;
+                text-align: center;
+            `
         });
         
-        const originalPrice = el('div', { 
-            style: 'font-size: 1rem; color: #71717a; text-decoration: line-through; font-weight: 300;' 
-        }, [document.createTextNode(formatPrice(prod.price, prod.currency || 'EUR'))]);
-        priceContainer.appendChild(originalPrice);
+        const priceSymbol = el('div', { 
+            style: `
+                font-size: 2.5rem;
+                font-weight: 300;
+                background: linear-gradient(135deg, #D4AF37, #FFD700);
+                -webkit-background-clip: text;
+                -webkit-text-fill-color: transparent;
+                background-clip: text;
+                letter-spacing: 2px;
+                margin-bottom: 0.5rem;
+            `
+        }, [document.createTextNode('€ —')]);
         
-        const discountRow = el('div', { 
-            style: 'display: flex; align-items: center; gap: 0.75rem;' 
-        });
+        const priceLabel = el('div', { 
+            style: `
+                font-size: 0.9rem;
+                color: #c9a891;
+                letter-spacing: 2px;
+                text-transform: uppercase;
+                font-weight: 500;
+            `
+        }, [document.createTextNode('Su Richiesta')]);
         
-        const discountedPrice = el('div', { 
-            style: `font-size: 1.75rem; font-weight: 700; letter-spacing: 0.02em; 
-                    background: linear-gradient(135deg, #D4AF37, #FFD700);
-                    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
-                    background-clip: text;` 
-        }, [document.createTextNode(formatPrice(prod.discountPrice, prod.currency || 'EUR'))]);
-        discountRow.appendChild(discountedPrice);
-        
-        const discountPercent = Math.round(((prod.price - prod.discountPrice) / prod.price) * 100);
-        const badge = el('span', { 
-            style: `display: inline-block; background: linear-gradient(135deg, #D4AF37, #FFD700);
-                    color: #09090b; padding: 0.375rem 0.875rem; border-radius: 2rem;
-                    font-size: 0.875rem; font-weight: 600; letter-spacing: 0.05em;
-                    box-shadow: 0 4px 12px rgba(212, 175, 55, 0.3);` 
-        }, [document.createTextNode(`-${discountPercent}%`)]);
-        discountRow.appendChild(badge);
-        
-        priceContainer.appendChild(discountRow);
+        priceContainer.appendChild(priceSymbol);
+        priceContainer.appendChild(priceLabel);
         card.appendChild(priceContainer);
+        
+        card.classList.add('property-premium-card');
     } else {
-    // Prezzo normale con formattazione italiana
-    let priceDisplay;
-    if (prod.price != null && prod.price > 0) {
-        priceDisplay = formatPrice(prod.price, prod.currency || 'EUR');
-    } else {
-        priceDisplay = prod.price_text || 'Contattaci';
-    }
-    
-    const priceText = el('div', { class: 'card-price' }, [
-        document.createTextNode(priceDisplay)
-    ]);
-    card.appendChild(priceText);
-}
-}
+        const hasDiscount = prod.discountPrice && prod.discountPrice < prod.price;
 
-    // button area
+        if (hasDiscount) {
+            const priceContainer = el('div', { 
+                style: 'display: flex; flex-direction: column; gap: 0.5rem; margin-bottom: 1rem;' 
+            });
+            
+            const originalPrice = el('div', { 
+                style: 'font-size: 1rem; color: #71717a; text-decoration: line-through; font-weight: 300;' 
+            }, [document.createTextNode(formatPrice(prod.price, prod.currency || 'EUR'))]);
+            priceContainer.appendChild(originalPrice);
+            
+            const discountRow = el('div', { 
+                style: 'display: flex; align-items: center; gap: 0.75rem;' 
+            });
+            
+            const discountedPrice = el('div', { 
+                style: `font-size: 1.75rem; font-weight: 700; letter-spacing: 0.02em; 
+                        background: linear-gradient(135deg, #D4AF37, #FFD700);
+                        -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+                        background-clip: text;` 
+            }, [document.createTextNode(formatPrice(prod.discountPrice, prod.currency || 'EUR'))]);
+            discountRow.appendChild(discountedPrice);
+            
+            const discountPercent = Math.round(((prod.price - prod.discountPrice) / prod.price) * 100);
+            const badge = el('span', { 
+                style: `display: inline-block; background: linear-gradient(135deg, #D4AF37, #FFD700);
+                        color: #09090b; padding: 0.375rem 0.875rem; border-radius: 2rem;
+                        font-size: 0.875rem; font-weight: 600; letter-spacing: 0.05em;
+                        box-shadow: 0 4px 12px rgba(212, 175, 55, 0.3);` 
+            }, [document.createTextNode(`-${discountPercent}%`)]);
+            discountRow.appendChild(badge);
+            
+            priceContainer.appendChild(discountRow);
+            card.appendChild(priceContainer);
+        } else {
+            let priceDisplay;
+            if (prod.price != null && prod.price > 0) {
+                priceDisplay = formatPrice(prod.price, prod.currency || 'EUR');
+            } else {
+                priceDisplay = prod.price_text || 'Contattaci';
+            }
+            
+            const priceText = el('div', { class: 'card-price' }, [
+                document.createTextNode(priceDisplay)
+            ]);
+            card.appendChild(priceText);
+        }
+    }
+
+    // button
     const btn = el('button', { class: 'btn', style: 'margin-top: 1.5rem; width: 100%;' }, [document.createTextNode(prod.cta || defaultCta || 'Scopri')]);
 
-    // attach product data as data- attributes
     btn.dataset.sku = prod.sku || '';
     btn.dataset.title = prod.title || '';
     if (prod.stripe_link) btn.dataset.stripeLink = prod.stripe_link;
     if (prod.action) btn.dataset.action = prod.action;
 
-    // on click behaviour
     btn.addEventListener('click', (e) => {
-    e.preventDefault();
-    showLoader();
-    
-    const sku = btn.dataset.sku || '';
-    const skuPrefix = sku.split('-')[0].toUpperCase();
-    
-    // ✅ Prodotti prenotabili → booking.html
-    if (['SC', 'PR', 'EX'].includes(skuPrefix)) {
-        window.location.href = `product-details/booking.html?sku=${encodeURIComponent(sku)}`;
-    } 
-    // ✅ Prodotti shop → pdp-products.html
-    else {
-        try {
-            localStorage.setItem('lh360_last_product', JSON.stringify({ sku: sku, title: btn.dataset.title, ts: Date.now() }));
-            localStorage.setItem('lh360_selected_sku', sku);
-        } catch (e) {}
+        e.preventDefault();
+        showLoader();
         
-        setTimeout(() => {
-            const base = 'product-details/pdp-products.html';
-            const section = encodeURIComponent(prod.sectionName || prod.category || 'shop');
-            window.location.href = `${base}?sku=${encodeURIComponent(sku)}&section=${section}`;
-        }, 500);
-    }
-});
+        const sku = btn.dataset.sku || '';
+        const skuPrefix = sku.split('-')[0].toUpperCase();
+        
+        if (['SC', 'PR', 'EX'].includes(skuPrefix)) {
+            window.location.href = `product-details/booking.html?sku=${encodeURIComponent(sku)}`;
+        } else {
+            try {
+                localStorage.setItem('lh360_last_product', JSON.stringify({ sku: sku, title: btn.dataset.title, ts: Date.now() }));
+                localStorage.setItem('lh360_selected_sku', sku);
+            } catch (e) {}
+            
+            setTimeout(() => {
+                const base = 'product-details/pdp-products.html';
+                const section = encodeURIComponent(prod.sectionName || prod.category || 'shop');
+                window.location.href = `${base}?sku=${encodeURIComponent(sku)}&section=${section}`;
+            }, 500);
+        }
+    });
 
     card.appendChild(btn);
     return card;
@@ -979,3 +1003,4 @@ function resetCategoryFilter() {
         });
     }
 }
+
