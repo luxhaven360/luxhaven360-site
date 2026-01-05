@@ -424,13 +424,13 @@ if (prod.category === 'shop' && hasAvailability) {
   if (badgeClass) {
     const availabilityBadge = el('div', { class: badgeClass });
     availabilityBadge.innerHTML = `
-      <div class="badge-content">
-        ${badgeIcon}
-        <span class="badge-text">${badgeText}</span>
-      </div>
-    `;
+  <div class="badge-content">
+    ${badgeIcon}
+    <span class="badge-text">${badgeText}</span>
+  </div>
+`;
     
-    card.appendChild(availabilityBadge);
+    imageContainer.appendChild(availabilityBadge);
     console.log('✅ Badge creato:', badgeText);
   }
 }
@@ -1504,4 +1504,5 @@ function showValidationError(message, type) {
     if (overlay.parentNode) overlay.remove();
   }, 5000);
 }
+
 
