@@ -577,72 +577,40 @@ function resetSupercarFilter() {
 }
 
 /**
- * Ripristina filtri salvati con retry intelligente
+ * Ripristina filtri salvati (ora le card sono già filtrate alla creazione)
  */
 function restoreBookableFilters() {
-    console.log('🔄 restoreBookableFilters chiamata');
+    console.log('🔄 restoreBookableFilters: ripristino UI');
     
-    let attempts = 0;
-    const maxAttempts = 20; // Max 3 secondi (20 × 150ms)
+    // ✅ RIPRISTINA UI FILTRO IMMOBILI
+    const savedPropertyFilter = localStorage.getItem('lh360_active_property_filter');
+    if (savedPropertyFilter) {
+        const targetPill = document.querySelector(`.filter-pill[data-property-type="${savedPropertyFilter}"]`);
+        if (targetPill) {
+            document.querySelectorAll('.filter-pill[data-property-type]').forEach(p => p.classList.remove('active'));
+            targetPill.classList.add('active');
+            
+            const resetBtn = document.getElementById('propertyResetBtn');
+            if (resetBtn) resetBtn.style.display = 'inline-flex';
+            
+            console.log('✅ UI filtro Immobili ripristinata:', savedPropertyFilter);
+        }
+    }
     
-    const checkInterval = setInterval(() => {
-        attempts++;
-        
-        const propertyCards = document.querySelectorAll('#propertiesGrid .card[data-sku]');
-        const supercarCards = document.querySelectorAll('#supercarsGrid .card[data-sku]');
-        
-        const hasPropertyCards = propertyCards.length > 0;
-        const hasSupercarCards = supercarCards.length > 0;
-        
-        console.log(`🔍 Tentativo ${attempts}/${maxAttempts}: Properties=${propertyCards.length}, Supercars=${supercarCards.length}`);
-        
-        // ✅ CONDIZIONE DI SUCCESSO: Almeno una griglia popolata
-        if (hasPropertyCards || hasSupercarCards) {
-            clearInterval(checkInterval);
-            console.log('✅ Card trovate, applico filtri');
+    // ✅ RIPRISTINA UI FILTRO SUPERCAR
+    const savedSupercarFilter = localStorage.getItem('lh360_active_supercar_filter');
+    if (savedSupercarFilter) {
+        const targetPill = document.querySelector(`.filter-pill[data-supercar-type="${savedSupercarFilter}"]`);
+        if (targetPill) {
+            document.querySelectorAll('.filter-pill[data-supercar-type]').forEach(p => p.classList.remove('active'));
+            targetPill.classList.add('active');
             
-            // ✅ RIPRISTINA FILTRO IMMOBILI
-            const savedPropertyFilter = localStorage.getItem('lh360_active_property_filter');
-            if (savedPropertyFilter && hasPropertyCards) {
-                console.log(`✅ Ripristino filtro Immobili: ${savedPropertyFilter}`);
-                
-                const targetPill = document.querySelector(`.filter-pill[data-property-type="${savedPropertyFilter}"]`);
-                if (targetPill) {
-                    // ✅ APPLICA IL FILTRO DIRETTAMENTE (no click simulation)
-                    setTimeout(() => {
-                        filterProperties(savedPropertyFilter, targetPill);
-                        console.log('✅ Filtro Immobili applicato');
-                    }, 200);
-                } else {
-                    console.warn('⚠️ Pill Immobili non trovata');
-                }
-            }
+            const resetBtn = document.getElementById('supercarResetBtn');
+            if (resetBtn) resetBtn.style.display = 'inline-flex';
             
-            // ✅ RIPRISTINA FILTRO SUPERCAR
-            const savedSupercarFilter = localStorage.getItem('lh360_active_supercar_filter');
-            if (savedSupercarFilter && hasSupercarCards) {
-                console.log(`✅ Ripristino filtro Supercar: ${savedSupercarFilter}`);
-                
-                const targetPill = document.querySelector(`.filter-pill[data-supercar-type="${savedSupercarFilter}"]`);
-                if (targetPill) {
-                    setTimeout(() => {
-                        filterSupercars(savedSupercarFilter, targetPill);
-                        console.log('✅ Filtro Supercar applicato');
-                    }, 200);
-                } else {
-                    console.warn('⚠️ Pill Supercar non trovata');
-                }
-            }
-            
-            return; // Esci con successo
+            console.log('✅ UI filtro Supercar ripristinata:', savedSupercarFilter);
         }
-        
-        // ✅ TIMEOUT: Se supera i tentativi, fermati
-        if (attempts >= maxAttempts) {
-            clearInterval(checkInterval);
-            console.warn('⏱️ Timeout ripristino filtri (card non trovate)');
-        }
-    }, 150); // Check ogni 150ms
+    }
 }
 
 /**
@@ -1003,4 +971,5 @@ function resetCategoryFilter() {
         });
     }
 }
+
 
