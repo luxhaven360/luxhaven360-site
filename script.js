@@ -245,10 +245,6 @@ if (isExperience) {
         };
         
         imageContainer.appendChild(img);
-            // ✅ Aggiungi badge se esperienza
-            if (badgeHtml) {
-               imageContainer.innerHTML += badgeHtml;
-            }
     } else {
         imageContainer.textContent = prod.icon || '📦';
         imageContainer.style.display = 'flex';
@@ -256,6 +252,11 @@ if (isExperience) {
         imageContainer.style.justifyContent = 'center';
         imageContainer.style.fontSize = '3rem';
     }
+
+    // ✅ Aggiungi badge se esperienza
+     if (badgeHtml) {
+         imageContainer.innerHTML += badgeHtml;
+     }
     
     card.appendChild(imageContainer);
 
@@ -1222,6 +1223,7 @@ function closeErrorMessage() {
         errorDiv.style.display = 'none';
     }, 500);
 }
+
 
 
 
