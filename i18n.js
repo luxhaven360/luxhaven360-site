@@ -140,6 +140,11 @@ class I18n {
     this.translatePage();
     this.updateLanguageSelector();
 
+     // Aggiorna prezzi
+if (typeof updateAllPricesForLanguage === 'function') {
+    updateAllPricesForLanguage();
+}
+
     // Dispatch event
     document.dispatchEvent(new CustomEvent('languageChanged', { detail: { lang: langCode } }));
 
