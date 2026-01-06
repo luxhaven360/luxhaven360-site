@@ -912,7 +912,7 @@ function generatePropertiesEmptyState() {
             
             <!-- Content Editoriale -->
             <div class="empty-content-wrapper">
-                <h2 class="empty-main-title">Immobili Selezionati.<br>Non Cataloghi.</h2>
+                <h2 class="empty-main-title" data-i18n="empty_properties_title" data-i18n-html="true">Immobili Selezionati.<br>Non Cataloghi.</h2>
                 
                 <div class="empty-divider"></div>
                 
@@ -1564,5 +1564,6 @@ function showValidationError(message, type) {
     if (overlay.parentNode) overlay.remove();
   }, 5000);
 }
+
 
 
