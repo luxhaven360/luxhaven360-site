@@ -158,12 +158,12 @@ if (typeof updateAllPricesForLanguage === 'function') {
     const selector = document.getElementById('languageSelector');
     if (!selector) return;
 
-    // Imposta lingua corrente nel selettore
+    // Imposta lingua corrente nel selettore con flag-icons
     const currentFlag = selector.querySelector('.current-lang-flag');
     const currentCode = selector.querySelector('.current-lang-code');
     
     if (currentFlag && currentCode) {
-      currentFlag.textContent = this.getFlagEmoji(this.currentLang);
+      currentFlag.className = `current-lang-flag fi fi-${this.getFlagCode(this.currentLang)}`;
       currentCode.textContent = this.currentLang.toUpperCase();
     }
 
@@ -194,12 +194,7 @@ if (typeof updateAllPricesForLanguage === 'function') {
         selector.classList.remove('open');
       }
     });
-
-    // ✅ FORCE EMOJI su tutte le opzioni del dropdown
-selector.querySelectorAll('.lang-flag').forEach(flag => {
-    flag.style.fontFamily = "'Apple Color Emoji', 'Segoe UI Emoji', 'Noto Color Emoji', sans-serif";
-});
-  }
+}
 
   /**
  * Aggiorna visivamente il selettore lingua (bandiera e codice)
@@ -212,16 +207,7 @@ selector.querySelectorAll('.lang-flag').forEach(flag => {
     const currentCode = selector.querySelector('.current-lang-code');
     
     if (currentFlag && currentCode) {
-        // ✅ SOLUZIONE: Usa Unicode invece di emoji composte
-        const flags = {
-            it: '\u{1F1EE}\u{1F1F9}', // 🇮🇹
-            en: '\u{1F1EC}\u{1F1E7}', // 🇬🇧
-            fr: '\u{1F1EB}\u{1F1F7}', // 🇫🇷
-            de: '\u{1F1E9}\u{1F1EA}', // 🇩🇪
-            es: '\u{1F1EA}\u{1F1F8}'  // 🇪🇸
-        };
-        
-        currentFlag.textContent = flags[this.currentLang] || '🌐';
+        currentFlag.className = `current-lang-flag fi fi-${this.getFlagCode(this.currentLang)}`;
         currentCode.textContent = this.currentLang.toUpperCase();
     }
 
@@ -279,18 +265,18 @@ selector.querySelectorAll('.lang-flag').forEach(flag => {
   }
 
   /**
-   * Ottieni emoji bandiera per codice lingua
-   */
-  getFlagEmoji(langCode) {
-    const flags = {
-      it: '🇮🇹',
-      en: '🇬🇧',
-      fr: '🇫🇷',
-      de: '🇩🇪',
-      es: '🇪🇸'
+ * Ottieni codice bandiera per flag-icons
+ */
+getFlagCode(langCode) {
+    const codes = {
+      it: 'it',
+      en: 'gb',
+      fr: 'fr',
+      de: 'de',
+      es: 'es'
     };
-    return flags[langCode] || '🌍';
-  }
+    return codes[langCode] || 'it';
+}
 
   /**
    * Ottieni nome completo lingua
