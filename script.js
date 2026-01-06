@@ -438,66 +438,52 @@ console.log('🔍 Debug Card:', {
 if (prod.category === 'shop' && hasAvailability) {
   const availability = prod.availability;
   
-  // Determina stato e stile
   let badgeClass = 'availability-badge-premium';
   let badgeIcon = '';
   let badgeText = '';
   
   if (availability === 0) {
-    // ESAURITO
     badgeClass += ' status-sold-out';
-    badgeIcon = `
-      <svg class="badge-icon" width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    badgeIcon = `<svg class="badge-icon" width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
-      </svg>
-    `;
-    badgeText = 'Esaurito';
+      </svg>`;
+    badgeText = window.i18n().t('card_sold_out');
   } else if (availability <= 3) {
-    // CRITICO (≤3 pezzi)
     badgeClass += ' status-critical';
-    badgeIcon = `
-      <svg class="badge-icon" width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    badgeIcon = `<svg class="badge-icon" width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
-      </svg>
-    `;
-    badgeText = availability === 1 ? 'Ultimo Pezzo' : `Ultimi ${availability} Pezzi`;
+      </svg>`;
+    badgeText = availability === 1 
+      ? window.i18n().t('card_last_piece')
+      : window.i18n().t('card_last_pieces', { n: availability });
   } else if (availability <= 10) {
-    // LIMITATO (4-10 pezzi)
     badgeClass += ' status-limited';
-    badgeIcon = `
-  <svg class="badge-icon" width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
-  </svg>
-`;
-    badgeText = `${availability} Disponibili`;
+    badgeIcon = `<svg class="badge-icon" width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+      </svg>`;
+    badgeText = `${availability} ${window.i18n().t('card_availability')}`;
   } else {
-    // DISPONIBILE (>10 pezzi) - Solo per Limited Editions
     if (isLimitedEdition) {
       badgeClass += ' status-available';
-      badgeIcon = `
-        <svg class="badge-icon" width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      badgeIcon = `<svg class="badge-icon" width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
-        </svg>
-      `;
-      badgeText = `${availability} Disponibili`;
+        </svg>`;
+      badgeText = `${availability} ${window.i18n().t('card_availability')}`;
     } else {
-      // Per prodotti normali con >10 pezzi, non mostrare badge
       badgeClass = null;
     }
   }
   
-  // Crea il badge solo se necessario
   if (badgeClass) {
     const availabilityBadge = el('div', { class: badgeClass });
     availabilityBadge.innerHTML = `
-  <div class="badge-content">
-    ${badgeIcon}
-    <span class="badge-text">${badgeText}</span>
-  </div>
-`;
+      <div class="badge-content">
+        ${badgeIcon}
+        <span class="badge-text">${badgeText}</span>
+      </div>
+    `;
     
     imageContainer.appendChild(availabilityBadge);
-    console.log('✅ Badge creato:', badgeText);
   }
 }
 
@@ -659,6 +645,31 @@ function updateAllPricesForLanguage() {
         
         if (originalPrice) {
             priceElement.textContent = formatPrice(parseFloat(originalPrice), originalCurrency);
+        }
+    });
+}
+
+/**
+ * Aggiorna tutti i badge dinamici con la nuova lingua
+ */
+function updateAllBadgesForLanguage() {
+    document.querySelectorAll('.availability-badge-premium .badge-text').forEach(badge => {
+        const card = badge.closest('.card');
+        if (!card) return;
+        
+        const availability = parseInt(card.dataset.availability);
+        if (isNaN(availability)) return;
+        
+        const isLimited = card.classList.contains('limited-edition-card');
+        
+        if (availability === 0) {
+            badge.textContent = window.i18n().t('card_sold_out');
+        } else if (availability === 1) {
+            badge.textContent = window.i18n().t('card_last_piece');
+        } else if (availability <= 3) {
+            badge.textContent = window.i18n().t('card_last_pieces', { n: availability });
+        } else if (availability <= 10 || isLimited) {
+            badge.textContent = `${availability} ${window.i18n().t('card_availability')}`;
         }
     });
 }
@@ -1588,6 +1599,7 @@ function showValidationError(message, type) {
     if (overlay.parentNode) overlay.remove();
   }, 5000);
 }
+
 
 
 
