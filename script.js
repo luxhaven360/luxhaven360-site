@@ -155,33 +155,93 @@ function el(tag, attrs = {}, children = []) {
 }
 
 /**
- * Formatta il prezzo con separatore migliaia MANUALE (più robusto)
- * Output: "1.265 €" per index.html
+ * Formatta prezzo con conversione valuta e localizzazione
+ * @param {number} price - Prezzo in EUR
+ * @param {string} originalCurrency - Valuta originale (default: EUR)
+ * @returns {string} - Prezzo formattato con simbolo
  */
-function formatPrice(price, currency = 'EUR') {
+function formatPrice(price, originalCurrency = 'EUR') {
     const amount = parseFloat(price) || 0;
+    const currentLang = (window.i18n && window.i18n()) ? window.i18n().currentLang : 'it';
     
-    // Determina decimali
-    let decimals = 0;
-    if (amount < 100) decimals = 2;
-    else if (amount < 500) decimals = 2;
-    else if (amount < 1000) decimals = amount % 1 !== 0 ? 2 : 0; // Decimali solo se necessari
-    else decimals = 0; // Da 1000 in su: mai decimali
+    // 📊 TASSI DI CAMBIO (aggiorna periodicamente o usa API)
+    const exchangeRates = {
+        'EUR': 1,
+        'USD': 1.17,  // 1 EUR = 1.17 USD (esempio)
+        'GBP': 0.86   // 1 EUR = 0.86 GBP (esempio)
+    };
     
-    // Formatta manualmente
-    let formatted = amount.toFixed(decimals);
+    // 🌍 CONFIGURAZIONE PER LINGUA
+    const localeConfig = {
+        it: { 
+            currency: 'EUR', 
+            symbol: '€', 
+            symbolPosition: 'before',
+            thousands: '.', 
+            decimal: ',',
+            decimals: amount < 1000 ? 2 : 0
+        },
+        en: { 
+            currency: 'USD', 
+            symbol: '$', 
+            symbolPosition: 'before',
+            thousands: ',', 
+            decimal: '.',
+            decimals: 2
+        },
+        fr: { 
+            currency: 'EUR', 
+            symbol: '€', 
+            symbolPosition: 'after',
+            thousands: ' ', 
+            decimal: ',',
+            decimals: 2
+        },
+        de: { 
+            currency: 'EUR', 
+            symbol: '€', 
+            symbolPosition: 'after',
+            thousands: '.', 
+            decimal: ',',
+            decimals: 2
+        },
+        es: { 
+            currency: 'EUR', 
+            symbol: '€', 
+            symbolPosition: 'after',
+            thousands: '.', 
+            decimal: ',',
+            decimals: 2
+        }
+    };
     
-    // Sostituisci punto decimale con virgola
-    formatted = formatted.replace('.', ',');
+    const config = localeConfig[currentLang] || localeConfig.it;
     
-    // Aggiungi separatore migliaia (punto)
-    let parts = formatted.split(',');
-    parts[0] = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+    // 💱 CONVERSIONE VALUTA
+    let convertedAmount = amount;
+    if (originalCurrency !== config.currency) {
+        const fromRate = exchangeRates[originalCurrency] || 1;
+        const toRate = exchangeRates[config.currency] || 1;
+        convertedAmount = (amount / fromRate) * toRate;
+    }
     
-    // Simbolo valuta
-    const symbol = currency === 'EUR' ? '€' : currency;
+    // 🔢 FORMATTAZIONE NUMERO
+    let formatted = convertedAmount.toFixed(config.decimals);
     
-    return `${parts.join(',')} ${symbol}`;
+    // Sostituisci decimale
+    formatted = formatted.replace('.', config.decimal);
+    
+    // Aggiungi separatore migliaia
+    let parts = formatted.split(config.decimal);
+    parts[0] = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, config.thousands);
+    formatted = parts.join(config.decimal);
+    
+    // 💲 POSIZIONAMENTO SIMBOLO
+    if (config.symbolPosition === 'before') {
+        return `${config.symbol}${formatted}`;
+    } else {
+        return `${formatted} ${config.symbol}`;
+    }
 }
 
 // funzione per creare una card prodotto
@@ -1504,4 +1564,5 @@ function showValidationError(message, type) {
     if (overlay.parentNode) overlay.remove();
   }, 5000);
 }
+
 
