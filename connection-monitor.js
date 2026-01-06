@@ -283,6 +283,55 @@ class LuxHavenConnectionMonitor {
 }
 
     /**
+ * ✅ NUOVA FUNZIONE: Aggiorna lingua avvisi visibili
+ */
+updateWarningsLanguage() {
+    // Aggiorna avviso connessione debole/lenta
+    const warningBanner = document.getElementById('lh-connection-warning');
+    if (warningBanner && warningBanner.classList.contains('show')) {
+        const title = warningBanner.querySelector('.lh-banner-text strong');
+        const text = warningBanner.querySelector('.lh-banner-text span');
+        
+        if (title && text) {
+            // Determina se è "lenta" o "instabile" basandosi sullo stato corrente
+            const titleKey = this.connectionQuality === 'fair' ? 'connection_slow' : 'connection_unstable';
+            title.textContent = window.i18n ? window.i18n().t(titleKey) : title.textContent;
+            text.textContent = window.i18n ? window.i18n().t('connection_warning_text') : text.textContent;
+        }
+    }
+    
+    // Aggiorna overlay errore offline
+    const errorOverlay = document.getElementById('lh-connection-error');
+    if (errorOverlay && errorOverlay.classList.contains('show')) {
+        const errorTitle = errorOverlay.querySelector('.lh-error-title');
+        const errorText = errorOverlay.querySelector('.lh-error-text');
+        const errorBtn = errorOverlay.querySelector('.lh-error-btn');
+        
+        if (errorTitle) {
+            errorTitle.textContent = window.i18n ? window.i18n().t('connection_offline_title') : errorTitle.textContent;
+        }
+        if (errorText) {
+            const text = window.i18n ? window.i18n().t('connection_offline_text') : errorText.innerHTML;
+            errorText.innerHTML = text;
+        }
+        if (errorBtn) {
+            const btnText = window.i18n ? window.i18n().t('connection_offline_btn') : 'Ricarica Pagina';
+            // Mantieni l'emoji 🔄 e aggiorna solo il testo
+            errorBtn.innerHTML = `🔄 ${btnText}`;
+        }
+    }
+    
+    // Aggiorna notifica riconnessione (se visibile)
+    const reconnectNotif = document.getElementById('lh-reconnect-notif');
+    if (reconnectNotif && reconnectNotif.classList.contains('show')) {
+        const title = reconnectNotif.querySelector('.lh-banner-text strong');
+        if (title) {
+            title.textContent = window.i18n ? window.i18n().t('connection_restored') : title.textContent;
+        }
+    }
+}
+
+    /**
      * Nascondi tutti gli avvisi
      */
     hideAllWarnings() {
