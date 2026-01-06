@@ -5,10 +5,10 @@
 
 class I18n {
   constructor() {
+    this.translations = translations; // Importato da translations.js - SPOSTATO QUI
     this.currentLang = this.detectLanguage();
-    this.translations = translations; // Importato da translations.js
     this.init();
-  }
+}
 
   /**
    * Rileva lingua da URL o localStorage
