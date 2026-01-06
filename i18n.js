@@ -14,30 +14,49 @@ class I18n {
    * Rileva lingua da URL o localStorage
    */
   detectLanguage() {
-    // 1. Check URL parameter (?lang=it)
-    const urlParams = new URLSearchParams(window.location.search);
-    const langParam = urlParams.get('lang');
+    // 1. Check URL path (es: /it/, /en/, /fr/)
+    const pathParts = window.location.pathname.split('/').filter(Boolean);
     
-    if (langParam && this.translations[langParam]) {
-      localStorage.setItem('lh360_lang', langParam);
-      return langParam;
+    // Se il primo segmento è una lingua valida
+    if (pathParts[0] && this.translations[pathParts[0]]) {
+        const langFromPath = pathParts[0];
+        localStorage.setItem('lh360_lang', langFromPath);
+        return langFromPath;
     }
 
     // 2. Check localStorage
     const savedLang = localStorage.getItem('lh360_lang');
     if (savedLang && this.translations[savedLang]) {
-      return savedLang;
+        // Redirect per aggiungere lingua nell'URL
+        this.redirectToLanguagePath(savedLang);
+        return savedLang;
     }
 
     // 3. Check browser language
     const browserLang = navigator.language.split('-')[0];
     if (this.translations[browserLang]) {
-      return browserLang;
+        this.redirectToLanguagePath(browserLang);
+        return browserLang;
     }
 
     // 4. Default: italiano
+    this.redirectToLanguagePath('it');
     return 'it';
-  }
+}
+
+  /**
+ * Redirect per inserire lingua nel path se mancante
+ */
+redirectToLanguagePath(langCode) {
+    const currentPath = window.location.pathname;
+    const pathParts = currentPath.split('/').filter(Boolean);
+    
+    // Se non c'è già la lingua nel path
+    if (!pathParts[0] || !this.translations[pathParts[0]]) {
+        const newPath = `/${langCode}${currentPath === '/' ? '/' : currentPath}`;
+        window.history.replaceState({}, '', newPath + window.location.search + window.location.hash);
+    }
+}
 
   /**
    * Inizializza sistema i18n
@@ -51,9 +70,12 @@ class I18n {
     // Setup selettore lingua
     this.setupLanguageSelector();
     
+    // ✅ Aggiorna UI selettore con lingua corrente
+    this.updateLanguageSelector();
+    
     // Listener per contenuti dinamici
     this.observeDynamicContent();
-  }
+}
 
   /**
    * Traduce tutti gli elementi con data-i18n
@@ -109,27 +131,39 @@ class I18n {
    */
   changeLanguage(langCode) {
     if (!this.translations[langCode]) {
-      console.error(`Lingua "${langCode}" non supportata`);
-      return;
+        console.error(`Lingua "${langCode}" non supportata`);
+        return;
     }
 
     // Salva scelta
     localStorage.setItem('lh360_lang', langCode);
     this.currentLang = langCode;
 
-    // Aggiorna URL senza ricaricare
-    const url = new URL(window.location);
-    url.searchParams.set('lang', langCode);
-    window.history.replaceState({}, '', url);
+    // Aggiorna URL path: sostituisci lingua esistente con nuova
+    const currentPath = window.location.pathname;
+    const pathParts = currentPath.split('/').filter(Boolean);
+    
+    // Rimuovi lingua esistente (primo segmento se è una lingua valida)
+    if (pathParts[0] && this.translations[pathParts[0]]) {
+        pathParts.shift();
+    }
+    
+    // Costruisci nuovo path con nuova lingua
+    const newPath = `/${langCode}${pathParts.length ? '/' + pathParts.join('/') : '/'}`;
+    
+    window.history.replaceState({}, '', newPath + window.location.search + window.location.hash);
 
     // Traduci pagina
     this.translatePage();
+    
+    // ✅ AGGIORNA SELETTORE (fix problema 3)
+    this.updateLanguageSelector();
 
     // Notifica cambio lingua
     document.dispatchEvent(new CustomEvent('languageChanged', { detail: { lang: langCode } }));
 
     console.log(`✅ Lingua cambiata: ${langCode.toUpperCase()}`);
-  }
+}
 
   /**
    * Setup selettore lingua nella navbar
@@ -175,6 +209,34 @@ class I18n {
       }
     });
   }
+
+  /**
+ * Aggiorna visivamente il selettore lingua (bandiera e codice)
+ */
+updateLanguageSelector() {
+    const selector = document.getElementById('languageSelector');
+    if (!selector) return;
+
+    // Aggiorna bandiera e codice nel toggle
+    const currentFlag = selector.querySelector('.current-lang-flag');
+    const currentCode = selector.querySelector('.current-lang-code');
+    
+    if (currentFlag && currentCode) {
+        currentFlag.textContent = this.getFlagEmoji(this.currentLang);
+        currentCode.textContent = this.currentLang.toUpperCase();
+    }
+
+    // Aggiorna stato "active" nelle opzioni dropdown
+    selector.querySelectorAll('.lang-option').forEach(option => {
+        if (option.dataset.lang === this.currentLang) {
+            option.classList.add('active');
+        } else {
+            option.classList.remove('active');
+        }
+    });
+
+    console.log(`🔄 Selettore aggiornato: ${this.currentLang.toUpperCase()}`);
+}
 
   /**
    * Osserva DOM per contenuti dinamici
