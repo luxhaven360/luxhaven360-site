@@ -171,49 +171,49 @@ function formatPrice(price, originalCurrency = 'EUR') {
         'GBP': 0.86   // 1 EUR = 0.86 GBP (esempio)
     };
     
-    // 🌍 CONFIGURAZIONE PER LINGUA
-    const localeConfig = {
-        it: { 
-            currency: 'EUR', 
-            symbol: '€', 
-            symbolPosition: 'before',
-            thousands: '.', 
-            decimal: ',',
-            decimals: amount < 1000 ? 2 : 0
-        },
-        en: { 
-            currency: 'USD', 
-            symbol: '$', 
-            symbolPosition: 'before',
-            thousands: ',', 
-            decimal: '.',
-            decimals: 2
-        },
-        fr: { 
-            currency: 'EUR', 
-            symbol: '€', 
-            symbolPosition: 'after',
-            thousands: ' ', 
-            decimal: ',',
-            decimals: 2
-        },
-        de: { 
-            currency: 'EUR', 
-            symbol: '€', 
-            symbolPosition: 'after',
-            thousands: '.', 
-            decimal: ',',
-            decimals: 2
-        },
-        es: { 
-            currency: 'EUR', 
-            symbol: '€', 
-            symbolPosition: 'after',
-            thousands: '.', 
-            decimal: ',',
-            decimals: 2
-        }
-    };
+    // 🌐 CONFIGURAZIONE PER LINGUA
+const localeConfig = {
+    it: { 
+        currency: 'EUR', 
+        symbol: '€', 
+        symbolPosition: 'before',
+        thousands: '.', 
+        decimal: ',',
+        decimals: amount < 500 ? 2 : 0  // ← MODIFICATO: era < 1000
+    },
+    en: { 
+        currency: 'USD', 
+        symbol: '$', 
+        symbolPosition: 'before',
+        thousands: ',', 
+        decimal: '.',
+        decimals: amount < 500 ? 2 : 0  // ← MODIFICATO: era fisso a 2
+    },
+    fr: { 
+        currency: 'EUR', 
+        symbol: '€', 
+        symbolPosition: 'after',
+        thousands: ' ', 
+        decimal: ',',
+        decimals: amount < 500 ? 2 : 0  // ← MODIFICATO: era fisso a 2
+    },
+    de: { 
+        currency: 'EUR', 
+        symbol: '€', 
+        symbolPosition: 'after',
+        thousands: '.', 
+        decimal: ',',
+        decimals: amount < 500 ? 2 : 0  // ← MODIFICATO: era fisso a 2
+    },
+    es: { 
+        currency: 'EUR', 
+        symbol: '€', 
+        symbolPosition: 'after',
+        thousands: '.', 
+        decimal: ',',
+        decimals: amount < 500 ? 2 : 0  // ← MODIFICATO: era fisso a 2
+    }
+};
     
     const config = localeConfig[currentLang] || localeConfig.it;
     
@@ -1599,6 +1599,7 @@ function showValidationError(message, type) {
     if (overlay.parentNode) overlay.remove();
   }, 5000);
 }
+
 
 
 
