@@ -25,6 +25,12 @@ class LuxHavenConnectionMonitor {
         // Event listeners per cambio stato online/offline
         window.addEventListener('online', () => this.handleOnline());
         window.addEventListener('offline', () => this.handleOffline());
+
+        // Listener per cambio lingua
+        document.addEventListener('languageChanged', () => {
+           console.log('🌐 Lingua cambiata, aggiorno avvisi connessione');
+           this.updateWarningsLanguage();
+        });
         
         // ✅ STRATEGIA OTTIMIZZATA:
         // 1. Check iniziale silenzioso (evita flash avvisi)
