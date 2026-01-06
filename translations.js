@@ -93,7 +93,16 @@ const translations = {
     empty_stays_subtitle: "Ogni esperienza è un racconto sensoriale.",
     empty_stays_body: "Dal <strong>tramonto in supercar</strong> sulle colline toscane, ai <strong>fine settimana in dimore storiche</strong> con concierge dedicato. Ogni esperienza LuxHaven360 è pensata per chi cerca l'eccezionale, non il convenzionale.<br><br>Siamo in fase di curatela delle prime esperienze esclusive.",
     empty_stays_cta: "Vuoi essere tra i primi a scoprirle?",
-    empty_contact_btn: "Contattaci"
+    empty_contact_btn: "Contattaci",
+
+    // CONNECTION MONITOR
+    connection_slow: "Connessione Lenta",
+    connection_unstable: "Connessione Instabile",
+    connection_warning_text: "Potrebbero verificarsi rallentamenti durante la navigazione",
+    connection_offline_title: "Connessione Assente",
+    connection_offline_text: "Impossibile connettersi a Internet.<br>Verifica la tua connessione e ricarica la pagina.",
+    connection_offline_btn: "Ricarica Pagina",
+    connection_restored: "Connessione Ristabilita"
   },
   
   en: {
@@ -190,7 +199,16 @@ const translations = {
     empty_stays_subtitle: "Each experience is a sensory narrative.",
     empty_stays_body: "From <strong>supercar sunsets</strong> over Tuscan hills, to <strong>weekends in historic estates</strong> with dedicated concierge. Every LuxHaven360 experience is designed for those seeking the exceptional, not the conventional.<br><br>We are curating the first exclusive experiences.",
     empty_stays_cta: "Want to be among the first to discover them?",
-    empty_contact_btn: "Contact Us"
+    empty_contact_btn: "Contact Us",
+
+    // CONNECTION MONITOR
+    connection_slow: "Slow Connection",
+    connection_unstable: "Unstable Connection",
+    connection_warning_text: "You may experience slowdowns while browsing",
+    connection_offline_title: "No Connection",
+    connection_offline_text: "Unable to connect to the Internet.<br>Check your connection and reload the page.",
+    connection_offline_btn: "Reload Page",
+    connection_restored: "Connection Restored"
   },
   
   fr: {
@@ -287,7 +305,16 @@ const translations = {
     empty_stays_subtitle: "Chaque expérience est un récit sensoriel.",
     empty_stays_body: "Du <strong>coucher de soleil en supercar</strong> sur les collines toscanes, aux <strong>week-ends dans des demeures historiques</strong> avec concierge dédié. Chaque expérience LuxHaven360 est conçue pour ceux qui recherchent l'exceptionnel, pas le conventionnel.<br><br>Nous préparons les premières expériences exclusives.",
     empty_stays_cta: "Voulez-vous être parmi les premiers à les découvrir ?",
-    empty_contact_btn: "Nous Contacter"
+    empty_contact_btn: "Nous Contacter",
+
+    // CONNECTION MONITOR
+    connection_slow: "Connexion Lente",
+    connection_unstable: "Connexion Instable",
+    connection_warning_text: "Des ralentissements peuvent survenir pendant la navigation",
+    connection_offline_title: "Connexion Absente",
+    connection_offline_text: "Impossible de se connecter à Internet.<br>Vérifiez votre connexion et rechargez la page.",
+    connection_offline_btn: "Recharger la Page",
+    connection_restored: "Connexion Rétablie"
   },
   
   de: {
@@ -384,7 +411,16 @@ const translations = {
     empty_stays_subtitle: "Jedes Erlebnis ist eine sensorische Erzählung.",
     empty_stays_body: "Vom <strong>Sonnenuntergang im Supercar</strong> über toskanischen Hügeln bis zu <strong>Wochenenden in historischen Anwesen</strong> mit dediziertem Concierge. Jedes LuxHaven360-Erlebnis ist für diejenigen konzipiert, die das Außergewöhnliche suchen, nicht das Konventionelle.<br><br>Wir kuratieren die ersten exklusiven Erlebnisse.",
     empty_stays_cta: "Möchten Sie zu den Ersten gehören, die sie entdecken?",
-    empty_contact_btn: "Kontaktieren Sie Uns"
+    empty_contact_btn: "Kontaktieren Sie Uns",
+
+    // CONNECTION MONITOR
+    connection_slow: "Langsame Verbindung",
+    connection_unstable: "Instabile Verbindung",
+    connection_warning_text: "Beim Surfen kann es zu Verzögerungen kommen",
+    connection_offline_title: "Keine Verbindung",
+    connection_offline_text: "Verbindung zum Internet nicht möglich.<br>Überprüfen Sie Ihre Verbindung und laden Sie die Seite neu.",
+    connection_offline_btn: "Seite Neu Laden",
+    connection_restored: "Verbindung Wiederhergestellt"
   },
   
   es: {
@@ -481,6 +517,15 @@ const translations = {
     empty_stays_subtitle: "Cada experiencia es una narrativa sensorial.",
     empty_stays_body: "Desde <strong>atardeceres en supercar</strong> sobre colinas toscanas, hasta <strong>fines de semana en propiedades históricas</strong> con conserje dedicado. Cada experiencia LuxHaven360 está diseñada para quienes buscan lo excepcional, no lo convencional.<br><br>Estamos preparando las primeras experiencias exclusivas.",
     empty_stays_cta: "¿Quiere estar entre los primeros en descubrirlas?",
-    empty_contact_btn: "Contáctenos"
+    empty_contact_btn: "Contáctenos",
+
+    // CONNECTION MONITOR
+    connection_slow: "Conexión Lenta",
+    connection_unstable: "Conexión Inestable",
+    connection_warning_text: "Pueden producirse ralentizaciones durante la navegación",
+    connection_offline_title: "Sin Conexión",
+    connection_offline_text: "No se puede conectar a Internet.<br>Verifique su conexión y recargue la página.",
+    connection_offline_btn: "Recargar Página",
+    connection_restored: "Conexión Restablecida"
   }
 };
