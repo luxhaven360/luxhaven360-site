@@ -20,18 +20,32 @@ class I18n {
     
     // Detect GitHub Pages
     const isGitHubPages = window.location.hostname.includes('github.io');
-    let langIndex = 0;
     
-    if (isGitHubPages && pathParts[0] === this.githubRepo) {
-        // Su GitHub Pages: /luxhaven360-site/it/...
-        langIndex = 1; // La lingua è al secondo posto
-    }
-    
-    // Check se c'è una lingua valida nella posizione corretta
-    if (pathParts[langIndex] && this.translations[pathParts[langIndex]]) {
-        const langFromPath = pathParts[langIndex];
-        localStorage.setItem('lh360_lang', langFromPath);
-        return langFromPath;
+    if (isGitHubPages) {
+        // GitHub Pages: /repo/lingua/...
+        let repoIndex = -1;
+        
+        for (let i = 0; i < pathParts.length; i++) {
+            if (pathParts[i] === this.githubRepo) {
+                repoIndex = i;
+                break;
+            }
+        }
+        
+        if (repoIndex !== -1 && pathParts[repoIndex + 1]) {
+            const possibleLang = pathParts[repoIndex + 1];
+            if (this.translations[possibleLang]) {
+                localStorage.setItem('lh360_lang', possibleLang);
+                return possibleLang;
+            }
+        }
+    } else {
+        // Dominio personale: /lingua/...
+        if (pathParts[0] && this.translations[pathParts[0]]) {
+            const langFromPath = pathParts[0];
+            localStorage.setItem('lh360_lang', langFromPath);
+            return langFromPath;
+        }
     }
 
     // 2. Check localStorage
@@ -62,27 +76,51 @@ class I18n {
     
     // Detect GitHub Pages
     const isGitHubPages = window.location.hostname.includes('github.io');
-    let basePath = '';
-    let restOfPath = currentPath;
     
-    if (isGitHubPages && pathParts[0] === this.githubRepo) {
-        // Siamo su GitHub Pages con repo: /luxhaven360-site/
-        basePath = `/${this.githubRepo}`;
-        // Rimuovi repo name dal path
-        pathParts.shift();
-        restOfPath = pathParts.length ? '/' + pathParts.join('/') : '/';
+    if (isGitHubPages) {
+        // Caso GitHub Pages: /repo/lingua/...
+        let repoIndex = -1;
+        
+        // Trova l'indice del repository
+        for (let i = 0; i < pathParts.length; i++) {
+            if (pathParts[i] === this.githubRepo) {
+                repoIndex = i;
+                break;
+            }
+        }
+        
+        if (repoIndex === -1) {
+            // Repository non trovato, aggiungilo
+            const newPath = `/${this.githubRepo}/${langCode}/`;
+            window.history.replaceState({}, '', newPath + window.location.search + window.location.hash);
+            return;
+        }
+        
+        // Repository trovato, verifica se c'è già una lingua dopo di esso
+        const afterRepoIndex = repoIndex + 1;
+        
+        // Rimuovi lingua esistente se presente
+        if (pathParts[afterRepoIndex] && this.translations[pathParts[afterRepoIndex]]) {
+            pathParts.splice(afterRepoIndex, 1);
+        }
+        
+        // Inserisci nuova lingua dopo il repository
+        pathParts.splice(afterRepoIndex, 0, langCode);
+        
+        // Ricostruisci path
+        const newPath = '/' + pathParts.join('/') + '/';
+        window.history.replaceState({}, '', newPath + window.location.search + window.location.hash);
+    } else {
+        // Dominio personale futuro: /lingua/...
+        if (pathParts[0] && this.translations[pathParts[0]]) {
+            pathParts.shift();
+        }
+        
+        const restOfPath = pathParts.length ? '/' + pathParts.join('/') : '/';
+        const newPath = `/${langCode}${restOfPath}`;
+        
+        window.history.replaceState({}, '', newPath + window.location.search + window.location.hash);
     }
-    
-    // Rimuovi lingua esistente se presente
-    if (pathParts[0] && this.translations[pathParts[0]]) {
-        pathParts.shift();
-        restOfPath = pathParts.length ? '/' + pathParts.join('/') : '/';
-    }
-    
-    // Costruisci nuovo path: /luxhaven360-site/it/...
-    const newPath = `${basePath}/${langCode}${restOfPath === '/' ? '/' : restOfPath}`;
-    
-    window.history.replaceState({}, '', newPath + window.location.search + window.location.hash);
 }
 
   /**
@@ -170,23 +208,43 @@ class I18n {
     
     // Detect GitHub Pages
     const isGitHubPages = window.location.hostname.includes('github.io');
-    let basePath = '';
     
-    if (isGitHubPages && pathParts[0] === this.githubRepo) {
-        basePath = `/${this.githubRepo}`;
-        pathParts.shift(); // Rimuovi repo name
+    if (isGitHubPages) {
+        // GitHub Pages: /repo/lingua/...
+        let repoIndex = -1;
+        
+        for (let i = 0; i < pathParts.length; i++) {
+            if (pathParts[i] === this.githubRepo) {
+                repoIndex = i;
+                break;
+            }
+        }
+        
+        if (repoIndex !== -1) {
+            const afterRepoIndex = repoIndex + 1;
+            
+            // Rimuovi lingua esistente
+            if (pathParts[afterRepoIndex] && this.translations[pathParts[afterRepoIndex]]) {
+                pathParts.splice(afterRepoIndex, 1);
+            }
+            
+            // Inserisci nuova lingua
+            pathParts.splice(afterRepoIndex, 0, langCode);
+            
+            const newPath = '/' + pathParts.join('/') + '/';
+            window.history.replaceState({}, '', newPath + window.location.search + window.location.hash);
+        }
+    } else {
+        // Dominio personale
+        if (pathParts[0] && this.translations[pathParts[0]]) {
+            pathParts.shift();
+        }
+        
+        const restOfPath = pathParts.length ? '/' + pathParts.join('/') : '/';
+        const newPath = `/${langCode}${restOfPath}`;
+        
+        window.history.replaceState({}, '', newPath + window.location.search + window.location.hash);
     }
-    
-    // Rimuovi lingua esistente
-    if (pathParts[0] && this.translations[pathParts[0]]) {
-        pathParts.shift();
-    }
-    
-    // Costruisci nuovo path: /luxhaven360-site/lingua/resto
-    const restOfPath = pathParts.length ? '/' + pathParts.join('/') : '/';
-    const newPath = `${basePath}/${langCode}${restOfPath}`;
-    
-    window.history.replaceState({}, '', newPath + window.location.search + window.location.hash);
 
     this.translatePage();
     this.updateLanguageSelector();
