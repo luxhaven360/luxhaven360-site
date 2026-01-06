@@ -5,21 +5,31 @@
 
 class I18n {
   constructor() {
-    this.translations = translations; // Importato da translations.js - SPOSTATO QUI
+    this.translations = translations;
     this.currentLang = this.detectLanguage();
+    // Aggiungi questa riga:
+    this.githubRepo = 'luxhaven360-site'; // Nome del repository GitHub
     this.init();
 }
 
   /**
    * Rileva lingua da URL o localStorage
    */
-  detectLanguage() {
-    // 1. Check URL path (es: /it/, /en/, /fr/)
+   detectLanguage() {
     const pathParts = window.location.pathname.split('/').filter(Boolean);
     
-    // Se il primo segmento è una lingua valida
-    if (pathParts[0] && this.translations[pathParts[0]]) {
-        const langFromPath = pathParts[0];
+    // Detect GitHub Pages
+    const isGitHubPages = window.location.hostname.includes('github.io');
+    let langIndex = 0;
+    
+    if (isGitHubPages && pathParts[0] === this.githubRepo) {
+        // Su GitHub Pages: /luxhaven360-site/it/...
+        langIndex = 1; // La lingua è al secondo posto
+    }
+    
+    // Check se c'è una lingua valida nella posizione corretta
+    if (pathParts[langIndex] && this.translations[pathParts[langIndex]]) {
+        const langFromPath = pathParts[langIndex];
         localStorage.setItem('lh360_lang', langFromPath);
         return langFromPath;
     }
@@ -27,7 +37,6 @@ class I18n {
     // 2. Check localStorage
     const savedLang = localStorage.getItem('lh360_lang');
     if (savedLang && this.translations[savedLang]) {
-        // Redirect per aggiungere lingua nell'URL
         this.redirectToLanguagePath(savedLang);
         return savedLang;
     }
@@ -47,15 +56,33 @@ class I18n {
   /**
  * Redirect per inserire lingua nel path se mancante
  */
-redirectToLanguagePath(langCode) {
+ redirectToLanguagePath(langCode) {
     const currentPath = window.location.pathname;
     const pathParts = currentPath.split('/').filter(Boolean);
     
-    // Se non c'è già la lingua nel path
-    if (!pathParts[0] || !this.translations[pathParts[0]]) {
-        const newPath = `/${langCode}${currentPath === '/' ? '/' : currentPath}`;
-        window.history.replaceState({}, '', newPath + window.location.search + window.location.hash);
+    // Detect GitHub Pages
+    const isGitHubPages = window.location.hostname.includes('github.io');
+    let basePath = '';
+    let restOfPath = currentPath;
+    
+    if (isGitHubPages && pathParts[0] === this.githubRepo) {
+        // Siamo su GitHub Pages con repo: /luxhaven360-site/
+        basePath = `/${this.githubRepo}`;
+        // Rimuovi repo name dal path
+        pathParts.shift();
+        restOfPath = pathParts.length ? '/' + pathParts.join('/') : '/';
     }
+    
+    // Rimuovi lingua esistente se presente
+    if (pathParts[0] && this.translations[pathParts[0]]) {
+        pathParts.shift();
+        restOfPath = pathParts.length ? '/' + pathParts.join('/') : '/';
+    }
+    
+    // Costruisci nuovo path: /luxhaven360-site/it/...
+    const newPath = `${basePath}/${langCode}${restOfPath === '/' ? '/' : restOfPath}`;
+    
+    window.history.replaceState({}, '', newPath + window.location.search + window.location.hash);
 }
 
   /**
@@ -129,37 +156,41 @@ redirectToLanguagePath(langCode) {
   /**
    * Cambia lingua e ricarica pagina
    */
-  changeLanguage(langCode) {
+   changeLanguage(langCode) {
     if (!this.translations[langCode]) {
         console.error(`Lingua "${langCode}" non supportata`);
         return;
     }
 
-    // Salva scelta
     localStorage.setItem('lh360_lang', langCode);
     this.currentLang = langCode;
 
-    // Aggiorna URL path: sostituisci lingua esistente con nuova
     const currentPath = window.location.pathname;
     const pathParts = currentPath.split('/').filter(Boolean);
     
-    // Rimuovi lingua esistente (primo segmento se è una lingua valida)
+    // Detect GitHub Pages
+    const isGitHubPages = window.location.hostname.includes('github.io');
+    let basePath = '';
+    
+    if (isGitHubPages && pathParts[0] === this.githubRepo) {
+        basePath = `/${this.githubRepo}`;
+        pathParts.shift(); // Rimuovi repo name
+    }
+    
+    // Rimuovi lingua esistente
     if (pathParts[0] && this.translations[pathParts[0]]) {
         pathParts.shift();
     }
     
-    // Costruisci nuovo path con nuova lingua
-    const newPath = `/${langCode}${pathParts.length ? '/' + pathParts.join('/') : '/'}`;
+    // Costruisci nuovo path: /luxhaven360-site/lingua/resto
+    const restOfPath = pathParts.length ? '/' + pathParts.join('/') : '/';
+    const newPath = `${basePath}/${langCode}${restOfPath}`;
     
     window.history.replaceState({}, '', newPath + window.location.search + window.location.hash);
 
-    // Traduci pagina
     this.translatePage();
-    
-    // ✅ AGGIORNA SELETTORE (fix problema 3)
     this.updateLanguageSelector();
 
-    // Notifica cambio lingua
     document.dispatchEvent(new CustomEvent('languageChanged', { detail: { lang: langCode } }));
 
     console.log(`✅ Lingua cambiata: ${langCode.toUpperCase()}`);
