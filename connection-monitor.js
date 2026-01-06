@@ -184,98 +184,103 @@ class LuxHavenConnectionMonitor {
      * Mostra avviso connessione debole/lenta
      */
     showWeakConnectionWarning(quality) {
-        // Rimuovi avvisi esistenti
-        this.hideAllWarnings();
+    this.hideAllWarnings();
 
-        const warningHTML = `
-            <div id="lh-connection-warning" class="lh-connection-banner weak">
-                <div class="lh-banner-content">
-                    <div class="lh-banner-icon">⚠️</div>
-                    <div class="lh-banner-text">
-                        <strong>Connessione ${quality === 'fair' ? 'Lenta' : 'Instabile'}</strong>
-                        <span>Potrebbero verificarsi rallentamenti durante la navigazione</span>
-                    </div>
-                    <button class="lh-banner-close" onclick="luxConnectionMonitor.dismissWarning()">×</button>
+    // ✅ USA TRADUZIONI
+    const titleKey = quality === 'fair' ? 'connection_slow' : 'connection_unstable';
+    const title = window.i18n ? window.i18n().t(titleKey) : (quality === 'fair' ? 'Connessione Lenta' : 'Connessione Instabile');
+    const text = window.i18n ? window.i18n().t('connection_warning_text') : 'Potrebbero verificarsi rallentamenti durante la navigazione';
+
+    const warningHTML = `
+        <div id="lh-connection-warning" class="lh-connection-banner weak">
+            <div class="lh-banner-content">
+                <div class="lh-banner-icon">⚠️</div>
+                <div class="lh-banner-text">
+                    <strong>${title}</strong>
+                    <span>${text}</span>
                 </div>
+                <button class="lh-banner-close" onclick="luxConnectionMonitor.dismissWarning()">×</button>
             </div>
-        `;
+        </div>
+    `;
 
-        document.body.insertAdjacentHTML('beforeend', warningHTML);
-        
-        // Animazione entrata
-        setTimeout(() => {
-            const banner = document.getElementById('lh-connection-warning');
-            if (banner) banner.classList.add('show');
-        }, 100);
+    document.body.insertAdjacentHTML('beforeend', warningHTML);
+    
+    setTimeout(() => {
+        const banner = document.getElementById('lh-connection-warning');
+        if (banner) banner.classList.add('show');
+    }, 100);
 
-        this.hasShownWarning = true;
-    }
+    this.hasShownWarning = true;
+}
 
     /**
      * Mostra errore connessione assente
      */
     showOfflineError() {
-        // Rimuovi avvisi esistenti
-        this.hideAllWarnings();
+    this.hideAllWarnings();
 
-        const errorHTML = `
-            <div id="lh-connection-error" class="lh-connection-overlay">
-                <div class="lh-error-card">
-                    <div class="lh-error-icon">📡</div>
-                    <h2 class="lh-error-title">Connessione Assente</h2>
-                    <p class="lh-error-text">
-                        Impossibile connettersi a Internet.<br>
-                        Verifica la tua connessione e ricarica la pagina.
-                    </p>
-                    <button class="lh-error-btn" onclick="window.location.reload()">
-                        🔄 Ricarica Pagina
-                    </button>
-                </div>
+    // ✅ USA TRADUZIONI
+    const title = window.i18n ? window.i18n().t('connection_offline_title') : 'Connessione Assente';
+    const text = window.i18n ? window.i18n().t('connection_offline_text') : 'Impossibile connettersi a Internet.<br>Verifica la tua connessione e ricarica la pagina.';
+    const btnText = window.i18n ? window.i18n().t('connection_offline_btn') : 'Ricarica Pagina';
+
+    const errorHTML = `
+        <div id="lh-connection-error" class="lh-connection-overlay">
+            <div class="lh-error-card">
+                <div class="lh-error-icon">📡</div>
+                <h2 class="lh-error-title">${title}</h2>
+                <p class="lh-error-text">${text}</p>
+                <button class="lh-error-btn" onclick="window.location.reload()">
+                    🔄 ${btnText}
+                </button>
             </div>
-        `;
+        </div>
+    `;
 
-        document.body.insertAdjacentHTML('beforeend', errorHTML);
-        
-        // Animazione entrata
-        setTimeout(() => {
-            const overlay = document.getElementById('lh-connection-error');
-            if (overlay) overlay.classList.add('show');
-        }, 100);
-    }
+    document.body.insertAdjacentHTML('beforeend', errorHTML);
+    
+    setTimeout(() => {
+        const overlay = document.getElementById('lh-connection-error');
+        if (overlay) overlay.classList.add('show');
+    }, 100);
+}
 
     /**
      * ✅ Mostra notifica breve di riconnessione (verde)
      */
     showReconnectedNotification() {
-        console.log('✅ Mostro notifica riconnessione');
-        
-        const notifHTML = `
-            <div id="lh-reconnect-notif" class="lh-connection-banner success">
-                <div class="lh-banner-content">
-                    <div class="lh-banner-icon">✓</div>
-                    <div class="lh-banner-text">
-                        <strong>Connessione Ristabilita</strong>
-                    </div>
+    console.log('✅ Mostro notifica riconnessione');
+    
+    // ✅ USA TRADUZIONI
+    const title = window.i18n ? window.i18n().t('connection_restored') : 'Connessione Ristabilita';
+    
+    const notifHTML = `
+        <div id="lh-reconnect-notif" class="lh-connection-banner success">
+            <div class="lh-banner-content">
+                <div class="lh-banner-icon">✓</div>
+                <div class="lh-banner-text">
+                    <strong>${title}</strong>
                 </div>
             </div>
-        `;
+        </div>
+    `;
 
-        document.body.insertAdjacentHTML('beforeend', notifHTML);
-        
-        setTimeout(() => {
-            const notif = document.getElementById('lh-reconnect-notif');
-            if (notif) notif.classList.add('show');
-        }, 100);
+    document.body.insertAdjacentHTML('beforeend', notifHTML);
+    
+    setTimeout(() => {
+        const notif = document.getElementById('lh-reconnect-notif');
+        if (notif) notif.classList.add('show');
+    }, 100);
 
-        // Auto-dismiss dopo 4 secondi
-        setTimeout(() => {
-            const notif = document.getElementById('lh-reconnect-notif');
-            if (notif) {
-                notif.classList.remove('show');
-                setTimeout(() => notif.remove(), 500);
-            }
-        }, 4000);
-    }
+    setTimeout(() => {
+        const notif = document.getElementById('lh-reconnect-notif');
+        if (notif) {
+            notif.classList.remove('show');
+            setTimeout(() => notif.remove(), 500);
+        }
+    }, 4000);
+}
 
     /**
      * Nascondi tutti gli avvisi
