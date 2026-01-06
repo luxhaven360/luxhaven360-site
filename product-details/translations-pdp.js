@@ -208,7 +208,125 @@ const translationsPDP = {
     pdp_error_connection: "Errore di connessione",
     pdp_error_connection_text: "Impossibile recuperare i dettagli del prodotto.",
     pdp_error_retry: "Riprova",
-    pdp_error_security: "⚠️ Errore di sicurezza. Ricarica la pagina e riprova."
+    pdp_error_security: "⚠️ Errore di sicurezza. Ricarica la pagina e riprova.",
+
+    // ============================================
+// SUCCESS.HTML - PAGINA CONFERMA ORDINE
+// ============================================
+
+// Loader Messages
+success_loader_title: "Un momento",
+success_loader_msg1: "Preparazione dei dettagli",
+success_loader_msg2: "Verifica delle informazioni",
+success_loader_msg3: "Conferma in corso",
+success_loader_msg4: "Recupero dati prenotazione",
+success_loader_msg5: "Elaborazione richiesta",
+success_loader_msg6: "Quasi pronto",
+success_loader_msg7: "Finalizzazione",
+
+// Hero Section
+success_title: "Ordine Confermato",
+success_subtitle: "Il tuo ordine è stato ricevuto con successo",
+success_order_number: "Ordine",
+success_loading_order: "Caricamento ID ordine...",
+
+// Info Cards
+success_info_confirmation: "Conferma Inviata",
+success_info_delivery: "Consegna Prevista",
+success_info_payment: "Metodo di Pagamento",
+success_loading: "Caricamento...",
+success_payment_online: "Pagamento Online",
+
+// Order Summary
+success_summary_title: "Dettagli Ordine",
+success_summary_subtotal: "Subtotale",
+success_summary_shipping: "Spedizione",
+success_summary_free: "Gratuita",
+success_summary_discount: "Sconto",
+success_summary_total: "Totale Pagato",
+success_combo_badge: "COMBO",
+
+// Timeline
+success_timeline_title: "Traccia il Tuo Ordine",
+success_timeline_confirmed: "Confermato",
+success_timeline_preparing: "In Preparazione",
+success_timeline_shipped: "Spedito",
+success_timeline_delivered: "Consegnato",
+success_timeline_date_loading: "Caricamento...",
+success_timeline_in_progress: "in corso",
+success_timeline_to_schedule: "da programmare",
+success_timeline_to_define: "da definire",
+success_timeline_preparation_complete: "preparazione completata",
+
+// CTA Buttons
+success_btn_track: "Traccia Spedizione",
+success_btn_shop: "Continua lo Shopping",
+
+// Support Section
+success_support_title: "Hai bisogno di assistenza?",
+success_support_text: "Il nostro team è sempre a tua disposizione",
+
+// Session Expired Modal
+success_modal_expired_title: "Sessione Scaduta",
+success_modal_expired_message: "La sessione di tracciamento è scaduta. Per visualizzare lo stato del tuo ordine, accedi alla pagina completa degli ordini dove potrai tracciare tutte le tue spedizioni.",
+success_modal_expired_cta: "Vai agli Ordini",
+
+// Dynamic Content (from backend)
+success_category_merch: "Merchandising",
+success_category_properties: "Immobili",
+success_category_supercars: "Supercar",
+success_category_experiences: "Esperienze",
+success_category_lifestyle: "Lifestyle Collections",
+
+// ============================================
+// SUCCESS-BOOKING.HTML - CONFERMA PRENOTAZIONE
+// ============================================
+
+// Loader Messages
+booking_loader_msg1: "Preparazione dei dettagli",
+booking_loader_msg2: "Verifica delle informazioni",
+booking_loader_msg3: "Conferma in corso",
+booking_loader_msg4: "Recupero dati prenotazione",
+booking_loader_msg5: "Elaborazione richiesta",
+booking_loader_msg6: "Quasi pronto",
+booking_loader_msg7: "Finalizzazione",
+
+// Hero
+booking_title: "Prenotazione Confermata",
+booking_subtitle: "La tua richiesta è stata registrata con successo",
+booking_code_label: "Codice Prenotazione",
+booking_loading: "Caricamento...",
+
+// Categories (dynamic)
+booking_category_properties: "Immobili",
+booking_category_supercars: "Supercar",
+booking_category_experiences: "Esperienze",
+
+// Detail Labels
+booking_detail_service: "Servizio",
+booking_detail_date: "Data",
+booking_detail_time: "Orario",
+booking_detail_period: "Periodo",
+booking_detail_amount: "Importo",
+booking_to_confirm: "Da confermare",
+
+// Next Steps Section
+booking_next_steps_title: "Prossimi Passi",
+
+// Dynamic next steps messages (from backend by category)
+booking_next_steps_properties: "Un nostro consulente immobiliare ti contatterà entro 24-48 ore per confermare l'appuntamento e fornirti tutti i dettagli necessari.",
+booking_next_steps_supercars: "Un nostro consulente ti contatterà entro 24 ore per confermare i dettagli dell'esperienza di guida e fornirti tutte le informazioni necessarie.",
+booking_next_steps_experiences: "Riceverai un'email di conferma con tutti i dettagli. Il nostro team ti contatterà per assicurarsi che ogni aspetto dell'esperienza sia perfetto.",
+
+// CTA Buttons
+booking_btn_details: "Visualizza Dettagli",
+booking_btn_home: "Torna alla Home",
+
+// Error States
+booking_error_title: "Errore Caricamento Dati",
+booking_error_message: "Impossibile recuperare i dettagli della prenotazione.",
+booking_error_submessage: "Ti preghiamo di contattare il supporto.",
+booking_error_cta: "Torna alla Home"
   },
   
   en: {
@@ -395,7 +513,102 @@ const translationsPDP = {
     pdp_error_connection: "Connection error",
     pdp_error_connection_text: "Unable to retrieve product details.",
     pdp_error_retry: "Retry",
-    pdp_error_security: "⚠️ Security error. Reload the page and try again."
+    pdp_error_security: "⚠️ Security error. Reload the page and try again.",
+
+    // SUCCESS.HTML
+success_loader_title: "One moment",
+success_loader_msg1: "Preparing details",
+success_loader_msg2: "Verifying information",
+success_loader_msg3: "Confirmation in progress",
+success_loader_msg4: "Retrieving booking data",
+success_loader_msg5: "Processing request",
+success_loader_msg6: "Almost ready",
+success_loader_msg7: "Finalizing",
+
+success_title: "Order Confirmed",
+success_subtitle: "Your order has been received successfully",
+success_order_number: "Order",
+success_loading_order: "Loading order ID...",
+
+success_info_confirmation: "Confirmation Sent",
+success_info_delivery: "Expected Delivery",
+success_info_payment: "Payment Method",
+success_loading: "Loading...",
+success_payment_online: "Online Payment",
+
+success_summary_title: "Order Details",
+success_summary_subtotal: "Subtotal",
+success_summary_shipping: "Shipping",
+success_summary_free: "Free",
+success_summary_discount: "Discount",
+success_summary_total: "Total Paid",
+success_combo_badge: "COMBO",
+
+success_timeline_title: "Track Your Order",
+success_timeline_confirmed: "Confirmed",
+success_timeline_preparing: "Preparing",
+success_timeline_shipped: "Shipped",
+success_timeline_delivered: "Delivered",
+success_timeline_date_loading: "Loading...",
+success_timeline_in_progress: "in progress",
+success_timeline_to_schedule: "to be scheduled",
+success_timeline_to_define: "to be defined",
+success_timeline_preparation_complete: "preparation complete",
+
+success_btn_track: "Track Shipment",
+success_btn_shop: "Continue Shopping",
+
+success_support_title: "Need assistance?",
+success_support_text: "Our team is always at your disposal",
+
+success_modal_expired_title: "Session Expired",
+success_modal_expired_message: "The tracking session has expired. To view your order status, access the complete orders page where you can track all your shipments.",
+success_modal_expired_cta: "Go to Orders",
+
+success_category_merch: "Merchandising",
+success_category_properties: "Real Estate",
+success_category_supercars: "Supercars",
+success_category_experiences: "Experiences",
+success_category_lifestyle: "Lifestyle Collections",
+
+// SUCCESS-BOOKING.HTML
+booking_loader_msg1: "Preparing details",
+booking_loader_msg2: "Verifying information",
+booking_loader_msg3: "Confirmation in progress",
+booking_loader_msg4: "Retrieving booking data",
+booking_loader_msg5: "Processing request",
+booking_loader_msg6: "Almost ready",
+booking_loader_msg7: "Finalizing",
+
+booking_title: "Booking Confirmed",
+booking_subtitle: "Your request has been registered successfully",
+booking_code_label: "Booking Code",
+booking_loading: "Loading...",
+
+booking_category_properties: "Real Estate",
+booking_category_supercars: "Supercars",
+booking_category_experiences: "Experiences",
+
+booking_detail_service: "Service",
+booking_detail_date: "Date",
+booking_detail_time: "Time",
+booking_detail_period: "Period",
+booking_detail_amount: "Amount",
+booking_to_confirm: "To be confirmed",
+
+booking_next_steps_title: "Next Steps",
+
+booking_next_steps_properties: "A real estate consultant will contact you within 24-48 hours to confirm the appointment and provide all necessary details.",
+booking_next_steps_supercars: "A consultant will contact you within 24 hours to confirm the driving experience details and provide all necessary information.",
+booking_next_steps_experiences: "You will receive a confirmation email with all details. Our team will contact you to ensure every aspect of the experience is perfect.",
+
+booking_btn_details: "View Details",
+booking_btn_home: "Back to Home",
+
+booking_error_title: "Data Loading Error",
+booking_error_message: "Unable to retrieve booking details.",
+booking_error_submessage: "Please contact support.",
+booking_error_cta: "Back to Home"
   },
   
   fr: {
@@ -582,7 +795,102 @@ const translationsPDP = {
     pdp_error_connection: "Erreur de connexion",
     pdp_error_connection_text: "Impossible de récupérer les détails du produit.",
     pdp_error_retry: "Réessayer",
-    pdp_error_security: "⚠️ Erreur de sécurité. Rechargez la page et réessayez."
+    pdp_error_security: "⚠️ Erreur de sécurité. Rechargez la page et réessayez.",
+
+    // SUCCESS.HTML
+success_loader_title: "Un instant",
+success_loader_msg1: "Préparation des détails",
+success_loader_msg2: "Vérification des informations",
+success_loader_msg3: "Confirmation en cours",
+success_loader_msg4: "Récupération données réservation",
+success_loader_msg5: "Traitement de la demande",
+success_loader_msg6: "Presque prêt",
+success_loader_msg7: "Finalisation",
+
+success_title: "Commande Confirmée",
+success_subtitle: "Votre commande a été reçue avec succès",
+success_order_number: "Commande",
+success_loading_order: "Chargement ID commande...",
+
+success_info_confirmation: "Confirmation Envoyée",
+success_info_delivery: "Livraison Prévue",
+success_info_payment: "Méthode de Paiement",
+success_loading: "Chargement...",
+success_payment_online: "Paiement en Ligne",
+
+success_summary_title: "Détails de la Commande",
+success_summary_subtotal: "Sous-total",
+success_summary_shipping: "Livraison",
+success_summary_free: "Gratuite",
+success_summary_discount: "Réduction",
+success_summary_total: "Total Payé",
+success_combo_badge: "COMBO",
+
+success_timeline_title: "Suivez Votre Commande",
+success_timeline_confirmed: "Confirmée",
+success_timeline_preparing: "En Préparation",
+success_timeline_shipped: "Expédiée",
+success_timeline_delivered: "Livrée",
+success_timeline_date_loading: "Chargement...",
+success_timeline_in_progress: "en cours",
+success_timeline_to_schedule: "à programmer",
+success_timeline_to_define: "à définir",
+success_timeline_preparation_complete: "préparation terminée",
+
+success_btn_track: "Suivre Expédition",
+success_btn_shop: "Continuer les Achats",
+
+success_support_title: "Besoin d'assistance?",
+success_support_text: "Notre équipe est toujours à votre disposition",
+
+success_modal_expired_title: "Session Expirée",
+success_modal_expired_message: "La session de suivi a expiré. Pour visualiser l'état de votre commande, accédez à la page complète des commandes où vous pourrez suivre toutes vos expéditions.",
+success_modal_expired_cta: "Aller aux Commandes",
+
+success_category_merch: "Merchandising",
+success_category_properties: "Immobilier",
+success_category_supercars: "Supercars",
+success_category_experiences: "Expériences",
+success_category_lifestyle: "Collections Lifestyle",
+
+// SUCCESS-BOOKING.HTML
+booking_loader_msg1: "Préparation des détails",
+booking_loader_msg2: "Vérification des informations",
+booking_loader_msg3: "Confirmation en cours",
+booking_loader_msg4: "Récupération données réservation",
+booking_loader_msg5: "Traitement de la demande",
+booking_loader_msg6: "Presque prêt",
+booking_loader_msg7: "Finalisation",
+
+booking_title: "Réservation Confirmée",
+booking_subtitle: "Votre demande a été enregistrée avec succès",
+booking_code_label: "Code de Réservation",
+booking_loading: "Chargement...",
+
+booking_category_properties: "Immobilier",
+booking_category_supercars: "Supercars",
+booking_category_experiences: "Expériences",
+
+booking_detail_service: "Service",
+booking_detail_date: "Date",
+booking_detail_time: "Heure",
+booking_detail_period: "Période",
+booking_detail_amount: "Montant",
+booking_to_confirm: "À confirmer",
+
+booking_next_steps_title: "Prochaines Étapes",
+
+booking_next_steps_properties: "Un consultant immobilier vous contactera sous 24-48 heures pour confirmer le rendez-vous et vous fournir tous les détails nécessaires.",
+booking_next_steps_supercars: "Un consultant vous contactera sous 24 heures pour confirmer les détails de l'expérience de conduite et vous fournir toutes les informations nécessaires.",
+booking_next_steps_experiences: "Vous recevrez un email de confirmation avec tous les détails. Notre équipe vous contactera pour s'assurer que chaque aspect de l'expérience soit parfait.",
+
+booking_btn_details: "Voir les Détails",
+booking_btn_home: "Retour à l'Accueil",
+
+booking_error_title: "Erreur de Chargement",
+booking_error_message: "Impossible de récupérer les détails de la réservation.",
+booking_error_submessage: "Veuillez contacter le support.",
+booking_error_cta: "Retour à l'Accueil"
   },
   
   de: {
@@ -769,7 +1077,102 @@ const translationsPDP = {
     pdp_error_connection: "Verbindungsfehler",
     pdp_error_connection_text: "Produktdetails können nicht abgerufen werden.",
     pdp_error_retry: "Erneut Versuchen",
-    pdp_error_security: "⚠️ Sicherheitsfehler. Laden Sie die Seite neu und versuchen Sie es erneut."
+    pdp_error_security: "⚠️ Sicherheitsfehler. Laden Sie die Seite neu und versuchen Sie es erneut.",
+
+    // SUCCESS.HTML
+success_loader_title: "Einen Moment",
+success_loader_msg1: "Details vorbereiten",
+success_loader_msg2: "Informationen überprüfen",
+success_loader_msg3: "Bestätigung läuft",
+success_loader_msg4: "Buchungsdaten abrufen",
+success_loader_msg5: "Anfrage verarbeiten",
+success_loader_msg6: "Fast fertig",
+success_loader_msg7: "Fertigstellung",
+
+success_title: "Bestellung Bestätigt",
+success_subtitle: "Ihre Bestellung wurde erfolgreich empfangen",
+success_order_number: "Bestellung",
+success_loading_order: "Bestell-ID wird geladen...",
+
+success_info_confirmation: "Bestätigung Gesendet",
+success_info_delivery: "Voraussichtliche Lieferung",
+success_info_payment: "Zahlungsmethode",
+success_loading: "Wird geladen...",
+success_payment_online: "Online-Zahlung",
+
+success_summary_title: "Bestelldetails",
+success_summary_subtotal: "Zwischensumme",
+success_summary_shipping: "Versand",
+success_summary_free: "Kostenlos",
+success_summary_discount: "Rabatt",
+success_summary_total: "Gesamt Bezahlt",
+success_combo_badge: "COMBO",
+
+success_timeline_title: "Ihre Bestellung Verfolgen",
+success_timeline_confirmed: "Bestätigt",
+success_timeline_preparing: "Wird Vorbereitet",
+success_timeline_shipped: "Versendet",
+success_timeline_delivered: "Zugestellt",
+success_timeline_date_loading: "Wird geladen...",
+success_timeline_in_progress: "in Bearbeitung",
+success_timeline_to_schedule: "zu planen",
+success_timeline_to_define: "zu definieren",
+success_timeline_preparation_complete: "Vorbereitung abgeschlossen",
+
+success_btn_track: "Sendung Verfolgen",
+success_btn_shop: "Weiter Einkaufen",
+
+success_support_title: "Benötigen Sie Hilfe?",
+success_support_text: "Unser Team steht Ihnen jederzeit zur Verfügung",
+
+success_modal_expired_title: "Sitzung Abgelaufen",
+success_modal_expired_message: "Die Tracking-Sitzung ist abgelaufen. Um Ihren Bestellstatus anzuzeigen, greifen Sie auf die vollständige Bestellseite zu, wo Sie alle Ihre Sendungen verfolgen können.",
+success_modal_expired_cta: "Zu Bestellungen",
+
+success_category_merch: "Merchandising",
+success_category_properties: "Immobilien",
+success_category_supercars: "Supercars",
+success_category_experiences: "Erlebnisse",
+success_category_lifestyle: "Lifestyle-Kollektionen",
+
+// SUCCESS-BOOKING.HTML
+booking_loader_msg1: "Details vorbereiten",
+booking_loader_msg2: "Informationen überprüfen",
+booking_loader_msg3: "Bestätigung läuft",
+booking_loader_msg4: "Buchungsdaten abrufen",
+booking_loader_msg5: "Anfrage verarbeiten",
+booking_loader_msg6: "Fast fertig",
+booking_loader_msg7: "Fertigstellung",
+
+booking_title: "Buchung Bestätigt",
+booking_subtitle: "Ihre Anfrage wurde erfolgreich registriert",
+booking_code_label: "Buchungscode",
+booking_loading: "Wird geladen...",
+
+booking_category_properties: "Immobilien",
+booking_category_supercars: "Supercars",
+booking_category_experiences: "Erlebnisse",
+
+booking_detail_service: "Service",
+booking_detail_date: "Datum",
+booking_detail_time: "Uhrzeit",
+booking_detail_period: "Zeitraum",
+booking_detail_amount: "Betrag",
+booking_to_confirm: "Zu bestätigen",
+
+booking_next_steps_title: "Nächste Schritte",
+
+booking_next_steps_properties: "Ein Immobilienberater wird Sie innerhalb von 24-48 Stunden kontaktieren, um den Termin zu bestätigen und alle notwendigen Details bereitzustellen.",
+booking_next_steps_supercars: "Ein Berater wird Sie innerhalb von 24 Stunden kontaktieren, um die Details des Fahrerlebnisses zu bestätigen und alle notwendigen Informationen bereitzustellen.",
+booking_next_steps_experiences: "Sie erhalten eine Bestätigungs-E-Mail mit allen Details. Unser Team wird Sie kontaktieren, um sicherzustellen, dass jeder Aspekt des Erlebnisses perfekt ist.",
+
+booking_btn_details: "Details Anzeigen",
+booking_btn_home: "Zurück zur Startseite",
+
+booking_error_title: "Datenladefehler",
+booking_error_message: "Buchungsdetails konnten nicht abgerufen werden.",
+booking_error_submessage: "Bitte kontaktieren Sie den Support.",
+booking_error_cta: "Zurück zur Startseite"
   },
   
   es: {
@@ -956,6 +1359,101 @@ const translationsPDP = {
     pdp_error_connection: "Error de conexión",
     pdp_error_connection_text: "No se pueden recuperar los detalles del producto.",
     pdp_error_retry: "Reintentar",
-    pdp_error_security: "⚠️ Error de seguridad. Recarga la página e inténtalo de nuevo."
+    pdp_error_security: "⚠️ Error de seguridad. Recarga la página e inténtalo de nuevo.",
+
+    // SUCCESS.HTML
+success_loader_title: "Un momento",
+success_loader_msg1: "Preparación de detalles",
+success_loader_msg2: "Verificación de información",
+success_loader_msg3: "Confirmación en curso",
+success_loader_msg4: "Recuperación datos reserva",
+success_loader_msg5: "Procesando solicitud",
+success_loader_msg6: "Casi listo",
+success_loader_msg7: "Finalización",
+
+success_title: "Pedido Confirmado",
+success_subtitle: "Tu pedido ha sido recibido con éxito",
+success_order_number: "Pedido",
+success_loading_order: "Cargando ID pedido...",
+
+success_info_confirmation: "Confirmación Enviada",
+success_info_delivery: "Entrega Prevista",
+success_info_payment: "Método de Pago",
+success_loading: "Cargando...",
+success_payment_online: "Pago en Línea",
+
+success_summary_title: "Detalles del Pedido",
+success_summary_subtotal: "Subtotal",
+success_summary_shipping: "Envío",
+success_summary_free: "Gratis",
+success_summary_discount: "Descuento",
+success_summary_total: "Total Pagado",
+success_combo_badge: "COMBO",
+
+success_timeline_title: "Rastrea Tu Pedido",
+success_timeline_confirmed: "Confirmado",
+success_timeline_preparing: "En Preparación",
+success_timeline_shipped: "Enviado",
+success_timeline_delivered: "Entregado",
+success_timeline_date_loading: "Cargando...",
+success_timeline_in_progress: "en curso",
+success_timeline_to_schedule: "por programar",
+success_timeline_to_define: "por definir",
+success_timeline_preparation_complete: "preparación completada",
+
+success_btn_track: "Rastrear Envío",
+success_btn_shop: "Continuar Comprando",
+
+success_support_title: "¿Necesitas asistencia?",
+success_support_text: "Nuestro equipo está siempre a tu disposición",
+
+success_modal_expired_title: "Sesión Expirada",
+success_modal_expired_message: "La sesión de rastreo ha expirado. Para ver el estado de tu pedido, accede a la página completa de pedidos donde podrás rastrear todos tus envíos.",
+success_modal_expired_cta: "Ir a Pedidos",
+
+success_category_merch: "Merchandising",
+success_category_properties: "Inmuebles",
+success_category_supercars: "Supercars",
+success_category_experiences: "Experiencias",
+success_category_lifestyle: "Colecciones Lifestyle",
+
+// SUCCESS-BOOKING.HTML
+booking_loader_msg1: "Preparación de detalles",
+booking_loader_msg2: "Verificación de información",
+booking_loader_msg3: "Confirmación en curso",
+booking_loader_msg4: "Recuperación datos reserva",
+booking_loader_msg5: "Procesando solicitud",
+booking_loader_msg6: "Casi listo",
+booking_loader_msg7: "Finalización",
+
+booking_title: "Reserva Confirmada",
+booking_subtitle: "Tu solicitud ha sido registrada con éxito",
+booking_code_label: "Código de Reserva",
+booking_loading: "Cargando...",
+
+booking_category_properties: "Inmuebles",
+booking_category_supercars: "Supercars",
+booking_category_experiences: "Experiencias",
+
+booking_detail_service: "Servicio",
+booking_detail_date: "Fecha",
+booking_detail_time: "Horario",
+booking_detail_period: "Período",
+booking_detail_amount: "Importe",
+booking_to_confirm: "Por confirmar",
+
+booking_next_steps_title: "Próximos Pasos",
+
+booking_next_steps_properties: "Un consultor inmobiliario te contactará en 24-48 horas para confirmar la cita y proporcionarte todos los detalles necesarios.",
+booking_next_steps_supercars: "Un consultor te contactará en 24 horas para confirmar los detalles de la experiencia de conducción y proporcionarte toda la información necesaria.",
+booking_next_steps_experiences: "Recibirás un email de confirmación con todos los detalles. Nuestro equipo te contactará para asegurarse de que cada aspecto de la experiencia sea perfecto.",
+
+booking_btn_details: "Ver Detalles",
+booking_btn_home: "Volver al Inicio",
+
+booking_error_title: "Error de Carga",
+booking_error_message: "No se pueden recuperar los detalles de la reserva.",
+booking_error_submessage: "Por favor, contacta con soporte.",
+booking_error_cta: "Volver al Inicio"
   }
 };
