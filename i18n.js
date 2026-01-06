@@ -16,54 +16,28 @@ class I18n {
    * Rileva lingua da URL o localStorage
    */
    detectLanguage() {
-    const pathParts = window.location.pathname.split('/').filter(Boolean);
+    // 1. Check URL query parameter (?lang=xx)
+    const urlParams = new URLSearchParams(window.location.search);
+    const langFromUrl = urlParams.get('lang');
     
-    // Detect GitHub Pages
-    const isGitHubPages = window.location.hostname.includes('github.io');
-    
-    if (isGitHubPages) {
-        // GitHub Pages: /repo/lingua/...
-        let repoIndex = -1;
-        
-        for (let i = 0; i < pathParts.length; i++) {
-            if (pathParts[i] === this.githubRepo) {
-                repoIndex = i;
-                break;
-            }
-        }
-        
-        if (repoIndex !== -1 && pathParts[repoIndex + 1]) {
-            const possibleLang = pathParts[repoIndex + 1];
-            if (this.translations[possibleLang]) {
-                localStorage.setItem('lh360_lang', possibleLang);
-                return possibleLang;
-            }
-        }
-    } else {
-        // Dominio personale: /lingua/...
-        if (pathParts[0] && this.translations[pathParts[0]]) {
-            const langFromPath = pathParts[0];
-            localStorage.setItem('lh360_lang', langFromPath);
-            return langFromPath;
-        }
+    if (langFromUrl && this.translations[langFromUrl]) {
+        localStorage.setItem('lh360_lang', langFromUrl);
+        return langFromUrl;
     }
 
     // 2. Check localStorage
     const savedLang = localStorage.getItem('lh360_lang');
     if (savedLang && this.translations[savedLang]) {
-        this.redirectToLanguagePath(savedLang);
         return savedLang;
     }
 
     // 3. Check browser language
     const browserLang = navigator.language.split('-')[0];
     if (this.translations[browserLang]) {
-        this.redirectToLanguagePath(browserLang);
         return browserLang;
     }
 
     // 4. Default: italiano
-    this.redirectToLanguagePath('it');
     return 'it';
 }
 
@@ -71,56 +45,10 @@ class I18n {
  * Redirect per inserire lingua nel path se mancante
  */
  redirectToLanguagePath(langCode) {
-    const currentPath = window.location.pathname;
-    const pathParts = currentPath.split('/').filter(Boolean);
-    
-    // Detect GitHub Pages
-    const isGitHubPages = window.location.hostname.includes('github.io');
-    
-    if (isGitHubPages) {
-        // Caso GitHub Pages: /repo/lingua/...
-        let repoIndex = -1;
-        
-        // Trova l'indice del repository
-        for (let i = 0; i < pathParts.length; i++) {
-            if (pathParts[i] === this.githubRepo) {
-                repoIndex = i;
-                break;
-            }
-        }
-        
-        if (repoIndex === -1) {
-            // Repository non trovato, aggiungilo
-            const newPath = `/${this.githubRepo}/${langCode}/`;
-            window.history.replaceState({}, '', newPath + window.location.search + window.location.hash);
-            return;
-        }
-        
-        // Repository trovato, verifica se c'è già una lingua dopo di esso
-        const afterRepoIndex = repoIndex + 1;
-        
-        // Rimuovi lingua esistente se presente
-        if (pathParts[afterRepoIndex] && this.translations[pathParts[afterRepoIndex]]) {
-            pathParts.splice(afterRepoIndex, 1);
-        }
-        
-        // Inserisci nuova lingua dopo il repository
-        pathParts.splice(afterRepoIndex, 0, langCode);
-        
-        // Ricostruisci path
-        const newPath = '/' + pathParts.join('/') + '/';
-        window.history.replaceState({}, '', newPath + window.location.search + window.location.hash);
-    } else {
-        // Dominio personale futuro: /lingua/...
-        if (pathParts[0] && this.translations[pathParts[0]]) {
-            pathParts.shift();
-        }
-        
-        const restOfPath = pathParts.length ? '/' + pathParts.join('/') : '/';
-        const newPath = `/${langCode}${restOfPath}`;
-        
-        window.history.replaceState({}, '', newPath + window.location.search + window.location.hash);
-    }
+    // Usa query parameters per GitHub Pages
+    const url = new URL(window.location);
+    url.searchParams.set('lang', langCode);
+    window.history.replaceState({}, '', url.toString());
 }
 
   /**
@@ -203,52 +131,16 @@ class I18n {
     localStorage.setItem('lh360_lang', langCode);
     this.currentLang = langCode;
 
-    const currentPath = window.location.pathname;
-    const pathParts = currentPath.split('/').filter(Boolean);
-    
-    // Detect GitHub Pages
-    const isGitHubPages = window.location.hostname.includes('github.io');
-    
-    if (isGitHubPages) {
-        // GitHub Pages: /repo/lingua/...
-        let repoIndex = -1;
-        
-        for (let i = 0; i < pathParts.length; i++) {
-            if (pathParts[i] === this.githubRepo) {
-                repoIndex = i;
-                break;
-            }
-        }
-        
-        if (repoIndex !== -1) {
-            const afterRepoIndex = repoIndex + 1;
-            
-            // Rimuovi lingua esistente
-            if (pathParts[afterRepoIndex] && this.translations[pathParts[afterRepoIndex]]) {
-                pathParts.splice(afterRepoIndex, 1);
-            }
-            
-            // Inserisci nuova lingua
-            pathParts.splice(afterRepoIndex, 0, langCode);
-            
-            const newPath = '/' + pathParts.join('/') + '/';
-            window.history.replaceState({}, '', newPath + window.location.search + window.location.hash);
-        }
-    } else {
-        // Dominio personale
-        if (pathParts[0] && this.translations[pathParts[0]]) {
-            pathParts.shift();
-        }
-        
-        const restOfPath = pathParts.length ? '/' + pathParts.join('/') : '/';
-        const newPath = `/${langCode}${restOfPath}`;
-        
-        window.history.replaceState({}, '', newPath + window.location.search + window.location.hash);
-    }
+    // Aggiorna URL con query parameter
+    const url = new URL(window.location);
+    url.searchParams.set('lang', langCode);
+    window.history.replaceState({}, '', url.toString());
 
+    // Traduci pagina
     this.translatePage();
     this.updateLanguageSelector();
 
+    // Dispatch event
     document.dispatchEvent(new CustomEvent('languageChanged', { detail: { lang: langCode } }));
 
     console.log(`✅ Lingua cambiata: ${langCode.toUpperCase()}`);
@@ -297,12 +189,17 @@ class I18n {
         selector.classList.remove('open');
       }
     });
+
+    // ✅ FORCE EMOJI su tutte le opzioni del dropdown
+selector.querySelectorAll('.lang-flag').forEach(flag => {
+    flag.style.fontFamily = "'Apple Color Emoji', 'Segoe UI Emoji', 'Noto Color Emoji', sans-serif";
+});
   }
 
   /**
  * Aggiorna visivamente il selettore lingua (bandiera e codice)
  */
-updateLanguageSelector() {
+ updateLanguageSelector() {
     const selector = document.getElementById('languageSelector');
     if (!selector) return;
 
@@ -311,7 +208,11 @@ updateLanguageSelector() {
     const currentCode = selector.querySelector('.current-lang-code');
     
     if (currentFlag && currentCode) {
-        currentFlag.textContent = this.getFlagEmoji(this.currentLang);
+        // ✅ FORCE EMOJI RENDERING - usa innerHTML invece di textContent
+        const flagEmoji = this.getFlagEmoji(this.currentLang);
+        currentFlag.innerHTML = flagEmoji;
+        currentFlag.style.fontFamily = "'Apple Color Emoji', 'Segoe UI Emoji', 'Noto Color Emoji', sans-serif";
+        
         currentCode.textContent = this.currentLang.toUpperCase();
     }
 
@@ -324,7 +225,7 @@ updateLanguageSelector() {
         }
     });
 
-    console.log(`🔄 Selettore aggiornato: ${this.currentLang.toUpperCase()}`);
+    console.log(`🔄 Selettore aggiornato: ${this.currentLang.toUpperCase()} ${this.getFlagEmoji(this.currentLang)}`);
 }
 
   /**
