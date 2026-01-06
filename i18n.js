@@ -203,20 +203,23 @@ selector.querySelectorAll('.lang-flag').forEach(flag => {
     const selector = document.getElementById('languageSelector');
     if (!selector) return;
 
-    // Aggiorna bandiera e codice nel toggle
     const currentFlag = selector.querySelector('.current-lang-flag');
     const currentCode = selector.querySelector('.current-lang-code');
     
     if (currentFlag && currentCode) {
-        // ✅ FORCE EMOJI RENDERING - usa innerHTML invece di textContent
-        const flagEmoji = this.getFlagEmoji(this.currentLang);
-        currentFlag.innerHTML = flagEmoji;
-        currentFlag.style.fontFamily = "'Apple Color Emoji', 'Segoe UI Emoji', 'Noto Color Emoji', sans-serif";
+        // ✅ SOLUZIONE: Usa Unicode invece di emoji composte
+        const flags = {
+            it: '\u{1F1EE}\u{1F1F9}', // 🇮🇹
+            en: '\u{1F1EC}\u{1F1E7}', // 🇬🇧
+            fr: '\u{1F1EB}\u{1F1F7}', // 🇫🇷
+            de: '\u{1F1E9}\u{1F1EA}', // 🇩🇪
+            es: '\u{1F1EA}\u{1F1F8}'  // 🇪🇸
+        };
         
+        currentFlag.textContent = flags[this.currentLang] || '🌐';
         currentCode.textContent = this.currentLang.toUpperCase();
     }
 
-    // Aggiorna stato "active" nelle opzioni dropdown
     selector.querySelectorAll('.lang-option').forEach(option => {
         if (option.dataset.lang === this.currentLang) {
             option.classList.add('active');
@@ -224,8 +227,6 @@ selector.querySelectorAll('.lang-flag').forEach(flag => {
             option.classList.remove('active');
         }
     });
-
-    console.log(`🔄 Selettore aggiornato: ${this.currentLang.toUpperCase()} ${this.getFlagEmoji(this.currentLang)}`);
 }
 
   /**
