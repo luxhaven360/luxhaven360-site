@@ -255,6 +255,11 @@ if (prod.price) {
     card.dataset.originalCurrency = prod.currency || 'EUR';
 }
 
+// ✅ AGGIUNGI QUESTE 3 RIGHE
+if (prod.discountPrice) {
+    card.dataset.discountPrice = prod.discountPrice;
+}
+
   // ========================================
 // ✅ GESTIONE STATI ESPERIENZE (SOLO EX)
 // ========================================
@@ -636,15 +641,33 @@ const isProperty = prod.category === 'properties';
  */
 function updateAllPricesForLanguage() {
     document.querySelectorAll('.card').forEach(card => {
-        // Trova il prezzo originale salvato come data attribute
-        const priceElement = card.querySelector('.card-price');
-        if (!priceElement) return;
-        
-        const originalPrice = card.dataset.originalPrice;
+        const originalPrice = parseFloat(card.dataset.originalPrice);
         const originalCurrency = card.dataset.originalCurrency || 'EUR';
         
-        if (originalPrice) {
-            priceElement.textContent = formatPrice(parseFloat(originalPrice), originalCurrency);
+        if (!originalPrice) return;
+        
+        // ✅ CONTROLLA SE LA CARD HA UNO SCONTO
+        const discountPrice = parseFloat(card.dataset.discountPrice);
+        const hasDiscount = discountPrice && discountPrice < originalPrice;
+        
+        if (hasDiscount) {
+            // ✅ AGGIORNA PREZZO ORIGINALE BARRATO
+            const originalPriceEl = card.querySelector('div[style*="text-decoration: line-through"]');
+            if (originalPriceEl) {
+                originalPriceEl.textContent = formatPrice(originalPrice, originalCurrency);
+            }
+            
+            // ✅ AGGIORNA PREZZO SCONTATO
+            const discountedPriceEl = card.querySelector('div[style*="background-clip: text"]');
+            if (discountedPriceEl && discountedPriceEl.parentElement.style.display === 'flex') {
+                discountedPriceEl.textContent = formatPrice(discountPrice, originalCurrency);
+            }
+        } else {
+            // Card senza sconto - metodo originale
+            const priceElement = card.querySelector('.card-price');
+            if (priceElement) {
+                priceElement.textContent = formatPrice(originalPrice, originalCurrency);
+            }
         }
     });
 }
@@ -1599,6 +1622,7 @@ function showValidationError(message, type) {
     if (overlay.parentNode) overlay.remove();
   }, 5000);
 }
+
 
 
 
