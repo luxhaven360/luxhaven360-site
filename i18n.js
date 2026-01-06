@@ -145,6 +145,11 @@ if (typeof updateAllPricesForLanguage === 'function') {
     updateAllPricesForLanguage();
 }
 
+     // Aggiorna badge
+if (typeof updateAllBadgesForLanguage === 'function') {
+    updateAllBadgesForLanguage();
+}
+
     // Dispatch event
     document.dispatchEvent(new CustomEvent('languageChanged', { detail: { lang: langCode } }));
 
