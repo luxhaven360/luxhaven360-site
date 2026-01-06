@@ -168,7 +168,7 @@ function formatPrice(price, originalCurrency = 'EUR') {
     const exchangeRates = {
         'EUR': 1,
         'USD': 1.17,  // 1 EUR = 1.17 USD (esempio)
-        'GBP': 0.86   // 1 EUR = 0.86 GBP (esempio)
+        'GBP': 0.87   // 1 EUR = 0.87 GBP (esempio)
     };
     
     // 🌐 CONFIGURAZIONE PER LINGUA
@@ -1622,6 +1622,7 @@ function showValidationError(message, type) {
     if (overlay.parentNode) overlay.remove();
   }, 5000);
 }
+
 
 
 
