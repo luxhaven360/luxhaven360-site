@@ -1084,9 +1084,13 @@ function hideLoaderImmediately() {
     const loader = document.getElementById('luxhaven-loader');
     if (loader) {
         loader.style.opacity = '0';
+        
+        // ✅ RIATTIVA SCROLL
+        document.body.classList.remove('no-scroll');
+        
         setTimeout(() => {
             loader.style.display = 'none';
-        }, 500); // Tempo per transizione
+        }, 500);
     }
 }
 
@@ -1127,13 +1131,14 @@ function showLoader() {
     injectLoader();
     const loader = document.getElementById('luxhaven-loader');
     if (loader) {
-        // Reset stili inline per override completo
-        loader.style.display = 'flex'; // Forza visibilità
-        loader.style.opacity = '1';    // Forza opacità immediata
-        loader.classList.remove('visible'); // Reset classe per ri-trigger transizione
-        // Forza reflow per applicare cambiamenti (trick per browser con cache issues)
+        loader.style.display = 'flex';
+        loader.style.opacity = '1';
+        loader.classList.remove('visible');
         void loader.offsetWidth;
-        loader.classList.add('visible'); // Ri-applica classe
+        loader.classList.add('visible');
+        
+        // ✅ BLOCCA SCROLL
+        document.body.classList.add('no-scroll');
     }
 }
 
@@ -1142,9 +1147,12 @@ function hideLoader() {
     const loader = document.getElementById('luxhaven-loader');
     if (loader) {
         loader.classList.remove('visible');
-        // Rimuovi dal DOM dopo la transizione per pulizia (opzionale)
+        
+        // ✅ RIATTIVA SCROLL
+        document.body.classList.remove('no-scroll');
+        
         setTimeout(() => {
-            // loader.remove(); // Decommenta se vuoi rimuoverlo completamente
+            // loader.remove();
         }, 500);
     }
 }
@@ -1504,3 +1512,4 @@ function showValidationError(message, type) {
     if (overlay.parentNode) overlay.remove();
   }, 5000);
 }
+
