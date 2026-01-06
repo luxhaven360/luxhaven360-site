@@ -249,6 +249,12 @@ function createProductCard(prod, defaultCta) {
     // container
     const card = el('div', { class: 'card' });
 
+    // Salva prezzo originale come data attribute
+if (prod.price) {
+    card.dataset.originalPrice = prod.price;
+    card.dataset.originalCurrency = prod.currency || 'EUR';
+}
+
   // ========================================
 // ✅ GESTIONE STATI ESPERIENZE (SOLO EX)
 // ========================================
@@ -637,6 +643,24 @@ const isProperty = prod.category === 'properties';
 
     card.appendChild(btn);
     return card;
+}
+
+/**
+ * Aggiorna tutti i prezzi visibili con la nuova valuta
+ */
+function updateAllPricesForLanguage() {
+    document.querySelectorAll('.card').forEach(card => {
+        // Trova il prezzo originale salvato come data attribute
+        const priceElement = card.querySelector('.card-price');
+        if (!priceElement) return;
+        
+        const originalPrice = card.dataset.originalPrice;
+        const originalCurrency = card.dataset.originalCurrency || 'EUR';
+        
+        if (originalPrice) {
+            priceElement.textContent = formatPrice(parseFloat(originalPrice), originalCurrency);
+        }
+    });
 }
 
 // =========================================
@@ -1564,6 +1588,7 @@ function showValidationError(message, type) {
     if (overlay.parentNode) overlay.remove();
   }, 5000);
 }
+
 
 
 
