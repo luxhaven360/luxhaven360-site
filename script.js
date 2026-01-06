@@ -1072,7 +1072,7 @@ function injectLoader() {
             <div class="lh-progress-container">
                 <div class="lh-progress-fill"></div>
             </div>
-            <div class="lh-loading-text">Caricamento</div>
+            <div class="lh-loading-text" data-i18n="intro_loading">Caricamento</div>
         </div>
     </div>`;
     
@@ -1504,3 +1504,4 @@ function showValidationError(message, type) {
     if (overlay.parentNode) overlay.remove();
   }, 5000);
 }
+
