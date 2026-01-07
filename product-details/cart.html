@@ -1379,8 +1379,11 @@ const loader = document.getElementById('recommendedLoader');
         : `<div class="recommended-price">€ ${finalPrice.toLocaleString('it-IT', {minimumFractionDigits: 2})}</div>`;
     
     return `
-        <a href="pdp-products.html?sku=${product.sku}" 
-           class="recommended-item${featuredClass}" 
+    <a href="pdp-products.html?sku=${product.sku}" 
+       class="recommended-item${featuredClass}"
+       data-original-price="${originalPrice}"
+       data-discount-price="${hasDiscount ? finalPrice : ''}"
+       data-original-currency="${product.currency || 'EUR'}"
            style="text-decoration: none; color: inherit; display: block;">
             ${badgeHtml}
             <div class="recommended-image">
@@ -1751,12 +1754,76 @@ function updateAllPricesForLanguage() {
     const i18n = window.i18nPDP();
     if (!i18n) return;
     
-    // In cart.html: aggiorna summary
-    if (typeof updateSummary === 'function') {
-        updateSummary();
+    // 1. AGGIORNAMENTO IMMEDIATO CONTEGGIO ARTICOLI
+    const itemCount = cart.reduce((sum, item) => sum + (item.qty || 1), 0);
+    const itemCountEl = document.getElementById('itemCount');
+    if (itemCountEl) {
+        const itemCountText = itemCount === 1 
+            ? i18n.t('cart_items_count_one') 
+            : i18n.t('cart_items_count_many', { n: itemCount });
+        itemCountEl.textContent = itemCountText;
     }
     
-    // ✅ AGGIUNTO: Verifica che currentProduct esista (solo in pdp-products.html)
+    // 2. AGGIORNAMENTO IMMEDIATO PREZZI SUMMARY (sincrono)
+    let subtotal = 0;
+    cart.forEach(item => {
+        const finalPrice = (item.discountPrice && item.discountPrice < item.price) 
+            ? item.discountPrice 
+            : item.price;
+        subtotal += finalPrice * (item.qty || 1);
+    });
+    
+    const shipping = subtotal >= 150 ? 0 : 15;
+    
+    // Ottieni sconti esistenti
+    const savedDiscounts = JSON.parse(localStorage.getItem('lh360_applied_discounts') || '{}');
+    const discount = savedDiscounts.totalDiscount || 0;
+    
+    const total = subtotal + shipping - discount;
+    
+    // Aggiorna UI prezzi
+    document.getElementById('subtotal').textContent = i18n.formatPrice(subtotal);
+    document.getElementById('shipping').textContent = shipping === 0 
+        ? i18n.t('cart_summary_shipping_free') 
+        : i18n.formatPrice(shipping);
+    document.getElementById('total').textContent = i18n.formatPrice(total);
+    
+    if (discount > 0) {
+        document.getElementById('discount').textContent = `- ${i18n.formatPrice(discount)}`;
+    }
+    
+    // 3. AGGIORNAMENTO PREZZI PRODOTTI CONSIGLIATI
+    document.querySelectorAll('.recommended-item').forEach(card => {
+        const originalPrice = parseFloat(card.dataset.originalPrice);
+        const discountPrice = parseFloat(card.dataset.discountPrice);
+        const originalCurrency = card.dataset.originalCurrency || 'EUR';
+        
+        if (!originalPrice) return;
+        
+        const hasDiscount = discountPrice && discountPrice < originalPrice;
+        
+        if (hasDiscount) {
+            // Aggiorna prezzo originale barrato
+            const originalPriceEl = card.querySelector('div[style*="text-decoration: line-through"]');
+            if (originalPriceEl) {
+                originalPriceEl.textContent = i18n.formatPrice(originalPrice, originalCurrency);
+            }
+            
+            // Aggiorna prezzo scontato
+            const discountedPriceEl = card.querySelector('div[style*="background-clip: text"]');
+            if (discountedPriceEl) {
+                discountedPriceEl.textContent = i18n.formatPrice(discountPrice, originalCurrency);
+            }
+        } else {
+            // Prezzo normale
+            const priceElements = card.querySelectorAll('.recommended-price');
+            priceElements.forEach(el => {
+                el.textContent = i18n.formatPrice(originalPrice, originalCurrency);
+            });
+        }
+    });
+    
+    // 4. PDP-PRODUCTS (se presente currentProduct)
     if (typeof currentProduct !== 'undefined' && currentProduct && currentProduct.price) {
         const priceContainer = document.getElementById('productPrice');
         if (priceContainer) {
@@ -1777,34 +1844,6 @@ function updateAllPricesForLanguage() {
             }
         }
     }
-    
-    // Aggiorna prezzi nelle card (se presenti)
-    document.querySelectorAll('.card').forEach(card => {
-        const originalPrice = parseFloat(card.dataset.originalPrice);
-        const originalCurrency = card.dataset.originalCurrency || 'EUR';
-        
-        if (!originalPrice) return;
-        
-        const discountPrice = parseFloat(card.dataset.discountPrice);
-        const hasDiscount = discountPrice && discountPrice < originalPrice;
-        
-        if (hasDiscount) {
-            const originalPriceEl = card.querySelector('div[style*="text-decoration: line-through"]');
-            if (originalPriceEl) {
-                originalPriceEl.textContent = i18n.formatPrice(originalPrice, originalCurrency);
-            }
-            
-            const discountedPriceEl = card.querySelector('div[style*="background-clip: text"]');
-            if (discountedPriceEl && discountedPriceEl.parentElement.style.display === 'flex') {
-                discountedPriceEl.textContent = i18n.formatPrice(discountPrice, originalCurrency);
-            }
-        } else {
-            const priceElement = card.querySelector('.card-price');
-            if (priceElement) {
-                priceElement.textContent = i18n.formatPrice(originalPrice, originalCurrency);
-            }
-        }
-    });
 }
     
     // Ascolta cambio lingua da altre pagine
@@ -1820,4 +1859,5 @@ window.addEventListener('storage', (event) => {
 </script>
 </body>
 </html>
+
 
