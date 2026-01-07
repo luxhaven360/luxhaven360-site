@@ -113,14 +113,6 @@ class I18nPDP {
     console.log(`✅ Lingua PDP cambiata: ${langCode.toUpperCase()}`);
   }
 
-  // Ri-renderizza recensioni se presenti (solo in pdp-products.html)
-if (typeof updateReviewsSummaryData === 'function' && 
-    typeof currentReviewsData !== 'undefined' && 
-    currentReviewsData && 
-    currentReviewsData.length > 0) {
-    updateReviewsSummaryData(currentReviewsData);
-}
-
   setupLanguageSelector() {
     const selector = document.getElementById('pdpLanguageSelector');
     if (!selector) return;
@@ -295,8 +287,12 @@ if (typeof updateReviewsSummaryData === 'function' &&
   }
 }
 
-// Inizializza sistema i18n SUBITO (non aspettare DOMContentLoaded)
-let i18nPDPInstance = new I18nPDP();
+// Inizializza sistema i18n
+let i18nPDPInstance;
+
+document.addEventListener('DOMContentLoaded', () => {
+  i18nPDPInstance = new I18nPDP();
+});
 
 // Esporta per uso globale
 window.i18nPDP = () => i18nPDPInstance;
