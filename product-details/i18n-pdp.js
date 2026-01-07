@@ -1,20 +1,17 @@
 /**
- * ðŸŒ LuxHaven360 - Sistema i18n per pagine Product Details
- * Sincronizzato con index.html via localStorage
+ * 🌍 Sistema i18n per Product Details Pages
+ * Sincronizzato con index.html tramite localStorage
  */
 
 class I18nPDP {
   constructor() {
-    this.translations = translationsPDP; // Usa translationsPDP dal file translations-pdp.js
+    this.translations = translationsPDP; // Dal file translations-pdp.js
     this.currentLang = this.detectLanguage();
     this.init();
   }
 
-  /**
-   * Rileva lingua da localStorage (sincronizzato con index.html)
-   */
   detectLanguage() {
-    // 1. Check localStorage (priorità massima - sincronizzazione con index.html)
+    // 1. Check localStorage (sincronizzato con index.html)
     const savedLang = localStorage.getItem('lh360_lang');
     if (savedLang && this.translations[savedLang]) {
       return savedLang;
@@ -38,30 +35,15 @@ class I18nPDP {
     return 'it';
   }
 
-  /**
-   * Inizializza sistema i18n
-   */
   init() {
-    console.log(`ðŸŒ [PDP] Lingua attiva: ${this.currentLang.toUpperCase()}`);
-    
-    // Traduci pagina
+    console.log(`🌍 Lingua PDP attiva: ${this.currentLang.toUpperCase()}`);
     this.translatePage();
-    
-    // Setup selettore lingua (se presente)
     this.setupLanguageSelector();
-    
-    // Listener per contenuti dinamici
     this.observeDynamicContent();
-    
-    // Listener per cambiamenti da altre schede
-    this.setupStorageListener();
   }
 
-  /**
-   * Traduce tutti gli elementi con data-i18n
-   */
   translatePage() {
-    // Traduci testo normale
+    // Traduci elementi con data-i18n
     document.querySelectorAll('[data-i18n]').forEach(el => {
       const key = el.getAttribute('data-i18n');
       const translation = this.t(key);
@@ -90,24 +72,18 @@ class I18nPDP {
     });
   }
 
-  /**
-   * Ottieni traduzione per chiave con sostituzione placeholder
-   */
   t(key, replacements = {}) {
     const lang = this.translations[this.currentLang];
-    let text = lang?.[key] || key;
+    let text = lang[key] || key;
 
     // Sostituisci placeholder (es: {n}, {code}, {percent})
     Object.keys(replacements).forEach(placeholder => {
-      text = text.replace(new RegExp(`{${placeholder}}`, 'g'), replacements[placeholder]);
+      text = text.replace(new RegExp(`\\{${placeholder}\\}`, 'g'), replacements[placeholder]);
     });
 
     return text;
   }
 
-  /**
-   * Cambia lingua e salva in localStorage (sincronizza con index.html)
-   */
   changeLanguage(langCode) {
     if (!this.translations[langCode]) {
       console.error(`Lingua "${langCode}" non supportata`);
@@ -117,80 +93,48 @@ class I18nPDP {
     localStorage.setItem('lh360_lang', langCode);
     this.currentLang = langCode;
 
-    // Aggiorna URL con query parameter
-    const url = new URL(window.location);
-    url.searchParams.set('lang', langCode);
-    window.history.replaceState({}, '', url.toString());
-
     // Traduci pagina
     this.translatePage();
     this.updateLanguageSelector();
 
-    // Dispatch event per script esterni
-    document.dispatchEvent(new CustomEvent('languageChanged', { detail: { lang: langCode } }));
-
-    console.log(`âœ… [PDP] Lingua cambiata: ${langCode.toUpperCase()}`);
-  }
-
-  /**
-   * Setup selettore lingua
-   */
-  setupLanguageSelector() {
-    const selector = document.getElementById('languageSelector');
-    if (!selector) return;
-
-    // Imposta lingua corrente
-    const currentFlag = selector.querySelector('.current-lang-flag');
-    const currentCode = selector.querySelector('.current-lang-code');
-    
-    if (currentFlag && currentCode) {
-      currentFlag.className = `current-lang-flag fi fi-${this.getFlagCode(this.currentLang)}`;
-      currentCode.textContent = this.currentLang.toUpperCase();
+    // Aggiorna prezzi con nuova valuta
+    if (typeof updateAllPricesForLanguage === 'function') {
+      updateAllPricesForLanguage();
     }
 
-    // Click handlers per le opzioni
-    selector.querySelectorAll('.lang-option').forEach(option => {
+    // Aggiorna badge disponibilità
+    if (typeof updateAllBadgesForLanguage === 'function') {
+      updateAllBadgesForLanguage();
+    }
+
+    // Dispatch event
+    document.dispatchEvent(new CustomEvent('languageChanged', { detail: { lang: langCode } }));
+
+    console.log(`✅ Lingua PDP cambiata: ${langCode.toUpperCase()}`);
+  }
+
+  setupLanguageSelector() {
+    const selector = document.getElementById('pdpLanguageSelector');
+    if (!selector) return;
+
+    // Setup click handlers per ogni lingua
+    selector.querySelectorAll('.pdp-lang-option').forEach(option => {
       option.addEventListener('click', (e) => {
         e.preventDefault();
         const lang = option.dataset.lang;
         this.changeLanguage(lang);
-        selector.classList.remove('open');
       });
     });
 
-    // Toggle dropdown
-    const toggle = selector.querySelector('.lang-selector-toggle');
-    if (toggle) {
-      toggle.addEventListener('click', (e) => {
-        e.stopPropagation();
-        selector.classList.toggle('open');
-      });
-    }
-
-    // Chiudi dropdown se click esterno
-    document.addEventListener('click', (e) => {
-      if (!selector.contains(e.target)) {
-        selector.classList.remove('open');
-      }
-    });
+    this.updateLanguageSelector();
   }
 
-  /**
-   * Aggiorna UI selettore lingua
-   */
   updateLanguageSelector() {
-    const selector = document.getElementById('languageSelector');
+    const selector = document.getElementById('pdpLanguageSelector');
     if (!selector) return;
 
-    const currentFlag = selector.querySelector('.current-lang-flag');
-    const currentCode = selector.querySelector('.current-lang-code');
-    
-    if (currentFlag && currentCode) {
-      currentFlag.className = `current-lang-flag fi fi-${this.getFlagCode(this.currentLang)}`;
-      currentCode.textContent = this.currentLang.toUpperCase();
-    }
-
-    selector.querySelectorAll('.lang-option').forEach(option => {
+    // Aggiorna stato attivo
+    selector.querySelectorAll('.pdp-lang-option').forEach(option => {
       if (option.dataset.lang === this.currentLang) {
         option.classList.add('active');
       } else {
@@ -199,26 +143,24 @@ class I18nPDP {
     });
   }
 
-  /**
-   * Osserva DOM per contenuti dinamici
-   */
   observeDynamicContent() {
     const observer = new MutationObserver((mutations) => {
       mutations.forEach(mutation => {
         mutation.addedNodes.forEach(node => {
-          if (node.nodeType === 1) {
-            if (node.hasAttribute('data-i18n')) {
-              const key = node.getAttribute('data-i18n');
-              const translation = this.t(key);
-              if (translation) {
-                if (node.getAttribute('data-i18n-html') === 'true') {
-                  node.innerHTML = translation;
-                } else {
-                  node.textContent = translation;
-                }
+          if (node.nodeType === 1 && node.hasAttribute('data-i18n')) {
+            const key = node.getAttribute('data-i18n');
+            const translation = this.t(key);
+            if (translation) {
+              if (node.getAttribute('data-i18n-html') === 'true') {
+                node.innerHTML = translation;
+              } else {
+                node.textContent = translation;
               }
             }
-            
+          }
+          
+          // Cerca elementi figli
+          if (node.querySelectorAll) {
             node.querySelectorAll('[data-i18n]').forEach(el => {
               const key = el.getAttribute('data-i18n');
               const translation = this.t(key);
@@ -242,35 +184,90 @@ class I18nPDP {
   }
 
   /**
-   * Ascolta cambiamenti lingua da altre schede
+   * Formatta prezzo con conversione valuta
    */
-  setupStorageListener() {
-    window.addEventListener('storage', (e) => {
-      if (e.key === 'lh360_lang' && e.newValue !== this.currentLang) {
-        console.log(`ðŸ"„ [PDP] Lingua cambiata da altra scheda: ${e.newValue}`);
-        this.currentLang = e.newValue;
-        this.translatePage();
-        this.updateLanguageSelector();
-      }
-    });
-  }
-
-  /**
-   * Ottieni codice bandiera per flag-icons
-   */
-  getFlagCode(langCode) {
-    const codes = {
-      it: 'it',
-      en: 'gb',
-      fr: 'fr',
-      de: 'de',
-      es: 'es'
+  formatPrice(price, originalCurrency = 'EUR') {
+    const amount = parseFloat(price) || 0;
+    
+    // Tassi di cambio (aggiorna periodicamente)
+    const exchangeRates = {
+      'EUR': 1,
+      'USD': 1.17,
+      'GBP': 0.87
     };
-    return codes[langCode] || 'it';
+    
+    // Configurazione per lingua
+    const localeConfig = {
+      it: { 
+        currency: 'EUR', 
+        symbol: '€', 
+        symbolPosition: 'before',
+        thousands: '.', 
+        decimal: ',',
+        decimals: amount < 500 ? 2 : 0
+      },
+      en: { 
+        currency: 'USD', 
+        symbol: '$', 
+        symbolPosition: 'before',
+        thousands: ',', 
+        decimal: '.',
+        decimals: amount < 500 ? 2 : 0
+      },
+      fr: { 
+        currency: 'EUR', 
+        symbol: '€', 
+        symbolPosition: 'after',
+        thousands: ' ', 
+        decimal: ',',
+        decimals: amount < 500 ? 2 : 0
+      },
+      de: { 
+        currency: 'EUR', 
+        symbol: '€', 
+        symbolPosition: 'after',
+        thousands: '.', 
+        decimal: ',',
+        decimals: amount < 500 ? 2 : 0
+      },
+      es: { 
+        currency: 'EUR', 
+        symbol: '€', 
+        symbolPosition: 'after',
+        thousands: '.', 
+        decimal: ',',
+        decimals: amount < 500 ? 2 : 0
+      }
+    };
+    
+    const config = localeConfig[this.currentLang] || localeConfig.it;
+    
+    // Conversione valuta
+    let convertedAmount = amount;
+    if (originalCurrency !== config.currency) {
+      const fromRate = exchangeRates[originalCurrency] || 1;
+      const toRate = exchangeRates[config.currency] || 1;
+      convertedAmount = (amount / fromRate) * toRate;
+    }
+    
+    // Formattazione numero
+    let formatted = convertedAmount.toFixed(config.decimals);
+    formatted = formatted.replace('.', config.decimal);
+    
+    let parts = formatted.split(config.decimal);
+    parts[0] = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, config.thousands);
+    formatted = parts.join(config.decimal);
+    
+    // Posizionamento simbolo
+    if (config.symbolPosition === 'before') {
+      return `${config.symbol}${formatted}`;
+    } else {
+      return `${formatted} ${config.symbol}`;
+    }
   }
 }
 
-// Inizializza sistema i18n PDP
+// Inizializza sistema i18n
 let i18nPDPInstance;
 
 document.addEventListener('DOMContentLoaded', () => {
