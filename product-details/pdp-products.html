@@ -1606,13 +1606,54 @@
         let allReviewsCache = []; // Memorizza tutte le recensioni scaricate
 
         /* ====== Loader Dinamico ====== */
-        function getLoadingMessages() {
-    const i18n = window.i18nPDP();
-    if (!i18n) return [
-        'Loading...', 'Please wait...', 'Almost ready...'
-    ];
+let loadingMessages = [
+    'Loading...',
+    'Please wait...',
+    'Almost ready...',
+    'Finalizing...'
+];
+
+let currentMessageIndex = 0;
+let loaderInterval;
+let progressInterval;
+
+function startDynamicLoader() {
+    const messageEl = document.getElementById('loader-message');
+    const progressEl = document.getElementById('loader-progress');
     
-    return [
+    if (!messageEl || !progressEl) return;
+    
+    // Usa i messaggi attuali (potrebbero già essere tradotti)
+    messageEl.textContent = loadingMessages[0];
+    messageEl.style.opacity = '1';
+    
+    let progress = 0;
+    progressInterval = setInterval(() => {
+        progress += Math.random() * 15;
+        if (progress > 85) progress = 85; 
+        progressEl.style.width = progress + '%';
+    }, 400);
+    
+    loaderInterval = setInterval(() => {
+        currentMessageIndex++;
+        if (currentMessageIndex >= loadingMessages.length) {
+            currentMessageIndex = loadingMessages.length - 1;
+            return;
+        }
+        messageEl.style.opacity = '0';
+        setTimeout(() => {
+            messageEl.textContent = loadingMessages[currentMessageIndex];
+            messageEl.style.opacity = '1';
+        }, 300);
+    }, 1200);
+}
+
+        /* ====== Aggiorna messaggi loader con traduzioni ====== */
+function updateLoaderMessages() {
+    const i18n = window.i18nPDP();
+    if (!i18n) return;
+    
+    loadingMessages = [
         i18n.t('pdp_loader_step1'),
         i18n.t('pdp_loader_step2'),
         i18n.t('pdp_loader_step3'),
@@ -1622,41 +1663,6 @@
         i18n.t('pdp_loader_step7')
     ];
 }
-
-        let currentMessageIndex = 0;
-        let loaderInterval;
-        let progressInterval;
-
-        function startDynamicLoader() {
-            const loadingMessages = getLoadingMessages();
-            const messageEl = document.getElementById('loader-message');
-            const progressEl = document.getElementById('loader-progress');
-            
-            if (!messageEl || !progressEl) return;
-            
-            messageEl.textContent = loadingMessages[0];
-            messageEl.style.opacity = '1';
-            
-            let progress = 0;
-            progressInterval = setInterval(() => {
-                progress += Math.random() * 15;
-                if (progress > 85) progress = 85; 
-                progressEl.style.width = progress + '%';
-            }, 400);
-            
-            loaderInterval = setInterval(() => {
-                currentMessageIndex++;
-                if (currentMessageIndex >= loadingMessages.length) {
-                    currentMessageIndex = loadingMessages.length - 1;
-                    return;
-                }
-                messageEl.style.opacity = '0';
-                setTimeout(() => {
-                    messageEl.textContent = loadingMessages[currentMessageIndex];
-                    messageEl.style.opacity = '1';
-                }, 300);
-            }, 1200);
-        }
 
         function completeLoader() {
             if (!productLoaded || !reviewsLoaded) return;
@@ -2912,8 +2918,8 @@ async function generateDeviceFingerprint() {
 
         /* ====== Init ====== */
         document.addEventListener('DOMContentLoaded', () => {
+            updateLoaderMessages();
             startDynamicLoader();
-            // Genera Device Fingerprint
             generateDeviceFingerprint();
             renderGallery();
             loadProduct();
@@ -3043,5 +3049,6 @@ window.addEventListener('storage', (event) => {
     </script>
 </body>
 </html>
+
 
 
