@@ -295,12 +295,8 @@ if (typeof updateReviewsSummaryData === 'function' &&
   }
 }
 
-// Inizializza sistema i18n
-let i18nPDPInstance;
-
-document.addEventListener('DOMContentLoaded', () => {
-  i18nPDPInstance = new I18nPDP();
-});
+// Inizializza sistema i18n SUBITO (non aspettare DOMContentLoaded)
+let i18nPDPInstance = new I18nPDP();
 
 // Esporta per uso globale
 window.i18nPDP = () => i18nPDPInstance;
