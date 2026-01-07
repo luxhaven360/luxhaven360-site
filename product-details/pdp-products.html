@@ -1980,12 +1980,16 @@ function renderStars(containerId, ratingValue) {
         specsGrid.style.display = 'none';
         
         // --- MODIFICA: Messaggio professionale semplice ---
+        const i18n = window.i18nPDP();
+        const noSpecsTitle = i18n ? i18n.t('pdp_spec_no_specs_title') : 'Specifiche non disponibili';
+        const noSpecsText = i18n ? i18n.t('pdp_spec_no_specs_text') : 'Al momento non sono presenti dettagli tecnici aggiuntivi per questo prodotto.';
+        
         const noSpecsHtml = `
             <div class="no-specs-container" style="border: 1px solid rgba(255,255,255,0.1); background: rgba(255,255,255,0.02);">
                 <div class="no-specs-icon" style="color: #a1a1aa; font-size: 1.5rem; animation: none;">ⓘ</div>
-                <div class="no-specs-title" style="color: #fafafa; font-family: inherit; font-size: 1.1rem; margin-bottom: 0.5rem;">Specifiche non disponibili</div>
+                <div class="no-specs-title" style="color: #fafafa; font-family: inherit; font-size: 1.1rem; margin-bottom: 0.5rem;">${noSpecsTitle}</div>
                 <div class="no-specs-text" style="color: #a1a1aa;">
-                    Al momento non sono presenti dettagli tecnici aggiuntivi per questo prodotto.
+                    ${noSpecsText}
                 </div>
             </div>
         `;
@@ -2047,14 +2051,13 @@ function getDynamicTime(dateTimeStr) {
     if (!dateTimeStr) return '';
     
     try {
-        // Parse della stringa "07 December 2025 - 17:46"
+        const i18n = window.i18nPDP();
         const parts = dateTimeStr.split(' - ');
         if (parts.length !== 2) return dateTimeStr;
         
-        const datePart = parts[0]; // "07 December 2025"
-        const timePart = parts[1]; // "17:46"
+        const datePart = parts[0];
+        const timePart = parts[1];
         
-        // Creiamo oggetto Date
         const reviewDate = new Date(datePart + ' ' + timePart);
         
         if (isNaN(reviewDate.getTime())) return dateTimeStr;
@@ -2067,28 +2070,25 @@ function getDynamicTime(dateTimeStr) {
         const oneHour = 60 * oneMinute;
         const oneDay = 24 * oneHour;
 
-        // Controllo preventivo per orari futuri
-        if (diff < 0) return 'ora';
+        if (diff < 0) return i18n ? i18n.t('pdp_review_time_now') : 'ora';
 
-        // 1. Meno di 1 minuto -> "ora" (minuscolo)
         if (diff < oneMinute) {
-            return 'ora';
+            return i18n ? i18n.t('pdp_review_time_now') : 'ora';
         }
         
-        // 2. Da 1 minuto a 59 minuti (minuscolo)
         if (diff < oneHour) {
             const minutes = Math.floor(diff / oneMinute);
-            return `${minutes} minut${minutes === 1 ? 'o' : 'i'} fa`;
+            const key = minutes === 1 ? 'pdp_review_time_minutes_one' : 'pdp_review_time_minutes_many';
+            return i18n ? i18n.t(key, { n: minutes }) : `${minutes} minuti fa`;
         }
         
-        // 3. Da 1 ora a 23 ore (minuscolo)
         if (diff < oneDay) {
             const hours = Math.floor(diff / oneHour);
-            return `${hours} or${hours === 1 ? 'a' : 'e'} fa`;
+            const key = hours === 1 ? 'pdp_review_time_hours_one' : 'pdp_review_time_hours_many';
+            return i18n ? i18n.t(key, { n: hours }) : `${hours} ore fa`;
         }
         
-        // 4. Oltre 24 ore -> Formatta data italiana con maiuscole
-        return formatDateItalian(reviewDate);
+        return formatDateWithLocale(reviewDate);
         
     } catch (e) {
         console.error('Errore parsing data:', e);
@@ -2097,17 +2097,23 @@ function getDynamicTime(dateTimeStr) {
 }
 
 // Funzione helper per formattare la data in italiano con maiuscole
-function formatDateItalian(dateObj) {
-    const mesiItaliani = [
+function formatDateWithLocale(dateObj) {
+    const i18n = window.i18nPDP();
+    if (!i18n) return dateObj.toLocaleDateString('it-IT');
+    
+    const giorno = dateObj.getDate();
+    const mese = dateObj.getMonth() + 1; // 1-12
+    const anno = dateObj.getFullYear();
+    
+    // Ottieni nome mese tradotto
+    const monthNames = [
         'gennaio', 'febbraio', 'marzo', 'aprile', 'maggio', 'giugno',
         'luglio', 'agosto', 'settembre', 'ottobre', 'novembre', 'dicembre'
     ];
+    const monthKey = `pdp_month_${monthNames[dateObj.getMonth()]}`;
+    const monthName = i18n.t(monthKey);
     
-    const giorno = dateObj.getDate();
-    const mese = mesiItaliani[dateObj.getMonth()];
-    const anno = dateObj.getFullYear();
-    
-    return `${giorno} ${mese} ${anno}`;
+    return `${giorno} ${monthName} ${anno}`;
 }
 
 // Funzione per aggiornare le etichette di tempo in tempo reale
@@ -3034,3 +3040,4 @@ document.addEventListener('languageChanged', () => {
     </script>
 </body>
 </html>
+
