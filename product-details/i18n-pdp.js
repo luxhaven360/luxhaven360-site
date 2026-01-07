@@ -113,6 +113,11 @@ class I18nPDP {
     console.log(`✅ Lingua PDP cambiata: ${langCode.toUpperCase()}`);
   }
 
+  // Ri-renderizza recensioni se presenti
+    if (typeof currentReviewsData !== 'undefined' && currentReviewsData.length > 0) {
+        updateReviewsSummaryData(currentReviewsData);
+    }
+
   setupLanguageSelector() {
     const selector = document.getElementById('pdpLanguageSelector');
     if (!selector) return;
