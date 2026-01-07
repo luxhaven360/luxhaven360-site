@@ -1743,9 +1743,79 @@ window.addEventListener('pageshow', function(event) {
         }
     }
 });
+
+    /**
+ * Aggiorna tutti i prezzi con la nuova lingua/valuta
+ */
+function updateAllPricesForLanguage() {
+    const i18n = window.i18nPDP();
+    if (!i18n) return;
+    
+    // In cart.html: aggiorna summary
+    if (typeof updateSummary === 'function') {
+        updateSummary();
+    }
+    
+    // In pdp-products.html: aggiorna prezzo prodotto
+    if (currentProduct && currentProduct.price) {
+        const priceContainer = document.getElementById('productPrice');
+        if (priceContainer) {
+            if (currentProduct.discountPrice && currentProduct.discountPrice < currentProduct.price) {
+                const discountPercent = Math.round(((currentProduct.price - currentProduct.discountPrice) / currentProduct.price) * 100);
+                
+                priceContainer.innerHTML = `
+                    <div class="price-container">
+                        <div class="price-original">${i18n.formatPrice(currentProduct.price, currentProduct.currency || 'EUR')}</div>
+                        <div class="price-row">
+                            <div class="price-discounted">${i18n.formatPrice(currentProduct.discountPrice, currentProduct.currency || 'EUR')}</div>
+                            <span class="discount-badge">-${discountPercent}%</span>
+                        </div>
+                    </div>
+                `;
+            } else {
+                priceContainer.innerHTML = `<div class="price">${i18n.formatPrice(currentProduct.price, currentProduct.currency || 'EUR')}</div>`;
+            }
+        }
+    }
+    
+    // Aggiorna prezzi nelle card (se presenti)
+    document.querySelectorAll('.card').forEach(card => {
+        const originalPrice = parseFloat(card.dataset.originalPrice);
+        const originalCurrency = card.dataset.originalCurrency || 'EUR';
+        
+        if (!originalPrice) return;
+        
+        const discountPrice = parseFloat(card.dataset.discountPrice);
+        const hasDiscount = discountPrice && discountPrice < originalPrice;
+        
+        if (hasDiscount) {
+            const originalPriceEl = card.querySelector('div[style*="text-decoration: line-through"]');
+            if (originalPriceEl) {
+                originalPriceEl.textContent = i18n.formatPrice(originalPrice, originalCurrency);
+            }
+            
+            const discountedPriceEl = card.querySelector('div[style*="background-clip: text"]');
+            if (discountedPriceEl && discountedPriceEl.parentElement.style.display === 'flex') {
+                discountedPriceEl.textContent = i18n.formatPrice(discountPrice, originalCurrency);
+            }
+        } else {
+            const priceElement = card.querySelector('.card-price');
+            if (priceElement) {
+                priceElement.textContent = i18n.formatPrice(originalPrice, originalCurrency);
+            }
+        }
+    });
+}
+    // Ascolta cambio lingua da altre pagine
+window.addEventListener('storage', (event) => {
+    if (event.key === 'lh360_lang' && event.newValue) {
+        const i18n = window.i18nPDP();
+        if (i18n && i18n.currentLang !== event.newValue) {
+            i18n.changeLanguage(event.newValue);
+        }
+    }
+});
+    
 </script>
 </body>
 </html>
-
-
-
