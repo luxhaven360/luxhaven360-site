@@ -790,7 +790,7 @@ document.write(`
             <path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/>
         </svg>
         
-        <div style="font-size:1.25rem;color:#d4d4d8;margin-bottom:2rem;font-weight:300;">Caricamento Carrello</div>
+        <div id="cartLoaderText" style="font-size:1.25rem;color:#d4d4d8;margin-bottom:2rem;font-weight:300;" data-i18n="cart_loader_title">Caricamento Carrello</div>
         
         <div style="position:relative;height:4px;background:rgba(212,175,55,0.1);border-radius:10px;overflow:hidden;margin-bottom:1rem;">
             <div id="loaderBar" style="position:absolute;left:0;top:0;height:100%;width:0%;background:linear-gradient(90deg, #D4AF37, #FFD700);border-radius:10px;animation:fillBar 2.8s cubic-bezier(0.4, 0, 0.2, 1) forwards;"></div>
@@ -846,7 +846,7 @@ document.write(`
     <div class="progress-section">
         <div class="progress-text">
             <span data-i18n="cart_summary_shipping_progress">Spedizione gratuita a</span>
-            <span class="progress-highlight">€ 150</span>
+            <span class="progress-highlight" id="freeShippingThreshold">€ 150</span>
         </div>
         <div class="progress-bar">
             <div class="progress-fill" id="progressFill" style="width: 0%;"></div>
@@ -966,68 +966,68 @@ document.write(`
 
     // === RENDERING CARRELLO ===
     function renderCart() {
-        const cartItemsContainer = document.getElementById('cartItems');
-        cartItemsContainer.innerHTML = '';
-        
-        if (cart.length === 0) {
-            checkEmptyCart();
-        } else {
-            cart.forEach((item, index) => {
-                let variantHTML = '';
-if (item.color || item.size) {
-    const variantParts = [];
-    if (item.color) variantParts.push(item.color);
-    if (item.size) variantParts.push(`Taglia ${item.size}`);
-    const variantText = variantParts.join(' · '); // Middot Unicode: U+00B7
+    const cartItemsContainer = document.getElementById('cartItems');
+    cartItemsContainer.innerHTML = '';
     
-    variantHTML = '<div class="item-variant">';
-    if (item.color) {
-        const colorMap = {
-            'Nero': '#000000', 'Bianco': '#FFFFFF', 'Grigio': '#808080',
-            'Blu': '#0000FF', 'Rosso': '#FF0000', 'Verde': '#008000',
-            'Giallo': '#FFFF00', 'Viola': '#800080', 'Arancione': '#FFA500',
-            'Marrone': '#A52A2A', 'Oro': '#FFD700', 'Argento': '#C0C0C0',
-            'Beige': '#F5F5DC', 'Rosa': '#FFC0CB', 'Celeste': '#87CEEB',
-            'Black': '#000000', 'White': '#FFFFFF', 'Grey': '#808080',
-            'Blue': '#0000FF', 'Red': '#FF0000'
-        };
-        const cssColor = colorMap[item.color] || item.color;
-        const isLight = ['#FFFFFF', 'white', '#F5F5DC', 'beige'].includes(cssColor.toLowerCase());
-        const borderStyle = isLight ? 'border: 1px solid rgba(255,255,255,0.3);' : '';
-        variantHTML += `<div class="variant-detail"><span class="color-dot" style="background-color: ${cssColor}; ${borderStyle}"></span><span>${variantText}</span></div>`;
+    if (cart.length === 0) {
+        checkEmptyCart();
     } else {
-        variantHTML += `<div class="variant-detail"><span>${variantText}</span></div>`;
+        const i18n = window.i18nPDP(); // ✅ AGGIUNGI
+        
+        cart.forEach((item, index) => {
+            let variantHTML = '';
+            if (item.color || item.size) {
+                const variantParts = [];
+                
+                // ✅ TRADUCI "Colore" e "Taglia"
+                if (item.color) {
+                    const colorLabel = i18n ? i18n.t('pdp_color_label') : 'Colore';
+                    variantParts.push(`${colorLabel}: ${item.color}`);
+                }
+                if (item.size) {
+                    const sizeLabel = i18n ? i18n.t('pdp_size_label') : 'Taglia';
+                    variantParts.push(`${sizeLabel} ${item.size}`);
+                }
+                
+                const variantText = variantParts.join(' · ');
+                
+                variantHTML = `<div class="item-variant">${variantText}</div>`;
+            }
+            
+            const finalPrice = (item.discountPrice && item.discountPrice < item.price) ? item.discountPrice : item.price;
+            const hasDiscount = item.discountPrice && item.discountPrice < item.price;
+            
+            // ✅ TRADUCI "Rimuovi"
+            const removeLabel = i18n ? i18n.t('cart_item_remove') : 'Rimuovi';
+            
+            // ✅ USA formatPrice per i prezzi
+            const priceFormatted = i18n ? i18n.formatPrice(finalPrice, item.currency || 'EUR') : `€ ${finalPrice.toFixed(2).replace('.', ',')}`;
+            const originalPriceFormatted = i18n ? i18n.formatPrice(item.price, item.currency || 'EUR') : `€ ${item.price.toFixed(2).replace('.', ',')}`;
+            
+            const itemElement = document.createElement('div');
+            itemElement.className = 'cart-item';
+            itemElement.dataset.id = index;
+            itemElement.innerHTML = `
+                <div class="item-image">
+                    <img src="${item.image || 'https://via.placeholder.com/140x186?text=' + encodeURIComponent(item.title)}" alt="${item.title}">
+                </div>
+                <div class="item-details">
+                    <div class="item-name">${item.title}</div>
+                    ${variantHTML}
+                    <div class="item-actions">
+                        <button class="remove-btn" onclick="removeItem(${index})">${removeLabel}</button>
+                    </div>
+                </div>
+                <div class="item-price-section">
+                    ${hasDiscount ? `<div class="item-original-price">${originalPriceFormatted}</div>` : ''}
+                    <div class="item-price">${priceFormatted}</div>
+                </div>
+            `;
+            cartItemsContainer.appendChild(itemElement);
+        });
     }
-    variantHTML += '</div>';
+    updateSummaryImmediate();
 }
-                
-                const finalPrice = (item.discountPrice && item.discountPrice < item.price) ? item.discountPrice : item.price;
-                const hasDiscount = item.discountPrice && item.discountPrice < item.price;
-                
-                const itemElement = document.createElement('div');
-                itemElement.className = 'cart-item';
-                itemElement.dataset.id = index;
-                itemElement.innerHTML = `
-                    <div class="item-image">
-                        <img src="${item.image || 'https://via.placeholder.com/140x186?text=' + encodeURIComponent(item.title)}" alt="${item.title}">
-                    </div>
-                    <div class="item-details">
-                        <div class="item-name">${item.title}</div>
-                        ${variantHTML}
-                        <div class="item-actions">
-                            <button class="remove-btn" onclick="removeItem(${index})">Rimuovi</button>
-                        </div>
-                    </div>
-                    <div class="item-price-section">
-                        ${hasDiscount ? `<div class="item-original-price">€ ${item.price.toFixed(2).replace('.', ',')}</div>` : ''}
-                        <div class="item-price">€ ${finalPrice.toFixed(2).replace('.', ',')}</div>
-                    </div>
-                `;
-                cartItemsContainer.appendChild(itemElement);
-            });
-        }
-        updateSummaryImmediate(); // ✅ Update immediato UI
-    }
 
     /**
  * ✅ Ripristina coupon salvato (OTTIMIZZATO - evita calcoli multipli)
@@ -1223,14 +1223,16 @@ function showDiscountCalculating() {
     const discountRow = document.getElementById('discountRow');
     const comboBadge = document.getElementById('comboBadge');
     
-    // ✅ NASCONDI SEMPRE il badge durante il calcolo
     if (comboBadge) {
         comboBadge.style.display = 'none';
     }
     
+    const i18n = window.i18nPDP(); // ✅ AGGIUNGI
+    const calculatingText = i18n ? i18n.t('cart_coupon_calculating') : 'Calcolo...';
+    
     discountEl.innerHTML = `
         <span class="discount-calculating">
-            <span class="discount-calculating-text">Calcolo...</span>
+            <span class="discount-calculating-text">${calculatingText}</span>
         </span>
     `;
     discountRow.classList.add('discount-active');
@@ -1243,17 +1245,21 @@ function showDiscountValue(totalDiscount, isCombo = false) {
     const discountEl = document.getElementById('discount');
     const discountRow = document.getElementById('discountRow');
     const comboBadge = document.getElementById('comboBadge');
+    const i18n = window.i18nPDP(); // ✅ AGGIUNGI
     
     if (totalDiscount > 0) {
-        discountEl.innerHTML = `- € ${totalDiscount.toFixed(2).replace('.', ',')}`;
+        // ✅ USA formatPrice
+        const formattedDiscount = i18n ? i18n.formatPrice(totalDiscount) : `€ ${totalDiscount.toFixed(2).replace('.', ',')}`;
+        discountEl.innerHTML = `- ${formattedDiscount}`;
         discountRow.classList.add('discount-active');
         
-        // ✅ Mostra badge COMBO solo se isCombo è true
         if (comboBadge) {
             comboBadge.style.display = isCombo ? 'inline-block' : 'none';
         }
     } else {
-        discountEl.textContent = '- € 0,00';
+        // ✅ USA formatPrice anche per zero
+        const zeroDiscount = i18n ? i18n.formatPrice(0) : '€ 0,00';
+        discountEl.textContent = `- ${zeroDiscount}`;
         discountRow.classList.remove('discount-active');
         if (comboBadge) comboBadge.style.display = 'none';
     }
@@ -1344,46 +1350,47 @@ const loader = document.getElementById('recommendedLoader');
         
         // Genera HTML
         container.innerHTML = selected.map((product, index) => {
+    const i18n = window.i18nPDP();
     const isFeatured = index === 0;
     const featuredClass = isFeatured ? ' featured' : '';
-    const badgeHtml = isFeatured ? '<div class="recommended-badge">✦ Consigliato</div>' : '';
     
-    // ✅ Tronca descrizione a max 60 caratteri
+    // ✅ TRADUCI BADGE
+    const badgeText = i18n ? i18n.t('cart_recommended_badge') : '✦ Consigliato';
+    const badgeHtml = isFeatured ? `<div class="recommended-badge">${badgeText}</div>` : '';
+    
     const shortDesc = (product.desc || '').length > 60 
         ? product.desc.substring(0, 60) + '...' 
         : product.desc || '';
     
-    // ✅ NUOVO: Logica Sconto
     const hasDiscount = product.discountPrice && product.discountPrice < product.price;
     const originalPrice = parseFloat(product.price) || 0;
     const finalPrice = hasDiscount ? parseFloat(product.discountPrice) : originalPrice;
-    const discountPercent = hasDiscount ? Math.round(((originalPrice - finalPrice) / originalPrice) * 100) : 0;
     
-    // ✅ HTML Prezzo con Sconto
+    // ✅ USA formatPrice
     const priceHtml = hasDiscount 
         ? `
             <div style="display: flex; flex-direction: column; gap: 0.35rem; align-items: flex-start;">
                 <div style="font-size: 0.75rem; color: #71717a; text-decoration: line-through; font-weight: 300;">
-                    € ${originalPrice.toLocaleString('it-IT', {minimumFractionDigits: 2})}
+                    ${i18n ? i18n.formatPrice(originalPrice, product.currency || 'EUR') : `€ ${originalPrice.toFixed(2)}`}
                 </div>
                 <div style="display: flex; align-items: center; gap: 0.5rem;">
                     <span style="font-size: 1.125rem; font-weight: 700; background: linear-gradient(135deg, #D4AF37, #FFD700); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;">
-                        € ${finalPrice.toLocaleString('it-IT', {minimumFractionDigits: 2})}
+                        ${i18n ? i18n.formatPrice(finalPrice, product.currency || 'EUR') : `€ ${finalPrice.toFixed(2)}`}
                     </span>
                     <span style="display: inline-block; background: linear-gradient(135deg, #D4AF37, #FFD700); color: #09090b; padding: 0.2rem 0.5rem; border-radius: 1rem; font-size: 0.65rem; font-weight: 700; letter-spacing: 0.05em; box-shadow: 0 2px 8px rgba(212, 175, 55, 0.3);">
-                        -${discountPercent}%
+                        -${Math.round(((originalPrice - finalPrice) / originalPrice) * 100)}%
                     </span>
                 </div>
             </div>
         `
-        : `<div class="recommended-price">€ ${finalPrice.toLocaleString('it-IT', {minimumFractionDigits: 2})}</div>`;
+        : `<div class="recommended-price">${i18n ? i18n.formatPrice(finalPrice, product.currency || 'EUR') : `€ ${finalPrice.toFixed(2)}`}</div>`;
     
     return `
-    <a href="pdp-products.html?sku=${product.sku}" 
-       class="recommended-item${featuredClass}"
-       data-original-price="${originalPrice}"
-       data-discount-price="${hasDiscount ? finalPrice : ''}"
-       data-original-currency="${product.currency || 'EUR'}"
+        <a href="pdp-products.html?sku=${product.sku}" 
+           class="recommended-item${featuredClass}"
+           data-original-price="${originalPrice}"
+           data-discount-price="${hasDiscount ? finalPrice : ''}"
+           data-original-currency="${product.currency || 'EUR'}"
            style="text-decoration: none; color: inherit; display: block;">
             ${badgeHtml}
             <div class="recommended-image">
@@ -1844,6 +1851,12 @@ function updateAllPricesForLanguage() {
             }
         }
     }
+
+    // Aggiorna soglia spedizione gratuita
+const thresholdEl = document.getElementById('freeShippingThreshold');
+if (thresholdEl) {
+    thresholdEl.textContent = i18n.formatPrice(150);
+}
 }
     
     // Ascolta cambio lingua da altre pagine
@@ -1859,5 +1872,6 @@ window.addEventListener('storage', (event) => {
 </script>
 </body>
 </html>
+
 
 
