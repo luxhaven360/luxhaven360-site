@@ -265,6 +265,26 @@ class I18nPDP {
       return `${formatted} ${config.symbol}`;
     }
   }
+
+  /**
+   * Formatta numero con separatore decimale corretto per la lingua
+   */
+  formatNumber(number, decimals = 1) {
+    const amount = parseFloat(number) || 0;
+    
+    // Configurazione separatori per lingua
+    const decimalConfig = {
+      it: ',',  // Italiano: virgola
+      en: '.',  // Inglese: punto
+      fr: ',',  // Francese: virgola
+      de: ',',  // Tedesco: virgola
+      es: ','   // Spagnolo: virgola
+    };
+    
+    const decimal = decimalConfig[this.currentLang] || ',';
+    
+    return amount.toFixed(decimals).replace('.', decimal);
+  }
 }
 
 // Inizializza sistema i18n
