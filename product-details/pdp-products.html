@@ -1606,70 +1606,57 @@
         let allReviewsCache = []; // Memorizza tutte le recensioni scaricate
 
         /* ====== Loader Dinamico ====== */
-let loadingMessages = [
-    'Loading...',
-    'Please wait...',
-    'Almost ready...',
-    'Finalizing...'
-];
+        function getLoadingMessages() {
+    const i18n = window.i18nPDP();
+    if (!i18n) return [
+        'Loading...', 'Please wait...', 'Almost ready...'
+    ];
+    
+    return [
+        i18n.t('pdp_loader_step1'),
+        i18n.t('pdp_loader_step2'),
+        i18n.t('pdp_loader_step3'),
+        i18n.t('pdp_loader_step4'),
+        i18n.t('pdp_loader_step5'),
+        i18n.t('pdp_loader_step6'),
+        i18n.t('pdp_loader_step7')
+    ];
+}
 
-let currentMessageIndex = 0;
-let loaderInterval;
-let progressInterval;
+        let currentMessageIndex = 0;
+        let loaderInterval;
+        let progressInterval;
 
-function startDynamicLoader() {
-    const messageEl = document.getElementById('loader-message');
-    const progressEl = document.getElementById('loader-progress');
-    
-    if (!messageEl || !progressEl) return;
-    
-    // Usa i messaggi attuali (potrebbero già essere tradotti)
-    messageEl.textContent = loadingMessages[0];
-    messageEl.style.opacity = '1';
-    
-    let progress = 0;
-    progressInterval = setInterval(() => {
-        progress += Math.random() * 15;
-        if (progress > 85) progress = 85; 
-        progressEl.style.width = progress + '%';
-    }, 400);
-    
-    loaderInterval = setInterval(() => {
-        currentMessageIndex++;
-        if (currentMessageIndex >= loadingMessages.length) {
-            currentMessageIndex = loadingMessages.length - 1;
-            return;
-        }
-        messageEl.style.opacity = '0';
-        setTimeout(() => {
-            messageEl.textContent = loadingMessages[currentMessageIndex];
+        function startDynamicLoader() {
+            const loadingMessages = getLoadingMessages();
+            const messageEl = document.getElementById('loader-message');
+            const progressEl = document.getElementById('loader-progress');
+            
+            if (!messageEl || !progressEl) return;
+            
+            messageEl.textContent = loadingMessages[0];
             messageEl.style.opacity = '1';
-        }, 300);
-    }, 1200);
-}
-
-       /* ====== Aggiorna messaggi loader con traduzioni ====== */
-function updateLoaderMessages() {
-    try {
-        const i18n = window.i18nPDP && window.i18nPDP();
-        if (!i18n || typeof i18n.t !== 'function') {
-            console.warn('i18n not ready, using fallback messages');
-            return;
+            
+            let progress = 0;
+            progressInterval = setInterval(() => {
+                progress += Math.random() * 15;
+                if (progress > 85) progress = 85; 
+                progressEl.style.width = progress + '%';
+            }, 400);
+            
+            loaderInterval = setInterval(() => {
+                currentMessageIndex++;
+                if (currentMessageIndex >= loadingMessages.length) {
+                    currentMessageIndex = loadingMessages.length - 1;
+                    return;
+                }
+                messageEl.style.opacity = '0';
+                setTimeout(() => {
+                    messageEl.textContent = loadingMessages[currentMessageIndex];
+                    messageEl.style.opacity = '1';
+                }, 300);
+            }, 1200);
         }
-        
-        loadingMessages = [
-            i18n.t('pdp_loader_step1'),
-            i18n.t('pdp_loader_step2'),
-            i18n.t('pdp_loader_step3'),
-            i18n.t('pdp_loader_step4'),
-            i18n.t('pdp_loader_step5'),
-            i18n.t('pdp_loader_step6'),
-            i18n.t('pdp_loader_step7')
-        ];
-    } catch (error) {
-        console.warn('Error updating loader messages:', error);
-    }
-}
 
         function completeLoader() {
             if (!productLoaded || !reviewsLoaded) return;
@@ -1993,19 +1980,15 @@ function renderStars(containerId, ratingValue) {
         specsGrid.style.display = 'none';
         
         // --- MODIFICA: Messaggio professionale semplice ---
-        const i18n = window.i18nPDP();
-const noSpecsTitle = i18n ? i18n.t('pdp_spec_no_specs_title') : 'Specifiche non disponibili';
-const noSpecsText = i18n ? i18n.t('pdp_spec_no_specs_text') : 'Al momento non sono presenti dettagli tecnici aggiuntivi per questo prodotto.';
-
-const noSpecsHtml = `
-    <div class="no-specs-container" style="border: 1px solid rgba(255,255,255,0.1); background: rgba(255,255,255,0.02);">
-        <div class="no-specs-icon" style="color: #a1a1aa; font-size: 1.5rem; animation: none;">ℹ</div>
-        <div class="no-specs-title" style="color: #fafafa; font-family: inherit; font-size: 1.1rem; margin-bottom: 0.5rem;">${noSpecsTitle}</div>
-        <div class="no-specs-text" style="color: #a1a1aa;">
-            ${noSpecsText}
-        </div>
-    </div>
-`;
+        const noSpecsHtml = `
+            <div class="no-specs-container" style="border: 1px solid rgba(255,255,255,0.1); background: rgba(255,255,255,0.02);">
+                <div class="no-specs-icon" style="color: #a1a1aa; font-size: 1.5rem; animation: none;">ⓘ</div>
+                <div class="no-specs-title" style="color: #fafafa; font-family: inherit; font-size: 1.1rem; margin-bottom: 0.5rem;">Specifiche non disponibili</div>
+                <div class="no-specs-text" style="color: #a1a1aa;">
+                    Al momento non sono presenti dettagli tecnici aggiuntivi per questo prodotto.
+                </div>
+            </div>
+        `;
         // --------------------------------------------------
         
         // Inserisce il messaggio nel tab (dopo la griglia nascosta)
@@ -2063,14 +2046,15 @@ const noSpecsHtml = `
 function getDynamicTime(dateTimeStr) {
     if (!dateTimeStr) return '';
     
-    const i18n = window.i18nPDP();
-    
     try {
+        // Parse della stringa "07 December 2025 - 17:46"
         const parts = dateTimeStr.split(' - ');
         if (parts.length !== 2) return dateTimeStr;
         
-        const datePart = parts[0];
-        const timePart = parts[1];
+        const datePart = parts[0]; // "07 December 2025"
+        const timePart = parts[1]; // "17:46"
+        
+        // Creiamo oggetto Date
         const reviewDate = new Date(datePart + ' ' + timePart);
         
         if (isNaN(reviewDate.getTime())) return dateTimeStr;
@@ -2083,28 +2067,27 @@ function getDynamicTime(dateTimeStr) {
         const oneHour = 60 * oneMinute;
         const oneDay = 24 * oneHour;
 
-        if (diff < 0) return i18n ? i18n.t('pdp_review_time_now') : 'ora';
+        // Controllo preventivo per orari futuri
+        if (diff < 0) return 'ora';
 
-        // Meno di 1 minuto
+        // 1. Meno di 1 minuto -> "ora" (minuscolo)
         if (diff < oneMinute) {
-            return i18n ? i18n.t('pdp_review_time_now') : 'ora';
+            return 'ora';
         }
         
-        // Da 1 a 59 minuti
+        // 2. Da 1 minuto a 59 minuti (minuscolo)
         if (diff < oneHour) {
             const minutes = Math.floor(diff / oneMinute);
-            const key = minutes === 1 ? 'pdp_review_time_minutes_one' : 'pdp_review_time_minutes_many';
-            return i18n ? i18n.t(key, { n: minutes }) : `${minutes} minuti fa`;
+            return `${minutes} minut${minutes === 1 ? 'o' : 'i'} fa`;
         }
         
-        // Da 1 a 23 ore
+        // 3. Da 1 ora a 23 ore (minuscolo)
         if (diff < oneDay) {
             const hours = Math.floor(diff / oneHour);
-            const key = hours === 1 ? 'pdp_review_time_hours_one' : 'pdp_review_time_hours_many';
-            return i18n ? i18n.t(key, { n: hours }) : `${hours} ore fa`;
+            return `${hours} or${hours === 1 ? 'a' : 'e'} fa`;
         }
         
-        // Oltre 24 ore -> Data formattata
+        // 4. Oltre 24 ore -> Formatta data italiana con maiuscole
         return formatDateItalian(reviewDate);
         
     } catch (e) {
@@ -2292,7 +2275,7 @@ function updateReviewsSummaryData(reviews) {
     const reviewsCount = document.getElementById('reviewsCount');
     const ratingText = document.getElementById('ratingText');
     const i18n = window.i18nPDP();
-const formattedRating = i18n ? i18n.formatNumber(avgRating, 1) : avgRating.toFixed(1);
+    const formattedRating = i18n ? i18n.formatNumber(avgRating, 1) : avgRating.toFixed(1);
     
     if (ratingNumber) ratingNumber.textContent = formattedRating;
     
@@ -2314,17 +2297,6 @@ const formattedRating = i18n ? i18n.formatNumber(avgRating, 1) : avgRating.toFix
 
     renderStars('reviewsStarsContainer', avgRating);
     renderStars('starsContainer', avgRating);
-
-            // Aggiorna anche il rating vicino al prodotto (sopra)
-const ratingTextTop = document.getElementById('ratingText');
-if (ratingTextTop && i18n) {
-    const plural = count === 1 ? i18n.t('pdp_rating_reviews_one') : i18n.t('pdp_rating_reviews_many');
-    ratingTextTop.textContent = i18n.t('pdp_rating_text', { 
-        rating: formattedRating, 
-        count: formatCount(count),
-        plural: plural
-    });
-}
 
     if (count > 0) {
         for (let i = 5; i >= 1; i--) {
@@ -2925,8 +2897,8 @@ async function generateDeviceFingerprint() {
 
         /* ====== Init ====== */
         document.addEventListener('DOMContentLoaded', () => {
-            updateLoaderMessages();
             startDynamicLoader();
+            // Genera Device Fingerprint
             generateDeviceFingerprint();
             renderGallery();
             loadProduct();
@@ -3056,7 +3028,3 @@ window.addEventListener('storage', (event) => {
     </script>
 </body>
 </html>
-
-
-
-
