@@ -236,8 +236,8 @@ class LuxHavenConnectionMonitor {
 
     const i18n = getI18nInstance(); // ✅ MODIFICATO
     const title = i18n ? i18n.t('connection_offline_title') : 'Connessione Assente';
-    const text = window.i18n ? window.i18n().t('connection_offline_text') : 'Impossibile connettersi a Internet.<br>Verifica la tua connessione e ricarica la pagina.';
-    const btnText = window.i18n ? window.i18n().t('connection_offline_btn') : 'Ricarica Pagina';
+    const text = i18n ? i18n.t('connection_offline_text') : 'Impossibile connettersi a Internet.<br>Verifica la tua connessione e ricarica la pagina.';
+    const btnText = i18n ? i18n.t('connection_offline_btn') : 'Ricarica Pagina';
 
     const errorHTML = `
         <div id="lh-connection-error" class="lh-connection-overlay">
@@ -316,25 +316,25 @@ updateWarningsLanguage() {
     }
     
     // Aggiorna overlay errore offline
-    const errorOverlay = document.getElementById('lh-connection-error');
-    if (errorOverlay && errorOverlay.classList.contains('show')) {
-        const errorTitle = errorOverlay.querySelector('.lh-error-title');
-        const errorText = errorOverlay.querySelector('.lh-error-text');
-        const errorBtn = errorOverlay.querySelector('.lh-error-btn');
-        
-        if (errorTitle) {
-            errorTitle.textContent = window.i18n ? window.i18n().t('connection_offline_title') : errorTitle.textContent;
-        }
-        if (errorText) {
-            const text = window.i18n ? window.i18n().t('connection_offline_text') : errorText.innerHTML;
-            errorText.innerHTML = text;
-        }
-        if (errorBtn) {
-            const btnText = window.i18n ? window.i18n().t('connection_offline_btn') : 'Ricarica Pagina';
-            // Mantieni l'emoji 🔄 e aggiorna solo il testo
-            errorBtn.innerHTML = `🔄 ${btnText}`;
-        }
+const errorOverlay = document.getElementById('lh-connection-error');
+if (errorOverlay && errorOverlay.classList.contains('show')) {
+    const errorTitle = errorOverlay.querySelector('.lh-error-title');
+    const errorText = errorOverlay.querySelector('.lh-error-text');
+    const errorBtn = errorOverlay.querySelector('.lh-error-btn');
+    
+    if (errorTitle) {
+        errorTitle.textContent = i18n ? i18n.t('connection_offline_title') : errorTitle.textContent;
     }
+    if (errorText) {
+        const text = i18n ? i18n.t('connection_offline_text') : errorText.innerHTML;
+        errorText.innerHTML = text;
+    }
+    if (errorBtn) {
+        const btnText = i18n ? i18n.t('connection_offline_btn') : 'Ricarica Pagina';
+        // Mantieni l'emoji 🔄 e aggiorna solo il testo
+        errorBtn.innerHTML = `🔄 ${btnText}`;
+    }
+}
     
     // Aggiorna notifica riconnessione (se visibile)
     const reconnectNotif = document.getElementById('lh-reconnect-notif');
