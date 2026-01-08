@@ -541,7 +541,16 @@ booking_config_ex_subtitle: "Momenti esclusivi, curati nei minimi dettagli",
 booking_config_ex_badge: "Esperienza Curata su Misura",
 booking_config_ex_table1: "Dettagli Esperienza",
 booking_config_ex_table2: "Requisiti & Servizi",
-booking_config_ex_specs: ["Durata", "Partecipanti max", "Orario / Fascia", "Ritrovo", "Accessibilità", "Servizi inclusi", "Requisiti", "Alloggio"]
+booking_config_ex_specs: ["Durata", "Partecipanti max", "Orario / Fascia", "Ritrovo", "Accessibilità", "Servizi inclusi", "Requisiti", "Alloggio"],
+
+    // Connection Monitor
+    connection_slow: "Connessione Lenta",
+    connection_unstable: "Connessione Instabile",
+    connection_warning_text: "Potrebbero verificarsi rallentamenti durante la navigazione",
+    connection_offline_title: "Connessione Assente",
+    connection_offline_text: "Impossibile connettersi a Internet.<br>Verifica la tua connessione e ricarica la pagina.",
+    connection_offline_btn: "Ricarica Pagina",
+    connection_restored: "Connessione Ristabilita",
   },
   
   en: {
@@ -1017,7 +1026,16 @@ booking_config_ex_subtitle: "Exclusive moments, carefully crafted",
 booking_config_ex_badge: "Tailor-Made Experience",
 booking_config_ex_table1: "Experience Details",
 booking_config_ex_table2: "Requirements & Services",
-booking_config_ex_specs: ["Duration", "Max Participants", "Time / Slot", "Meeting Point", "Accessibility", "Included Services", "Requirements", "Accommodation"]
+booking_config_ex_specs: ["Duration", "Max Participants", "Time / Slot", "Meeting Point", "Accessibility", "Included Services", "Requirements", "Accommodation"],
+
+    // Connection Monitor
+    connection_slow: "Slow Connection",
+    connection_unstable: "Unstable Connection",
+    connection_warning_text: "You may experience slowdowns during browsing",
+    connection_offline_title: "No Connection",
+    connection_offline_text: "Unable to connect to the Internet.<br>Check your connection and reload the page.",
+    connection_offline_btn: "Reload Page",
+    connection_restored: "Connection Restored",
   },
   
   fr: {
@@ -1493,7 +1511,16 @@ booking_config_ex_subtitle: "Moments exclusifs, soigneusement préparés",
 booking_config_ex_badge: "Expérience Sur Mesure",
 booking_config_ex_table1: "Détails Expérience",
 booking_config_ex_table2: "Exigences & Services",
-booking_config_ex_specs: ["Durée", "Participants max", "Horaire / Créneau", "Point de rencontre", "Accessibilité", "Services inclus", "Exigences", "Hébergement"]
+booking_config_ex_specs: ["Durée", "Participants max", "Horaire / Créneau", "Point de rencontre", "Accessibilité", "Services inclus", "Exigences", "Hébergement"],
+
+    // Connection Monitor
+    connection_slow: "Connexion Lente",
+    connection_unstable: "Connexion Instable",
+    connection_warning_text: "Des ralentissements peuvent survenir pendant la navigation",
+    connection_offline_title: "Pas de Connexion",
+    connection_offline_text: "Impossible de se connecter à Internet.<br>Vérifiez votre connexion et rechargez la page.",
+    connection_offline_btn: "Recharger la Page",
+    connection_restored: "Connexion Rétablie",
   },
   
   de: {
@@ -1969,7 +1996,16 @@ booking_config_ex_subtitle: "Exklusive Momente, sorgfältig gestaltet",
 booking_config_ex_badge: "Maßgeschneidertes Erlebnis",
 booking_config_ex_table1: "Erlebnis-Details",
 booking_config_ex_table2: "Anforderungen & Services",
-booking_config_ex_specs: ["Dauer", "Max. Teilnehmer", "Uhrzeit / Zeitfenster", "Treffpunkt", "Zugänglichkeit", "Enthaltene Services", "Anforderungen", "Unterkunft"]
+booking_config_ex_specs: ["Dauer", "Max. Teilnehmer", "Uhrzeit / Zeitfenster", "Treffpunkt", "Zugänglichkeit", "Enthaltene Services", "Anforderungen", "Unterkunft"],
+
+    // Connection Monitor
+    connection_slow: "Langsame Verbindung",
+    connection_unstable: "Instabile Verbindung",
+    connection_warning_text: "Es können Verzögerungen beim Surfen auftreten",
+    connection_offline_title: "Keine Verbindung",
+    connection_offline_text: "Keine Internetverbindung möglich.<br>Überprüfen Sie Ihre Verbindung und laden Sie die Seite neu.",
+    connection_offline_btn: "Seite Neu Laden",
+    connection_restored: "Verbindung Wiederhergestellt",
   },
   
   es: {
@@ -2445,6 +2481,15 @@ booking_config_ex_subtitle: "Momentos exclusivos, cuidadosamente preparados",
 booking_config_ex_badge: "Experiencia A Medida",
 booking_config_ex_table1: "Detalles Experiencia",
 booking_config_ex_table2: "Requisitos & Servicios",
-booking_config_ex_specs: ["Duración", "Participantes máx", "Horario / Franja", "Punto de encuentro", "Accesibilidad", "Servicios incluidos", "Requisitos", "Alojamiento"]
+booking_config_ex_specs: ["Duración", "Participantes máx", "Horario / Franja", "Punto de encuentro", "Accesibilidad", "Servicios incluidos", "Requisitos", "Alojamiento"],
+
+    // Connection Monitor
+    connection_slow: "Conexión Lenta",
+    connection_unstable: "Conexión Inestable",
+    connection_warning_text: "Pueden producirse ralentizaciones durante la navegación",
+    connection_offline_title: "Sin Conexión",
+    connection_offline_text: "No se puede conectar a Internet.<br>Verifica tu conexión y recarga la página.",
+    connection_offline_btn: "Recargar Página",
+    connection_restored: "Conexión Restablecida",
   }
 };
