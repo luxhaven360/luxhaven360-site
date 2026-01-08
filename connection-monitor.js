@@ -21,6 +21,14 @@ class LuxHavenConnectionMonitor {
         this.init();
     }
 
+    /**
+ * Helper: Ottiene istanza i18n corretta in base alla pagina
+ */
+function getI18nInstance() {
+    // Prova prima i18nPDP (pdp-products.html), poi i18n (index.html)
+    return window.i18nPDP?.() || window.i18n?.() || null;
+}
+
     init() {
         // Event listeners per cambio stato online/offline
         window.addEventListener('online', () => this.handleOnline());
@@ -192,10 +200,10 @@ class LuxHavenConnectionMonitor {
     showWeakConnectionWarning(quality) {
     this.hideAllWarnings();
 
-    // ✅ USA TRADUZIONI
+    const i18n = getI18nInstance(); // ✅ MODIFICATO
     const titleKey = quality === 'fair' ? 'connection_slow' : 'connection_unstable';
-    const title = window.i18n ? window.i18n().t(titleKey) : (quality === 'fair' ? 'Connessione Lenta' : 'Connessione Instabile');
-    const text = window.i18n ? window.i18n().t('connection_warning_text') : 'Potrebbero verificarsi rallentamenti durante la navigazione';
+    const title = i18n ? i18n.t(titleKey) : (quality === 'fair' ? 'Connessione Lenta' : 'Connessione Instabile');
+    const text = i18n ? i18n.t('connection_warning_text') : 'Potrebbero verificarsi rallentamenti durante la navigazione';
 
     const warningHTML = `
         <div id="lh-connection-warning" class="lh-connection-banner weak">
@@ -226,8 +234,8 @@ class LuxHavenConnectionMonitor {
     showOfflineError() {
     this.hideAllWarnings();
 
-    // ✅ USA TRADUZIONI
-    const title = window.i18n ? window.i18n().t('connection_offline_title') : 'Connessione Assente';
+    const i18n = getI18nInstance(); // ✅ MODIFICATO
+    const title = i18n ? i18n.t('connection_offline_title') : 'Connessione Assente';
     const text = window.i18n ? window.i18n().t('connection_offline_text') : 'Impossibile connettersi a Internet.<br>Verifica la tua connessione e ricarica la pagina.';
     const btnText = window.i18n ? window.i18n().t('connection_offline_btn') : 'Ricarica Pagina';
 
@@ -258,8 +266,8 @@ class LuxHavenConnectionMonitor {
     showReconnectedNotification() {
     console.log('✅ Mostro notifica riconnessione');
     
-    // ✅ USA TRADUZIONI
-    const title = window.i18n ? window.i18n().t('connection_restored') : 'Connessione Ristabilita';
+    const i18n = getI18nInstance(); // ✅ MODIFICATO
+    const title = i18n ? i18n.t('connection_restored') : 'Connessione Ristabilita';
     
     const notifHTML = `
         <div id="lh-reconnect-notif" class="lh-connection-banner success">
@@ -292,6 +300,8 @@ class LuxHavenConnectionMonitor {
  * ✅ NUOVA FUNZIONE: Aggiorna lingua avvisi visibili
  */
 updateWarningsLanguage() {
+    const i18n = getI18nInstance(); // ✅ AGGIUNTO all'inizio
+    
     // Aggiorna avviso connessione debole/lenta
     const warningBanner = document.getElementById('lh-connection-warning');
     if (warningBanner && warningBanner.classList.contains('show')) {
@@ -299,10 +309,9 @@ updateWarningsLanguage() {
         const text = warningBanner.querySelector('.lh-banner-text span');
         
         if (title && text) {
-            // Determina se è "lenta" o "instabile" basandosi sullo stato corrente
             const titleKey = this.connectionQuality === 'fair' ? 'connection_slow' : 'connection_unstable';
-            title.textContent = window.i18n ? window.i18n().t(titleKey) : title.textContent;
-            text.textContent = window.i18n ? window.i18n().t('connection_warning_text') : text.textContent;
+            title.textContent = i18n ? i18n.t(titleKey) : title.textContent;
+            text.textContent = i18n ? i18n.t('connection_warning_text') : text.textContent;
         }
     }
     
