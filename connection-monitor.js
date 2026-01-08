@@ -6,6 +6,14 @@
  * - Notifica verde solo per riconnessioni reali
  */
 
+/**
+ * Helper: Ottiene istanza i18n corretta in base alla pagina
+ */
+function getI18nInstance() {
+    // Prova prima i18nPDP (pdp-products.html), poi i18n (index.html)
+    return window.i18nPDP?.() || window.i18n?.() || null;
+}
+
 class LuxHavenConnectionMonitor {
     constructor() {
         this.isOnline = navigator.onLine;
@@ -20,14 +28,6 @@ class LuxHavenConnectionMonitor {
         
         this.init();
     }
-
-    /**
- * Helper: Ottiene istanza i18n corretta in base alla pagina
- */
-function getI18nInstance() {
-    // Prova prima i18nPDP (pdp-products.html), poi i18n (index.html)
-    return window.i18nPDP?.() || window.i18n?.() || null;
-}
 
     init() {
         // Event listeners per cambio stato online/offline
