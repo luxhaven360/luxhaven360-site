@@ -6,25 +6,12 @@
  * - Notifica verde solo per riconnessioni reali
  */
 
-/**
+    /**
  * Helper: Ottiene istanza i18n corretta in base alla pagina
  */
 function getI18nInstance() {
     // Prova prima i18nPDP (pdp-products.html), poi i18n (index.html)
-    let i18nInstance = null;
-    
-    if (typeof window.i18nPDP === 'function') {
-        i18nInstance = window.i18nPDP();
-    } else if (typeof window.i18n === 'function') {
-        i18nInstance = window.i18n();
-    }
-    
-    // Verifica che abbia il metodo .t()
-    if (i18nInstance && typeof i18nInstance.t === 'function') {
-        return i18nInstance;
-    }
-    
-    return null;
+    return window.i18nPDP?.() || window.i18n?.() || null;
 }
 
 class LuxHavenConnectionMonitor {
