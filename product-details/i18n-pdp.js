@@ -78,11 +78,14 @@ class I18nPDP {
 
     // Sostituisci placeholder (es: {n}, {code}, {percent})
     Object.keys(replacements).forEach(placeholder => {
-      text = text.replace(new RegExp(`\\{${placeholder}\\}`, 'g'), replacements[placeholder]);
+        const value = replacements[placeholder];
+        // ✅ FIX: Assicurati che il valore non sia undefined
+        const safeValue = (value !== undefined && value !== null) ? value : '';
+        text = text.replace(new RegExp(`\\{${placeholder}\\}`, 'g'), safeValue);
     });
 
     return text;
-  }
+}
 
   changeLanguage(langCode) {
     if (!this.translations[langCode]) {
