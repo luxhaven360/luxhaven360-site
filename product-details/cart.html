@@ -981,6 +981,11 @@ if (window.i18nPDP) {
         const cartItemsContainer = document.getElementById('cartItems');
         cartItemsContainer.innerHTML = '';
         
+        // Aggiorna prezzi dopo il rendering
+if (typeof updateAllPricesForLanguage === 'function') {
+    updateAllPricesForLanguage();
+}
+        
         if (cart.length === 0) {
             checkEmptyCart();
         } else {
@@ -1042,8 +1047,9 @@ if (item.color || item.size) {
                 `;
                 cartItemsContainer.appendChild(itemElement);
             });
-            
-            const i18n = window.i18nPDP();
+
+            // Dopo il forEach in renderCart(), prima di chiudere l'else
+const i18n = window.i18nPDP();
 if (i18n) {
     // Traduci elementi dinamici
     document.querySelectorAll('[data-i18n]').forEach(el => {
@@ -1052,33 +1058,41 @@ if (i18n) {
         if (translation) el.textContent = translation;
     });
     
-    // Formatta prezzi
+    // ✅ FORMATTA PREZZI NELLE CARD
     document.querySelectorAll('.item-price').forEach((el, idx) => {
         const item = cart[idx];
         if (item) {
-            const finalPrice = (item.discountPrice && item.discountPrice < item.price) ? item.discountPrice : item.price;
-            el.textContent = i18n.formatPrice(finalPrice);
+            const finalPrice = (item.discountPrice && item.discountPrice < item.price) 
+                ? item.discountPrice 
+                : item.price;
+            el.textContent = i18n.formatPrice(finalPrice, item.currency || 'EUR');
         }
     });
     
     document.querySelectorAll('.item-original-price').forEach((el, idx) => {
         const item = cart[idx];
         if (item && item.price) {
-            el.textContent = i18n.formatPrice(item.price);
+            el.textContent = i18n.formatPrice(item.price, item.currency || 'EUR');
         }
     });
-}
-        }
+    
+    // ✅ AGGIUNGI FORMATTAZIONE SOGLIA SPEDIZIONE QUI ⬇️
+    const shippingThresholdEl = document.getElementById('shippingThreshold');
+    if (shippingThresholdEl) {
+        shippingThresholdEl.textContent = i18n.formatPrice(150);
+    }
+}  // ⬅️ Questa chiude if (i18n)
+        }  // ⬅️ Questa chiude l'else
         updateSummaryImmediate(); // ✅ Update immediato UI
     }
 
     /**
  * ✅ Ripristina coupon salvato (OTTIMIZZATO - evita calcoli multipli)
  */
-async function restoreAppliedCoupon() {
+  async function restoreAppliedCoupon() {
   const savedCoupon = localStorage.getItem('lh360_applied_coupon');
   
-  if (!savedCoupon) return; // ⭐ Se non c'è coupon, esci subito
+  if (!savedCoupon) return;
 
   try {
     const couponData = JSON.parse(savedCoupon);
@@ -1089,12 +1103,21 @@ async function restoreAppliedCoupon() {
       return;
     }
 
-    // ✅ Valida coupon con backend
+    // ✅ AGGIORNA SUBITO IL CONTEGGIO ARTICOLI PRIMA DELLA VALIDAZIONE
+    const i18n = window.i18nPDP();
+    if (i18n) {
+        const itemCount = cart.reduce((sum, item) => sum + (item.qty || 1), 0);
+        const itemCountText = itemCount === 1 
+            ? i18n.t('cart_items_count_one') 
+            : i18n.t('cart_items_count_many', { n: itemCount });
+        document.getElementById('itemCount').textContent = itemCountText;
+    }
+
+    // Valida coupon con backend
     const response = await fetch(`${webAppUrl}?action=validate_coupon&code=${encodeURIComponent(code)}&t=${Date.now()}`);
     const result = await response.json();
 
     if (result.success && result.valid) {
-      // ✅ Ripristina coupon PRIMA di chiamare updateSummary
       appliedCoupon = { 
         code: code, 
         discountPercent: discountPercent,
@@ -1103,28 +1126,26 @@ async function restoreAppliedCoupon() {
       
       document.getElementById('couponInput').value = code;
       
-      // ✅ SINGOLA chiamata diretta a updateSummaryWithCoupon
-      // (updateSummaryImmediate è già stato chiamato da renderCart)
       await updateSummaryWithCoupon();
       
-      // ✅ Mostra messaggio ripristino
-      showCouponMessage(
-        `Coupon "${code}" ripristinato con successo · Sconto attivo: ${discountPercent}%`, 
-        'success'
-      );
+      // ✅ Mostra messaggio ripristino TRADOTTO
+      if (i18n) {
+        showCouponMessage('cart_coupon_restored', 'success', {
+          code: code,
+          percent: discountPercent
+        });
+      }
       
     } else {
-      // ❌ Coupon non valido/utilizzato
       localStorage.removeItem('lh360_applied_coupon');
       appliedCoupon = null;
       
       const errorMsg = (result.error && result.error.includes('utilizzato')) 
-        ? `Il coupon "${code}" è stato utilizzato in un ordine precedente` 
-        : `Il coupon "${code}" non è più valido o è scaduto`;
+        ? 'cart_coupon_used' 
+        : 'cart_coupon_expired';
       
-      showCouponMessage(errorMsg, 'error');
+      showCouponMessage(errorMsg, 'error', { code: code });
       
-      // Ricalcola senza coupon
       await updateSummary();
     }
   } catch (error) {
@@ -1214,15 +1235,35 @@ async function restoreAppliedCoupon() {
     
     showDiscountValue(discount, isComboDiscount);
 
+       localStorage.setItem('lh360_applied_discounts', JSON.stringify({
+    comboDiscount: isComboDiscount ? discount : 0,
+    couponDiscount: appliedCoupon ? (subtotal * appliedCoupon.discountPercent) / 100 : 0,
+    couponCode: appliedCoupon ? appliedCoupon.code : null,
+    isComboActive: isComboDiscount,
+    totalDiscount: discount,
+    timestamp: Date.now()
+}));
+
     const progress = Math.min(100, (totalAfterDiscounts / 150) * 100);
-    document.getElementById('progressFill').style.width = `${progress}%`;
+const progressBar = document.getElementById('progressFill');
+
+// ✅ GESTIONE COMPLETAMENTO BARRA
+if (totalAfterDiscounts >= 150) {
+    progressBar.style.width = '100%';
+    progressBar.style.background = 'linear-gradient(90deg, #34d399, #10b981)';
+} else {
+    progressBar.style.width = `${progress}%`;
+    progressBar.style.background = 'linear-gradient(90deg, #34d399, #10b981)';
+}
 }
 
     /**
  * ✅ AGGIORNAMENTO IMMEDIATO UI (senza chiamate async)
  * Calcola e mostra istantaneamente: subtotale, articoli, barra progresso
  */
-function updateSummaryImmediate() {
+  function updateSummaryImmediate() {
+    const i18n = window.i18nPDP(); 
+    
     let subtotal = 0;
     let itemCount = 0;
     
@@ -1243,37 +1284,60 @@ function updateSummaryImmediate() {
     
     const totalWithCoupon = subtotal + shipping - couponDiscount;
 
-    document.getElementById('subtotal').textContent = `€ ${subtotal.toFixed(2).replace('.', ',')}`;
-    document.getElementById('shipping').textContent = shipping === 0 ? 'Gratuita' : `€ ${shipping.toFixed(2).replace('.', ',')}`;
-    document.getElementById('total').textContent = `€ ${totalWithCoupon.toFixed(2).replace('.', ',')}`;
-    document.getElementById('itemCount').textContent = itemCount === 1 ? '1 Articolo' : `${itemCount} Articoli`;
+    // ✅ USA i18n INVECE DI FORMATTAZIONE HARDCODED
+    if (i18n) {
+        document.getElementById('subtotal').textContent = i18n.formatPrice(subtotal);
+        document.getElementById('shipping').textContent = shipping === 0 
+            ? i18n.t('cart_summary_shipping_free') 
+            : i18n.formatPrice(shipping);
+        document.getElementById('total').textContent = i18n.formatPrice(totalWithCoupon);
+        
+        const itemCountText = itemCount === 1 
+            ? i18n.t('cart_items_count_one') 
+            : i18n.t('cart_items_count_many', { n: itemCount });
+        document.getElementById('itemCount').textContent = itemCountText;
+    } else {
+        // Fallback se i18n non è disponibile
+        document.getElementById('subtotal').textContent = `€ ${subtotal.toFixed(2).replace('.', ',')}`;
+        document.getElementById('shipping').textContent = shipping === 0 ? 'Gratuita' : `€ ${shipping.toFixed(2).replace('.', ',')}`;
+        document.getElementById('total').textContent = `€ ${totalWithCoupon.toFixed(2).replace('.', ',')}`;
+        document.getElementById('itemCount').textContent = itemCount === 1 ? '1 Articolo' : `${itemCount} Articoli`;
+    }
 
     const progress = Math.min(100, (subtotal / 150) * 100);
     document.getElementById('progressFill').style.width = `${progress}%`;
+
+    const shippingThresholdEl = document.getElementById('shippingThreshold');
+    if (shippingThresholdEl && i18n) {
+        shippingThresholdEl.textContent = i18n.formatPrice(150);
+    }
     
     if (cart.length > 0) {
-        showDiscountCalculating(); // ✅ Ora nasconde anche il badge
+        showDiscountCalculating();
     } else {
-        showDiscountValue(0); // ✅ Nasconde tutto se carrello vuoto
+        showDiscountValue(0);
     }
 }
 
  /**
  * ✅ Mostra indicatore "Calcolo..." per sconti in elaborazione
  */
-function showDiscountCalculating() {
+  function showDiscountCalculating() {
     const discountEl = document.getElementById('discount');
     const discountRow = document.getElementById('discountRow');
     const comboBadge = document.getElementById('comboBadge');
+    const i18n = window.i18nPDP();
     
-    // ✅ NASCONDI SEMPRE il badge durante il calcolo
     if (comboBadge) {
         comboBadge.style.display = 'none';
     }
     
+    // ✅ TRADUZIONE DINAMICA
+    const calculatingText = i18n ? i18n.t('cart_coupon_calculating') : 'Calcolo...';
+    
     discountEl.innerHTML = `
         <span class="discount-calculating">
-            <span class="discount-calculating-text">Calcolo...</span>
+            <span class="discount-calculating-text">${calculatingText}</span>
         </span>
     `;
     discountRow.classList.add('discount-active');
@@ -1282,21 +1346,27 @@ function showDiscountCalculating() {
 /**
  * ✅ Mostra valore sconto finale (o nasconde se zero)
  */
-function showDiscountValue(totalDiscount, isCombo = false) {
+ function showDiscountValue(totalDiscount, isCombo = false) {
     const discountEl = document.getElementById('discount');
     const discountRow = document.getElementById('discountRow');
     const comboBadge = document.getElementById('comboBadge');
+    const i18n = window.i18nPDP();
     
     if (totalDiscount > 0) {
-        discountEl.innerHTML = `- € ${totalDiscount.toFixed(2).replace('.', ',')}`;
+        discountEl.innerHTML = `- ${i18n ? i18n.formatPrice(totalDiscount) : '€ ' + totalDiscount.toFixed(2).replace('.', ',')}`;
         discountRow.classList.add('discount-active');
         
-        // ✅ Mostra badge COMBO solo se isCombo è true
         if (comboBadge) {
-            comboBadge.style.display = isCombo ? 'inline-block' : 'none';
+            // ✅ TRADUZIONE DINAMICA DEL BADGE
+            if (isCombo) {
+                comboBadge.textContent = i18n ? i18n.t('cart_combo_badge') : 'COMBO';
+                comboBadge.style.display = 'inline-block';
+            } else {
+                comboBadge.style.display = 'none';
+            }
         }
     } else {
-        discountEl.textContent = '- € 0,00';
+        discountEl.textContent = `- ${i18n ? i18n.formatPrice(0) : '€ 0,00'}`;
         discountRow.classList.remove('discount-active');
         if (comboBadge) comboBadge.style.display = 'none';
     }
@@ -1317,6 +1387,16 @@ function showDiscountValue(totalDiscount, isCombo = false) {
     document.querySelector('.cart-summary').style.display = 'none';
 }
 
+    function updateShippingThreshold() {
+    const i18n = window.i18nPDP();
+    if (!i18n) return;
+    
+    const shippingThresholdEl = document.getElementById('shippingThreshold');
+    if (shippingThresholdEl) {
+        shippingThresholdEl.textContent = i18n.formatPrice(150);
+    }
+}
+
     /**
  * ✅ Inizializza carrello con sequenza ottimizzata
  * Evita calcoli multipli durante il ripristino coupon
@@ -1324,6 +1404,7 @@ function showDiscountValue(totalDiscount, isCombo = false) {
 async function initializeCart() {
   // 1. Rendering DOM
   renderCart(); 
+  updateShippingThreshold();
   
   // 2. Ripristina coupon (se presente) e calcola sconti
   await restoreAppliedCoupon();
@@ -1401,33 +1482,35 @@ const loader = document.getElementById('recommendedLoader');
     const originalPrice = parseFloat(product.price) || 0;
     const finalPrice = hasDiscount ? parseFloat(product.discountPrice) : originalPrice;
     const discountPercent = hasDiscount ? Math.round(((originalPrice - finalPrice) / originalPrice) * 100) : 0;
+
+    const i18n = window.i18nPDP();
     
-    // ✅ HTML Prezzo con Sconto
-    const priceHtml = hasDiscount 
-        ? `
-            <div style="display: flex; flex-direction: column; gap: 0.35rem; align-items: flex-start;">
-                <div style="font-size: 0.75rem; color: #71717a; text-decoration: line-through; font-weight: 300;">
-                    € ${originalPrice.toLocaleString('it-IT', {minimumFractionDigits: 2})}
-                </div>
-                <div style="display: flex; align-items: center; gap: 0.5rem;">
-                    <span style="font-size: 1.125rem; font-weight: 700; background: linear-gradient(135deg, #D4AF37, #FFD700); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;">
-                        € ${finalPrice.toLocaleString('it-IT', {minimumFractionDigits: 2})}
-                    </span>
-                    <span style="display: inline-block; background: linear-gradient(135deg, #D4AF37, #FFD700); color: #09090b; padding: 0.2rem 0.5rem; border-radius: 1rem; font-size: 0.65rem; font-weight: 700; letter-spacing: 0.05em; box-shadow: 0 2px 8px rgba(212, 175, 55, 0.3);">
-                        -${discountPercent}%
-                    </span>
-                </div>
+    // ✅ HTML Prezzo con Sconto (con data attributes per aggiornamento dinamico)
+const priceHtml = hasDiscount 
+    ? `
+        <div style="display: flex; flex-direction: column; gap: 0.35rem; align-items: flex-start;">
+            <div style="font-size: 0.75rem; color: #71717a; text-decoration: line-through; font-weight: 300;">
+                ${i18n ? i18n.formatPrice(originalPrice, product.currency || 'EUR') : `€ ${originalPrice.toLocaleString('it-IT', {minimumFractionDigits: 2})}`}
             </div>
-        `
-        : `<div class="recommended-price">€ ${finalPrice.toLocaleString('it-IT', {minimumFractionDigits: 2})}</div>`;
+            <div style="display: flex; align-items: center; gap: 0.5rem;">
+                <span style="font-size: 1.125rem; font-weight: 700; background: linear-gradient(135deg, #D4AF37, #FFD700); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;">
+                    ${i18n ? i18n.formatPrice(finalPrice, product.currency || 'EUR') : `€ ${finalPrice.toLocaleString('it-IT', {minimumFractionDigits: 2})}`}
+                </span>
+                <span style="display: inline-block; background: linear-gradient(135deg, #D4AF37, #FFD700); color: #09090b; padding: 0.2rem 0.5rem; border-radius: 1rem; font-size: 0.65rem; font-weight: 700; letter-spacing: 0.05em; box-shadow: 0 2px 8px rgba(212, 175, 55, 0.3);">
+                    -${discountPercent}%
+                </span>
+            </div>
+        </div>
+    `
+    : `<div class="recommended-price">${i18n ? i18n.formatPrice(finalPrice, product.currency || 'EUR') : `€ ${finalPrice.toLocaleString('it-IT', {minimumFractionDigits: 2})}`}</div>`;
     
     return `
-    <a href="pdp-products.html?sku=${product.sku}" 
-       class="recommended-item${featuredClass}"
-       data-original-price="${originalPrice}"
-       data-discount-price="${hasDiscount ? finalPrice : ''}"
-       data-original-currency="${product.currency || 'EUR'}"
-           style="text-decoration: none; color: inherit; display: block;">
+<a href="pdp-products.html?sku=${product.sku}" 
+   class="recommended-item${featuredClass}"
+   data-original-price="${originalPrice}"
+   data-discount-price="${hasDiscount ? finalPrice : ''}"
+   data-original-currency="${product.currency || 'EUR'}"
+   style="text-decoration: none; color: inherit; display: block;">
             ${badgeHtml}
             <div class="recommended-image">
                 <img src="${product.icon || 'https://via.placeholder.com/300x400?text=No+Image'}" 
@@ -1440,11 +1523,6 @@ const loader = document.getElementById('recommendedLoader');
         </a>
     `;
 }).join('');
-
-        // Aggiorna prezzi dopo il rendering
-if (typeof updateAllPricesForLanguage === 'function') {
-    updateAllPricesForLanguage();
-}
 
         // Nascondi loader dopo aver popolato i prodotti
 if (loader) {
@@ -1629,8 +1707,8 @@ document.getElementById('applyCouponBtn').addEventListener('click', async functi
   }
 
   btn.disabled = true;
-  btn.textContent = i18n.t('cart_coupon_verifying'); // ✅ MODIFICATO
-  showCouponMessage('cart_coupon_verifying_progress', 'warning'); // ✅ MODIFICATO
+  btn.textContent = i18n.t('cart_coupon_verifying');
+  showCouponMessage('cart_coupon_verifying_progress', 'warning');
 
   try {
     const response = await fetch(`${webAppUrl}?action=validate_coupon&code=${encodeURIComponent(couponCode)}&t=${Date.now()}`);
@@ -1748,33 +1826,59 @@ function showCouponMessage(messageKey, type, replacements = {}) {
     }
 
     // Aggiungi sconto coupon se presente
-    if (appliedCoupon) {
-        const couponDiscount = (subtotal * appliedCoupon.discountPercent) / 100;
-        discount += couponDiscount;
-    }
+let couponDiscount = 0; // ✅ AGGIUNGI QUESTA RIGA
+if (appliedCoupon) {
+    couponDiscount = (subtotal * appliedCoupon.discountPercent) / 100;
+    discount += couponDiscount;
+}
 
-    // Calcola totali finali
+    // ✅ CALCOLA TOTALI FINALI PRIMA DI USARLI
     const totalAfterDiscounts = subtotal - discount;
     const shipping = totalAfterDiscounts >= 150 ? 0 : 15;
     const total = subtotal + shipping - discount;
 
-    // Aggiorna UI
+    // ✅ ORA AGGIORNA UI (shipping e total sono definiti)
     const i18n = window.i18nPDP();
-if (i18n) {
-    document.getElementById('subtotal').textContent = i18n.formatPrice(subtotal);
-    document.getElementById('shipping').textContent = shipping === 0 
-        ? i18n.t('cart_summary_shipping_free') 
-        : i18n.formatPrice(shipping);
-    document.getElementById('total').textContent = i18n.formatPrice(total);
-}
-    document.getElementById('itemCount').textContent = itemCount === 1 ? '1 Articolo' : `${itemCount} Articoli`;
+
+    if (i18n) {
+        const itemCountText = itemCount === 1 
+            ? i18n.t('cart_items_count_one') 
+            : i18n.t('cart_items_count_many', { n: itemCount });
+        document.getElementById('itemCount').textContent = itemCountText;
+    }
+
+    if (i18n) {
+        document.getElementById('subtotal').textContent = i18n.formatPrice(subtotal);
+        document.getElementById('shipping').textContent = shipping === 0 
+            ? i18n.t('cart_summary_shipping_free') 
+            : i18n.formatPrice(shipping);
+        document.getElementById('total').textContent = i18n.formatPrice(total);
+    }
     
     // Aggiorna barra progresso
     const progress = Math.min(100, (totalAfterDiscounts / 150) * 100);
-    document.getElementById('progressFill').style.width = `${progress}%`;
+    const progressBar = document.getElementById('progressFill');
     
-    // ✅ Mostra valore sconto finale (nasconde indicatore)
+    if (totalAfterDiscounts >= 150) {
+        progressBar.style.width = '100%';
+        progressBar.style.background = 'linear-gradient(90deg, #34d399, #10b981)';
+    } else {
+        progressBar.style.width = `${progress}%`;
+        progressBar.style.background = 'linear-gradient(90deg, #34d399, #10b981)';
+    }
+    
+    // Mostra valore sconto finale
     showDiscountValue(discount, isComboDiscount);
+
+    // ✅ SALVA SCONTI PER RIPRISTINO AL CAMBIO LINGUA
+localStorage.setItem('lh360_applied_discounts', JSON.stringify({
+    comboDiscount: isComboDiscount ? (discount - couponDiscount) : 0,
+    couponDiscount: couponDiscount,
+    couponCode: appliedCoupon ? appliedCoupon.code : null,
+    isComboActive: isComboDiscount,
+    totalDiscount: discount,
+    timestamp: Date.now()
+}));
 }
 
     // ⭐ FIX PROBLEMA 3: Nascondi loader dopo 3 secondi (ridotto da 4)
@@ -1803,7 +1907,7 @@ window.addEventListener('pageshow', function(event) {
    /**
  * Aggiorna tutti i prezzi con la nuova lingua/valuta
  */
-function updateAllPricesForLanguage() {
+  function updateAllPricesForLanguage() {
     const i18n = window.i18nPDP();
     if (!i18n) return;
     
@@ -1845,7 +1949,25 @@ function updateAllPricesForLanguage() {
         document.getElementById('discount').textContent = `- ${i18n.formatPrice(discount)}`;
     }
     
-    // 3. AGGIORNAMENTO PREZZI PRODOTTI CONSIGLIATI
+    // 3. AGGIORNAMENTO PREZZI ITEM CARRELLO
+    document.querySelectorAll('.item-price').forEach((el, idx) => {
+        const item = cart[idx];
+        if (item) {
+            const finalPrice = (item.discountPrice && item.discountPrice < item.price) 
+                ? item.discountPrice 
+                : item.price;
+            el.textContent = i18n.formatPrice(finalPrice, item.currency || 'EUR');
+        }
+    });
+    
+    document.querySelectorAll('.item-original-price').forEach((el, idx) => {
+        const item = cart[idx];
+        if (item && item.price) {
+            el.textContent = i18n.formatPrice(item.price, item.currency || 'EUR');
+        }
+    });
+    
+    // 4. AGGIORNAMENTO PREZZI PRODOTTI CONSIGLIATI
     document.querySelectorAll('.recommended-item').forEach(card => {
         const originalPrice = parseFloat(card.dataset.originalPrice);
         const discountPrice = parseFloat(card.dataset.discountPrice);
@@ -1863,7 +1985,7 @@ function updateAllPricesForLanguage() {
             }
             
             // Aggiorna prezzo scontato
-            const discountedPriceEl = card.querySelector('div[style*="background-clip: text"]');
+            const discountedPriceEl = card.querySelector('span[style*="background-clip: text"]');
             if (discountedPriceEl) {
                 discountedPriceEl.textContent = i18n.formatPrice(discountPrice, originalCurrency);
             }
@@ -1876,34 +1998,11 @@ function updateAllPricesForLanguage() {
         }
     });
     
-    // 4. PDP-PRODUCTS (se presente currentProduct)
-    if (typeof currentProduct !== 'undefined' && currentProduct && currentProduct.price) {
-        const priceContainer = document.getElementById('productPrice');
-        if (priceContainer) {
-            if (currentProduct.discountPrice && currentProduct.discountPrice < currentProduct.price) {
-                const discountPercent = Math.round(((currentProduct.price - currentProduct.discountPrice) / currentProduct.price) * 100);
-                
-                priceContainer.innerHTML = `
-                    <div class="price-container">
-                        <div class="price-original">${i18n.formatPrice(currentProduct.price, currentProduct.currency || 'EUR')}</div>
-                        <div class="price-row">
-                            <div class="price-discounted">${i18n.formatPrice(currentProduct.discountPrice, currentProduct.currency || 'EUR')}</div>
-                            <span class="discount-badge">-${discountPercent}%</span>
-                        </div>
-                    </div>
-                `;
-            } else {
-                priceContainer.innerHTML = `<div class="price">${i18n.formatPrice(currentProduct.price, currentProduct.currency || 'EUR')}</div>`;
-            }
-        }
+    // 5. Aggiorna soglia spedizione gratuita
+    const shippingThresholdEl = document.getElementById('shippingThreshold');
+    if (shippingThresholdEl) {
+        shippingThresholdEl.textContent = i18n.formatPrice(150);
     }
-
-    // Aggiorna soglia spedizione gratuita
-const shippingThresholdEl = document.getElementById('shippingThreshold');
-if (shippingThresholdEl) {
-    shippingThresholdEl.textContent = i18n.formatPrice(150);
-}
-    
 }
     
     // Ascolta cambio lingua da altre pagine
