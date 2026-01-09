@@ -1080,10 +1080,10 @@ if (i18n) {
     /**
  * ✅ Ripristina coupon salvato (OTTIMIZZATO - evita calcoli multipli)
  */
-async function restoreAppliedCoupon() {
+  async function restoreAppliedCoupon() {
   const savedCoupon = localStorage.getItem('lh360_applied_coupon');
   
-  if (!savedCoupon) return; // ⭐ Se non c'è coupon, esci subito
+  if (!savedCoupon) return;
 
   try {
     const couponData = JSON.parse(savedCoupon);
@@ -1094,12 +1094,21 @@ async function restoreAppliedCoupon() {
       return;
     }
 
-    // ✅ Valida coupon con backend
+    // ✅ AGGIORNA SUBITO IL CONTEGGIO ARTICOLI PRIMA DELLA VALIDAZIONE
+    const i18n = window.i18nPDP();
+    if (i18n) {
+        const itemCount = cart.reduce((sum, item) => sum + (item.qty || 1), 0);
+        const itemCountText = itemCount === 1 
+            ? i18n.t('cart_items_count_one') 
+            : i18n.t('cart_items_count_many', { n: itemCount });
+        document.getElementById('itemCount').textContent = itemCountText;
+    }
+
+    // Valida coupon con backend
     const response = await fetch(`${webAppUrl}?action=validate_coupon&code=${encodeURIComponent(code)}&t=${Date.now()}`);
     const result = await response.json();
 
     if (result.success && result.valid) {
-      // ✅ Ripristina coupon PRIMA di chiamare updateSummary
       appliedCoupon = { 
         code: code, 
         discountPercent: discountPercent,
@@ -1108,37 +1117,26 @@ async function restoreAppliedCoupon() {
       
       document.getElementById('couponInput').value = code;
       
-      // ✅ SINGOLA chiamata diretta a updateSummaryWithCoupon
-await updateSummaryWithCoupon();
-
-// ✅ AGGIORNA IMMEDIATAMENTE IL CONTEGGIO ARTICOLI
-const i18n = window.i18nPDP();
-if (i18n) {
-    const itemCount = cart.reduce((sum, item) => sum + (item.qty || 1), 0);
-    const itemCountText = itemCount === 1 
-        ? i18n.t('cart_items_count_one') 
-        : i18n.t('cart_items_count_many', { n: itemCount });
-    document.getElementById('itemCount').textContent = itemCountText;
-}
+      await updateSummaryWithCoupon();
       
-      // ✅ Mostra messaggio ripristino
-      showCouponMessage(
-        `Coupon "${code}" ripristinato con successo · Sconto attivo: ${discountPercent}%`, 
-        'success'
-      );
+      // ✅ Mostra messaggio ripristino TRADOTTO
+      if (i18n) {
+        showCouponMessage('cart_coupon_restored', 'success', {
+          code: code,
+          percent: discountPercent
+        });
+      }
       
     } else {
-      // ❌ Coupon non valido/utilizzato
       localStorage.removeItem('lh360_applied_coupon');
       appliedCoupon = null;
       
       const errorMsg = (result.error && result.error.includes('utilizzato')) 
-        ? `Il coupon "${code}" è stato utilizzato in un ordine precedente` 
-        : `Il coupon "${code}" non è più valido o è scaduto`;
+        ? 'cart_coupon_used' 
+        : 'cart_coupon_expired';
       
-      showCouponMessage(errorMsg, 'error');
+      showCouponMessage(errorMsg, 'error', { code: code });
       
-      // Ricalcola senza coupon
       await updateSummary();
     }
   } catch (error) {
@@ -1229,7 +1227,16 @@ if (i18n) {
     showDiscountValue(discount, isComboDiscount);
 
     const progress = Math.min(100, (totalAfterDiscounts / 150) * 100);
-    document.getElementById('progressFill').style.width = `${progress}%`;
+const progressBar = document.getElementById('progressFill');
+
+// ✅ GESTIONE COMPLETAMENTO BARRA
+if (totalAfterDiscounts >= 150) {
+    progressBar.style.width = '100%';
+    progressBar.style.background = 'linear-gradient(90deg, #34d399, #10b981)';
+} else {
+    progressBar.style.width = `${progress}%`;
+    progressBar.style.background = 'linear-gradient(90deg, #34d399, #10b981)';
+}
 }
 
     /**
@@ -1283,11 +1290,11 @@ function updateSummaryImmediate() {
  /**
  * ✅ Mostra indicatore "Calcolo..." per sconti in elaborazione
  */
-function showDiscountCalculating() {
+  function showDiscountCalculating() {
     const discountEl = document.getElementById('discount');
     const discountRow = document.getElementById('discountRow');
     const comboBadge = document.getElementById('comboBadge');
-    const i18n = window.i18nPDP(); // ✅ AGGIUNGI
+    const i18n = window.i18nPDP();
     
     if (comboBadge) {
         comboBadge.style.display = 'none';
@@ -1311,18 +1318,22 @@ function showDiscountValue(totalDiscount, isCombo = false) {
     const discountEl = document.getElementById('discount');
     const discountRow = document.getElementById('discountRow');
     const comboBadge = document.getElementById('comboBadge');
-    const i18n = window.i18nPDP(); // ✅ AGGIUNGI
+    const i18n = window.i18nPDP();
     
     if (totalDiscount > 0) {
-        // ✅ MODIFICA: usa formatPrice invece di toFixed
         discountEl.innerHTML = `- ${i18n ? i18n.formatPrice(totalDiscount) : '€ ' + totalDiscount.toFixed(2).replace('.', ',')}`;
         discountRow.classList.add('discount-active');
         
         if (comboBadge) {
-            comboBadge.style.display = isCombo ? 'inline-block' : 'none';
+            // ✅ TRADUZIONE DINAMICA DEL BADGE
+            if (isCombo) {
+                comboBadge.textContent = i18n ? i18n.t('cart_combo_badge') : 'COMBO';
+                comboBadge.style.display = 'inline-block';
+            } else {
+                comboBadge.style.display = 'none';
+            }
         }
     } else {
-        // ✅ MODIFICA: formatta anche lo 0,00
         discountEl.textContent = `- ${i18n ? i18n.formatPrice(0) : '€ 0,00'}`;
         discountRow.classList.remove('discount-active');
         if (comboBadge) comboBadge.style.display = 'none';
@@ -1766,6 +1777,25 @@ function showCouponMessage(messageKey, type, replacements = {}) {
         itemCount += (item.qty || 1);
     });
 
+        // Aggiorna UI
+const i18n = window.i18nPDP();
+
+// ✅ AGGIORNA SUBITO IL CONTEGGIO ARTICOLI
+if (i18n) {
+    const itemCountText = itemCount === 1 
+        ? i18n.t('cart_items_count_one') 
+        : i18n.t('cart_items_count_many', { n: itemCount });
+    document.getElementById('itemCount').textContent = itemCountText;
+}
+
+if (i18n) {
+    document.getElementById('subtotal').textContent = i18n.formatPrice(subtotal);
+    document.getElementById('shipping').textContent = shipping === 0 
+        ? i18n.t('cart_summary_shipping_free') 
+        : i18n.formatPrice(shipping);
+    document.getElementById('total').textContent = i18n.formatPrice(total);
+}
+
     let discount = 0;
     let isComboDiscount = false;
     
@@ -1793,26 +1823,19 @@ function showCouponMessage(messageKey, type, replacements = {}) {
     const totalAfterDiscounts = subtotal - discount;
     const shipping = totalAfterDiscounts >= 150 ? 0 : 15;
     const total = subtotal + shipping - discount;
-
-    // Aggiorna UI
-    const i18n = window.i18nPDP();
-if (i18n) {
-    document.getElementById('subtotal').textContent = i18n.formatPrice(subtotal);
-    document.getElementById('shipping').textContent = shipping === 0 
-        ? i18n.t('cart_summary_shipping_free') 
-        : i18n.formatPrice(shipping);
-    document.getElementById('total').textContent = i18n.formatPrice(total);
-}
-    if (i18n) {
-    const itemCountText = itemCount === 1 
-        ? i18n.t('cart_items_count_one') 
-        : i18n.t('cart_items_count_many', { n: itemCount });
-    document.getElementById('itemCount').textContent = itemCountText;
-}
     
     // Aggiorna barra progresso
-    const progress = Math.min(100, (totalAfterDiscounts / 150) * 100);
-    document.getElementById('progressFill').style.width = `${progress}%`;
+const progress = Math.min(100, (totalAfterDiscounts / 150) * 100);
+document.getElementById('progressFill').style.width = `${progress}%`;
+
+const progressBar = document.getElementById('progressFill');
+if (totalAfterDiscounts >= 150) {
+    progressBar.style.width = '100%';
+    progressBar.style.background = 'linear-gradient(90deg, #34d399, #10b981)'; // Verde completo
+} else {
+    progressBar.style.width = `${progress}%`;
+    progressBar.style.background = 'linear-gradient(90deg, #34d399, #10b981)';
+}
     
     // ✅ Mostra valore sconto finale (nasconde indicatore)
     showDiscountValue(discount, isComboDiscount);
@@ -1960,6 +1983,7 @@ window.addEventListener('storage', (event) => {
 </script>
 </body>
 </html>
+
 
 
 
