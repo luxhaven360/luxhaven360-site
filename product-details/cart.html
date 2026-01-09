@@ -790,7 +790,7 @@ document.write(`
             <path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/>
         </svg>
         
-        <div style="font-size:1.25rem;color:#d4d4d8;margin-bottom:2rem;font-weight:300;">Caricamento Carrello</div>
+        <div style="font-size:1.25rem;color:#d4d4d8;margin-bottom:2rem;font-weight:300;" data-i18n="cart_loader_title">Caricamento Carrello</div>
         
         <div style="position:relative;height:4px;background:rgba(212,175,55,0.1);border-radius:10px;overflow:hidden;margin-bottom:1rem;">
             <div id="loaderBar" style="position:absolute;left:0;top:0;height:100%;width:0%;background:linear-gradient(90deg, #D4AF37, #FFD700);border-radius:10px;animation:fillBar 2.8s cubic-bezier(0.4, 0, 0.2, 1) forwards;"></div>
@@ -814,6 +814,18 @@ document.write(`
 }
 </style>
 `);
+
+    // Traduci loader se i18n è disponibile
+if (window.i18nPDP) {
+    const i18n = window.i18nPDP();
+    if (i18n) {
+        document.querySelectorAll('[data-i18n]').forEach(el => {
+            const key = el.getAttribute('data-i18n');
+            const translation = i18n.t(key);
+            if (translation) el.textContent = translation;
+        });
+    }
+}
 </script>
 </head>
 <body>
@@ -846,7 +858,7 @@ document.write(`
     <div class="progress-section">
         <div class="progress-text">
             <span data-i18n="cart_summary_shipping_progress">Spedizione gratuita a</span>
-            <span class="progress-highlight">€ 150</span>
+            <span class="progress-highlight" id="shippingThreshold">€ 150</span>
         </div>
         <div class="progress-bar">
             <div class="progress-fill" id="progressFill" style="width: 0%;"></div>
@@ -969,6 +981,11 @@ document.write(`
         const cartItemsContainer = document.getElementById('cartItems');
         cartItemsContainer.innerHTML = '';
         
+        // Aggiorna prezzi dopo il rendering
+if (typeof updateAllPricesForLanguage === 'function') {
+    updateAllPricesForLanguage();
+}
+        
         if (cart.length === 0) {
             checkEmptyCart();
         } else {
@@ -977,7 +994,12 @@ document.write(`
 if (item.color || item.size) {
     const variantParts = [];
     if (item.color) variantParts.push(item.color);
-    if (item.size) variantParts.push(`Taglia ${item.size}`);
+    
+    if (item.size) {
+    const i18n = window.i18nPDP();
+    const sizeLabel = i18n ? i18n.t('cart_item_size_label') : 'Taglia';
+    variantParts.push(`${sizeLabel} ${item.size}`);
+}
     const variantText = variantParts.join(' · '); // Middot Unicode: U+00B7
     
     variantHTML = '<div class="item-variant">';
@@ -1015,7 +1037,7 @@ if (item.color || item.size) {
                         <div class="item-name">${item.title}</div>
                         ${variantHTML}
                         <div class="item-actions">
-                            <button class="remove-btn" onclick="removeItem(${index})">Rimuovi</button>
+                            <button class="remove-btn" onclick="removeItem(${index})" data-i18n="cart_item_remove">Rimuovi</button>
                         </div>
                     </div>
                     <div class="item-price-section">
@@ -1025,6 +1047,32 @@ if (item.color || item.size) {
                 `;
                 cartItemsContainer.appendChild(itemElement);
             });
+            
+            const i18n = window.i18nPDP();
+if (i18n) {
+    // Traduci elementi dinamici
+    document.querySelectorAll('[data-i18n]').forEach(el => {
+        const key = el.getAttribute('data-i18n');
+        const translation = i18n.t(key);
+        if (translation) el.textContent = translation;
+    });
+    
+    // Formatta prezzi
+    document.querySelectorAll('.item-price').forEach((el, idx) => {
+        const item = cart[idx];
+        if (item) {
+            const finalPrice = (item.discountPrice && item.discountPrice < item.price) ? item.discountPrice : item.price;
+            el.textContent = i18n.formatPrice(finalPrice);
+        }
+    });
+    
+    document.querySelectorAll('.item-original-price').forEach((el, idx) => {
+        const item = cart[idx];
+        if (item && item.price) {
+            el.textContent = i18n.formatPrice(item.price);
+        }
+    });
+}
         }
         updateSummaryImmediate(); // ✅ Update immediato UI
     }
@@ -1346,7 +1394,7 @@ const loader = document.getElementById('recommendedLoader');
         container.innerHTML = selected.map((product, index) => {
     const isFeatured = index === 0;
     const featuredClass = isFeatured ? ' featured' : '';
-    const badgeHtml = isFeatured ? '<div class="recommended-badge">✦ Consigliato</div>' : '';
+    const badgeHtml = isFeatured ? `<div class="recommended-badge" data-i18n="cart_recommended_badge">✦ Consigliato</div>` : '';
     
     // ✅ Tronca descrizione a max 60 caratteri
     const shortDesc = (product.desc || '').length > 60 
@@ -1581,8 +1629,8 @@ document.getElementById('applyCouponBtn').addEventListener('click', async functi
   }
 
   btn.disabled = true;
-  btn.textContent = i18n.t('cart_checkout_processing');
-  showCouponMessage('cart_coupon_calculating', 'warning');
+  btn.textContent = "Verifica...";
+  showCouponMessage('Verifica in corso...', 'warning');
 
   try {
     const response = await fetch(`${webAppUrl}?action=validate_coupon&code=${encodeURIComponent(couponCode)}&t=${Date.now()}`);
@@ -1711,9 +1759,14 @@ function showCouponMessage(messageKey, type, replacements = {}) {
     const total = subtotal + shipping - discount;
 
     // Aggiorna UI
-    document.getElementById('subtotal').textContent = `€ ${subtotal.toFixed(2).replace('.', ',')}`;
-    document.getElementById('shipping').textContent = shipping === 0 ? 'Gratuita' : `€ ${shipping.toFixed(2).replace('.', ',')}`;
-    document.getElementById('total').textContent = `€ ${total.toFixed(2).replace('.', ',')}`;
+    const i18n = window.i18nPDP();
+if (i18n) {
+    document.getElementById('subtotal').textContent = i18n.formatPrice(subtotal);
+    document.getElementById('shipping').textContent = shipping === 0 
+        ? i18n.t('cart_summary_shipping_free') 
+        : i18n.formatPrice(shipping);
+    document.getElementById('total').textContent = i18n.formatPrice(total);
+}
     document.getElementById('itemCount').textContent = itemCount === 1 ? '1 Articolo' : `${itemCount} Articoli`;
     
     // Aggiorna barra progresso
@@ -1844,6 +1897,13 @@ function updateAllPricesForLanguage() {
             }
         }
     }
+
+    // Aggiorna soglia spedizione gratuita
+const shippingThresholdEl = document.getElementById('shippingThreshold');
+if (shippingThresholdEl) {
+    shippingThresholdEl.textContent = i18n.formatPrice(150);
+}
+    
 }
     
     // Ascolta cambio lingua da altre pagine
@@ -1859,3 +1919,4 @@ window.addEventListener('storage', (event) => {
 </script>
 </body>
 </html>
+
