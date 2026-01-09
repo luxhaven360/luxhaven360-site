@@ -164,11 +164,11 @@ function formatPrice(price, originalCurrency = 'EUR') {
     const amount = parseFloat(price) || 0;
     const currentLang = (window.i18n && window.i18n()) ? window.i18n().currentLang : 'it';
     
-    // 📊 TASSI DI CAMBIO - Caricati dinamicamente da cache
-    const exchangeRates = window.cachedExchangeRates || {
-      'EUR': 1,
-      'USD': 1.16,  // Fallback
-      'GBP': 0.87   // Fallback
+    // 📊 TASSI DI CAMBIO (aggiorna periodicamente o usa API)
+    const exchangeRates = {
+        'EUR': 1,
+        'USD': 1.17,  // 1 EUR = 1.17 USD (esempio)
+        'GBP': 0.87   // 1 EUR = 0.87 GBP (esempio)
     };
     
     // 🌐 CONFIGURAZIONE PER LINGUA
@@ -1041,36 +1041,10 @@ function generateExperiencesEmptyState() {
 }
 
 /**
- * 💱 Carica tassi di cambio aggiornati dal backend
- */
-async function loadExchangeRates() {
-    try {
-        const response = await fetch(`${WEB_APP_URL}?action=get_exchange_rates&t=${Date.now()}`);
-        const data = await response.json();
-        
-        if (data.success && data.rates) {
-            window.cachedExchangeRates = data.rates;
-            console.log('✅ Tassi di cambio caricati:', data.rates);
-            return data.rates;
-        }
-    } catch (error) {
-        console.warn('⚠️ Errore caricamento tassi, uso fallback:', error);
-    }
-    
-    // Fallback
-    return { EUR: 1, USD: 1.16, GBP: 0.87 };
-}
-
-/**
  * NUOVA FUNZIONE UNIFICATA (Fetch API)
  * Scarica prodotti SHOP + BOOKABLE e li distribuisce nelle sezioni
  */
 async function initDynamicProducts(retryCount = 0) {
-    // 💱 CARICA TASSI DI CAMBIO PRIMA DEI PRODOTTI
-    if (retryCount === 0) {
-        await loadExchangeRates();
-    }
-    
     // 1. Imposta loader su tutte le griglie
     const grids = {};
     SECTIONS.forEach(section => {
@@ -1648,13 +1622,3 @@ function showValidationError(message, type) {
     if (overlay.parentNode) overlay.remove();
   }, 5000);
 }
-
-
-
-
-
-
-
-
-
-
