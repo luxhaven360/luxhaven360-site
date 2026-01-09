@@ -1047,7 +1047,7 @@ if (item.color || item.size) {
                 `;
                 cartItemsContainer.appendChild(itemElement);
             });
-            
+
             const i18n = window.i18nPDP();
 if (i18n) {
     // Traduci elementi dinamici
@@ -1057,22 +1057,22 @@ if (i18n) {
         if (translation) el.textContent = translation;
     });
     
-    // Formatta prezzi
+    // ✅ FORMATTA PREZZI NELLE CARD
     document.querySelectorAll('.item-price').forEach((el, idx) => {
         const item = cart[idx];
         if (item) {
             const finalPrice = (item.discountPrice && item.discountPrice < item.price) ? item.discountPrice : item.price;
-            el.textContent = i18n.formatPrice(finalPrice);
+            el.textContent = i18n.formatPrice(finalPrice, item.currency || 'EUR');
         }
     });
     
     document.querySelectorAll('.item-original-price').forEach((el, idx) => {
         const item = cart[idx];
         if (item && item.price) {
-            el.textContent = i18n.formatPrice(item.price);
+            el.textContent = i18n.formatPrice(item.price, item.currency || 'EUR');
         }
     });
-}
+}            
         }
         updateSummaryImmediate(); // ✅ Update immediato UI
     }
@@ -1109,8 +1109,17 @@ async function restoreAppliedCoupon() {
       document.getElementById('couponInput').value = code;
       
       // ✅ SINGOLA chiamata diretta a updateSummaryWithCoupon
-      // (updateSummaryImmediate è già stato chiamato da renderCart)
-      await updateSummaryWithCoupon();
+await updateSummaryWithCoupon();
+
+// ✅ AGGIORNA IMMEDIATAMENTE IL CONTEGGIO ARTICOLI
+const i18n = window.i18nPDP();
+if (i18n) {
+    const itemCount = cart.reduce((sum, item) => sum + (item.qty || 1), 0);
+    const itemCountText = itemCount === 1 
+        ? i18n.t('cart_items_count_one') 
+        : i18n.t('cart_items_count_many', { n: itemCount });
+    document.getElementById('itemCount').textContent = itemCountText;
+}
       
       // ✅ Mostra messaggio ripristino
       showCouponMessage(
@@ -1251,7 +1260,11 @@ function updateSummaryImmediate() {
     document.getElementById('subtotal').textContent = `€ ${subtotal.toFixed(2).replace('.', ',')}`;
     document.getElementById('shipping').textContent = shipping === 0 ? 'Gratuita' : `€ ${shipping.toFixed(2).replace('.', ',')}`;
     document.getElementById('total').textContent = `€ ${totalWithCoupon.toFixed(2).replace('.', ',')}`;
-    document.getElementById('itemCount').textContent = itemCount === 1 ? '1 Articolo' : `${itemCount} Articoli`;
+    const itemCountText = i18n && itemCount === 1 
+    ? i18n.t('cart_items_count_one') 
+    : i18n ? i18n.t('cart_items_count_many', { n: itemCount }) 
+    : (itemCount === 1 ? '1 Articolo' : `${itemCount} Articoli`);
+document.getElementById('itemCount').textContent = itemCountText;
 
     const progress = Math.min(100, (subtotal / 150) * 100);
     document.getElementById('progressFill').style.width = `${progress}%`;
@@ -1270,15 +1283,18 @@ function showDiscountCalculating() {
     const discountEl = document.getElementById('discount');
     const discountRow = document.getElementById('discountRow');
     const comboBadge = document.getElementById('comboBadge');
+    const i18n = window.i18nPDP(); // ✅ AGGIUNGI
     
-    // ✅ NASCONDI SEMPRE il badge durante il calcolo
     if (comboBadge) {
         comboBadge.style.display = 'none';
     }
     
+    // ✅ TRADUZIONE DINAMICA
+    const calculatingText = i18n ? i18n.t('cart_coupon_calculating') : 'Calcolo...';
+    
     discountEl.innerHTML = `
         <span class="discount-calculating">
-            <span class="discount-calculating-text">Calcolo...</span>
+            <span class="discount-calculating-text">${calculatingText}</span>
         </span>
     `;
     discountRow.classList.add('discount-active');
@@ -1291,17 +1307,19 @@ function showDiscountValue(totalDiscount, isCombo = false) {
     const discountEl = document.getElementById('discount');
     const discountRow = document.getElementById('discountRow');
     const comboBadge = document.getElementById('comboBadge');
+    const i18n = window.i18nPDP(); // ✅ AGGIUNGI
     
     if (totalDiscount > 0) {
-        discountEl.innerHTML = `- € ${totalDiscount.toFixed(2).replace('.', ',')}`;
+        // ✅ MODIFICA: usa formatPrice invece di toFixed
+        discountEl.innerHTML = `- ${i18n ? i18n.formatPrice(totalDiscount) : '€ ' + totalDiscount.toFixed(2).replace('.', ',')}`;
         discountRow.classList.add('discount-active');
         
-        // ✅ Mostra badge COMBO solo se isCombo è true
         if (comboBadge) {
             comboBadge.style.display = isCombo ? 'inline-block' : 'none';
         }
     } else {
-        discountEl.textContent = '- € 0,00';
+        // ✅ MODIFICA: formatta anche lo 0,00
+        discountEl.textContent = `- ${i18n ? i18n.formatPrice(0) : '€ 0,00'}`;
         discountRow.classList.remove('discount-active');
         if (comboBadge) comboBadge.style.display = 'none';
     }
@@ -1322,6 +1340,16 @@ function showDiscountValue(totalDiscount, isCombo = false) {
     document.querySelector('.cart-summary').style.display = 'none';
 }
 
+    function updateShippingThreshold() {
+  const i18n = window.i18nPDP();
+  if (!i18n) return;
+  
+  const shippingThresholdEl = document.getElementById('shippingThreshold');
+  if (shippingThresholdEl) {
+    shippingThresholdEl.textContent = i18n.formatPrice(150);
+  }
+}
+
     /**
  * ✅ Inizializza carrello con sequenza ottimizzata
  * Evita calcoli multipli durante il ripristino coupon
@@ -1329,6 +1357,8 @@ function showDiscountValue(totalDiscount, isCombo = false) {
 async function initializeCart() {
   // 1. Rendering DOM
   renderCart(); 
+
+  updateShippingThreshold();
   
   // 2. Ripristina coupon (se presente) e calcola sconti
   await restoreAppliedCoupon();
@@ -1407,32 +1437,32 @@ const loader = document.getElementById('recommendedLoader');
     const finalPrice = hasDiscount ? parseFloat(product.discountPrice) : originalPrice;
     const discountPercent = hasDiscount ? Math.round(((originalPrice - finalPrice) / originalPrice) * 100) : 0;
     
-    // ✅ HTML Prezzo con Sconto
-    const priceHtml = hasDiscount 
-        ? `
-            <div style="display: flex; flex-direction: column; gap: 0.35rem; align-items: flex-start;">
-                <div style="font-size: 0.75rem; color: #71717a; text-decoration: line-through; font-weight: 300;">
-                    € ${originalPrice.toLocaleString('it-IT', {minimumFractionDigits: 2})}
-                </div>
-                <div style="display: flex; align-items: center; gap: 0.5rem;">
-                    <span style="font-size: 1.125rem; font-weight: 700; background: linear-gradient(135deg, #D4AF37, #FFD700); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;">
-                        € ${finalPrice.toLocaleString('it-IT', {minimumFractionDigits: 2})}
-                    </span>
-                    <span style="display: inline-block; background: linear-gradient(135deg, #D4AF37, #FFD700); color: #09090b; padding: 0.2rem 0.5rem; border-radius: 1rem; font-size: 0.65rem; font-weight: 700; letter-spacing: 0.05em; box-shadow: 0 2px 8px rgba(212, 175, 55, 0.3);">
-                        -${discountPercent}%
-                    </span>
-                </div>
+    // ✅ HTML Prezzo con Sconto (con data attributes per aggiornamento dinamico)
+const priceHtml = hasDiscount 
+    ? `
+        <div style="display: flex; flex-direction: column; gap: 0.35rem; align-items: flex-start;">
+            <div style="font-size: 0.75rem; color: #71717a; text-decoration: line-through; font-weight: 300;">
+                ${i18n ? i18n.formatPrice(originalPrice, product.currency || 'EUR') : `€ ${originalPrice.toLocaleString('it-IT', {minimumFractionDigits: 2})}`}
             </div>
-        `
-        : `<div class="recommended-price">€ ${finalPrice.toLocaleString('it-IT', {minimumFractionDigits: 2})}</div>`;
+            <div style="display: flex; align-items: center; gap: 0.5rem;">
+                <span style="font-size: 1.125rem; font-weight: 700; background: linear-gradient(135deg, #D4AF37, #FFD700); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;">
+                    ${i18n ? i18n.formatPrice(finalPrice, product.currency || 'EUR') : `€ ${finalPrice.toLocaleString('it-IT', {minimumFractionDigits: 2})}`}
+                </span>
+                <span style="display: inline-block; background: linear-gradient(135deg, #D4AF37, #FFD700); color: #09090b; padding: 0.2rem 0.5rem; border-radius: 1rem; font-size: 0.65rem; font-weight: 700; letter-spacing: 0.05em; box-shadow: 0 2px 8px rgba(212, 175, 55, 0.3);">
+                    -${discountPercent}%
+                </span>
+            </div>
+        </div>
+    `
+    : `<div class="recommended-price">${i18n ? i18n.formatPrice(finalPrice, product.currency || 'EUR') : `€ ${finalPrice.toLocaleString('it-IT', {minimumFractionDigits: 2})}`}</div>`;
     
     return `
-    <a href="pdp-products.html?sku=${product.sku}" 
-       class="recommended-item${featuredClass}"
-       data-original-price="${originalPrice}"
-       data-discount-price="${hasDiscount ? finalPrice : ''}"
-       data-original-currency="${product.currency || 'EUR'}"
-           style="text-decoration: none; color: inherit; display: block;">
+<a href="pdp-products.html?sku=${product.sku}" 
+   class="recommended-item${featuredClass}"
+   data-original-price="${originalPrice}"
+   data-discount-price="${hasDiscount ? finalPrice : ''}"
+   data-original-currency="${product.currency || 'EUR'}"
+   style="text-decoration: none; color: inherit; display: block;">
             ${badgeHtml}
             <div class="recommended-image">
                 <img src="${product.icon || 'https://via.placeholder.com/300x400?text=No+Image'}" 
@@ -1767,7 +1797,12 @@ if (i18n) {
         : i18n.formatPrice(shipping);
     document.getElementById('total').textContent = i18n.formatPrice(total);
 }
-    document.getElementById('itemCount').textContent = itemCount === 1 ? '1 Articolo' : `${itemCount} Articoli`;
+    if (i18n) {
+    const itemCountText = itemCount === 1 
+        ? i18n.t('cart_items_count_one') 
+        : i18n.t('cart_items_count_many', { n: itemCount });
+    document.getElementById('itemCount').textContent = itemCountText;
+}
     
     // Aggiorna barra progresso
     const progress = Math.min(100, (totalAfterDiscounts / 150) * 100);
@@ -1846,35 +1881,35 @@ function updateAllPricesForLanguage() {
     }
     
     // 3. AGGIORNAMENTO PREZZI PRODOTTI CONSIGLIATI
-    document.querySelectorAll('.recommended-item').forEach(card => {
-        const originalPrice = parseFloat(card.dataset.originalPrice);
-        const discountPrice = parseFloat(card.dataset.discountPrice);
-        const originalCurrency = card.dataset.originalCurrency || 'EUR';
-        
-        if (!originalPrice) return;
-        
-        const hasDiscount = discountPrice && discountPrice < originalPrice;
-        
-        if (hasDiscount) {
-            // Aggiorna prezzo originale barrato
-            const originalPriceEl = card.querySelector('div[style*="text-decoration: line-through"]');
-            if (originalPriceEl) {
-                originalPriceEl.textContent = i18n.formatPrice(originalPrice, originalCurrency);
-            }
-            
-            // Aggiorna prezzo scontato
-            const discountedPriceEl = card.querySelector('div[style*="background-clip: text"]');
-            if (discountedPriceEl) {
-                discountedPriceEl.textContent = i18n.formatPrice(discountPrice, originalCurrency);
-            }
-        } else {
-            // Prezzo normale
-            const priceElements = card.querySelectorAll('.recommended-price');
-            priceElements.forEach(el => {
-                el.textContent = i18n.formatPrice(originalPrice, originalCurrency);
-            });
+document.querySelectorAll('.recommended-item').forEach(card => {
+    const originalPrice = parseFloat(card.dataset.originalPrice);
+    const discountPrice = parseFloat(card.dataset.discountPrice);
+    const originalCurrency = card.dataset.originalCurrency || 'EUR';
+    
+    if (!originalPrice) return;
+    
+    const hasDiscount = discountPrice && discountPrice < originalPrice;
+    
+    if (hasDiscount) {
+        // Aggiorna prezzo originale barrato
+        const originalPriceEl = card.querySelector('div[style*="text-decoration: line-through"]');
+        if (originalPriceEl) {
+            originalPriceEl.textContent = i18n.formatPrice(originalPrice, originalCurrency);
         }
-    });
+        
+        // Aggiorna prezzo scontato
+        const discountedPriceEl = card.querySelector('span[style*="background-clip: text"]');
+        if (discountedPriceEl) {
+            discountedPriceEl.textContent = i18n.formatPrice(discountPrice, originalCurrency);
+        }
+    } else {
+        // Prezzo normale
+        const priceElements = card.querySelectorAll('.recommended-price');
+        priceElements.forEach(el => {
+            el.textContent = i18n.formatPrice(originalPrice, originalCurrency);
+        });
+    }
+});
     
     // 4. PDP-PRODUCTS (se presente currentProduct)
     if (typeof currentProduct !== 'undefined' && currentProduct && currentProduct.price) {
@@ -1919,5 +1954,6 @@ window.addEventListener('storage', (event) => {
 </script>
 </body>
 </html>
+
 
 
