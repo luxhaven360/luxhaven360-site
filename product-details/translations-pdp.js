@@ -36,6 +36,8 @@ const translationsPDP = {
     cart_coupon_placeholder: "Inserisci codice",
     cart_coupon_apply_btn: "Applica",
     cart_coupon_calculating: "Calcolo...",
+    cart_coupon_verifying: "Verifica...",
+    cart_coupon_verifying_progress: "Verifica in corso...",
     
     // Coupon Messages
     cart_coupon_success: "Coupon \"{code}\" applicato con successo · Risparmio: {percent}%",
@@ -585,6 +587,8 @@ booking_config_ex_specs: ["Durata", "Partecipanti max", "Orario / Fascia", "Ritr
     cart_coupon_placeholder: "Enter code",
     cart_coupon_apply_btn: "Apply",
     cart_coupon_calculating: "Calculating...",
+    cart_coupon_verifying: "Verifying...",
+    cart_coupon_verifying_progress: "Verification in progress...",
     
     cart_coupon_success: "Coupon \"{code}\" applied successfully · Savings: {percent}%",
     cart_coupon_restored: "Coupon \"{code}\" restored successfully · Active discount: {percent}%",
@@ -1070,6 +1074,8 @@ booking_config_ex_specs: ["Duration", "Max Participants", "Time / Slot", "Meetin
     cart_coupon_placeholder: "Entrer le code",
     cart_coupon_apply_btn: "Appliquer",
     cart_coupon_calculating: "Calcul...",
+    cart_coupon_verifying: "Vérification...",
+    cart_coupon_verifying_progress: "Vérification en cours...",
     
     cart_coupon_success: "Coupon \"{code}\" appliqué avec succès · Économie : {percent}%",
     cart_coupon_restored: "Coupon \"{code}\" restauré avec succès · Réduction active : {percent}%",
@@ -1555,6 +1561,8 @@ booking_config_ex_specs: ["Durée", "Participants max", "Horaire / Créneau", "P
     cart_coupon_placeholder: "Code eingeben",
     cart_coupon_apply_btn: "Anwenden",
     cart_coupon_calculating: "Berechnung...",
+    cart_coupon_verifying: "Überprüfung...",
+    cart_coupon_verifying_progress: "Überprüfung läuft...",
     
     cart_coupon_success: "Gutschein \"{code}\" erfolgreich angewendet · Ersparnis: {percent}%",
     cart_coupon_restored: "Gutschein \"{code}\" erfolgreich wiederhergestellt · Aktiver Rabatt: {percent}%",
@@ -2040,6 +2048,8 @@ booking_config_ex_specs: ["Dauer", "Max. Teilnehmer", "Uhrzeit / Zeitfenster", "
     cart_coupon_placeholder: "Ingresar código",
     cart_coupon_apply_btn: "Aplicar",
     cart_coupon_calculating: "Calculando...",
+    cart_coupon_verifying: "Verificando...",
+    cart_coupon_verifying_progress: "Verificación en curso...",
     
     cart_coupon_success: "Cupón \"{code}\" aplicado con éxito · Ahorro: {percent}%",
     cart_coupon_restored: "Cupón \"{code}\" restaurado con éxito · Descuento activo: {percent}%",
