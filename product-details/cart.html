@@ -1203,14 +1203,14 @@ function getShippingThreshold() {
 }
 
     // === RENDERING CARRELLO ===
-    function renderCart(skipPriceUpdate = false) {
-    validateCartPrices(); // Corregge prezzi errati
+    function renderCart(skipPriceUpdate = false, preserveDiscount = false) {
+    validateCartPrices();
     
     const cartItemsContainer = document.getElementById('cartItems');
     cartItemsContainer.innerHTML = '';
         
-        if (cart.length === 0) {
-            checkEmptyCart();
+    if (cart.length === 0) {
+        checkEmptyCart();
         } else {
             cart.forEach((item, index) => {
                 let variantHTML = '';
@@ -1312,14 +1312,14 @@ if (i18n) {
         }  // ⬅️ Questa chiude l'else
         
         // Evita loop infinito
-    if (!skipPriceUpdate) {
-        updateSummaryImmediate();
-        
-        if (typeof updateAllPricesForLanguage === 'function') {
-            updateAllPricesForLanguage();
+        if (!skipPriceUpdate) {
+            updateSummaryImmediate(!preserveDiscount); // ✅ Passa il flag
+            
+            if (typeof updateAllPricesForLanguage === 'function') {
+                updateAllPricesForLanguage();
+            }
         }
     }
-}
 
     /**
  * ✅ Ripristina coupon salvato (OTTIMIZZATO - evita calcoli multipli)
@@ -1391,7 +1391,7 @@ if (i18n) {
 }
 
     // ✅ RIMOZIONE IMMEDIATA con aggiornamento completo instantaneo
-async function removeItem(index) {
+    async function removeItem(index) {
     const itemElement = document.querySelector(`[data-id="${index}"]`);
     if (!itemElement) return;
     
@@ -1400,41 +1400,38 @@ async function removeItem(index) {
     localStorage.setItem('lh360_cart', JSON.stringify(cart));
     
     // 2. ✅ AGGIORNAMENTO COMPLETO IMMEDIATO (con sconti combo)
-if (cart.length > 0) {
-    // Aggiorna conteggio articoli immediatamente
-    const i18n = window.i18nPDP();
-    const itemCount = cart.reduce((sum, item) => sum + (item.qty || 1), 0);
-    const itemCountEl = document.getElementById('itemCount');
-    if (itemCountEl && i18n) {
-        let itemCountText;
-        if (itemCount === 0) {
-            itemCountText = i18n.t('cart_items_count_zero');
-        } else if (itemCount === 1) {
-            itemCountText = i18n.t('cart_items_count_one');
-        } else {
-            itemCountText = i18n.t('cart_items_count_many', { n: itemCount });
+    if (cart.length > 0) {
+        showDiscountCalculating();
+        
+        const i18n = window.i18nPDP();
+        const itemCount = cart.reduce((sum, item) => sum + (item.qty || 1), 0);
+        const itemCountEl = document.getElementById('itemCount');
+        if (itemCountEl && i18n) {
+            let itemCountText;
+            if (itemCount === 0) {
+                itemCountText = i18n.t('cart_items_count_zero');
+            } else if (itemCount === 1) {
+                itemCountText = i18n.t('cart_items_count_one');
+            } else {
+                itemCountText = i18n.t('cart_items_count_many', { n: itemCount });
+            }
+            itemCountEl.textContent = itemCountText;
         }
-        itemCountEl.textContent = itemCountText;
+        
+        await updateSummary();
     }
     
-    // Mostra "Calcolo..." SUBITO PRIMA del calcolo
-    showDiscountCalculating();
-    
-    // Calcola immediatamente i nuovi sconti E GARANTISCE showDiscountValue
-    await updateSummary();
-}
-    
-    // 3. ✅ Animazione fade out PARALLELA (non blocca aggiornamento)
+    // 3. ✅ Animazione fade out PARALLELA
     itemElement.style.transition = 'opacity 0.2s, transform 0.2s';
     itemElement.style.opacity = '0';
     itemElement.style.transform = 'translateX(-1rem)';
     
-    // 4. Rimuovi elemento DOM e ri-renderizza dopo animazione
+    // 4. Rimuovi elemento DOM e ri-renderizza
     setTimeout(() => {
         if (cart.length === 0) {
             checkEmptyCart();
         } else {
-            renderCart();
+            renderCart(false, true); // ✅ MODIFICA: passa true per preservare lo sconto
         }
     }, 200);
 }
@@ -1516,15 +1513,13 @@ if (totalAfterDiscounts >= 150) {
     progressBar.style.width = `${progress}%`;
     progressBar.style.background = 'linear-gradient(90deg, #34d399, #10b981)';
 }
-    // ✅ GARANTISCE che "Calcolo..." venga sempre sostituito
-    showDiscountValue(discount, isComboDiscount);
 }
 
     /**
  * ✅ AGGIORNAMENTO IMMEDIATO UI (senza chiamate async)
  * Calcola e mostra istantaneamente: subtotale, articoli, barra progresso
  */
-  function updateSummaryImmediate() {
+  function updateSummaryImmediate(showCalculating = true) {
     const i18n = window.i18nPDP(); 
     
     let subtotal = 0;
@@ -1539,7 +1534,7 @@ if (totalAfterDiscounts >= 150) {
     });
 
     const shippingThreshold = getShippingThreshold();
-const shipping = subtotal >= shippingThreshold ? 0 : 15;
+    const shipping = subtotal >= shippingThreshold ? 0 : 15;
     
     let couponDiscount = 0;
     if (appliedCoupon) {
@@ -1548,7 +1543,6 @@ const shipping = subtotal >= shippingThreshold ? 0 : 15;
     
     const totalWithCoupon = subtotal + shipping - couponDiscount;
 
-    // ✅ USA i18n INVECE DI FORMATTAZIONE HARDCODED
     if (i18n) {
         document.getElementById('subtotal').textContent = i18n.formatPrice(subtotal);
         document.getElementById('shipping').textContent = shipping === 0 
@@ -1561,7 +1555,6 @@ const shipping = subtotal >= shippingThreshold ? 0 : 15;
             : i18n.t('cart_items_count_many', { n: itemCount });
         document.getElementById('itemCount').textContent = itemCountText;
     } else {
-        // Fallback se i18n non è disponibile
         document.getElementById('subtotal').textContent = `€ ${subtotal.toFixed(2).replace('.', ',')}`;
         document.getElementById('shipping').textContent = shipping === 0 ? 'Gratuita' : `€ ${shipping.toFixed(2).replace('.', ',')}`;
         document.getElementById('total').textContent = `€ ${totalWithCoupon.toFixed(2).replace('.', ',')}`;
@@ -1572,15 +1565,17 @@ const shipping = subtotal >= shippingThreshold ? 0 : 15;
     document.getElementById('progressFill').style.width = `${progress}%`;
 
     const shippingThresholdEl = document.getElementById('shippingThreshold');
-if (shippingThresholdEl && i18n) {
-    shippingThresholdEl.textContent = i18n.formatPrice(getShippingThreshold());
-}
+    if (shippingThresholdEl && i18n) {
+        shippingThresholdEl.textContent = i18n.formatPrice(getShippingThreshold());
+    }
     
-    if (cart.length > 0) {
+    // ✅ MODIFICA: mostra "Calcolo..." solo se richiesto
+    if (cart.length > 0 && showCalculating) {
         showDiscountCalculating();
-    } else {
+    } else if (cart.length === 0) {
         showDiscountValue(0);
     }
+    // Se showCalculating è false, mantiene il valore esistente nello sconto
 }
 
  /**
@@ -2301,14 +2296,3 @@ window.addEventListener('storage', (event) => {
 </script>
 </body>
 </html>
-
-
-
-
-
-
-
-
-
-
-
