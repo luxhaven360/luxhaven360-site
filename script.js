@@ -142,6 +142,9 @@ const SECTIONS = [
     { id: 'shop', gridId: 'shopGrid', defaultCta: 'Acquista' }
 ];
 
+// 💱 Tassi di cambio globali (aggiornati dinamicamente dal backend)
+let exchangeRates = { 'EUR': 1, 'USD': 1.17, 'GBP': 0.87 }; // Fallback iniziale
+
 // utility per creare elementi DOM
 function el(tag, attrs = {}, children = []) {
     const node = document.createElement(tag);
@@ -163,9 +166,6 @@ function el(tag, attrs = {}, children = []) {
 function formatPrice(price, originalCurrency = 'EUR') {
     const amount = parseFloat(price) || 0;
     const currentLang = (window.i18n && window.i18n()) ? window.i18n().currentLang : 'it';
-    
-    // 📄 Tassi di cambio dinamici (caricati dal backend)
-let exchangeRates = { 'EUR': 1, 'USD': 1.17, 'GBP': 0.87 }; // ← Cambiato da const a let
     
     // 🌐 CONFIGURAZIONE PER LINGUA
 const localeConfig = {
@@ -1640,6 +1640,7 @@ function showValidationError(message, type) {
     if (overlay.parentNode) overlay.remove();
   }, 5000);
 }
+
 
 
 
