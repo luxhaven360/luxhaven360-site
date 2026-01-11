@@ -70,11 +70,12 @@ const translationsPDP = {
     
     // Loader
     cart_loader_title: "Caricamento Carrello",
-    cart_loader_msg5: "Quasi pronto!",
-    cart_loader_msg4: "Preparazione checkout sicuro...",
-    cart_loader_msg3: "Controllo offerte attive...",
-    cart_loader_msg2: "Calcolo sconti personalizzati...",
     cart_loader_msg1: "Verifica prodotti disponibili...",
+    cart_loader_msg2: "Calcolo sconti personalizzati...",
+    cart_loader_msg3: "Controllo offerte attive...",
+   cart_loader_msg4: "Preparazione checkout sicuro...",
+   cart_loader_msg5: "Quasi pronto!",
+   cart_loader_cart_preparing: "Preparazione del carrello in corso...",
     
     // ============================================
     // PDP-PRODUCTS.HTML - DETTAGLIO PRODOTTO
@@ -626,6 +627,7 @@ booking_config_ex_specs: ["Durata", "Partecipanti max", "Orario / Fascia", "Ritr
     cart_loader_msg3: "Checking active offers...",
     cart_loader_msg2: "Calculating personalized discounts...",
     cart_loader_msg1: "Checking available products...",
+    cart_loader_cart_preparing: "Preparing your cart...",
     
     // ============================================
     // PDP-PRODUCTS.HTML - PRODUCT DETAILS
@@ -1118,6 +1120,7 @@ booking_config_ex_specs: ["Duration", "Max Participants", "Time / Slot", "Meetin
     cart_loader_msg3: "Vérification des offres actives...",
     cart_loader_msg2: "Calcul des remises personnalisées...",
     cart_loader_msg1: "Vérification des produits disponibles...",
+    cart_loader_cart_preparing: "Préparation du panier en cours...",
     
     // ============================================
     // PDP-PRODUCTS.HTML - DÉTAILS PRODUIT
