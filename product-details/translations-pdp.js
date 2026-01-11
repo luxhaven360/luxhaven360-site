@@ -2029,6 +2029,13 @@ booking_config_ex_specs: ["Dauer", "Max. Teilnehmer", "Uhrzeit / Zeitfenster", "
     connection_offline_text: "Keine Internetverbindung möglich.<br>Überprüfen Sie Ihre Verbindung und laden Sie die Seite neu.",
     connection_offline_btn: "Seite Neu Laden",
     connection_restored: "Verbindung Wiederhergestellt",
+  
+    cart_loader_msg1: "Überprüfung verfügbarer Produkte...",
+    cart_loader_msg2: "Berechnung personalisierter Rabatte...",
+    cart_loader_msg3: "Prüfung aktiver Angebote...",
+    cart_loader_msg4: "Vorbereitung des sicheren Checkouts...",
+    cart_loader_msg5: "Fast bereit!",
+    cart_loader_cart_preparing: "Warenkorb wird vorbereitet...",
   },
   
   es: {
@@ -2516,5 +2523,12 @@ booking_config_ex_specs: ["Duración", "Participantes máx", "Horario / Franja",
     connection_offline_text: "No se puede conectar a Internet.<br>Verifica tu conexión y recarga la página.",
     connection_offline_btn: "Recargar Página",
     connection_restored: "Conexión Restablecida",
+  
+    cart_loader_msg1: "Verificando productos disponibles...",
+    cart_loader_msg2: "Calculando descuentos personalizados...",
+    cart_loader_msg3: "Comprobando ofertas activas...",
+    cart_loader_msg4: "Preparando pago seguro...",
+    cart_loader_msg5: "¡Casi listo!",
+    cart_loader_cart_preparing: "Preparación del carrito en curso...",
   }
 };
