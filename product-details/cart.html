@@ -1222,27 +1222,52 @@ if (i18n) {
   }
 }
 
-    // ⭐ FIX PROBLEMA 2: Rimozione immediata senza setTimeout
-    function removeItem(index) {
+    // ✅ RIMOZIONE IMMEDIATA con aggiornamento completo instantaneo
+async function removeItem(index) {
     const itemElement = document.querySelector(`[data-id="${index}"]`);
     if (!itemElement) return;
     
-    // ✅ RIMOZIONE IMMEDIATA dal carrello
+    // 1. RIMOZIONE IMMEDIATA dal carrello
     cart.splice(index, 1);
     localStorage.setItem('lh360_cart', JSON.stringify(cart));
     
-    // ✅ AGGIORNAMENTO IMMEDIATO UI
-    updateSummaryImmediate();
+    // 2. ✅ AGGIORNAMENTO COMPLETO IMMEDIATO (con sconti combo)
+    if (cart.length > 0) {
+        // Mostra "Calcolo..." mentre si aggiornano gli sconti
+        showDiscountCalculating();
+        
+        // Aggiorna conteggio articoli immediatamente
+        const i18n = window.i18nPDP();
+        const itemCount = cart.reduce((sum, item) => sum + (item.qty || 1), 0);
+        const itemCountEl = document.getElementById('itemCount');
+        if (itemCountEl && i18n) {
+            let itemCountText;
+            if (itemCount === 0) {
+                itemCountText = i18n.t('cart_items_count_zero');
+            } else if (itemCount === 1) {
+                itemCountText = i18n.t('cart_items_count_one');
+            } else {
+                itemCountText = i18n.t('cart_items_count_many', { n: itemCount });
+            }
+            itemCountEl.textContent = itemCountText;
+        }
+        
+        // Calcola immediatamente i nuovi sconti
+        await updateSummary();
+    }
     
-    // ✅ Animazione fade out PARALLELA (non blocca aggiornamento)
+    // 3. ✅ Animazione fade out PARALLELA (non blocca aggiornamento)
     itemElement.style.transition = 'opacity 0.2s, transform 0.2s';
     itemElement.style.opacity = '0';
     itemElement.style.transform = 'translateX(-1rem)';
     
-    // Rimuovi elemento DOM e ri-renderizza dopo animazione
-    setTimeout(async () => {
-        renderCart();
-        await updateSummary(); // ✅ AGGIUNTO: Completa il calcolo sconti
+    // 4. Rimuovi elemento DOM e ri-renderizza dopo animazione
+    setTimeout(() => {
+        if (cart.length === 0) {
+            checkEmptyCart();
+        } else {
+            renderCart();
+        }
     }, 200);
 }
 
@@ -1980,16 +2005,16 @@ localStorage.setItem('lh360_applied_discounts', JSON.stringify({
 }));
 }
 
-    // ⭐ FIX PROBLEMA 3: Nascondi loader dopo 3 secondi (ridotto da 4)
-    window.addEventListener('DOMContentLoaded', () => {
-        setTimeout(() => {
-            const loader = document.getElementById('cartLoader');
-            if (loader) {
-                loader.style.opacity = '0';
-                setTimeout(() => loader.remove(), 600);
-            }
-        }, 4200); // ⭐ Ridotto per caricamento più veloce
-    });
+    // ⭐ Nascondi loader dopo 7,8 secondi
+window.addEventListener('DOMContentLoaded', () => {
+    setTimeout(() => {
+        const loader = document.getElementById('cartLoader');
+        if (loader) {
+            loader.style.opacity = '0';
+            setTimeout(() => loader.remove(), 600);
+        }
+    }, 6800); // ⭐ Durata totale: 7,8 secondi (4200ms + 3600ms)
+});
 
     // FIX: Ripristina stato bottone checkout quando si torna indietro
 window.addEventListener('pageshow', function(event) {
@@ -2106,6 +2131,7 @@ window.addEventListener('storage', (event) => {
 </script>
 </body>
 </html>
+
 
 
 
