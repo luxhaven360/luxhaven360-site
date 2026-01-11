@@ -12,8 +12,6 @@
 <script src="translations-pdp.js"></script>
 <script src="i18n-pdp.js"></script>
     
-    <script src="exchange-rates.js"></script>
-    
     <style>
         * {
             margin: 0;
@@ -1589,8 +1587,6 @@
         
         // URL dello script Apps Script
         const REVIEWS_API_URL = 'https://script.google.com/macros/s/AKfycbwr79RkXIEocpuOKaM6uMJqE6VFs9wjlUPvrr__FvDbDDrD2ELB1NbfrWP3BCYpHj2u/exec';
-        // URL Web App
-        const WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbwr79RkXIEocpuOKaM6uMJqE6VFs9wjlUPvrr__FvDbDDrD2ELB1NbfrWP3BCYpHj2u/exec';
         
         let currentProductSku = '';
         let selectedColor = '';
@@ -1686,28 +1682,6 @@ if (messageEl) {
                     setTimeout(() => loader.style.display = 'none', 500);
                 }
             }, 800);
-        }
-
-        /* ====== Utilità ====== */
-        function qs(name) {
-            return new URLSearchParams(window.location.search).get(name);
-        }
-
-        function formatPrice(p, currency = 'EUR') {
-           // ✅ USA LA FUNZIONE GLOBALE
-           return formatPriceGlobal(p, currency);
-        }
-
-        function formatCount(n) {
-            try { return new Intl.NumberFormat('it-IT').format(n); } 
-            catch (e) { return n; }
-        }
-
-        function safeText(s){
-            if (s == null) return '';
-            return String(s).replace(/[&<>"']/g, function(m){
-                return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[m];
-            });
         }
 
         /* ====== Gallery ====== */
@@ -2470,9 +2444,6 @@ if (!emailDomain || !validDomains.includes(emailDomain)) {
         const skuFromQs = qs('sku');
         const skuFromLS = localStorage.getItem('lh360_selected_sku');
         const sku = skuFromQs || skuFromLS;
-
-        // ✅ RICARICA TASSI PRIMA DI TUTTO
-        await loadGlobalExchangeRates();
         
         if (!sku) {
              document.querySelector('.container').innerHTML = '<div style="padding:4rem;color:#fca5a5;text-align:center;">SKU prodotto mancante.</div>';
@@ -2982,19 +2953,19 @@ function closeModal(modalId) {
         /**
  * Aggiorna tutti i prezzi con la nuova lingua/valuta
  */
+  /**
+ * 🔄 Aggiorna prezzi specifici della PDP (estende la versione base)
+ */
 function updateAllPricesForLanguage() {
     const i18n = window.i18nPDP();
     if (!i18n) return;
     
-    // ✅ RICARICA TASSI PRIMA DI AGGIORNARE I PREZZI
-    loadGlobalExchangeRates().then(() => {
+    console.log(`🔄 [PDP] Aggiornamento prezzi per lingua: ${i18n.currentLang.toUpperCase()}`);
     
-    // In cart.html: aggiorna summary
-    if (typeof updateSummary === 'function') {
-        updateSummary();
-    }
+    // ✅ CHIAMA PRIMA LA VERSIONE BASE (dalle card generiche)
+    // Nota: la funzione base è già in shared-logic.js, quindi viene chiamata automaticamente
     
-    // ✅ AGGIUNTO: Verifica che currentProduct esista (solo in pdp-products.html)
+    // ✅ AGGIORNA PREZZO PRODOTTO PRINCIPALE (specifico PDP)
     if (typeof currentProduct !== 'undefined' && currentProduct && currentProduct.price) {
         const priceContainer = document.getElementById('productPrice');
         if (priceContainer) {
@@ -3003,47 +2974,20 @@ function updateAllPricesForLanguage() {
                 
                 priceContainer.innerHTML = `
                     <div class="price-container">
-                        <div class="price-original">${i18n.formatPrice(currentProduct.price, currentProduct.currency || 'EUR')}</div>
+                        <div class="price-original">${formatPrice(currentProduct.price, currentProduct.currency || 'EUR')}</div>
                         <div class="price-row">
-                            <div class="price-discounted">${i18n.formatPrice(currentProduct.discountPrice, currentProduct.currency || 'EUR')}</div>
+                            <div class="price-discounted">${formatPrice(currentProduct.discountPrice, currentProduct.currency || 'EUR')}</div>
                             <span class="discount-badge">-${discountPercent}%</span>
                         </div>
                     </div>
                 `;
             } else {
-                priceContainer.innerHTML = `<div class="price">${i18n.formatPrice(currentProduct.price, currentProduct.currency || 'EUR')}</div>`;
+                priceContainer.innerHTML = `<div class="price">${formatPrice(currentProduct.price, currentProduct.currency || 'EUR')}</div>`;
             }
         }
     }
     
-    // Aggiorna prezzi nelle card (se presenti)
-    document.querySelectorAll('.card').forEach(card => {
-        const originalPrice = parseFloat(card.dataset.originalPrice);
-        const originalCurrency = card.dataset.originalCurrency || 'EUR';
-        
-        if (!originalPrice) return;
-        
-        const discountPrice = parseFloat(card.dataset.discountPrice);
-        const hasDiscount = discountPrice && discountPrice < originalPrice;
-        
-        if (hasDiscount) {
-            const originalPriceEl = card.querySelector('div[style*="text-decoration: line-through"]');
-            if (originalPriceEl) {
-                originalPriceEl.textContent = i18n.formatPrice(originalPrice, originalCurrency);
-            }
-            
-            const discountedPriceEl = card.querySelector('div[style*="background-clip: text"]');
-            if (discountedPriceEl && discountedPriceEl.parentElement.style.display === 'flex') {
-                discountedPriceEl.textContent = i18n.formatPrice(discountPrice, originalCurrency);
-            }
-        } else {
-            const priceElement = card.querySelector('.card-price');
-            if (priceElement) {
-                priceElement.textContent = i18n.formatPrice(originalPrice, originalCurrency);
-            }
-        }
-    });
-  });
+    console.log(`✅ [PDP] Prezzi PDP aggiornati con successo`);
 }
         // Ascolta cambio lingua da altre pagine
 window.addEventListener('storage', (event) => {
