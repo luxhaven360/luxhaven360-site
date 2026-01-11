@@ -5,8 +5,12 @@
 
 class I18nPDP {
   constructor() {
-    this.translations = translationsPDP; // Dal file translations-pdp.js
+    this.translations = translationsPDP;
     this.currentLang = this.detectLanguage();
+    
+    // ✅ NUOVO: Tassi di cambio dinamici
+    this.exchangeRates = { 'EUR': 1, 'USD': 1.17, 'GBP': 0.87 }; // Fallback iniziale
+    
     this.init();
   }
 
@@ -37,9 +41,37 @@ class I18nPDP {
 
   init() {
     console.log(`🌍 Lingua PDP attiva: ${this.currentLang.toUpperCase()}`);
+    
+    // ✅ NUOVO: Carica tassi di cambio
+    this.loadExchangeRates();
+    
     this.translatePage();
     this.setupLanguageSelector();
     this.observeDynamicContent();
+  }
+
+  /**
+   * 💱 Carica tassi di cambio aggiornati dal backend
+   */
+  async loadExchangeRates() {
+    const WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbwr79RkXIEocpuOKaM6uMJqE6VFs9wjlUPvrr__FvDbDDrD2ELB1NbfrWP3BCYpHj2u/exec';
+    
+    try {
+      const response = await fetch(`${WEB_APP_URL}?action=get_exchange_rates&t=${Date.now()}`);
+      const data = await response.json();
+      
+      if (data.success && data.rates) {
+        this.exchangeRates = data.rates;
+        console.log('✅ [i18n-pdp] Tassi aggiornati:', this.exchangeRates);
+        
+        // ✅ Aggiorna tutti i prezzi visibili dopo il caricamento
+        if (typeof updateAllPricesForLanguage === 'function') {
+          updateAllPricesForLanguage();
+        }
+      }
+    } catch (error) {
+      console.warn('⚠️ [i18n-pdp] Errore caricamento tassi, uso fallback:', error);
+    }
   }
 
   translatePage() {
@@ -187,17 +219,10 @@ class I18nPDP {
   }
 
   /**
-   * Formatta prezzo con conversione valuta
+   * Formatta prezzo con conversione valuta DINAMICA
    */
   formatPrice(price, originalCurrency = 'EUR') {
     const amount = parseFloat(price) || 0;
-    
-    // Tassi di cambio (aggiorna periodicamente)
-    const exchangeRates = {
-      'EUR': 1,
-      'USD': 1.17,
-      'GBP': 0.87
-    };
     
     // Configurazione per lingua
     const localeConfig = {
@@ -245,15 +270,15 @@ class I18nPDP {
     
     const config = localeConfig[this.currentLang] || localeConfig.it;
     
-    // Conversione valuta
+    // 💱 CONVERSIONE VALUTA con tassi dinamici
     let convertedAmount = amount;
     if (originalCurrency !== config.currency) {
-      const fromRate = exchangeRates[originalCurrency] || 1;
-      const toRate = exchangeRates[config.currency] || 1;
+      const fromRate = this.exchangeRates[originalCurrency] || 1;
+      const toRate = this.exchangeRates[config.currency] || 1;
       convertedAmount = (amount / fromRate) * toRate;
     }
     
-    // Formattazione numero
+    // 📢 FORMATTAZIONE NUMERO
     let formatted = convertedAmount.toFixed(config.decimals);
     formatted = formatted.replace('.', config.decimal);
     
@@ -261,7 +286,7 @@ class I18nPDP {
     parts[0] = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, config.thousands);
     formatted = parts.join(config.decimal);
     
-    // Posizionamento simbolo
+    // 💲 POSIZIONAMENTO SIMBOLO
     if (config.symbolPosition === 'before') {
       return `${config.symbol}${formatted}`;
     } else {
