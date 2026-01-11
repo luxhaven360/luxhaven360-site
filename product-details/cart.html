@@ -11,8 +11,6 @@
 <script src="../translations.js"></script>
 <script src="translations-pdp.js"></script>
 <script src="i18n-pdp.js"></script>
-
-    <script src="price-manager.js"></script>
     
     <style>
         * {
@@ -1248,20 +1246,17 @@ if (item.color || item.size) {
     variantHTML += '</div>';
 }
                 
-const finalPrice = (item.discountPrice && item.discountPrice < item.price) ? item.discountPrice : item.price;
+                const finalPrice = (item.discountPrice && item.discountPrice < item.price) ? item.discountPrice : item.price;
 const hasDiscount = item.discountPrice && item.discountPrice < item.price;
+
+// ✅ FORMATTA PREZZI CON i18n SUBITO
+const i18n = window.i18nPDP();
+const formattedOriginalPrice = i18n ? i18n.formatPrice(item.price, item.currency || 'EUR') : `€ ${item.price.toFixed(2).replace('.', ',')}`;
+const formattedFinalPrice = i18n ? i18n.formatPrice(finalPrice, item.currency || 'EUR') : `€ ${finalPrice.toFixed(2).replace('.', ',')}`;
 
 const itemElement = document.createElement('div');
 itemElement.className = 'cart-item';
 itemElement.dataset.id = index;
-
-// ✅ Salva prezzi originali
-itemElement.dataset.originalPrice = item.price;
-itemElement.dataset.originalCurrency = item.currency || 'EUR';
-if (item.discountPrice) {
-    itemElement.dataset.discountPrice = item.discountPrice;
-}
-
 itemElement.innerHTML = `
     <div class="item-image">
         <img src="${item.image || 'https://via.placeholder.com/140x186?text=' + encodeURIComponent(item.title)}" alt="${item.title}">
@@ -1274,8 +1269,8 @@ itemElement.innerHTML = `
         </div>
     </div>
     <div class="item-price-section">
-        ${hasDiscount ? `<div class="item-original-price" data-price-type="original">${formatPrice(item.price, item.currency || 'EUR')}</div>` : ''}
-        <div class="item-price" data-price-type="final">${formatPrice(finalPrice, item.currency || 'EUR')}</div>
+        ${hasDiscount ? `<div class="item-original-price">${formattedOriginalPrice}</div>` : ''}
+        <div class="item-price">${formattedFinalPrice}</div>
     </div>
 `;
 cartItemsContainer.appendChild(itemElement);
@@ -1480,42 +1475,21 @@ const totalAfterDiscounts = subtotal - discount;
 const shipping = totalAfterDiscounts >= shippingThreshold ? 0 : 15;
 const total = subtotal + shipping - discount;
 
-    // ✅ Salva valori come data attributes
-const subtotalEl = document.getElementById('subtotal');
-const shippingEl = document.getElementById('shipping');
-const discountElValue = document.getElementById('discount');
-const totalEl = document.getElementById('total');
-
-if (subtotalEl) {
-    subtotalEl.dataset.amount = subtotal;
-    subtotalEl.textContent = formatPrice(subtotal);
-}
-
-if (shippingEl) {
-    shippingEl.dataset.amount = shipping;
+    // Aggiorna UI con prezzi formattati
     const i18n = window.i18nPDP();
-    shippingEl.textContent = shipping === 0 
-        ? (i18n ? i18n.t('cart_summary_shipping_free') : 'Gratuita')
-        : formatPrice(shipping);
-}
-
-if (discountElValue) {
-    discountElValue.dataset.amount = discount;
-}
-
-if (totalEl) {
-    totalEl.dataset.amount = total;
-    totalEl.textContent = formatPrice(total);
-}
-
-// Aggiorna conteggio articoli
-const i18n = window.i18nPDP();
-if (i18n) {
-    const itemCountText = itemCount === 1 
-        ? i18n.t('cart_items_count_one') 
-        : i18n.t('cart_items_count_many', { n: itemCount });
-    document.getElementById('itemCount').textContent = itemCountText;
-}
+    if (i18n) {
+        document.getElementById('subtotal').textContent = i18n.formatPrice(subtotal);
+        document.getElementById('shipping').textContent = shipping === 0 
+            ? i18n.t('cart_summary_shipping_free') 
+            : i18n.formatPrice(shipping);
+        document.getElementById('total').textContent = i18n.formatPrice(total);
+        
+        // Aggiorna conteggio articoli
+        const itemCountText = itemCount === 1 
+            ? i18n.t('cart_items_count_one') 
+            : i18n.t('cart_items_count_many', { n: itemCount });
+        document.getElementById('itemCount').textContent = itemCountText;
+    }
     
     showDiscountValue(discount, isComboDiscount);
 
@@ -2218,6 +2192,96 @@ window.addEventListener('pageshow', function(event) {
         }
     }
 });
+
+   /**
+ * Aggiorna tutti i prezzi con la nuova lingua/valuta
+ */
+  function updateAllPricesForLanguage() {
+    const i18n = window.i18nPDP();
+    if (!i18n) return;
+    
+    // 1. CALCOLO CONTEGGIO ARTICOLI (SEMPRE)
+    const itemCount = cart.reduce((sum, item) => sum + (item.qty || 1), 0);
+    
+    // 2. AGGIORNAMENTO IMMEDIATO CONTEGGIO ARTICOLI
+const itemCountEl = document.getElementById('itemCount');
+if (itemCountEl) {
+    let itemCountText;
+    if (itemCount === 0) {
+        itemCountText = i18n.t('cart_items_count_zero');
+    } else if (itemCount === 1) {
+        itemCountText = i18n.t('cart_items_count_one');
+    } else {
+        itemCountText = i18n.t('cart_items_count_many', { n: itemCount });
+    }
+    itemCountEl.textContent = itemCountText;
+}
+    
+    // 3. CALCOLO PREZZI (per summary sidebar)
+    let subtotal = 0;
+    cart.forEach(item => {
+        const finalPrice = (item.discountPrice && item.discountPrice < item.price) 
+            ? item.discountPrice 
+            : item.price;
+        subtotal += finalPrice * (item.qty || 1);
+    });
+    
+    const savedDiscounts = JSON.parse(localStorage.getItem('lh360_applied_discounts') || '{}');
+    const discount = savedDiscounts.totalDiscount || 0;
+    
+    const shippingThreshold = getShippingThreshold();
+    const totalAfterDiscounts = subtotal - discount;
+    const shipping = totalAfterDiscounts >= shippingThreshold ? 0 : 15;
+    const total = subtotal + shipping - discount;
+    
+    // 4. AGGIORNA UI SUMMARY
+    document.getElementById('subtotal').textContent = i18n.formatPrice(subtotal);
+    document.getElementById('shipping').textContent = shipping === 0 
+        ? i18n.t('cart_summary_shipping_free') 
+        : i18n.formatPrice(shipping);
+    document.getElementById('total').textContent = i18n.formatPrice(total);
+    
+    if (discount > 0) {
+        document.getElementById('discount').textContent = `- ${i18n.formatPrice(discount)}`;
+    }
+    
+    // 5. AGGIORNA SOGLIA SPEDIZIONE
+    const shippingThresholdEl = document.getElementById('shippingThreshold');
+    if (shippingThresholdEl) {
+        shippingThresholdEl.textContent = i18n.formatPrice(getShippingThreshold());
+    }
+    
+    // 6. ✅ RI-RENDERIZZA LE CARD PRODOTTO
+    renderCart(true); // ← passa true per evitare loop
+    
+    // 7. AGGIORNA PREZZI PRODOTTI CONSIGLIATI
+    document.querySelectorAll('.recommended-item').forEach(card => {
+        const originalPrice = parseFloat(card.dataset.originalPrice);
+        const discountPrice = parseFloat(card.dataset.discountPrice);
+        const originalCurrency = card.dataset.originalCurrency || 'EUR';
+        
+        if (!originalPrice) return;
+        
+        const hasDiscount = discountPrice && discountPrice < originalPrice;
+        
+        if (hasDiscount) {
+            const originalPriceEl = card.querySelector('div[style*="text-decoration: line-through"]');
+            if (originalPriceEl) {
+                originalPriceEl.textContent = i18n.formatPrice(originalPrice, originalCurrency);
+            }
+            
+            const discountedPriceEl = card.querySelector('span[style*="background-clip: text"]');
+            if (discountedPriceEl) {
+                discountedPriceEl.textContent = i18n.formatPrice(discountPrice, originalCurrency);
+            }
+        } else {
+            const priceElements = card.querySelectorAll('.recommended-price');
+            priceElements.forEach(el => {
+                el.textContent = i18n.formatPrice(originalPrice, originalCurrency);
+            });
+        }
+    });
+}
     
     // Ascolta cambio lingua da altre pagine
 window.addEventListener('storage', (event) => {
@@ -2232,4 +2296,3 @@ window.addEventListener('storage', (event) => {
 </script>
 </body>
 </html>
-
