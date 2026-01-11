@@ -960,6 +960,28 @@ if (window.i18nPDP) {
         return userId;
     }
 
+    /**
+ * ✅ Calcola soglia spedizione convertita nella valuta corrente
+ */
+function getShippingThreshold() {
+    const baseThreshold = 150; // Sempre in EUR
+    const i18n = window.i18nPDP();
+    
+    if (!i18n) return baseThreshold;
+    
+    // Configurazione valute per lingua
+    const currencyConfig = {
+        it: { currency: 'EUR', rate: 1 },
+        fr: { currency: 'EUR', rate: 1 },
+        de: { currency: 'EUR', rate: 1 },
+        es: { currency: 'EUR', rate: 1 },
+        en: { currency: 'USD', rate: 1.17 }
+    };
+    
+    const config = currencyConfig[i18n.currentLang] || { currency: 'EUR', rate: 1 };
+    return baseThreshold * config.rate;
+}
+
     function hasCouponBeenUsed(couponCode) {
         const usedCoupons = JSON.parse(localStorage.getItem('lh360_used_coupons') || '{}');
         const userId = getUserId();
@@ -1213,9 +1235,10 @@ if (i18n) {
     }
 
     // Calcola spedizione
-    const totalAfterDiscounts = subtotal - discount;
-    const shipping = totalAfterDiscounts >= 150 ? 0 : 15;
-    const total = subtotal + shipping - discount;
+    const shippingThreshold = getShippingThreshold();
+const totalAfterDiscounts = subtotal - discount;
+const shipping = totalAfterDiscounts >= shippingThreshold ? 0 : 15;
+const total = subtotal + shipping - discount;
 
     // Aggiorna UI con prezzi formattati
     const i18n = window.i18nPDP();
@@ -1275,7 +1298,8 @@ if (totalAfterDiscounts >= 150) {
         itemCount += (item.qty || 1);
     });
 
-    const shipping = subtotal >= 150 ? 0 : 15;
+    const shippingThreshold = getShippingThreshold();
+const shipping = subtotal >= shippingThreshold ? 0 : 15;
     
     let couponDiscount = 0;
     if (appliedCoupon) {
@@ -1308,9 +1332,9 @@ if (totalAfterDiscounts >= 150) {
     document.getElementById('progressFill').style.width = `${progress}%`;
 
     const shippingThresholdEl = document.getElementById('shippingThreshold');
-    if (shippingThresholdEl && i18n) {
-        shippingThresholdEl.textContent = i18n.formatPrice(150);
-    }
+if (shippingThresholdEl && i18n) {
+    shippingThresholdEl.textContent = i18n.formatPrice(getShippingThreshold());
+}
     
     if (cart.length > 0) {
         showDiscountCalculating();
@@ -1393,7 +1417,7 @@ if (totalAfterDiscounts >= 150) {
     
     const shippingThresholdEl = document.getElementById('shippingThreshold');
     if (shippingThresholdEl) {
-        shippingThresholdEl.textContent = i18n.formatPrice(150);
+        shippingThresholdEl.textContent = i18n.formatPrice(getShippingThreshold());
     }
 }
 
@@ -1402,6 +1426,16 @@ if (totalAfterDiscounts >= 150) {
  * Evita calcoli multipli durante il ripristino coupon
  */
 async function initializeCart() {
+  // ✅ Verifica che i18n sia pronto
+  const i18n = window.i18nPDP();
+  if (!i18n) {
+    console.error('❌ i18nPDP non inizializzato!');
+    setTimeout(initializeCart, 100);
+    return;
+  }
+  
+  console.log(`✅ Carrello inizializzato con lingua: ${i18n.currentLang.toUpperCase()}`);
+  
   // 1. Rendering DOM
   renderCart(); 
   updateShippingThreshold();
@@ -1418,8 +1452,13 @@ async function initializeCart() {
   loadRecommendedProducts();
 }
 
-// ✅ Avvia inizializzazione
-initializeCart();
+// ✅ ASPETTA CHE i18n SIA PRONTO
+document.addEventListener('DOMContentLoaded', () => {
+    // Aspetta un tick per assicurarsi che i18nPDP sia completamente inizializzato
+    setTimeout(() => {
+        initializeCart();
+    }, 50);
+});
 
 /**
  * Carica prodotti consigliati basati sulla categoria del carrello
@@ -1833,9 +1872,10 @@ if (appliedCoupon) {
 }
 
     // ✅ CALCOLA TOTALI FINALI PRIMA DI USARLI
-    const totalAfterDiscounts = subtotal - discount;
-    const shipping = totalAfterDiscounts >= 150 ? 0 : 15;
-    const total = subtotal + shipping - discount;
+    const shippingThreshold = getShippingThreshold();
+const totalAfterDiscounts = subtotal - discount;
+const shipping = totalAfterDiscounts >= shippingThreshold ? 0 : 15;
+const total = subtotal + shipping - discount;
 
     // ✅ ORA AGGIORNA UI (shipping e total sono definiti)
     const i18n = window.i18nPDP();
@@ -1930,7 +1970,8 @@ window.addEventListener('pageshow', function(event) {
         subtotal += finalPrice * (item.qty || 1);
     });
     
-    const shipping = subtotal >= 150 ? 0 : 15;
+    const shippingThreshold = getShippingThreshold();
+const shipping = subtotal >= shippingThreshold ? 0 : 15;
     
     // Ottieni sconti esistenti
     const savedDiscounts = JSON.parse(localStorage.getItem('lh360_applied_discounts') || '{}');
@@ -2000,9 +2041,9 @@ window.addEventListener('pageshow', function(event) {
     
     // 5. Aggiorna soglia spedizione gratuita
     const shippingThresholdEl = document.getElementById('shippingThreshold');
-    if (shippingThresholdEl) {
-        shippingThresholdEl.textContent = i18n.formatPrice(150);
-    }
+if (shippingThresholdEl) {
+    shippingThresholdEl.textContent = i18n.formatPrice(getShippingThreshold());
+}
 }
     
     // Ascolta cambio lingua da altre pagine
@@ -2018,3 +2059,4 @@ window.addEventListener('storage', (event) => {
 </script>
 </body>
 </html>
+
