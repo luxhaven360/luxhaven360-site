@@ -1079,28 +1079,33 @@ if (item.color || item.size) {
 }
                 
                 const finalPrice = (item.discountPrice && item.discountPrice < item.price) ? item.discountPrice : item.price;
-                const hasDiscount = item.discountPrice && item.discountPrice < item.price;
-                
-                const itemElement = document.createElement('div');
-                itemElement.className = 'cart-item';
-                itemElement.dataset.id = index;
-                itemElement.innerHTML = `
-                    <div class="item-image">
-                        <img src="${item.image || 'https://via.placeholder.com/140x186?text=' + encodeURIComponent(item.title)}" alt="${item.title}">
-                    </div>
-                    <div class="item-details">
-                        <div class="item-name">${item.title}</div>
-                        ${variantHTML}
-                        <div class="item-actions">
-                            <button class="remove-btn" onclick="removeItem(${index})" data-i18n="cart_item_remove">Rimuovi</button>
-                        </div>
-                    </div>
-                    <div class="item-price-section">
-                        ${hasDiscount ? `<div class="item-original-price">€ ${item.price.toFixed(2).replace('.', ',')}</div>` : ''}
-                        <div class="item-price">€ ${finalPrice.toFixed(2).replace('.', ',')}</div>
-                    </div>
-                `;
-                cartItemsContainer.appendChild(itemElement);
+const hasDiscount = item.discountPrice && item.discountPrice < item.price;
+
+// ✅ FORMATTA PREZZI CON i18n SUBITO
+const i18n = window.i18nPDP();
+const formattedOriginalPrice = i18n ? i18n.formatPrice(item.price, item.currency || 'EUR') : `€ ${item.price.toFixed(2).replace('.', ',')}`;
+const formattedFinalPrice = i18n ? i18n.formatPrice(finalPrice, item.currency || 'EUR') : `€ ${finalPrice.toFixed(2).replace('.', ',')}`;
+
+const itemElement = document.createElement('div');
+itemElement.className = 'cart-item';
+itemElement.dataset.id = index;
+itemElement.innerHTML = `
+    <div class="item-image">
+        <img src="${item.image || 'https://via.placeholder.com/140x186?text=' + encodeURIComponent(item.title)}" alt="${item.title}">
+    </div>
+    <div class="item-details">
+        <div class="item-name">${item.title}</div>
+        ${variantHTML}
+        <div class="item-actions">
+            <button class="remove-btn" onclick="removeItem(${index})" data-i18n="cart_item_remove">Rimuovi</button>
+        </div>
+    </div>
+    <div class="item-price-section">
+        ${hasDiscount ? `<div class="item-original-price">${formattedOriginalPrice}</div>` : ''}
+        <div class="item-price">${formattedFinalPrice}</div>
+    </div>
+`;
+cartItemsContainer.appendChild(itemElement);
             });
 
             // ✅ AGGIORNA CONTEGGIO ARTICOLI PRIMA DELLE TRADUZIONI
@@ -1127,24 +1132,6 @@ if (i18n) {
             } else {
                 el.textContent = translation;
             }
-        }
-    });
-    
-    // ✅ FORMATTA PREZZI NELLE CARD
-    document.querySelectorAll('.item-price').forEach((el, idx) => {
-        const item = cart[idx];
-        if (item) {
-            const finalPrice = (item.discountPrice && item.discountPrice < item.price) 
-                ? item.discountPrice 
-                : item.price;
-            el.textContent = i18n.formatPrice(finalPrice, item.currency || 'EUR');
-        }
-    });
-    
-    document.querySelectorAll('.item-original-price').forEach((el, idx) => {
-        const item = cart[idx];
-        if (item && item.price) {
-            el.textContent = i18n.formatPrice(item.price, item.currency || 'EUR');
         }
     });
     
@@ -1484,7 +1471,6 @@ if (shippingThresholdEl && i18n) {
  * Evita calcoli multipli durante il ripristino coupon
  */
 async function initializeCart() {
-  // ✅ Verifica che i18n sia pronto
   const i18n = window.i18nPDP();
   if (!i18n) {
     console.error('❌ i18nPDP non inizializzato!');
@@ -1504,7 +1490,12 @@ async function initializeCart() {
     itemCountEl.textContent = itemCountText;
   }
   
-  // 2. Rendering DOM
+  // 1.5. ✅ MOSTRA "Calcolo..." PRIMA DI QUALSIASI OPERAZIONE
+  if (cart.length > 0) {
+    showDiscountCalculating();
+  }
+  
+  // 2 Rendering DOM
   renderCart(); 
   updateShippingThreshold();
   
@@ -2115,5 +2106,6 @@ window.addEventListener('storage', (event) => {
 </script>
 </body>
 </html>
+
 
 
