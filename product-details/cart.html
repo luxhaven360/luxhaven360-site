@@ -1103,15 +1103,22 @@ if (item.color || item.size) {
                 cartItemsContainer.appendChild(itemElement);
             });
 
-            // Dopo il forEach in renderCart(), prima di chiudere l'else
+            // ✅ AGGIORNA CONTEGGIO ARTICOLI PRIMA DELLE TRADUZIONI
+const itemCount = cart.reduce((sum, item) => sum + (item.qty || 1), 0);
+const itemCountEl = document.getElementById('itemCount');
+
 const i18n = window.i18nPDP();
 if (i18n) {
+    // ✅ AGGIORNA CONTEGGIO CON TRADUZIONE CORRETTA
+    if (itemCountEl && itemCount > 0) {
+        const itemCountText = itemCount === 1 
+            ? i18n.t('cart_items_count_one') 
+            : i18n.t('cart_items_count_many', { n: itemCount });
+        itemCountEl.textContent = itemCountText;
+    }
+    
     // Traduci elementi dinamici
     document.querySelectorAll('[data-i18n]').forEach(el => {
-        const key = el.getAttribute('data-i18n');
-        const translation = i18n.t(key);
-        if (translation) el.textContent = translation;
-    });
     
     // ✅ FORMATTA PREZZI NELLE CARD
     document.querySelectorAll('.item-price').forEach((el, idx) => {
@@ -1477,11 +1484,21 @@ async function initializeCart() {
   
   console.log(`✅ Carrello inizializzato con lingua: ${i18n.currentLang.toUpperCase()}`);
   
-  // 1. Rendering DOM
+  // 1. AGGIORNA CONTEGGIO ARTICOLI IMMEDIATO
+  const itemCount = cart.reduce((sum, item) => sum + (item.qty || 1), 0);
+  const itemCountEl = document.getElementById('itemCount');
+  if (itemCountEl && itemCount > 0) {
+    const itemCountText = itemCount === 1 
+      ? i18n.t('cart_items_count_one') 
+      : i18n.t('cart_items_count_many', { n: itemCount });
+    itemCountEl.textContent = itemCountText;
+  }
+  
+  // 2. Rendering DOM
   renderCart(); 
   updateShippingThreshold();
   
-  // 2. Ripristina coupon (se presente) e calcola sconti
+  // 2a. Ripristina coupon (se presente) e calcola sconti
   await restoreAppliedCoupon();
   
   // 3. Se NON c'era coupon da ripristinare, calcola normalmente
@@ -1992,17 +2009,19 @@ window.addEventListener('pageshow', function(event) {
     const i18n = window.i18nPDP();
     if (!i18n) return;
     
-    // 1. AGGIORNAMENTO CONTEGGIO ARTICOLI
+    // 1. CALCOLO CONTEGGIO ARTICOLI (SEMPRE)
     const itemCount = cart.reduce((sum, item) => sum + (item.qty || 1), 0);
+    
+    // 2. AGGIORNAMENTO IMMEDIATO CONTEGGIO ARTICOLI
     const itemCountEl = document.getElementById('itemCount');
-    if (itemCountEl) {
+    if (itemCountEl && itemCount > 0) {
         const itemCountText = itemCount === 1 
             ? i18n.t('cart_items_count_one') 
             : i18n.t('cart_items_count_many', { n: itemCount });
         itemCountEl.textContent = itemCountText;
     }
     
-    // 2. CALCOLO PREZZI (per summary sidebar)
+    // 3. CALCOLO PREZZI (per summary sidebar)
     let subtotal = 0;
     cart.forEach(item => {
         const finalPrice = (item.discountPrice && item.discountPrice < item.price) 
@@ -2019,7 +2038,7 @@ window.addEventListener('pageshow', function(event) {
     const shipping = totalAfterDiscounts >= shippingThreshold ? 0 : 15;
     const total = subtotal + shipping - discount;
     
-    // 3. AGGIORNA UI SUMMARY
+    // 4. AGGIORNA UI SUMMARY
     document.getElementById('subtotal').textContent = i18n.formatPrice(subtotal);
     document.getElementById('shipping').textContent = shipping === 0 
         ? i18n.t('cart_summary_shipping_free') 
@@ -2030,16 +2049,16 @@ window.addEventListener('pageshow', function(event) {
         document.getElementById('discount').textContent = `- ${i18n.formatPrice(discount)}`;
     }
     
-    // 4. AGGIORNA SOGLIA SPEDIZIONE
+    // 5. AGGIORNA SOGLIA SPEDIZIONE
     const shippingThresholdEl = document.getElementById('shippingThreshold');
     if (shippingThresholdEl) {
         shippingThresholdEl.textContent = i18n.formatPrice(getShippingThreshold());
     }
     
-    // 5. ✅ RI-RENDERIZZA LE CARD PRODOTTO
+    // 6. ✅ RI-RENDERIZZA LE CARD PRODOTTO
     renderCart(true); // ← passa true per evitare loop
     
-    // 6. AGGIORNA PREZZI PRODOTTI CONSIGLIATI
+    // 7. AGGIORNA PREZZI PRODOTTI CONSIGLIATI
     document.querySelectorAll('.recommended-item').forEach(card => {
         const originalPrice = parseFloat(card.dataset.originalPrice);
         const discountPrice = parseFloat(card.dataset.discountPrice);
@@ -2081,3 +2100,4 @@ window.addEventListener('storage', (event) => {
 </script>
 </body>
 </html>
+
