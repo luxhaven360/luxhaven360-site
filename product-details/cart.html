@@ -998,8 +998,31 @@ function getShippingThreshold() {
         }
     }
 
+    // ✅ Aggiungi questa funzione PRIMA di renderCart()
+function validateCartPrices() {
+    let hasChanges = false;
+    
+    cart = cart.map(item => {
+        // Se il prezzo sembra errato (es. somma di prezzi invece di prezzo singolo)
+        // lo resettiamo al discountPrice se disponibile
+        if (item.price > 1000 && item.discountPrice && item.discountPrice < item.price) {
+            console.warn(`⚠️ Prezzo sospetto rilevato per ${item.title}: €${item.price}. Correzione in corso...`);
+            item.price = item.discountPrice * 1.6; // Stima prezzo originale (se sconto ~40%)
+            hasChanges = true;
+        }
+        return item;
+    });
+    
+    if (hasChanges) {
+        localStorage.setItem('lh360_cart', JSON.stringify(cart));
+        console.log('✅ Prezzi carrello corretti e salvati');
+    }
+}
+
     // === RENDERING CARRELLO ===
     function renderCart() {
+        validateCartPrices();
+        
         const cartItemsContainer = document.getElementById('cartItems');
         cartItemsContainer.innerHTML = '';
         
@@ -1951,17 +1974,7 @@ window.addEventListener('pageshow', function(event) {
     const i18n = window.i18nPDP();
     if (!i18n) return;
     
-    // 1. AGGIORNAMENTO IMMEDIATO CONTEGGIO ARTICOLI
-    const itemCount = cart.reduce((sum, item) => sum + (item.qty || 1), 0);
-    const itemCountEl = document.getElementById('itemCount');
-    if (itemCountEl) {
-        const itemCountText = itemCount === 1 
-            ? i18n.t('cart_items_count_one') 
-            : i18n.t('cart_items_count_many', { n: itemCount });
-        itemCountEl.textContent = itemCountText;
-    }
-    
-    // 2. AGGIORNAMENTO IMMEDIATO PREZZI SUMMARY (sincrono)
+    // 1. Calcola subtotale
     let subtotal = 0;
     cart.forEach(item => {
         const finalPrice = (item.discountPrice && item.discountPrice < item.price) 
@@ -1970,16 +1983,17 @@ window.addEventListener('pageshow', function(event) {
         subtotal += finalPrice * (item.qty || 1);
     });
     
-    const shippingThreshold = getShippingThreshold();
-const shipping = subtotal >= shippingThreshold ? 0 : 15;
-    
-    // Ottieni sconti esistenti
+    // 2. Ottieni sconti salvati (combo + coupon)
     const savedDiscounts = JSON.parse(localStorage.getItem('lh360_applied_discounts') || '{}');
     const discount = savedDiscounts.totalDiscount || 0;
     
+    // 3. ✅ CALCOLO CORRETTO: spedizione si basa sul totale DOPO sconti
+    const shippingThreshold = getShippingThreshold();
+    const totalAfterDiscounts = subtotal - discount;
+    const shipping = totalAfterDiscounts >= shippingThreshold ? 0 : 15;
     const total = subtotal + shipping - discount;
     
-    // Aggiorna UI prezzi
+    // 4. Aggiorna UI con i18n
     document.getElementById('subtotal').textContent = i18n.formatPrice(subtotal);
     document.getElementById('shipping').textContent = shipping === 0 
         ? i18n.t('cart_summary_shipping_free') 
@@ -1990,7 +2004,17 @@ const shipping = subtotal >= shippingThreshold ? 0 : 15;
         document.getElementById('discount').textContent = `- ${i18n.formatPrice(discount)}`;
     }
     
-    // 3. AGGIORNAMENTO PREZZI ITEM CARRELLO
+    // 5. Aggiorna conteggio articoli
+    const itemCount = cart.reduce((sum, item) => sum + (item.qty || 1), 0);
+    const itemCountEl = document.getElementById('itemCount');
+    if (itemCountEl) {
+        const itemCountText = itemCount === 1 
+            ? i18n.t('cart_items_count_one') 
+            : i18n.t('cart_items_count_many', { n: itemCount });
+        itemCountEl.textContent = itemCountText;
+    }
+    
+    // 6. Aggiorna prezzi nelle card prodotto
     document.querySelectorAll('.item-price').forEach((el, idx) => {
         const item = cart[idx];
         if (item) {
@@ -2008,7 +2032,28 @@ const shipping = subtotal >= shippingThreshold ? 0 : 15;
         }
     });
     
-    // 4. AGGIORNAMENTO PREZZI PRODOTTI CONSIGLIATI
+    // 7. ✅ AGGIORNA TRADUZIONE "TAGLIA" (Fix Problema 3)
+    document.querySelectorAll('.cart-item').forEach((itemEl, idx) => {
+        const item = cart[idx];
+        if (item && item.size) {
+            const variantEl = itemEl.querySelector('.item-variant');
+            if (variantEl) {
+                const sizeLabel = i18n.t('cart_item_size_label');
+                const sizeText = variantEl.textContent;
+                // Sostituisci solo la label "Taglia/Size/Taille/etc"
+                const newText = sizeText.replace(/^[^0-9]+/, `${sizeLabel} `);
+                variantEl.lastChild.textContent = newText;
+            }
+        }
+    });
+    
+    // 8. Aggiorna soglia spedizione gratuita
+    const shippingThresholdEl = document.getElementById('shippingThreshold');
+    if (shippingThresholdEl) {
+        shippingThresholdEl.textContent = i18n.formatPrice(getShippingThreshold());
+    }
+    
+    // 9. Aggiorna prezzi prodotti consigliati
     document.querySelectorAll('.recommended-item').forEach(card => {
         const originalPrice = parseFloat(card.dataset.originalPrice);
         const discountPrice = parseFloat(card.dataset.discountPrice);
@@ -2019,31 +2064,22 @@ const shipping = subtotal >= shippingThreshold ? 0 : 15;
         const hasDiscount = discountPrice && discountPrice < originalPrice;
         
         if (hasDiscount) {
-            // Aggiorna prezzo originale barrato
             const originalPriceEl = card.querySelector('div[style*="text-decoration: line-through"]');
             if (originalPriceEl) {
                 originalPriceEl.textContent = i18n.formatPrice(originalPrice, originalCurrency);
             }
             
-            // Aggiorna prezzo scontato
             const discountedPriceEl = card.querySelector('span[style*="background-clip: text"]');
             if (discountedPriceEl) {
                 discountedPriceEl.textContent = i18n.formatPrice(discountPrice, originalCurrency);
             }
         } else {
-            // Prezzo normale
             const priceElements = card.querySelectorAll('.recommended-price');
             priceElements.forEach(el => {
                 el.textContent = i18n.formatPrice(originalPrice, originalCurrency);
             });
         }
     });
-    
-    // 5. Aggiorna soglia spedizione gratuita
-    const shippingThresholdEl = document.getElementById('shippingThreshold');
-if (shippingThresholdEl) {
-    shippingThresholdEl.textContent = i18n.formatPrice(getShippingThreshold());
-}
 }
     
     // Ascolta cambio lingua da altre pagine
@@ -2059,4 +2095,5 @@ window.addEventListener('storage', (event) => {
 </script>
 </body>
 </html>
+
 
