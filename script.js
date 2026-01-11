@@ -160,7 +160,7 @@ function el(tag, attrs = {}, children = []) {
  * @param {string} originalCurrency - Valuta originale (default: EUR)
  * @returns {string} - Prezzo formattato con simbolo
  */
- async function formatPrice(price, originalCurrency = 'EUR') {
+function formatPrice(price, originalCurrency = 'EUR') {
     const amount = parseFloat(price) || 0;
     const currentLang = (window.i18n && window.i18n()) ? window.i18n().currentLang : 'it';
     
@@ -254,7 +254,7 @@ const localeConfig = {
 }
 
 // funzione per creare una card prodotto
-async function createProductCard(prod, defaultCta) {
+function createProductCard(prod, defaultCta) {
     // container
     const card = el('div', { class: 'card' });
 
@@ -555,8 +555,8 @@ const isProperty = prod.category === 'properties';
             });
             
             const originalPrice = el('div', { 
-    style: 'font-size: 1rem; color: #71717a; text-decoration: line-through; font-weight: 300;' 
-}, [document.createTextNode(await formatPrice(prod.price, prod.currency || 'EUR'))]);
+                style: 'font-size: 1rem; color: #71717a; text-decoration: line-through; font-weight: 300;' 
+            }, [document.createTextNode(formatPrice(prod.price, prod.currency || 'EUR'))]);
             priceContainer.appendChild(originalPrice);
             
             const discountRow = el('div', { 
@@ -564,11 +564,11 @@ const isProperty = prod.category === 'properties';
             });
             
             const discountedPrice = el('div', { 
-    style: `font-size: 1.75rem; font-weight: 700; letter-spacing: 0.02em; 
-            background: linear-gradient(135deg, #D4AF37, #FFD700);
-            -webkit-background-clip: text; -webkit-text-fill-color: transparent;
-            background-clip: text;` 
-}, [document.createTextNode(await formatPrice(prod.discountPrice, prod.currency || 'EUR'))]);
+                style: `font-size: 1.75rem; font-weight: 700; letter-spacing: 0.02em; 
+                        background: linear-gradient(135deg, #D4AF37, #FFD700);
+                        -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+                        background-clip: text;` 
+            }, [document.createTextNode(formatPrice(prod.discountPrice, prod.currency || 'EUR'))]);
             discountRow.appendChild(discountedPrice);
             
             const discountPercent = Math.round(((prod.price - prod.discountPrice) / prod.price) * 100);
@@ -585,10 +585,10 @@ const isProperty = prod.category === 'properties';
         } else {
             let priceDisplay;
             if (prod.price != null && prod.price > 0) {
-    priceDisplay = await formatPrice(prod.price, prod.currency || 'EUR');
-} else {
-    priceDisplay = prod.price_text || 'Contattaci';
-}
+                priceDisplay = formatPrice(prod.price, prod.currency || 'EUR');
+            } else {
+                priceDisplay = prod.price_text || 'Contattaci';
+            }
             
             const priceText = el('div', { class: 'card-price' }, [
                 document.createTextNode(priceDisplay)
@@ -648,7 +648,7 @@ const isProperty = prod.category === 'properties';
 /**
  * Aggiorna tutti i prezzi visibili con la nuova valuta
  */
-async function updateAllPricesForLanguage() {
+function updateAllPricesForLanguage() {
     document.querySelectorAll('.card').forEach(card => {
         const originalPrice = parseFloat(card.dataset.originalPrice);
         const originalCurrency = card.dataset.originalCurrency || 'EUR';
@@ -663,20 +663,20 @@ async function updateAllPricesForLanguage() {
             // ✅ AGGIORNA PREZZO ORIGINALE BARRATO
             const originalPriceEl = card.querySelector('div[style*="text-decoration: line-through"]');
             if (originalPriceEl) {
-    originalPriceEl.textContent = await formatPrice(originalPrice, originalCurrency);
-}
+                originalPriceEl.textContent = formatPrice(originalPrice, originalCurrency);
+            }
             
             // ✅ AGGIORNA PREZZO SCONTATO
             const discountedPriceEl = card.querySelector('div[style*="background-clip: text"]');
             if (discountedPriceEl && discountedPriceEl.parentElement.style.display === 'flex') {
-    discountedPriceEl.textContent = await formatPrice(discountPrice, originalCurrency);
-}
+                discountedPriceEl.textContent = formatPrice(discountPrice, originalCurrency);
+            }
         } else {
             // Card senza sconto - metodo originale
             const priceElement = card.querySelector('.card-price');
             if (priceElement) {
-    priceElement.textContent = await formatPrice(originalPrice, originalCurrency);
-}
+                priceElement.textContent = formatPrice(originalPrice, originalCurrency);
+            }
         }
     });
 }
@@ -1083,29 +1083,29 @@ async function initDynamicProducts(retryCount = 0) {
 
         // === 4a. RENDERING PRODOTTI SHOP ===
         if (shopData.success && shopData.products) {
-    for (const prod of shopData.products) {
-        if (prod.category === 'shop' && grids.shop) {
-            prod.sectionName = 'shop';
-            const card = await createProductCard(prod, 'Acquista');
-            grids.shop.appendChild(card);
-            countBySection.shop = (countBySection.shop || 0) + 1;
+            shopData.products.forEach(prod => {
+                if (prod.category === 'shop' && grids.shop) {
+                    prod.sectionName = 'shop';
+                    const card = createProductCard(prod, 'Acquista');
+                    grids.shop.appendChild(card);
+                    countBySection.shop = (countBySection.shop || 0) + 1;
+                }
+            });
         }
-    }
-}
 
         // === 4b. RENDERING PRODOTTI BOOKABLE (properties, supercars, stays) ===
 if (bookableData.success && bookableData.products) {
     const propertyProducts = [];
     const supercarProducts = [];
     
-    for (const prod of bookableData.products) {
-    const targetSection = SECTIONS.find(s => s.id === prod.category);
-    
-    if (targetSection && grids[targetSection.id]) {
-        prod.sectionName = targetSection.id;
-        prod.icon = prod.mainImage || '📦';
+    bookableData.products.forEach(prod => {
+        const targetSection = SECTIONS.find(s => s.id === prod.category);
         
-        const card = await createProductCard(prod, targetSection.defaultCta);
+        if (targetSection && grids[targetSection.id]) {
+            prod.sectionName = targetSection.id;
+            prod.icon = prod.mainImage || '📦';
+            
+            const card = createProductCard(prod, targetSection.defaultCta);
             
             // ✅ AGGIUNGI SKU COME DATA ATTRIBUTE
             card.dataset.sku = prod.sku;
@@ -1117,7 +1117,7 @@ if (bookableData.success && bookableData.products) {
             if (prod.category === 'properties') propertyProducts.push(prod);
             if (prod.category === 'supercars') supercarProducts.push(prod);
         }
-    }
+    });
     
     // ✅ INIZIALIZZA FILTRI
     if (propertyProducts.length > 0) {
@@ -1631,5 +1631,4 @@ function showValidationError(message, type) {
     if (overlay.parentNode) overlay.remove();
   }, 5000);
 }
-
 
