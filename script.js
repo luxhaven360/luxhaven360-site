@@ -635,7 +635,11 @@ const isProperty = prod.category === 'properties';
 /**
  * Aggiorna tutti i prezzi visibili con la nuova valuta
  */
-function updateAllPricesForLanguage() {
+ function updateAllPricesForLanguage() {
+    console.log('🔄 updateAllPricesForLanguage: Inizio aggiornamento');
+    
+    let updatedCount = 0;
+    
     document.querySelectorAll('.card').forEach(card => {
         const originalPrice = parseFloat(card.dataset.originalPrice);
         const originalCurrency = card.dataset.originalCurrency || 'EUR';
@@ -651,28 +655,33 @@ function updateAllPricesForLanguage() {
             const originalPriceEl = card.querySelector('div[style*="text-decoration: line-through"]');
             if (originalPriceEl) {
                 originalPriceEl.textContent = formatPrice(originalPrice, originalCurrency);
+                updatedCount++;
             }
             
             // ✅ AGGIORNA PREZZO SCONTATO
             const discountedPriceEl = card.querySelector('div[style*="background-clip: text"]');
             if (discountedPriceEl && discountedPriceEl.parentElement.style.display === 'flex') {
                 discountedPriceEl.textContent = formatPrice(discountPrice, originalCurrency);
+                updatedCount++;
             }
         } else {
             // Card senza sconto - metodo originale
             const priceElement = card.querySelector('.card-price');
             if (priceElement) {
                 priceElement.textContent = formatPrice(originalPrice, originalCurrency);
+                updatedCount++;
             }
         }
     });
+    
+    console.log(`✅ Aggiornati ${updatedCount} prezzi`);
 }
 
 /**
  * 💱 Carica tassi di cambio aggiornati dal backend
  * Chiamata UNA VOLTA all'avvio dell'app
  */
-async function loadExchangeRates() {
+  async function loadExchangeRates() {
     try {
         const response = await fetch(`${WEB_APP_URL}?action=get_exchange_rates&t=${Date.now()}`);
         const data = await response.json();
@@ -680,10 +689,14 @@ async function loadExchangeRates() {
         if (data.success && data.rates) {
             exchangeRates = data.rates;
             console.log('✅ Tassi di cambio aggiornati:', exchangeRates);
-            console.log('📅 Ultimo aggiornamento:', data.updated);
+            console.log('📅 Ultimo aggiornamento:', data.updated || 'N/A');
             
-            // ♻️ Aggiorna tutti i prezzi visibili con i nuovi tassi
-            updateAllPricesForLanguage();
+            // ✅ Forza refresh immediato di TUTTI i prezzi
+            setTimeout(() => {
+                console.log('🔄 Aggiornamento prezzi con nuovi tassi...');
+                updateAllPricesForLanguage();
+                console.log('✅ Prezzi aggiornati');
+            }, 50);
         }
     } catch (error) {
         console.warn('⚠️ Errore caricamento tassi, uso fallback:', error);
@@ -1640,6 +1653,7 @@ function showValidationError(message, type) {
     if (overlay.parentNode) overlay.remove();
   }, 5000);
 }
+
 
 
 
