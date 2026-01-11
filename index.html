@@ -311,46 +311,52 @@
 
         // INIZIALIZZAZIONE PAGINA
         function initializePage() {
-            const introLoader = document.getElementById('intro-loader');
-            const progressBar = document.querySelector('.intro-progress-fill');
-            
-            document.body.style.overflow = 'hidden';
+    const introLoader = document.getElementById('intro-loader');
+    const progressBar = document.querySelector('.intro-progress-fill');
+    
+    document.body.style.overflow = 'hidden';
 
-            let progress = 0;
-            const fakeLoaderInterval = setInterval(() => {
-                if (progress < 70) {
-                    progress += (Math.random() * 8);
-                    if (progress > 70) progress = 70;
-                    if (progressBar) progressBar.style.width = `${progress}%`;
-                }
-            }, 80);
+    let progress = 0;
+    const fakeLoaderInterval = setInterval(() => {
+        if (progress < 70) {
+            progress += (Math.random() * 8);
+            if (progress > 70) progress = 70;
+            if (progressBar) progressBar.style.width = `${progress}%`;
+        }
+    }, 80);
 
-            loadExchangeRates(); // ← Carica tassi di cambio all'avvio
+    // ✅ Carica tassi di cambio E prodotti in parallelo
+    const ratesPromise = loadExchangeRates();
+    const dataPromise = typeof initDynamicProducts === 'function' 
+        ? initDynamicProducts() 
+        : Promise.resolve();
 
-            const dataPromise = typeof initDynamicProducts === 'function' 
-                ? initDynamicProducts() 
-                : Promise.resolve();
+    // ✅ Aspetta che ENTRAMBI finiscano
+    Promise.all([ratesPromise, dataPromise]).then(() => {
+        // ✅ Aggiorna tutti i prezzi con i tassi corretti
+        setTimeout(() => {
+            updateAllPricesForLanguage();
+        }, 100);
+        
+        clearInterval(fakeLoaderInterval);
+        
+        if (progressBar) {
+            progressBar.style.transition = 'width 0.3s ease-out';
+            progressBar.style.width = '100%';
+        }
 
-            dataPromise.then(() => {
-                clearInterval(fakeLoaderInterval);
+        setTimeout(() => {
+            if (introLoader) {
+                introLoader.style.opacity = '0';
+                introLoader.classList.add('fade-out');
+                document.body.style.overflow = '';
                 
-                if (progressBar) {
-                    progressBar.style.transition = 'width 0.3s ease-out';
-                    progressBar.style.width = '100%';
-                }
-
-                setTimeout(() => {
-                    if (introLoader) {
-                        introLoader.style.opacity = '0';
-                        introLoader.classList.add('fade-out');
-                        document.body.style.overflow = '';
-                        
-                        setTimeout(() => { 
-                            introLoader.style.display = 'none'; 
-                        }, 400); 
-                    }
-                }, 200);
-            });
+                setTimeout(() => { 
+                    introLoader.style.display = 'none'; 
+                }, 400); 
+            }
+        }, 200);
+    });
 
             loadShopCategories();
 
@@ -647,5 +653,6 @@
     </script>
 </body>
 </html>
+
 
 
