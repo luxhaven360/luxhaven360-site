@@ -164,21 +164,8 @@ function formatPrice(price, originalCurrency = 'EUR') {
     const amount = parseFloat(price) || 0;
     const currentLang = (window.i18n && window.i18n()) ? window.i18n().currentLang : 'it';
     
-    // 🔄 Tassi dinamici: prova a leggere dal backend, altrimenti usa fallback
-let exchangeRates = { 'EUR': 1, 'USD': 1.17, 'GBP': 0.87 };
-
-// Fetch tassi aggiornati (opzionale, per aggiornamenti real-time nel frontend)
-try {
-  const ratesResponse = await fetch(`${WEB_APP_URL}?action=get_exchange_rates&t=${Date.now()}`);
-  if (ratesResponse.ok) {
-    const ratesData = await ratesResponse.json();
-    if (ratesData.success && ratesData.rates) {
-      exchangeRates = ratesData.rates;
-    }
-  }
-} catch (e) {
-  console.log('ℹ️ Uso tassi fallback:', e);
-}
+    // 📄 Tassi di cambio fissi (aggiornati periodicamente)
+const exchangeRates = { 'EUR': 1, 'USD': 1.17, 'GBP': 0.87 };
     
     // 🌐 CONFIGURAZIONE PER LINGUA
 const localeConfig = {
@@ -1631,4 +1618,5 @@ function showValidationError(message, type) {
     if (overlay.parentNode) overlay.remove();
   }, 5000);
 }
+
 
