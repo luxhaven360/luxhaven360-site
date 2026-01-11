@@ -164,8 +164,8 @@ function formatPrice(price, originalCurrency = 'EUR') {
     const amount = parseFloat(price) || 0;
     const currentLang = (window.i18n && window.i18n()) ? window.i18n().currentLang : 'it';
     
-    // 📄 Tassi di cambio fissi (aggiornati periodicamente)
-const exchangeRates = { 'EUR': 1, 'USD': 1.17, 'GBP': 0.87 };
+    // 📄 Tassi di cambio dinamici (caricati dal backend)
+let exchangeRates = { 'EUR': 1, 'USD': 1.17, 'GBP': 0.87 }; // ← Cambiato da const a let
     
     // 🌐 CONFIGURAZIONE PER LINGUA
 const localeConfig = {
@@ -237,6 +237,28 @@ const localeConfig = {
         return `${config.symbol}${formatted}`;
     } else {
         return `${formatted} ${config.symbol}`;
+    }
+}
+
+/**
+ * 💱 Carica tassi di cambio aggiornati dal backend
+ * Chiamata UNA VOLTA all'avvio dell'app
+ */
+async function loadExchangeRates() {
+    try {
+        const response = await fetch(`${WEB_APP_URL}?action=get_exchange_rates&t=${Date.now()}`);
+        const data = await response.json();
+        
+        if (data.success && data.rates) {
+            exchangeRates = data.rates;
+            console.log('✅ Tassi di cambio aggiornati:', exchangeRates);
+            console.log('📅 Ultimo aggiornamento:', data.updated);
+            
+            // ♻️ Aggiorna tutti i prezzi visibili con i nuovi tassi
+            updateAllPricesForLanguage();
+        }
+    } catch (error) {
+        console.warn('⚠️ Errore caricamento tassi, uso fallback:', error);
     }
 }
 
@@ -1618,5 +1640,6 @@ function showValidationError(message, type) {
     if (overlay.parentNode) overlay.remove();
   }, 5000);
 }
+
 
 
