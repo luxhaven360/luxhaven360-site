@@ -240,28 +240,6 @@ const localeConfig = {
     }
 }
 
-/**
- * 💱 Carica tassi di cambio aggiornati dal backend
- * Chiamata UNA VOLTA all'avvio dell'app
- */
-async function loadExchangeRates() {
-    try {
-        const response = await fetch(`${WEB_APP_URL}?action=get_exchange_rates&t=${Date.now()}`);
-        const data = await response.json();
-        
-        if (data.success && data.rates) {
-            exchangeRates = data.rates;
-            console.log('✅ Tassi di cambio aggiornati:', exchangeRates);
-            console.log('📅 Ultimo aggiornamento:', data.updated);
-            
-            // ♻️ Aggiorna tutti i prezzi visibili con i nuovi tassi
-            updateAllPricesForLanguage();
-        }
-    } catch (error) {
-        console.warn('⚠️ Errore caricamento tassi, uso fallback:', error);
-    }
-}
-
 // funzione per creare una card prodotto
 function createProductCard(prod, defaultCta) {
     // container
@@ -688,6 +666,28 @@ function updateAllPricesForLanguage() {
             }
         }
     });
+}
+
+/**
+ * 💱 Carica tassi di cambio aggiornati dal backend
+ * Chiamata UNA VOLTA all'avvio dell'app
+ */
+async function loadExchangeRates() {
+    try {
+        const response = await fetch(`${WEB_APP_URL}?action=get_exchange_rates&t=${Date.now()}`);
+        const data = await response.json();
+        
+        if (data.success && data.rates) {
+            exchangeRates = data.rates;
+            console.log('✅ Tassi di cambio aggiornati:', exchangeRates);
+            console.log('📅 Ultimo aggiornamento:', data.updated);
+            
+            // ♻️ Aggiorna tutti i prezzi visibili con i nuovi tassi
+            updateAllPricesForLanguage();
+        }
+    } catch (error) {
+        console.warn('⚠️ Errore caricamento tassi, uso fallback:', error);
+    }
 }
 
 /**
@@ -1640,6 +1640,7 @@ function showValidationError(message, type) {
     if (overlay.parentNode) overlay.remove();
   }, 5000);
 }
+
 
 
 
