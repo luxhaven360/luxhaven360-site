@@ -11,6 +11,8 @@
 <script src="../translations.js"></script>
 <script src="translations-pdp.js"></script>
 <script src="i18n-pdp.js"></script>
+
+    <script src="price-manager.js"></script>
     
     <style>
         * {
@@ -1691,19 +1693,6 @@ if (messageEl) {
             return new URLSearchParams(window.location.search).get(name);
         }
 
-        function formatPrice(p, currency = 'EUR') {
-    const i18n = window.i18nPDP();
-    if (i18n) {
-        return i18n.formatPrice(p, currency);
-    }
-    // Fallback
-    try { 
-        return new Intl.NumberFormat('it-IT', { style: 'currency', currency }).format(p); 
-    } catch (e) { 
-        return p + ' ' + currency; 
-    }
-}
-
         function formatCount(n) {
             try { return new Intl.NumberFormat('it-IT').format(n); } 
             catch (e) { return n; }
@@ -2511,6 +2500,7 @@ if (!emailDomain || !validDomains.includes(emailDomain)) {
 
             // 4. Popola il prodotto
             const prod = data.product;
+            await loadExchangeRates(); // Carica tassi PRIMA di formattare
             populateProduct(prod);
             
             productLoaded = true;
@@ -2541,6 +2531,16 @@ if (!emailDomain || !validDomains.includes(emailDomain)) {
         function populateProduct(prod) {
             document.getElementById('productTitle').textContent = prod.title || 'Prodotto';
             document.getElementById('productDesc').textContent = prod.desc || '';
+
+            // ✅ Salva prezzi originali come data attributes (per aggiornamento dinamico)
+if (priceContainer) {
+    priceContainer.dataset.originalPrice = prod.price;
+    priceContainer.dataset.originalCurrency = prod.currency || 'EUR';
+    if (prod.discountPrice) {
+        priceContainer.dataset.discountPrice = prod.discountPrice;
+    }
+}
+            
             // === GESTIONE PREZZO CON/SENZA SCONTO ===
 const priceContainer = document.getElementById('productPrice');
 
@@ -2982,68 +2982,6 @@ function closeModal(modalId) {
     }
 }
 
-        /**
- * Aggiorna tutti i prezzi con la nuova lingua/valuta
- */
-function updateAllPricesForLanguage() {
-    const i18n = window.i18nPDP();
-    if (!i18n) return;
-    
-    // In cart.html: aggiorna summary
-    if (typeof updateSummary === 'function') {
-        updateSummary();
-    }
-    
-    // ✅ AGGIUNTO: Verifica che currentProduct esista (solo in pdp-products.html)
-    if (typeof currentProduct !== 'undefined' && currentProduct && currentProduct.price) {
-        const priceContainer = document.getElementById('productPrice');
-        if (priceContainer) {
-            if (currentProduct.discountPrice && currentProduct.discountPrice < currentProduct.price) {
-                const discountPercent = Math.round(((currentProduct.price - currentProduct.discountPrice) / currentProduct.price) * 100);
-                
-                priceContainer.innerHTML = `
-                    <div class="price-container">
-                        <div class="price-original">${i18n.formatPrice(currentProduct.price, currentProduct.currency || 'EUR')}</div>
-                        <div class="price-row">
-                            <div class="price-discounted">${i18n.formatPrice(currentProduct.discountPrice, currentProduct.currency || 'EUR')}</div>
-                            <span class="discount-badge">-${discountPercent}%</span>
-                        </div>
-                    </div>
-                `;
-            } else {
-                priceContainer.innerHTML = `<div class="price">${i18n.formatPrice(currentProduct.price, currentProduct.currency || 'EUR')}</div>`;
-            }
-        }
-    }
-    
-    // Aggiorna prezzi nelle card (se presenti)
-    document.querySelectorAll('.card').forEach(card => {
-        const originalPrice = parseFloat(card.dataset.originalPrice);
-        const originalCurrency = card.dataset.originalCurrency || 'EUR';
-        
-        if (!originalPrice) return;
-        
-        const discountPrice = parseFloat(card.dataset.discountPrice);
-        const hasDiscount = discountPrice && discountPrice < originalPrice;
-        
-        if (hasDiscount) {
-            const originalPriceEl = card.querySelector('div[style*="text-decoration: line-through"]');
-            if (originalPriceEl) {
-                originalPriceEl.textContent = i18n.formatPrice(originalPrice, originalCurrency);
-            }
-            
-            const discountedPriceEl = card.querySelector('div[style*="background-clip: text"]');
-            if (discountedPriceEl && discountedPriceEl.parentElement.style.display === 'flex') {
-                discountedPriceEl.textContent = i18n.formatPrice(discountPrice, originalCurrency);
-            }
-        } else {
-            const priceElement = card.querySelector('.card-price');
-            if (priceElement) {
-                priceElement.textContent = i18n.formatPrice(originalPrice, originalCurrency);
-            }
-        }
-    });
-}
         // Ascolta cambio lingua da altre pagine
 window.addEventListener('storage', (event) => {
     if (event.key === 'lh360_lang' && event.newValue) {
@@ -3063,3 +3001,4 @@ document.addEventListener('languageChanged', () => {
     </script>
 </body>
 </html>
+
