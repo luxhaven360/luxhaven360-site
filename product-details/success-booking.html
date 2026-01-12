@@ -861,43 +861,76 @@
         }
 
         /**
-         * ✅ Aggiorna il messaggio "Prossimi Passi" in base alla categoria (TRADOTTO)
-         */
-        function updateNextStepsMessage(category) {
-            const i18n = window.i18nPDP && window.i18nPDP();
-            if (!i18n) return;
-            
-            const messagesMap = {
-                'SUPERCAR': 'booking_next_steps_supercars',
-                'IMMOBILI': 'booking_next_steps_properties',
-                'ESPERIENZE': 'booking_next_steps_experiences'
-            };
-            
-            const messageKey = messagesMap[category] || 'booking_next_steps_experiences';
-            const message = i18n.t(messageKey);
-            
-            const infoSection = document.querySelector('#nextStepsText');
-            if (infoSection) {
-                infoSection.textContent = message;
-            }
-        }
+ * ✅ Aggiorna il messaggio "Prossimi Passi" in base alla categoria (TRADOTTO)
+ */
+function updateNextStepsMessage(category) {
+    const i18n = window.i18nPDP && window.i18nPDP();
+    if (!i18n) return;
+    
+    const messagesMap = {
+        'SUPERCAR': 'booking_next_steps_supercars',
+        'SUPERCARS': 'booking_next_steps_supercars', // Aggiungi questo
+        'IMMOBILI': 'booking_next_steps_properties',
+        'PROPERTIES': 'booking_next_steps_properties', // Aggiungi questo
+        'ESPERIENZE': 'booking_next_steps_experiences',
+        'EXPERIENCES': 'booking_next_steps_experiences' // Aggiungi questo
+    };
+    
+    const messageKey = messagesMap[category.toUpperCase()] || 'booking_next_steps_experiences';
+    const message = i18n.t(messageKey);
+    
+    const infoSection = document.querySelector('#nextStepsText');
+    if (infoSection) {
+        infoSection.textContent = message;
+    }
+}
+
+        // ✅ Aggiorna "Prossimi Passi" quando cambia lingua
+document.addEventListener('languageChanged', () => {
+    if (window.currentBookingCategory) {
+        updateNextStepsMessage(window.currentBookingCategory);
+    }
+});
 
         /**
-         * ✅ Traduce il badge categoria dinamicamente
-         */
-        function translateCategoryBadge(category) {
-            const i18n = window.i18nPDP && window.i18nPDP();
-            if (!i18n) return category;
-            
-            const categoryMap = {
-                'IMMOBILI': 'booking_category_properties',
-                'SUPERCAR': 'booking_category_supercars',
-                'ESPERIENZE': 'booking_category_experiences'
-            };
-            
-            const key = categoryMap[category];
-            return key ? i18n.t(key) : category;
-        }
+ * ✅ Traduce il badge categoria dinamicamente
+ */
+function translateCategoryBadge(category) {
+    const i18n = window.i18nPDP && window.i18nPDP();
+    if (!i18n) return category;
+    
+    const categoryMap = {
+        'IMMOBILI': 'booking_category_properties',
+        'PROPERTIES': 'booking_category_properties', // Aggiungi questo
+        'SUPERCAR': 'booking_category_supercars',
+        'SUPERCARS': 'booking_category_supercars',   // Aggiungi questo
+        'ESPERIENZE': 'booking_category_experiences',
+        'EXPERIENCES': 'booking_category_experiences' // Aggiungi questo
+    };
+    
+    const key = categoryMap[category.toUpperCase()]; // Aggiungi .toUpperCase()
+    return key ? i18n.t(key) : category;
+}
+
+        /**
+ * ✅ Aggiorna badge categoria quando cambia lingua
+ */
+function updateCategoryBadge() {
+    const badgeElement = document.getElementById('categoryBadge');
+    if (!badgeElement) return;
+    
+    // Recupera la categoria originale salvata come data-attribute
+    const originalCategory = badgeElement.dataset.originalCategory;
+    if (!originalCategory) return;
+    
+    const translatedText = translateCategoryBadge(originalCategory);
+    badgeElement.textContent = translatedText;
+}
+
+// Ascolta il cambio lingua
+document.addEventListener('languageChanged', () => {
+    updateCategoryBadge();
+});
 
         /**
          * 📅 Formatta data per visualizzazione (gestisce stringhe E Date objects)
@@ -930,6 +963,111 @@
             }
         }
 
+        /**
+ * 💰 Formatta prezzo con valuta corretta per la lingua
+ */
+function formatPriceForLanguage(amount, originalCurrency = 'EUR') {
+    const i18n = window.i18nPDP && window.i18nPDP();
+    if (!i18n) return amount;
+    
+    return i18n.formatPrice(amount, originalCurrency);
+}
+
+/**
+ * 📅 Formatta data in base alla lingua
+ */
+function formatDateForLanguage(dateValue) {
+    if (!dateValue) return '';
+    
+    const i18n = window.i18nPDP && window.i18nPDP();
+    if (!i18n) return formatDateDisplay(dateValue); // Fallback
+    
+    // Determina locale in base alla lingua
+    const localeMap = {
+        'it': 'it-IT',
+        'en': 'en-US',
+        'fr': 'fr-FR',
+        'de': 'de-DE',
+        'es': 'es-ES'
+    };
+    
+    const locale = localeMap[i18n.currentLang] || 'it-IT';
+    
+    // Se è già una stringa formattata, convertila in Date
+    let dateObj;
+    if (typeof dateValue === 'string' && !dateValue.includes('GMT') && !dateValue.includes('T')) {
+        // Prova a parsare formato italiano "15 Gennaio 2026"
+        const monthsIt = ['gennaio', 'febbraio', 'marzo', 'aprile', 'maggio', 'giugno', 
+                          'luglio', 'agosto', 'settembre', 'ottobre', 'novembre', 'dicembre'];
+        const match = dateValue.match(/(\d+)\s+(\w+)\s+(\d{4})/i);
+        if (match) {
+            const day = parseInt(match[1]);
+            const monthName = match[2].toLowerCase();
+            const year = parseInt(match[3]);
+            const monthIndex = monthsIt.indexOf(monthName);
+            if (monthIndex !== -1) {
+                dateObj = new Date(year, monthIndex, day);
+            }
+        }
+    }
+    
+    if (!dateObj) {
+        dateObj = dateValue instanceof Date ? dateValue : new Date(dateValue);
+    }
+    
+    if (isNaN(dateObj.getTime())) {
+        return String(dateValue);
+    }
+    
+    const options = { 
+        day: 'numeric', 
+        month: 'long', 
+        year: 'numeric' 
+    };
+    
+    return dateObj.toLocaleDateString(locale, options);
+}
+
+/**
+ * 🕐 Formatta orario/periodo in base alla lingua
+ */
+function formatTimeForLanguage(timeValue) {
+    if (!timeValue) return '';
+    
+    const i18n = window.i18nPDP && window.i18nPDP();
+    if (!i18n) return timeValue;
+    
+    // Se contiene "giorni" o "days", traduci
+    if (timeValue.toLowerCase().includes('giorni') || 
+        timeValue.toLowerCase().includes('giorno') ||
+        timeValue.toLowerCase().includes('days') ||
+        timeValue.toLowerCase().includes('day')) {
+        
+        const num = timeValue.match(/\d+/);
+        if (num) {
+            const count = parseInt(num[0]);
+            const dayTranslations = {
+                'it': count === 1 ? 'Giorno' : 'Giorni',
+                'en': count === 1 ? 'Day' : 'Days',
+                'fr': count === 1 ? 'Jour' : 'Jours',
+                'de': count === 1 ? 'Tag' : 'Tage',
+                'es': count === 1 ? 'Día' : 'Días'
+            };
+            
+            const dayWord = dayTranslations[i18n.currentLang] || 'Giorni';
+            return `${count} ${dayWord}`;
+        }
+    }
+    
+    // Per "Da confermare" o "To be confirmed"
+    if (timeValue === '—' || timeValue.toLowerCase().includes('confermare') || 
+        timeValue.toLowerCase().includes('confirm')) {
+        return i18n.t('booking_to_confirm');
+    }
+    
+    return timeValue;
+}
+
         // ✅ Chiamata API per recuperare dettagli (INTEGRATA CON TRADUZIONI)
         fetch(`${WEB_APP_URL}?action=get_booking_details&session_id=${identifier}`)
             .then(response => response.json())
@@ -943,19 +1081,35 @@
                 console.log('📋 Categoria:', data.category);
                 console.log('🆔 SKU/Codice:', data.code);
                 
-                // ✅ TRADUCI CATEGORIA BADGE
+                // ✅ TRADUCI CATEGORIA BADGE E SALVA ORIGINALE
+                const badgeElement = document.getElementById('categoryBadge');
+                badgeElement.dataset.originalCategory = data.category; // Salva originale
                 const translatedCategory = translateCategoryBadge(data.category);
-                document.getElementById('categoryBadge').textContent = translatedCategory;
+                badgeElement.textContent = translatedCategory;
                 
-                // ✅ Popola campi con dati reali
-                document.getElementById('serviceType').textContent = data.service;
-                document.getElementById('bookingDate').textContent = formatDateDisplay(data.date);
-                document.getElementById('bookingPeriod').textContent = data.time || '—';
-                document.getElementById('totalAmount').textContent = data.amount;
-                document.getElementById('bookingCode').textContent = data.code;
+                // ✅ Popola campi con dati reali E SALVA ORIGINALI
+document.getElementById('serviceType').textContent = data.service;
+document.getElementById('bookingDate').textContent = formatDateDisplay(data.date);
+document.getElementById('bookingPeriod').textContent = data.time || '—';
+document.getElementById('totalAmount').textContent = data.amount;
+document.getElementById('bookingCode').textContent = data.code;
+
+// ✅ NUOVO: Salva valori originali per aggiornamenti futuri
+window.bookingDataOriginal = {
+    service: data.service,
+    date: data.date,
+    time: data.time || '—',
+    amount: parseFloat(data.amount.replace(/[^0-9.]/g, '')), // Estrai numero
+    code: data.code,
+    category: data.category,
+    productImage: data.productImage
+};
                 
                 // ✅ Aggiorna testo "Prossimi Passi" (TRADOTTO)
                 updateNextStepsMessage(data.category);
+
+                // ✅ NUOVO: Salva categoria per aggiornamenti futuri
+                window.currentBookingCategory = data.category; // Aggiungi questa riga
                 
                 // ✅ Imposta sfondo con immagine prodotto
                 if (data.productImage) {
@@ -1000,6 +1154,42 @@
         function handleReturnHome() {
             window.location.href = 'https://luxhaven360.github.io/luxhaven360-site/';
         }
+
+        /**
+ * 🔄 Aggiorna tutti i campi formattati quando cambia lingua
+ */
+function updateAllFieldsForLanguage() {
+    if (!window.bookingDataOriginal) return;
+    
+    const data = window.bookingDataOriginal;
+    
+    // Aggiorna data
+    const dateEl = document.getElementById('bookingDate');
+    if (dateEl) {
+        dateEl.textContent = formatDateForLanguage(data.date);
+    }
+    
+    // Aggiorna orario/periodo
+    const timeEl = document.getElementById('bookingPeriod');
+    if (timeEl) {
+        timeEl.textContent = formatTimeForLanguage(data.time);
+    }
+    
+    // Aggiorna prezzo
+    const amountEl = document.getElementById('totalAmount');
+    if (amountEl) {
+        amountEl.textContent = formatPriceForLanguage(data.amount);
+    }
+}
+
+// ✅ Ascolta cambio lingua e aggiorna tutto
+document.addEventListener('languageChanged', () => {
+    updateAllFieldsForLanguage();
+    updateCategoryBadge();
+    if (window.currentBookingCategory) {
+        updateNextStepsMessage(window.currentBookingCategory);
+    }
+});
     </script>
     
     <script>
