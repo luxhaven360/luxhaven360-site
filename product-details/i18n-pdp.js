@@ -313,6 +313,44 @@ class I18nPDP {
     
     return amount.toFixed(decimals).replace('.', decimal);
   }
+
+  /**
+ * Formatta orario in base alla lingua (24h o 12h)
+ * @param {string} time - Orario in formato "HH:MM" (es: "17:00")
+ * @returns {string} - Orario formattato per la lingua corrente
+ */
+formatTime(time) {
+  if (!time || time === '—' || time === 'Da definire') return time;
+  
+  // Parse orario (formato atteso: "HH:MM")
+  const match = time.match(/(\d{1,2}):(\d{2})/);
+  if (!match) return time;
+  
+  const hours = parseInt(match[1]);
+  const minutes = match[2];
+  
+  // Configurazione formato per lingua
+  const timeConfig = {
+    it: { format: '24h', separator: ':' },  // 17:00
+    en: { format: '12h', separator: ':' },  // 5:00 PM
+    fr: { format: '24h', separator: ':' },  // 17:00
+    de: { format: '24h', separator: ':' },  // 17:00
+    es: { format: '24h', separator: ':' }   // 17:00
+  };
+  
+  const config = timeConfig[this.currentLang] || timeConfig.it;
+  
+  if (config.format === '12h') {
+    // Formato 12h con AM/PM (inglese)
+    const period = hours >= 12 ? 'PM' : 'AM';
+    const displayHours = hours % 12 || 12; // 0 diventa 12
+    return `${displayHours}${config.separator}${minutes} ${period}`;
+  } else {
+    // Formato 24h
+    const displayHours = hours.toString().padStart(2, '0');
+    return `${displayHours}${config.separator}${minutes}`;
+  }
+}
 }
 
 // Inizializza sistema i18n
