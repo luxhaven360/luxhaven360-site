@@ -644,66 +644,95 @@
     <script src="../connection-monitor.js"></script>
 
     <script>
-    // 🎯 Sistema messaggi dinamici loader TRADOTTO
-    (function initLoaderMessages() {
-        // ✅ Aspetta che i18n sia pronto
-        function waitForI18n() {
-            const i18n = window.i18nPDP && window.i18nPDP();
-            if (!i18n) {
-                setTimeout(waitForI18n, 50);
-                return;
-            }
-            
-            // Messaggi tradotti
-            const messages = [
-                i18n.t('booking_loader_msg1'),
-                i18n.t('booking_loader_msg2'),
-                i18n.t('booking_loader_msg3'),
-                i18n.t('booking_loader_msg4'),
-                i18n.t('booking_loader_msg5'),
-                i18n.t('booking_loader_msg6'),
-                i18n.t('booking_loader_msg7')
-            ];
-            
-            let currentIndex = 0;
-            const messageEl = document.getElementById('loaderMessage');
-            
-            if (!messageEl) return;
-            
-            // Mostra primo messaggio
-            setTimeout(() => {
-                messageEl.style.opacity = '1';
-            }, 300);
-            
-            // Cambia messaggio ogni 2 secondi
-            const interval = setInterval(() => {
-                messageEl.style.opacity = '0';
-                
-                setTimeout(() => {
-                    currentIndex = (currentIndex + 1) % messages.length;
-                    messageEl.textContent = messages[currentIndex];
-                    messageEl.style.opacity = '1';
-                }, 600);
-            }, 2000);
-            
-            // Cleanup quando loader viene rimosso
-            const observer = new MutationObserver((mutations) => {
-                mutations.forEach((mutation) => {
-                    mutation.removedNodes.forEach((node) => {
-                        if (node.id === 'pageLoader') {
-                            clearInterval(interval);
-                            observer.disconnect();
-                        }
-                    });
-                });
-            });
-            
-            observer.observe(document.body, { childList: true });
+// 🎯 Sistema messaggi dinamici loader TRADOTTO + AGGIORNAMENTO DINAMICO
+(function initLoaderMessages() {
+    let loaderInterval = null;
+    let currentIndex = 0;
+    
+    // ✅ Funzione per inizializzare/aggiornare i messaggi
+    function setupMessages() {
+        const i18n = window.i18nPDP && window.i18nPDP();
+        if (!i18n) return null;
+        
+        return [
+            i18n.t('booking_loader_msg1'),
+            i18n.t('booking_loader_msg2'),
+            i18n.t('booking_loader_msg3'),
+            i18n.t('booking_loader_msg4'),
+            i18n.t('booking_loader_msg5'),
+            i18n.t('booking_loader_msg6'),
+            i18n.t('booking_loader_msg7')
+        ];
+    }
+    
+    // ✅ Funzione per avviare la rotazione messaggi
+    function startMessageRotation(messages) {
+        const messageEl = document.getElementById('loaderMessage');
+        if (!messageEl || !messages) return;
+        
+        // Ferma rotazione precedente se esiste
+        if (loaderInterval) {
+            clearInterval(loaderInterval);
         }
         
-        waitForI18n();
-    })();
-    </script>
+        // Mostra primo messaggio
+        setTimeout(() => {
+            messageEl.textContent = messages[currentIndex];
+            messageEl.style.opacity = '1';
+        }, 300);
+        
+        // Cambia messaggio ogni 2 secondi
+        loaderInterval = setInterval(() => {
+            messageEl.style.opacity = '0';
+            
+            setTimeout(() => {
+                currentIndex = (currentIndex + 1) % messages.length;
+                messageEl.textContent = messages[currentIndex];
+                messageEl.style.opacity = '1';
+            }, 600);
+        }, 2000);
+    }
+    
+    // ✅ Aspetta che i18n sia pronto e avvia
+    function waitForI18n() {
+        const messages = setupMessages();
+        if (!messages) {
+            setTimeout(waitForI18n, 50);
+            return;
+        }
+        
+        startMessageRotation(messages);
+        
+        // Cleanup quando loader viene rimosso
+        const observer = new MutationObserver((mutations) => {
+            mutations.forEach((mutation) => {
+                mutation.removedNodes.forEach((node) => {
+                    if (node.id === 'pageLoader') {
+                        if (loaderInterval) clearInterval(loaderInterval);
+                        observer.disconnect();
+                    }
+                });
+            });
+        });
+        
+        observer.observe(document.body, { childList: true });
+    }
+    
+    // ✅ LISTENER: Aggiorna messaggi al cambio lingua
+    document.addEventListener('languageChanged', () => {
+        const loader = document.getElementById('pageLoader');
+        if (loader && loader.style.display !== 'none') {
+            const messages = setupMessages();
+            if (messages) {
+                currentIndex = 0; // Reset indice
+                startMessageRotation(messages);
+            }
+        }
+    });
+    
+    waitForI18n();
+})();
+</script>
     
     <div class="container">
         <div class="confirmation-card">
