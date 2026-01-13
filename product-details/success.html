@@ -2178,31 +2178,31 @@ function updateTimeline(data) {
 }
 
 function loadPurchasedItems() {
-    // *** 3. MODIFICA INIZIO: USA DATI PERSISTENTI ***
-    // const cartRaw = localStorage.getItem('lh360_cart'); // VECCHIO
-    // const cart = cartRaw ? JSON.parse(cartRaw) : []; // VECCHIO
-    const cart = _persistentCart; // NUOVO
-    // *** 3. MODIFICA FINE ***
+    validateCartPrices();
     
+    const cart = _persistentCart;
     const itemsContainer = document.querySelector('.summary-items');
-    const subtotalElem = document.querySelector('.summary-totals .summary-row:nth-child(1) span:last-child');
-    const shippingElem = document.querySelector('.summary-totals .summary-row:nth-child(2) span:last-child');
-    const totalElem = document.querySelector('.summary-total span:last-child');
+    const subtotalElem = document.getElementById('summarySubtotal');
+    const shippingElem = document.getElementById('summaryShipping');
+    const totalElem = document.getElementById('summaryTotal');
 
     if (!itemsContainer) return;
 
     itemsContainer.innerHTML = '';
 
     if (cart.length === 0) {
-        itemsContainer.innerHTML = '<div style="padding:1rem; color:#a1a1aa; text-align:center;">Dettagli articoli non disponibili (Sessione scaduta)</div>';
-        // Non calcoliamo i totali se il carrello è vuoto
+        const i18n = window.i18nPDP && window.i18nPDP();
+        const emptyMsg = i18n ? i18n.t('success_cart_empty') : 'Dettagli articoli non disponibili (Sessione scaduta)';
+        
+        itemsContainer.innerHTML = `<div style="padding:1rem; color:#a1a1aa; text-align:center;">${emptyMsg}</div>`;
+        
         if (subtotalElem) subtotalElem.textContent = `€ 0,00`;
         if (shippingElem) shippingElem.textContent = `€ 0,00`;
         if (totalElem) totalElem.textContent = `€ 0,00`;
         return;
     }
 
-    let subtotal = 0; // Lo ricalcoliamo qui solo per l'UI
+    let subtotal = 0;
 
     const colorNames = {
         '#000000': 'Nero', '#FFFFFF': 'Bianco', '#008000': 'Verde', 
@@ -2210,103 +2210,107 @@ function loadPurchasedItems() {
     };
 
     cart.forEach(item => {
-    // ⭐ FIX: Calcola prezzo finale considerando sconto di default
-    const hasDiscount = item.discountPrice && item.discountPrice < item.price;
-    const originalPrice = parseFloat(item.price) || 0;
-    const finalPrice = hasDiscount ? parseFloat(item.discountPrice) : originalPrice;
-    const itemQty = parseInt(item.qty) || 1;
-    
-    subtotal += finalPrice * itemQty; // Usa prezzo finale per subtotal
+        const hasDiscount = item.discountPrice && item.discountPrice < item.price;
+        const originalPrice = parseFloat(item.price) || 0;
+        const finalPrice = hasDiscount ? parseFloat(item.discountPrice) : originalPrice;
+        const itemQty = parseInt(item.qty) || 1;
+        
+        subtotal += finalPrice * itemQty;
 
-    let displayColor = item.color || '';
-    if (displayColor.startsWith('#') && colorNames[displayColor]) {
-        displayColor = colorNames[displayColor];
-    }
-    
-    let variantText = '';
-    if(displayColor) variantText += displayColor;
-    if(displayColor && item.size) variantText += ' · ';
-    if(item.size) variantText += `Taglia ${item.size}`;
-    if(!variantText) variantText = 'Taglia Unica';
+        let displayColor = item.color || '';
+        if (displayColor.startsWith('#') && colorNames[displayColor]) {
+            displayColor = colorNames[displayColor];
+        }
+        
+        const i18n = window.i18nPDP && window.i18nPDP();
+        
+        let variantText = '';
+        if(displayColor) variantText += displayColor;
+        if(displayColor && item.size) variantText += ' · ';
+        if(item.size) {
+            const sizeLabel = i18n ? i18n.t('cart_item_size_label') : 'Taglia';
+            variantText += `${sizeLabel} ${item.size}`;
+        }
+        if(!variantText) variantText = i18n ? i18n.t('success_size_one') : 'Taglia Unica';
 
-    const div = document.createElement('div');
-    div.className = 'summary-item';
-    
-    // ⭐ FIX: Mostra prezzo barrato se c'è sconto (come in cart.html)
-    const priceHtml = hasDiscount 
-        ? `
-            <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 0.25rem;">
-                <div style="font-size: 0.875rem; color: #71717a; text-decoration: line-through;">
-                    € ${(originalPrice * itemQty).toLocaleString('it-IT', {minimumFractionDigits: 2})}
+        const div = document.createElement('div');
+        div.className = 'summary-item';
+        
+        const priceHtml = hasDiscount 
+            ? `
+                <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 0.25rem;">
+                    <div style="font-size: 0.875rem; color: #71717a; text-decoration: line-through;">
+                        ${i18n ? i18n.formatPrice(originalPrice * itemQty, item.currency || 'EUR') : `€ ${(originalPrice * itemQty).toLocaleString('it-IT', {minimumFractionDigits: 2})}`}
+                    </div>
+                    <div style="font-size: 1.125rem; font-weight: 600; color: #D4AF37;">
+                        ${i18n ? i18n.formatPrice(finalPrice * itemQty, item.currency || 'EUR') : `€ ${(finalPrice * itemQty).toLocaleString('it-IT', {minimumFractionDigits: 2})}`}
+                    </div>
                 </div>
-                <div style="font-size: 1.125rem; font-weight: 600; color: #D4AF37;">
-                    € ${(finalPrice * itemQty).toLocaleString('it-IT', {minimumFractionDigits: 2})}
-                </div>
+            `
+            : i18n ? i18n.formatPrice(finalPrice * itemQty, item.currency || 'EUR') : `€ ${(finalPrice * itemQty).toLocaleString('it-IT', {minimumFractionDigits: 2})}`;
+        
+        div.innerHTML = `
+            <div class="summary-item-image">
+                <img src="${item.image || 'https://via.placeholder.com/150'}" alt="${item.title}">
             </div>
-        `
-        : `€ ${(finalPrice * itemQty).toLocaleString('it-IT', {minimumFractionDigits: 2})}`;
-    
-    div.innerHTML = `
-        <div class="summary-item-image">
-            <img src="${item.image || 'https://via.placeholder.com/150'}" alt="${item.title}">
-        </div>
-        <div class="summary-item-details">
-            <div class="summary-item-name">${item.title} <span style="font-size:0.8em; color:#71717a;">(x${itemQty})</span></div>
-            <div class="summary-item-variant">${variantText}</div>
-        </div>
-        <div class="summary-item-price">${priceHtml}</div>
-    `;
-    itemsContainer.appendChild(div);
-});
-
-    // ⭐ FIX: Calcola totale corretto con sconti applicati
-const totalDiscount = _appliedDiscounts.totalDiscount || 0;
-const subtotalAfterDiscount = subtotal - totalDiscount;
-const shippingCost = subtotalAfterDiscount >= 150 ? 0 : 15;
-const finalTotal = subtotal + shippingCost - totalDiscount;
-
-// Aggiorna Subtotale
-if (subtotalElem) subtotalElem.textContent = `€ ${subtotal.toLocaleString('it-IT', {minimumFractionDigits: 2})}`;
-
-// Aggiorna Spedizione (usa la variabile già dichiarata)
-if (shippingElem) {
-    if (shippingCost === 0) {
-        shippingElem.textContent = 'Gratuita';
-        shippingElem.style.color = '#34d399';
-    } else {
-        shippingElem.textContent = `€ ${shippingCost.toLocaleString('it-IT', {minimumFractionDigits: 2})}`;
-        shippingElem.style.color = '#fafafa';
-    }
-}
-
-// ⭐ NUOVO: Mostra/Nascondi riga Sconto
-const discountRow = document.getElementById('discountRow');
-const discountValue = document.getElementById('discountValue');
-const comboBadge = document.getElementById('comboBadge');
-
-if (totalDiscount > 0) {
-    discountRow.style.display = 'flex';
-    discountRow.classList.add('discount-active');
-    discountValue.textContent = `- € ${totalDiscount.toLocaleString('it-IT', {minimumFractionDigits: 2})}`;
-    
-    // Mostra badge COMBO se presente
-    if (_appliedDiscounts.isComboActive && comboBadge) {
-        comboBadge.style.display = 'inline-block';
-    } else if (comboBadge) {
-        comboBadge.style.display = 'none';
-    }
-    
-    console.log('✅ Sconto visualizzato:', {
-        combo: _appliedDiscounts.comboDiscount,
-        coupon: _appliedDiscounts.couponDiscount,
-        totale: totalDiscount
+            <div class="summary-item-details">
+                <div class="summary-item-name">${item.title} <span style="font-size:0.8em; color:#71717a;">(x${itemQty})</span></div>
+                <div class="summary-item-variant">${variantText}</div>
+            </div>
+            <div class="summary-item-price">${priceHtml}</div>
+        `;
+        itemsContainer.appendChild(div);
     });
-} else {
-    discountRow.style.display = 'none';
-}
 
-// Aggiorna Totale Finale
-if (totalElem) totalElem.textContent = `€ ${finalTotal.toLocaleString('it-IT', {minimumFractionDigits: 2})}`;
+    const i18n = window.i18nPDP && window.i18nPDP();
+    
+    const totalDiscount = _appliedDiscounts.totalDiscount || 0;
+    const subtotalAfterDiscount = subtotal - totalDiscount;
+    const shippingCost = subtotalAfterDiscount >= 150 ? 0 : 15;
+    const finalTotal = subtotal + shippingCost - totalDiscount;
+
+    if (subtotalElem) {
+        subtotalElem.textContent = i18n ? i18n.formatPrice(subtotal) : `€ ${subtotal.toLocaleString('it-IT', {minimumFractionDigits: 2})}`;
+    }
+
+    if (shippingElem) {
+        if (shippingCost === 0) {
+            shippingElem.textContent = i18n ? i18n.t('success_summary_free') : 'Gratuita';
+            shippingElem.style.color = '#34d399';
+        } else {
+            shippingElem.textContent = i18n ? i18n.formatPrice(shippingCost) : `€ ${shippingCost.toLocaleString('it-IT', {minimumFractionDigits: 2})}`;
+            shippingElem.style.color = '#fafafa';
+        }
+    }
+
+    const discountRow = document.getElementById('discountRow');
+    const discountValue = document.getElementById('discountValue');
+    const comboBadge = document.getElementById('comboBadge');
+
+    if (totalDiscount > 0) {
+        discountRow.style.display = 'flex';
+        discountRow.classList.add('discount-active');
+        discountValue.textContent = i18n ? `- ${i18n.formatPrice(totalDiscount)}` : `- € ${totalDiscount.toLocaleString('it-IT', {minimumFractionDigits: 2})}`;
+        
+        if (_appliedDiscounts.isComboActive && comboBadge) {
+            comboBadge.textContent = i18n ? i18n.t('success_combo_badge') : 'COMBO';
+            comboBadge.style.display = 'inline-block';
+        } else if (comboBadge) {
+            comboBadge.style.display = 'none';
+        }
+        
+        console.log('✅ Sconto visualizzato:', {
+            combo: _appliedDiscounts.comboDiscount,
+            coupon: _appliedDiscounts.couponDiscount,
+            totale: totalDiscount
+        });
+    } else {
+        discountRow.style.display = 'none';
+    }
+
+    if (totalElem) {
+        totalElem.textContent = i18n ? i18n.formatPrice(finalTotal) : `€ ${finalTotal.toLocaleString('it-IT', {minimumFractionDigits: 2})}`;
+    }
 }
 
         // ===== GESTIONE TRACCIAMENTO DOPO REFRESH =====
@@ -2320,11 +2324,7 @@ document.getElementById('trackOrderBtn').addEventListener('click', function(e) {
 function goToOrdersPage() {
     window.location.href = 'tracking-order.html?view=all&session_expired=true';
 }       
+        
     </script>    
 </body>
 </html>
-
-
-
-
-
