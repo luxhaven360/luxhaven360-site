@@ -559,7 +559,80 @@ booking_config_ex_specs: ["Durata", "Partecipanti max", "Orario / Fascia", "Ritr
     connection_offline_text: "Impossibile connettersi a Internet.<br>Verifica la tua connessione e ricarica la pagina.",
     connection_offline_btn: "Ricarica Pagina",
     connection_restored: "Connessione Ristabilita",
+
+    // TRACKING-ORDER.HTML
+tracking_brand: "LuxHaven360",
+tracking_title: "I Tuoi Ordini",
+tracking_subtitle: "Ordini degli ultimi 30 giorni",
+
+tracking_loading: "Caricamento ordini in corso...",
+
+tracking_empty_icon: "📦",
+tracking_empty_title: "Nessun ordine recente",
+tracking_empty_subtitle: "Non hai ordini negli ultimi 30 giorni",
+tracking_empty_cta: "Inizia a Fare Shopping",
+
+tracking_order_title: "Ordine",
+tracking_order_date_label: "Data ordine:",
+
+tracking_category_label: "Categoria",
+tracking_total_label: "Totale ordine",
+tracking_items_label: "Articoli",
+tracking_items_one: "articolo",
+tracking_items_many: "articoli",
+tracking_delivery_label: "Consegna prevista",
+
+tracking_step_confirmed: "Confermato",
+tracking_step_preparing: "In Preparazione",
+tracking_step_in_transit: "In Transito",
+tracking_step_delivered: "Consegnato",
+
+tracking_products_toggle: "Visualizza dettagli prodotti",
+tracking_product_category_label: "Categoria:",
+
+tracking_session_expired_title: "Sessione Scaduta per Sicurezza",
+tracking_session_expired_text: "Per motivi di sicurezza, la sessione di tracciamento è scaduta. Puoi tornare allo shop e continuare la navigazione premendo il pulsante qui accanto.",
+tracking_session_expired_cta: "← Torna allo Shop",
+
+tracking_recovery_title: "Accesso Sicuro",
+tracking_recovery_subtitle: "Per visualizzare i tuoi ordini recenti, inserisci l'email utilizzata durante il checkout. Ti invieremo un codice di accesso temporaneo.",
+tracking_recovery_email_placeholder: "tua@email.com",
+tracking_recovery_send_btn: "Invia Codice di Sicurezza",
+tracking_recovery_sending: "Invio in corso...",
+
+tracking_verify_title: "Verifica Identità",
+tracking_verify_subtitle_1: "Inserisci il codice di 8 caratteri inviato a",
+tracking_verify_subtitle_2: "Il codice scade in 15 minuti.",
+tracking_verify_code_placeholder: "Codice (es. A1B2C3D4)",
+tracking_verify_btn: "Verifica e Accedi",
+tracking_verify_verifying: "Verifica in corso...",
+tracking_verify_back: "← Usa un'altra email",
+
+tracking_logout_btn: "Cambia Account",
+tracking_logout_modal_title: "Cambiare Account?",
+tracking_logout_modal_text: "Sei sicuro di voler disconnettere questo account? Dovrai reinserire l'email per visualizzare nuovamente i tuoi ordini.",
+tracking_logout_modal_cancel: "Annulla",
+tracking_logout_modal_confirm: "Conferma",
+
+tracking_invalid_email_title: "Email Non Consentita",
+tracking_invalid_email_text: "L'indirizzo email inserito non è valido o non appartiene a un provider riconosciuto. Utilizza un indirizzo email personale verificato (Gmail, Outlook, Yahoo, ecc.).",
+tracking_invalid_email_btn: "Ho capito",
+
+tracking_invalid_code_title: "Codice Non Valido",
+tracking_invalid_code_text: "Il codice inserito non è corretto o è scaduto. Verifica di aver inserito correttamente gli 8 caratteri oppure richiedi un nuovo codice.",
+tracking_invalid_code_btn: "Ho capito",
+
+tracking_nav_prev_aria: "Ordini precedenti",
+tracking_nav_next_aria: "Ordini successivi",
+tracking_page_separator: "/",
+
+tracking_error_load_title: "Impossibile caricare gli ordini",
+tracking_error_network: "Errore server:",
+tracking_error_timeout_title: "⏱️ Caricamento rallentato",
+tracking_error_timeout_text: "La richiesta sta impiegando più tempo del previsto. Controlla la connessione internet e riprova.",
+tracking_error_generic: "Verifica la connessione internet. Se il problema persiste, contatta il supporto.",
   },
+
   
   en: {
     // ============================================
@@ -1052,6 +1125,77 @@ booking_config_ex_specs: ["Duration", "Max Participants", "Time / Slot", "Meetin
     connection_offline_text: "Unable to connect to the Internet.<br>Check your connection and reload the page.",
     connection_offline_btn: "Reload Page",
     connection_restored: "Connection Restored",
+
+    tracking_brand: "LuxHaven360",
+tracking_title: "Your Orders",
+tracking_subtitle: "Orders from the last 30 days",
+
+tracking_loading: "Loading orders...",
+
+tracking_empty_icon: "📦",
+tracking_empty_title: "No recent orders",
+tracking_empty_subtitle: "You have no orders in the last 30 days",
+tracking_empty_cta: "Start Shopping",
+
+tracking_order_title: "Order",
+tracking_order_date_label: "Order date:",
+
+tracking_category_label: "Category",
+tracking_total_label: "Order total",
+tracking_items_label: "Items",
+tracking_items_one: "item",
+tracking_items_many: "items",
+tracking_delivery_label: "Expected delivery",
+
+tracking_step_confirmed: "Confirmed",
+tracking_step_preparing: "Preparing",
+tracking_step_in_transit: "In Transit",
+tracking_step_delivered: "Delivered",
+
+tracking_products_toggle: "View product details",
+tracking_product_category_label: "Category:",
+
+tracking_session_expired_title: "Session Expired for Security",
+tracking_session_expired_text: "For security reasons, the tracking session has expired. You can return to the shop and continue browsing by pressing the button next to this message.",
+tracking_session_expired_cta: "← Back to Shop",
+
+tracking_recovery_title: "Secure Access",
+tracking_recovery_subtitle: "To view your recent orders, enter the email used during checkout. We'll send you a temporary access code.",
+tracking_recovery_email_placeholder: "your@email.com",
+tracking_recovery_send_btn: "Send Security Code",
+tracking_recovery_sending: "Sending...",
+
+tracking_verify_title: "Verify Identity",
+tracking_verify_subtitle_1: "Enter the 8-character code sent to",
+tracking_verify_subtitle_2: "The code expires in 15 minutes.",
+tracking_verify_code_placeholder: "Code (e.g. A1B2C3D4)",
+tracking_verify_btn: "Verify and Access",
+tracking_verify_verifying: "Verifying...",
+tracking_verify_back: "← Use another email",
+
+tracking_logout_btn: "Change Account",
+tracking_logout_modal_title: "Change Account?",
+tracking_logout_modal_text: "Are you sure you want to disconnect this account? You'll need to re-enter your email to view your orders again.",
+tracking_logout_modal_cancel: "Cancel",
+tracking_logout_modal_confirm: "Confirm",
+
+tracking_invalid_email_title: "Email Not Allowed",
+tracking_invalid_email_text: "The email address entered is invalid or doesn't belong to a recognized provider. Use a verified personal email address (Gmail, Outlook, Yahoo, etc.).",
+tracking_invalid_email_btn: "Understood",
+
+tracking_invalid_code_title: "Invalid Code",
+tracking_invalid_code_text: "The code entered is incorrect or has expired. Verify you've entered all 8 characters correctly or request a new code.",
+tracking_invalid_code_btn: "Understood",
+
+tracking_nav_prev_aria: "Previous orders",
+tracking_nav_next_aria: "Next orders",
+tracking_page_separator: "/",
+
+tracking_error_load_title: "Unable to load orders",
+tracking_error_network: "Server error:",
+tracking_error_timeout_title: "⏱️ Loading Delayed",
+tracking_error_timeout_text: "The request is taking longer than expected. Check your internet connection and try again.",
+tracking_error_generic: "Check your internet connection. If the problem persists, contact support.",
   },
   
   fr: {
@@ -1545,6 +1689,77 @@ booking_config_ex_specs: ["Durée", "Participants max", "Horaire / Créneau", "P
     connection_offline_text: "Impossible de se connecter à Internet.<br>Vérifiez votre connexion et rechargez la page.",
     connection_offline_btn: "Recharger la Page",
     connection_restored: "Connexion Rétablie",
+
+    tracking_brand: "LuxHaven360",
+tracking_title: "Vos Commandes",
+tracking_subtitle: "Commandes des 30 derniers jours",
+
+tracking_loading: "Chargement des commandes...",
+
+tracking_empty_icon: "📦",
+tracking_empty_title: "Aucune commande récente",
+tracking_empty_subtitle: "Vous n'avez pas de commandes dans les 30 derniers jours",
+tracking_empty_cta: "Commencer les Achats",
+
+tracking_order_title: "Commande",
+tracking_order_date_label: "Date de commande :",
+
+tracking_category_label: "Catégorie",
+tracking_total_label: "Total commande",
+tracking_items_label: "Articles",
+tracking_items_one: "article",
+tracking_items_many: "articles",
+tracking_delivery_label: "Livraison prévue",
+
+tracking_step_confirmed: "Confirmée",
+tracking_step_preparing: "En Préparation",
+tracking_step_in_transit: "En Transit",
+tracking_step_delivered: "Livrée",
+
+tracking_products_toggle: "Voir détails produits",
+tracking_product_category_label: "Catégorie :",
+
+tracking_session_expired_title: "Session Expirée pour Sécurité",
+tracking_session_expired_text: "Pour des raisons de sécurité, la session de suivi a expiré. Vous pouvez retourner à la boutique et continuer la navigation en appuyant sur le bouton à côté.",
+tracking_session_expired_cta: "← Retour à la Boutique",
+
+tracking_recovery_title: "Accès Sécurisé",
+tracking_recovery_subtitle: "Pour visualiser vos commandes récentes, entrez l'email utilisé lors du paiement. Nous vous enverrons un code d'accès temporaire.",
+tracking_recovery_email_placeholder: "votre@email.com",
+tracking_recovery_send_btn: "Envoyer Code de Sécurité",
+tracking_recovery_sending: "Envoi en cours...",
+
+tracking_verify_title: "Vérifier Identité",
+tracking_verify_subtitle_1: "Entrez le code de 8 caractères envoyé à",
+tracking_verify_subtitle_2: "Le code expire dans 15 minutes.",
+tracking_verify_code_placeholder: "Code (ex. A1B2C3D4)",
+tracking_verify_btn: "Vérifier et Accéder",
+tracking_verify_verifying: "Vérification...",
+tracking_verify_back: "← Utiliser un autre email",
+
+tracking_logout_btn: "Changer Compte",
+tracking_logout_modal_title: "Changer de Compte ?",
+tracking_logout_modal_text: "Êtes-vous sûr de vouloir déconnecter ce compte ? Vous devrez entrer à nouveau votre email pour voir vos commandes.",
+tracking_logout_modal_cancel: "Annuler",
+tracking_logout_modal_confirm: "Confirmer",
+
+tracking_invalid_email_title: "Email Non Autorisé",
+tracking_invalid_email_text: "L'adresse email saisie n'est pas valide ou n'appartient pas à un fournisseur reconnu. Utilisez une adresse email personnelle vérifiée (Gmail, Outlook, Yahoo, etc.).",
+tracking_invalid_email_btn: "J'ai compris",
+
+tracking_invalid_code_title: "Code Non Valide",
+tracking_invalid_code_text: "Le code saisi est incorrect ou a expiré. Vérifiez d'avoir saisi correctement les 8 caractères ou demandez un nouveau code.",
+tracking_invalid_code_btn: "J'ai compris",
+
+tracking_nav_prev_aria: "Commandes précédentes",
+tracking_nav_next_aria: "Commandes suivantes",
+tracking_page_separator: "/",
+
+tracking_error_load_title: "Impossible de charger les commandes",
+tracking_error_network: "Erreur serveur :",
+tracking_error_timeout_title: "⏱️ Chargement Ralenti",
+tracking_error_timeout_text: "La requête prend plus de temps que prévu. Vérifiez votre connexion internet et réessayez.",
+tracking_error_generic: "Vérifiez votre connexion internet. Si le problème persiste, contactez le support.",
   },
   
   de: {
@@ -2039,6 +2254,77 @@ booking_config_ex_specs: ["Dauer", "Max. Teilnehmer", "Uhrzeit / Zeitfenster", "
     cart_loader_msg4: "Vorbereitung des sicheren Checkouts...",
     cart_loader_msg5: "Fast bereit!",
     cart_loader_cart_preparing: "Warenkorb wird vorbereitet...",
+
+    tracking_brand: "LuxHaven360",
+tracking_title: "Ihre Bestellungen",
+tracking_subtitle: "Bestellungen der letzten 30 Tage",
+
+tracking_loading: "Bestellungen werden geladen...",
+
+tracking_empty_icon: "📦",
+tracking_empty_title: "Keine aktuellen Bestellungen",
+tracking_empty_subtitle: "Sie haben keine Bestellungen in den letzten 30 Tagen",
+tracking_empty_cta: "Einkaufen Beginnen",
+
+tracking_order_title: "Bestellung",
+tracking_order_date_label: "Bestelldatum:",
+
+tracking_category_label: "Kategorie",
+tracking_total_label: "Bestellsumme",
+tracking_items_label: "Artikel",
+tracking_items_one: "Artikel",
+tracking_items_many: "Artikel",
+tracking_delivery_label: "Voraussichtliche Lieferung",
+
+tracking_step_confirmed: "Bestätigt",
+tracking_step_preparing: "Wird Vorbereitet",
+tracking_step_in_transit: "Unterwegs",
+tracking_step_delivered: "Zugestellt",
+
+tracking_products_toggle: "Produktdetails anzeigen",
+tracking_product_category_label: "Kategorie:",
+
+tracking_session_expired_title: "Sitzung aus Sicherheitsgründen Abgelaufen",
+tracking_session_expired_text: "Aus Sicherheitsgründen ist die Tracking-Sitzung abgelaufen. Sie können zum Shop zurückkehren und mit dem Navigieren fortfahren, indem Sie auf die Schaltfläche daneben klicken.",
+tracking_session_expired_cta: "← Zurück zum Shop",
+
+tracking_recovery_title: "Sicherer Zugang",
+tracking_recovery_subtitle: "Um Ihre letzten Bestellungen zu sehen, geben Sie die beim Checkout verwendete E-Mail ein. Wir senden Ihnen einen temporären Zugangscode.",
+tracking_recovery_email_placeholder: "ihre@email.com",
+tracking_recovery_send_btn: "Sicherheitscode Senden",
+tracking_recovery_sending: "Wird gesendet...",
+
+tracking_verify_title: "Identität Verifizieren",
+tracking_verify_subtitle_1: "Geben Sie den 8-stelligen Code ein, der an",
+tracking_verify_subtitle_2: "Der Code läuft in 15 Minuten ab.",
+tracking_verify_code_placeholder: "Code (z.B. A1B2C3D4)",
+tracking_verify_btn: "Verifizieren und Zugreifen",
+tracking_verify_verifying: "Wird verifiziert...",
+tracking_verify_back: "← Andere E-Mail verwenden",
+
+tracking_logout_btn: "Konto Wechseln",
+tracking_logout_modal_title: "Konto Wechseln?",
+tracking_logout_modal_text: "Sind Sie sicher, dass Sie dieses Konto trennen möchten? Sie müssen Ihre E-Mail erneut eingeben, um Ihre Bestellungen wieder zu sehen.",
+tracking_logout_modal_cancel: "Abbrechen",
+tracking_logout_modal_confirm: "Bestätigen",
+
+tracking_invalid_email_title: "E-Mail Nicht Zulässig",
+tracking_invalid_email_text: "Die eingegebene E-Mail-Adresse ist ungültig oder gehört nicht zu einem anerkannten Anbieter. Verwenden Sie eine verifizierte persönliche E-Mail-Adresse (Gmail, Outlook, Yahoo usw.).",
+tracking_invalid_email_btn: "Verstanden",
+
+tracking_invalid_code_title: "Ungültiger Code",
+tracking_invalid_code_text: "Der eingegebene Code ist falsch oder abgelaufen. Überprüfen Sie, ob Sie alle 8 Zeichen korrekt eingegeben haben, oder fordern Sie einen neuen Code an.",
+tracking_invalid_code_btn: "Verstanden",
+
+tracking_nav_prev_aria: "Vorherige Bestellungen",
+tracking_nav_next_aria: "Nächste Bestellungen",
+tracking_page_separator: "/",
+
+tracking_error_load_title: "Bestellungen können nicht geladen werden",
+tracking_error_network: "Serverfehler:",
+tracking_error_timeout_title: "⏱️ Ladevorgang Verzögert",
+tracking_error_timeout_text: "Die Anfrage dauert länger als erwartet. Überprüfen Sie Ihre Internetverbindung und versuchen Sie es erneut.",
+tracking_error_generic: "Überprüfen Sie Ihre Internetverbindung. Wenn das Problem weiterhin besteht, wenden Sie sich an den Support.",
   },
   
   es: {
@@ -2533,5 +2819,76 @@ booking_config_ex_specs: ["Duración", "Participantes máx", "Horario / Franja",
     cart_loader_msg4: "Preparando pago seguro...",
     cart_loader_msg5: "¡Casi listo!",
     cart_loader_cart_preparing: "Preparación del carrito en curso...",
+
+    tracking_brand: "LuxHaven360",
+tracking_title: "Tus Pedidos",
+tracking_subtitle: "Pedidos de los últimos 30 días",
+
+tracking_loading: "Cargando pedidos...",
+
+tracking_empty_icon: "📦",
+tracking_empty_title: "No hay pedidos recientes",
+tracking_empty_subtitle: "No tienes pedidos en los últimos 30 días",
+tracking_empty_cta: "Comenzar a Comprar",
+
+tracking_order_title: "Pedido",
+tracking_order_date_label: "Fecha de pedido:",
+
+tracking_category_label: "Categoría",
+tracking_total_label: "Total pedido",
+tracking_items_label: "Artículos",
+tracking_items_one: "artículo",
+tracking_items_many: "artículos",
+tracking_delivery_label: "Entrega prevista",
+
+tracking_step_confirmed: "Confirmado",
+tracking_step_preparing: "En Preparación",
+tracking_step_in_transit: "En Tránsito",
+tracking_step_delivered: "Entregado",
+
+tracking_products_toggle: "Ver detalles productos",
+tracking_product_category_label: "Categoría:",
+
+tracking_session_expired_title: "Sesión Expirada por Seguridad",
+tracking_session_expired_text: "Por motivos de seguridad, la sesión de seguimiento ha expirado. Puedes volver a la tienda y continuar navegando presionando el botón al lado.",
+tracking_session_expired_cta: "← Volver a la Tienda",
+
+tracking_recovery_title: "Acceso Seguro",
+tracking_recovery_subtitle: "Para ver tus pedidos recientes, introduce el email usado durante el pago. Te enviaremos un código de acceso temporal.",
+tracking_recovery_email_placeholder: "tu@email.com",
+tracking_recovery_send_btn: "Enviar Código de Seguridad",
+tracking_recovery_sending: "Enviando...",
+
+tracking_verify_title: "Verificar Identidad",
+tracking_verify_subtitle_1: "Introduce el código de 8 caracteres enviado a",
+tracking_verify_subtitle_2: "El código expira en 15 minutos.",
+tracking_verify_code_placeholder: "Código (ej. A1B2C3D4)",
+tracking_verify_btn: "Verificar y Acceder",
+tracking_verify_verifying: "Verificando...",
+tracking_verify_back: "← Usar otro email",
+
+tracking_logout_btn: "Cambiar Cuenta",
+tracking_logout_modal_title: "¿Cambiar Cuenta?",
+tracking_logout_modal_text: "¿Estás seguro de que quieres desconectar esta cuenta? Deberás ingresar tu email nuevamente para ver tus pedidos.",
+tracking_logout_modal_cancel: "Cancelar",
+tracking_logout_modal_confirm: "Confirmar",
+
+tracking_invalid_email_title: "Email No Permitido",
+tracking_invalid_email_text: "La dirección de email ingresada no es válida o no pertenece a un proveedor reconocido. Utiliza una dirección de email personal verificada (Gmail, Outlook, Yahoo, etc.).",
+tracking_invalid_email_btn: "Entendido",
+
+tracking_invalid_code_title: "Código No Válido",
+tracking_invalid_code_text: "El código ingresado es incorrecto o ha expirado. Verifica haber ingresado correctamente los 8 caracteres o solicita un nuevo código.",
+tracking_invalid_code_btn: "Entendido",
+
+tracking_nav_prev_aria: "Pedidos anteriores",
+tracking_nav_next_aria: "Pedidos siguientes",
+tracking_page_separator: "/",
+
+tracking_error_load_title: "No se pueden cargar los pedidos",
+tracking_error_network: "Error del servidor:",
+tracking_error_timeout_title: "⏱️ Carga Retrasada",
+tracking_error_timeout_text: "La solicitud está tardando más de lo esperado. Verifica tu conexión a internet e intenta nuevamente.",
+tracking_error_generic: "Verifica tu conexión a internet. Si el problema persiste, contacta con soporte.",
   }
 };
