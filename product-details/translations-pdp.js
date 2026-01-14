@@ -223,14 +223,6 @@ const translationsPDP = {
 // ============================================
 
 // Loader Messages
-success_loader_title: "Un momento",
-success_loader_msg1: "Preparazione dei dettagli",
-success_loader_msg2: "Verifica delle informazioni",
-success_loader_msg3: "Conferma in corso",
-success_loader_msg4: "Recupero dati prenotazione",
-success_loader_msg5: "Elaborazione richiesta",
-success_loader_msg6: "Quasi pronto",
-success_loader_msg7: "Finalizzazione",
 success_loader_payment_verify: "Verifica del pagamento...",
 success_loader_payment_confirmed: "Pagamento confermato con successo",
 success_loader_order_registering: "Registrazione del tuo ordine...",
@@ -298,7 +290,8 @@ success_category_lifestyle: "Lifestyle Collections",
 // SUCCESS-BOOKING.HTML - CONFERMA PRENOTAZIONE
 // ============================================
 
-// Loader Messages
+// Loader Messages   
+booking_loader_title: "Un momento",    
 booking_loader_msg1: "Preparazione dei dettagli",
 booking_loader_msg2: "Verifica delle informazioni",
 booking_loader_msg3: "Conferma in corso",
@@ -837,14 +830,6 @@ tracking_error_generic: "Verifica la connessione internet. Se il problema persis
     pdp_error_security: "⚠️ Security error. Reload the page and try again.",
 
     // SUCCESS.HTML
-success_loader_title: "One moment",
-success_loader_msg1: "Preparing details",
-success_loader_msg2: "Verifying information",
-success_loader_msg3: "Confirmation in progress",
-success_loader_msg4: "Retrieving booking data",
-success_loader_msg5: "Processing request",
-success_loader_msg6: "Almost ready",
-success_loader_msg7: "Finalizing",
 success_loader_payment_verify: "Verifying payment...",
 success_loader_payment_confirmed: "Payment confirmed successfully",
 success_loader_order_registering: "Registering your order...",
@@ -901,6 +886,7 @@ success_category_experiences: "Experiences",
 success_category_lifestyle: "Lifestyle Collections",
 
 // SUCCESS-BOOKING.HTML
+booking_loader_title: "One moment",
 booking_loader_msg1: "Preparing details",
 booking_loader_msg2: "Verifying information",
 booking_loader_msg3: "Confirmation in progress",
@@ -1409,14 +1395,6 @@ tracking_error_generic: "Check your internet connection. If the problem persists
     pdp_error_security: "⚠️ Erreur de sécurité. Rechargez la page et réessayez.",
 
     // SUCCESS.HTML
-success_loader_title: "Un instant",
-success_loader_msg1: "Préparation des détails",
-success_loader_msg2: "Vérification des informations",
-success_loader_msg3: "Confirmation en cours",
-success_loader_msg4: "Récupération données réservation",
-success_loader_msg5: "Traitement de la demande",
-success_loader_msg6: "Presque prêt",
-success_loader_msg7: "Finalisation",
 success_loader_payment_verify: "Vérification du paiement...",
 success_loader_payment_confirmed: "Paiement confirmé avec succès",
 success_loader_order_registering: "Enregistrement de votre commande...",
@@ -1473,6 +1451,7 @@ success_category_experiences: "Expériences",
 success_category_lifestyle: "Collections Lifestyle",
 
 // SUCCESS-BOOKING.HTML
+booking_loader_title: "Un instant",    
 booking_loader_msg1: "Préparation des détails",
 booking_loader_msg2: "Vérification des informations",
 booking_loader_msg3: "Confirmation en cours",
@@ -1975,14 +1954,6 @@ tracking_error_generic: "Vérifiez votre connexion internet. Si le problème per
     pdp_error_security: "⚠️ Sicherheitsfehler. Laden Sie die Seite neu und versuchen Sie es erneut.",
 
     // SUCCESS.HTML
-success_loader_title: "Einen Moment",
-success_loader_msg1: "Details vorbereiten",
-success_loader_msg2: "Informationen überprüfen",
-success_loader_msg3: "Bestätigung läuft",
-success_loader_msg4: "Buchungsdaten abrufen",
-success_loader_msg5: "Anfrage verarbeiten",
-success_loader_msg6: "Fast fertig",
-success_loader_msg7: "Fertigstellung",
 success_loader_payment_verify: "Zahlungsüberprüfung...",
 success_loader_payment_confirmed: "Zahlung erfolgreich bestätigt",
 success_loader_order_registering: "Registrierung Ihrer Bestellung...",
@@ -2039,6 +2010,7 @@ success_category_experiences: "Erlebnisse",
 success_category_lifestyle: "Lifestyle-Kollektionen",
 
 // SUCCESS-BOOKING.HTML
+booking_loader_title: "Einen Moment",
 booking_loader_msg1: "Details vorbereiten",
 booking_loader_msg2: "Informationen überprüfen",
 booking_loader_msg3: "Bestätigung läuft",
@@ -2549,14 +2521,6 @@ tracking_error_generic: "Überprüfen Sie Ihre Internetverbindung. Wenn das Prob
     pdp_error_security: "⚠️ Error de seguridad. Recarga la página e inténtalo de nuevo.",
 
     // SUCCESS.HTML
-success_loader_title: "Un momento",
-success_loader_msg1: "Preparación de detalles",
-success_loader_msg2: "Verificación de información",
-success_loader_msg3: "Confirmación en curso",
-success_loader_msg4: "Recuperación datos reserva",
-success_loader_msg5: "Procesando solicitud",
-success_loader_msg6: "Casi listo",
-success_loader_msg7: "Finalización",
 success_loader_payment_verify: "Verificación del pago...",
 success_loader_payment_confirmed: "Pago confirmado con éxito",
 success_loader_order_registering: "Registrando tu pedido...",
@@ -2612,6 +2576,7 @@ success_category_experiences: "Experiencias",
 success_category_lifestyle: "Colecciones Lifestyle",
 
 // SUCCESS-BOOKING.HTML
+booking_loader_title: "Un momento",
 booking_loader_msg1: "Preparación de detalles",
 booking_loader_msg2: "Verificación de información",
 booking_loader_msg3: "Confirmación en curso",
