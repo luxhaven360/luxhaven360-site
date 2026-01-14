@@ -1318,8 +1318,12 @@ const statusMessages = isRefresh
 let currentStatusIndex = 0;
 let progressInterval;
 
-window.addEventListener('load', () => {
+window.addEventListener('load', async () => {
     startTime = Date.now();
+    
+    // ✅ ASPETTA CHE i18n SIA PRONTO
+    await initializeTranslations();
+    
     setupButtons();
     startLoadingSequence();
     loadPurchasedItems();
@@ -2193,16 +2197,14 @@ function getItalianMonthName(monthIndex) {
 }
 
 function loadPurchasedItems() {
-    // *** 3. MODIFICA INIZIO: USA DATI PERSISTENTI ***
-    // const cartRaw = localStorage.getItem('lh360_cart'); // VECCHIO
-    // const cart = cartRaw ? JSON.parse(cartRaw) : []; // VECCHIO
-    const cart = _persistentCart; // NUOVO
-    // *** 3. MODIFICA FINE ***
-    
-    const itemsContainer = document.querySelector('.summary-items');
-    const subtotalElem = document.querySelector('.summary-totals .summary-row:nth-child(1) span:last-child');
-    const shippingElem = document.querySelector('.summary-totals .summary-row:nth-child(2) span:last-child');
-    const totalElem = document.querySelector('.summary-total span:last-child');
+    const cart = _persistentCart;
+    const itemsContainer = document.getElementById('summaryItems'); // ✅ NUOVO ID
+    const subtotalElem = document.getElementById('subtotalValue');
+    const shippingElem = document.getElementById('shippingValue');
+    const totalElem = document.getElementById('totalValue');
+
+    // ✅ INIZIALIZZA i18n
+    const i18n = window.i18nPDP();
 
     if (!itemsContainer) return;
 
@@ -2210,14 +2212,15 @@ function loadPurchasedItems() {
 
     if (cart.length === 0) {
         itemsContainer.innerHTML = '<div style="padding:1rem; color:#a1a1aa; text-align:center;">Dettagli articoli non disponibili (Sessione scaduta)</div>';
-        // Non calcoliamo i totali se il carrello è vuoto
-        if (subtotalElem) subtotalElem.textContent = `€ 0,00`;
-        if (shippingElem) shippingElem.textContent = `€ 0,00`;
-        if (totalElem) totalElem.textContent = `€ 0,00`;
+        
+        // ✅ PREZZI TRADOTTI
+        if (subtotalElem) subtotalElem.textContent = i18n ? i18n.formatPrice(0) : `€ 0,00`;
+        if (shippingElem) shippingElem.textContent = i18n ? i18n.formatPrice(0) : `€ 0,00`;
+        if (totalElem) totalElem.textContent = i18n ? i18n.formatPrice(0) : `€ 0,00`;
         return;
     }
 
-    let subtotal = 0; // Lo ricalcoliamo qui solo per l'UI
+    let subtotal = 0;
 
     const colorNames = {
         '#000000': 'Nero', '#FFFFFF': 'Bianco', '#008000': 'Verde', 
@@ -2225,85 +2228,83 @@ function loadPurchasedItems() {
     };
 
     cart.forEach(item => {
-    // ⭐ FIX: Calcola prezzo finale considerando sconto di default
-    const hasDiscount = item.discountPrice && item.discountPrice < item.price;
-    const originalPrice = parseFloat(item.price) || 0;
-    const finalPrice = hasDiscount ? parseFloat(item.discountPrice) : originalPrice;
-    const itemQty = parseInt(item.qty) || 1;
-    
-    subtotal += finalPrice * itemQty; // Usa prezzo finale per subtotal
+        const hasDiscount = item.discountPrice && item.discountPrice < item.price;
+        const originalPrice = parseFloat(item.price) || 0;
+        const finalPrice = hasDiscount ? parseFloat(item.discountPrice) : originalPrice;
+        const itemQty = parseInt(item.qty) || 1;
+        
+        subtotal += finalPrice * itemQty;
 
-    let displayColor = item.color || '';
-    if (displayColor.startsWith('#') && colorNames[displayColor]) {
-        displayColor = colorNames[displayColor];
-    }
-    
-    let variantText = '';
-    if(displayColor) variantText += displayColor;
-    if(displayColor && item.size) variantText += ' · ';
-    if(item.size) variantText += `Taglia ${item.size}`;
-    if(!variantText) variantText = 'Taglia Unica';
+        let displayColor = item.color || '';
+        if (displayColor.startsWith('#') && colorNames[displayColor]) {
+            displayColor = colorNames[displayColor];
+        }
+        
+        let variantText = '';
+        if(displayColor) variantText += displayColor;
+        if(displayColor && item.size) variantText += ' · ';
+        if(item.size) variantText += `${i18n ? i18n.t('cart_item_size_label') : 'Taglia'} ${item.size}`;
+        if(!variantText) variantText = 'Taglia Unica';
 
-    const div = document.createElement('div');
-    div.className = 'summary-item';
-    
-    // ⭐ FIX: Mostra prezzo barrato se c'è sconto (come in cart.html)
-    const priceHtml = hasDiscount 
-        ? `
-            <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 0.25rem;">
-                <div style="font-size: 0.875rem; color: #71717a; text-decoration: line-through;">
-                    € ${(originalPrice * itemQty).toLocaleString('it-IT', {minimumFractionDigits: 2})}
+        const div = document.createElement('div');
+        div.className = 'summary-item';
+        
+        // ✅ PREZZI TRADOTTI CON i18n.formatPrice()
+        const priceHtml = hasDiscount 
+            ? `
+                <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 0.25rem;">
+                    <div style="font-size: 0.875rem; color: #71717a; text-decoration: line-through;">
+                        ${i18n ? i18n.formatPrice(originalPrice * itemQty) : `€ ${(originalPrice * itemQty).toFixed(2).replace('.', ',')}`}
+                    </div>
+                    <div style="font-size: 1.125rem; font-weight: 600; color: #D4AF37;">
+                        ${i18n ? i18n.formatPrice(finalPrice * itemQty) : `€ ${(finalPrice * itemQty).toFixed(2).replace('.', ',')}`}
+                    </div>
                 </div>
-                <div style="font-size: 1.125rem; font-weight: 600; color: #D4AF37;">
-                    € ${(finalPrice * itemQty).toLocaleString('it-IT', {minimumFractionDigits: 2})}
-                </div>
+            `
+            : (i18n ? i18n.formatPrice(finalPrice * itemQty) : `€ ${(finalPrice * itemQty).toFixed(2).replace('.', ',')}`);
+        
+        div.innerHTML = `
+            <div class="summary-item-image">
+                <img src="${item.image || 'https://via.placeholder.com/150'}" alt="${item.title}">
             </div>
-        `
-        : `€ ${(finalPrice * itemQty).toLocaleString('it-IT', {minimumFractionDigits: 2})}`;
-    
-    div.innerHTML = `
-        <div class="summary-item-image">
-            <img src="${item.image || 'https://via.placeholder.com/150'}" alt="${item.title}">
-        </div>
-        <div class="summary-item-details">
-            <div class="summary-item-name">${item.title} <span style="font-size:0.8em; color:#71717a;">(x${itemQty})</span></div>
-            <div class="summary-item-variant">${variantText}</div>
-        </div>
-        <div class="summary-item-price">${priceHtml}</div>
-    `;
-    itemsContainer.appendChild(div);
-});
+            <div class="summary-item-details">
+                <div class="summary-item-name">${item.title} <span style="font-size:0.8em; color:#71717a;">(x${itemQty})</span></div>
+                <div class="summary-item-variant">${variantText}</div>
+            </div>
+            <div class="summary-item-price">${priceHtml}</div>
+        `;
+        itemsContainer.appendChild(div);
+    });
 
     // ⭐ FIX: Calcola totale corretto con sconti applicati
-const totalDiscount = _appliedDiscounts.totalDiscount || 0;
-const subtotalAfterDiscount = subtotal - totalDiscount;
-const shippingCost = subtotalAfterDiscount >= 150 ? 0 : 15;
-const finalTotal = subtotal + shippingCost - totalDiscount;
+    const totalDiscount = _appliedDiscounts.totalDiscount || 0;
+    const subtotalAfterDiscount = subtotal - totalDiscount;
+    const shippingCost = subtotalAfterDiscount >= 150 ? 0 : 15;
+    const finalTotal = subtotal + shippingCost - totalDiscount;
 
-// Aggiorna Subtotale
-if (subtotalElem) subtotalElem.textContent = `€ ${subtotal.toLocaleString('it-IT', {minimumFractionDigits: 2})}`;
+    // ✅ AGGIORNA SUBTOTALE CON TRADUZIONE
+    if (subtotalElem) subtotalElem.textContent = i18n ? i18n.formatPrice(subtotal) : `€ ${subtotal.toFixed(2).replace('.', ',')}`;
 
-// Aggiorna Spedizione (usa la variabile già dichiarata)
-if (shippingElem) {
-    if (shippingCost === 0) {
-        shippingElem.textContent = 'Gratuita';
-        shippingElem.style.color = '#34d399';
-    } else {
-        shippingElem.textContent = `€ ${shippingCost.toLocaleString('it-IT', {minimumFractionDigits: 2})}`;
-        shippingElem.style.color = '#fafafa';
+    // ✅ AGGIORNA SPEDIZIONE CON TRADUZIONE
+    if (shippingElem) {
+        if (shippingCost === 0) {
+            shippingElem.textContent = i18n ? i18n.t('success_summary_free') : 'Gratuita';
+            shippingElem.style.color = '#34d399';
+        } else {
+            shippingElem.textContent = i18n ? i18n.formatPrice(shippingCost) : `€ ${shippingCost.toFixed(2).replace('.', ',')}`;
+            shippingElem.style.color = '#fafafa';
+        }
     }
-}
 
-// ⭐ NUOVO: Mostra/Nascondi riga Sconto
-const discountRow = document.getElementById('discountRow');
-const discountValue = document.getElementById('discountValue');
-const comboBadge = document.getElementById('comboBadge');
+    // ⭐ NUOVO: Mostra/Nascondi riga Sconto
+    const discountRow = document.getElementById('discountRow');
+    const discountValue = document.getElementById('discountValue');
+    const comboBadge = document.getElementById('comboBadge');
 
-if (totalDiscount > 0) {
-    discountRow.style.display = 'flex';
-    discountRow.classList.add('discount-active');
-    discountValue.textContent = `- € ${totalDiscount.toLocaleString('it-IT', {minimumFractionDigits: 2})}`;
-    
+    if (totalDiscount > 0) {
+        discountRow.style.display = 'flex';
+        discountRow.classList.add('discount-active');
+        discountValue.textContent = `- ${i18n ? i18n.formatPrice(totalDiscount) : € ${totalDiscount.toFixed(2).replace('.', ',')}}`;
     // Mostra badge COMBO se presente
     if (_appliedDiscounts.isComboActive && comboBadge) {
         comboBadge.style.display = 'inline-block';
@@ -2320,9 +2321,10 @@ if (totalDiscount > 0) {
     discountRow.style.display = 'none';
 }
 
-// Aggiorna Totale Finale
-if (totalElem) totalElem.textContent = `€ ${finalTotal.toLocaleString('it-IT', {minimumFractionDigits: 2})}`;
+// ✅ AGGIORNA TOTALE CON TRADUZIONE
+if (totalElem) totalElem.textContent = i18n ? i18n.formatPrice(finalTotal) : `€ ${finalTotal.toFixed(2).replace('.', ',')}`;
 }
+
 
         // ===== GESTIONE TRACCIAMENTO DOPO REFRESH =====
 document.getElementById('trackOrderBtn').addEventListener('click', function(e) {
@@ -2335,6 +2337,112 @@ document.getElementById('trackOrderBtn').addEventListener('click', function(e) {
 function goToOrdersPage() {
     window.location.href = 'tracking-order.html?view=all&session_expired=true';
 }       
+
+        /**
+ * ✅ Inizializza sistema i18n e traduzioni pagina
+ */
+async function initializeTranslations() {
+    const i18n = window.i18nPDP();
+    if (!i18n) {
+        setTimeout(initializeTranslations, 100);
+        return;
+    }
+    
+    console.log(`✅ Traduzioni success.html inizializzate: ${i18n.currentLang.toUpperCase()}`);
+    
+    // Carica tassi di cambio
+    await i18n.loadExchangeRates();
+    
+    // Traduci tutti gli elementi statici
+    document.querySelectorAll('[data-i18n]').forEach(el => {
+        const key = el.getAttribute('data-i18n');
+        const translation = i18n.t(key);
+        
+        if (translation) {
+            if (el.tagName === 'INPUT' && el.hasAttribute('data-i18n-placeholder')) {
+                el.placeholder = translation;
+            } else {
+                el.textContent = translation;
+            }
+        }
+    });
+    
+    // Aggiorna prezzi nella valuta corretta
+    if (typeof loadPurchasedItems === 'function') {
+        loadPurchasedItems();
+    }
+}
+
+/**
+ * ✅ Aggiorna tutte le traduzioni quando cambia lingua
+ */
+function updateAllTranslations() {
+    const i18n = window.i18nPDP();
+    if (!i18n) return;
+    
+    // 1. TRADUCI ELEMENTI STATICI
+    document.querySelectorAll('[data-i18n]').forEach(el => {
+        const key = el.getAttribute('data-i18n');
+        const translation = i18n.t(key);
+        
+        if (translation && el.id !== 'orderNumberValue') { // Non tradurre il numero ordine
+            if (el.tagName === 'INPUT' && el.hasAttribute('data-i18n-placeholder')) {
+                el.placeholder = translation;
+            } else {
+                el.textContent = translation;
+            }
+        }
+    });
+    
+    // 2. AGGIORNA PREZZI CON NUOVA VALUTA
+    if (typeof loadPurchasedItems === 'function') {
+        loadPurchasedItems();
+    }
+    
+    // 3. AGGIORNA TIMELINE CON TRADUZIONI
+    // (se i dati sono già caricati, ri-renderizza con nuove traduzioni)
+    const confirmedStep = document.getElementById('step-confirmed');
+    if (confirmedStep && confirmedStep.classList.contains('completed')) {
+        // Timeline già popolata, aggiorna solo le label
+        const preparingDate = document.getElementById('date-preparing');
+        if (preparingDate && preparingDate.textContent === 'in corso') {
+            preparingDate.textContent = i18n.t('success_timeline_in_progress');
+        }
+        
+        const toSchedule = document.querySelectorAll('.timeline-date');
+        toSchedule.forEach(el => {
+            if (el.textContent === 'da programmare') {
+                el.textContent = i18n.t('success_timeline_to_schedule');
+            } else if (el.textContent === 'da definire') {
+                el.textContent = i18n.t('success_timeline_to_define');
+            }
+        });
+    }
+    
+    console.log(`✅ Traduzioni aggiornate: ${i18n.currentLang.toUpperCase()}`);
+}
+
+// ✅ Ascolta cambio lingua
+document.addEventListener('languageChanged', (event) => {
+    console.log('🌍 Cambio lingua rilevato:', event.detail.lang);
+    updateAllTranslations();
+});
+
+// ✅ Ascolta cambio lingua da altre pagine (localStorage sync)
+window.addEventListener('storage', (event) => {
+    if (event.key === 'lh360_lang' && event.newValue) {
+        const i18n = window.i18nPDP();
+        if (i18n && i18n.currentLang !== event.newValue) {
+            i18n.changeLanguage(event.newValue);
+        }
+    }
+});
+
+// ✅ Inizializza traduzioni all'avvio
+document.addEventListener('DOMContentLoaded', () => {
+    initializeTranslations();
+});
     </script>    
 </body>
 </html>
+
