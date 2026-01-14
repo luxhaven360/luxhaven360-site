@@ -1312,9 +1312,7 @@ function getAllStatusMessages() {
     ];
 }
 
-const statusMessages = isRefresh 
-    ? getAllStatusMessages().filter(msg => !msg.skipOnRefresh)
-    : getAllStatusMessages();
+let statusMessages = []; // ✅ Inizializzazione vuota, verrà popolato quando i18n è pronto
 
 let currentStatusIndex = 0;
 let progressInterval;
@@ -1324,6 +1322,11 @@ window.addEventListener('load', async () => {
     
     // ✅ ASPETTA CHE i18n SIA PRONTO
     await initializeTranslations();
+    
+    // ✅ POPOLA statusMessages DOPO che i18n è pronto
+    statusMessages = isRefresh 
+        ? getAllStatusMessages().filter(msg => !msg.skipOnRefresh)
+        : getAllStatusMessages();
     
     setupButtons();
     startLoadingSequence();
@@ -2212,7 +2215,8 @@ function loadPurchasedItems() {
     itemsContainer.innerHTML = '';
 
     if (cart.length === 0) {
-        itemsContainer.innerHTML = '<div style="padding:1rem; color:#a1a1aa; text-align:center;">Dettagli articoli non disponibili (Sessione scaduta)</div>';
+        const emptyMessage = i18n ? i18n.t('success_cart_empty_session') : 'Dettagli articoli non disponibili (Sessione scaduta)';
+        itemsContainer.innerHTML = `<div style="padding:1rem; color:#a1a1aa; text-align:center;">${emptyMessage}</div>`;
         
         // ✅ PREZZI TRADOTTI
         if (subtotalElem) subtotalElem.textContent = i18n ? i18n.formatPrice(0) : `€ 0,00`;
@@ -2375,18 +2379,63 @@ async function initializeTranslations() {
 }
 
 /**
+ * ✅ Aggiorna solo le label della timeline senza perdere le date
+ */
+function updateTimelineDates(i18n) {
+    const steps = ['confirmed', 'preparing', 'shipped', 'delivered'];
+    
+    steps.forEach(step => {
+        const dateElem = document.getElementById(`date-${step}`);
+        if (!dateElem) return;
+        
+        const currentText = dateElem.textContent.trim().toLowerCase();
+        
+        // ✅ Traduci solo i placeholder, mantieni le date reali
+        if (currentText === 'loading...' || currentText === 'caricamento...') {
+            dateElem.textContent = i18n.t('success_timeline_date_loading');
+        } else if (currentText === 'in corso' || currentText === 'in progress') {
+            dateElem.textContent = i18n.t('success_timeline_in_progress');
+        } else if (currentText === 'da programmare' || currentText === 'to be scheduled' || currentText === 'to schedule') {
+            dateElem.textContent = i18n.t('success_timeline_to_schedule');
+        } else if (currentText === 'da definire' || currentText === 'to be defined' || currentText === 'to define') {
+            dateElem.textContent = i18n.t('success_timeline_to_define');
+        } else if (currentText === 'preparazione completata' || currentText.includes('preparation complete')) {
+            dateElem.textContent = i18n.t('success_timeline_preparation_complete');
+        } else if (currentText.startsWith('previsto:') || currentText.startsWith('expected:')) {
+            // ✅ Mantieni le date con formato "previsto: 27-31 dic"
+            // Non tradurre, sono già formattate correttamente
+        }
+        // ✅ Se è una data effettiva (contiene numeri e mesi), NON tradurla
+    });
+}
+
+/**
  * ✅ Aggiorna tutte le traduzioni quando cambia lingua
  */
 function updateAllTranslations() {
     const i18n = window.i18nPDP();
     if (!i18n) return;
     
+    // LISTA ELEMENTI DA NON TRADURRE (valori dinamici già popolati)
+    const skipElements = ['orderNumberValue', 'emailValue', 'deliveryValue', 'paymentValue'];
+    
     // 1. TRADUCI ELEMENTI STATICI
     document.querySelectorAll('[data-i18n]').forEach(el => {
         const key = el.getAttribute('data-i18n');
         const translation = i18n.t(key);
         
-        if (translation && el.id !== 'orderNumberValue') { // Non tradurre il numero ordine
+        // ✅ Skip elementi dinamici che hanno già un valore reale
+        if (skipElements.includes(el.id)) return;
+        
+        // ✅ Skip elementi che non sono più "Loading..." (hanno valori reali)
+        if (el.classList.contains('info-value') && 
+            !el.textContent.toLowerCase().includes('loading') &&
+            !el.textContent.toLowerCase().includes('caricamento') &&
+            el.textContent.trim() !== '...') {
+            return;
+        }
+        
+        if (translation) {
             if (el.tagName === 'INPUT' && el.hasAttribute('data-i18n-placeholder')) {
                 el.placeholder = translation;
             } else {
@@ -2400,25 +2449,8 @@ function updateAllTranslations() {
         loadPurchasedItems();
     }
     
-    // 3. AGGIORNA TIMELINE CON TRADUZIONI
-    // (se i dati sono già caricati, ri-renderizza con nuove traduzioni)
-    const confirmedStep = document.getElementById('step-confirmed');
-    if (confirmedStep && confirmedStep.classList.contains('completed')) {
-        // Timeline già popolata, aggiorna solo le label
-        const preparingDate = document.getElementById('date-preparing');
-        if (preparingDate && preparingDate.textContent === 'in corso') {
-            preparingDate.textContent = i18n.t('success_timeline_in_progress');
-        }
-        
-        const toSchedule = document.querySelectorAll('.timeline-date');
-        toSchedule.forEach(el => {
-            if (el.textContent === 'da programmare') {
-                el.textContent = i18n.t('success_timeline_to_schedule');
-            } else if (el.textContent === 'da definire') {
-                el.textContent = i18n.t('success_timeline_to_define');
-            }
-        });
-    }
+    // 3. AGGIORNA TIMELINE CON TRADUZIONI (ma mantieni date effettive)
+    updateTimelineDates(i18n);
     
     console.log(`✅ Traduzioni aggiornate: ${i18n.currentLang.toUpperCase()}`);
 }
@@ -2446,5 +2478,6 @@ document.addEventListener('DOMContentLoaded', () => {
     </script>    
 </body>
 </html>
+
 
 
