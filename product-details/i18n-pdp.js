@@ -121,32 +121,33 @@ class I18nPDP {
 
   changeLanguage(langCode) {
     if (!this.translations[langCode]) {
-      console.error(`Lingua "${langCode}" non supportata`);
-      return;
+        console.error(`Lingua "${langCode}" non supportata`);
+        return;
     }
 
     localStorage.setItem('lh360_lang', langCode);
     this.currentLang = langCode;
 
-    // Traduci pagina
-    this.translatePage();
+    // ✅ NON chiamare translatePage() qui per evitare di sovrascrivere valori dinamici
+    // La traduzione verrà gestita dall'evento languageChanged
+
     this.updateLanguageSelector();
 
     // Aggiorna prezzi con nuova valuta
     if (typeof updateAllPricesForLanguage === 'function') {
-      updateAllPricesForLanguage();
+        updateAllPricesForLanguage();
     }
 
     // Aggiorna badge disponibilità
     if (typeof updateAllBadgesForLanguage === 'function') {
-      updateAllBadgesForLanguage();
+        updateAllBadgesForLanguage();
     }
 
     // Dispatch event
     document.dispatchEvent(new CustomEvent('languageChanged', { detail: { lang: langCode } }));
 
     console.log(`✅ Lingua PDP cambiata: ${langCode.toUpperCase()}`);
-  }
+}
 
   setupLanguageSelector() {
     const selector = document.getElementById('pdpLanguageSelector');
