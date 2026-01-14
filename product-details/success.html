@@ -1070,8 +1070,8 @@
             
             <div class="status-container">
                 <div class="status-message" id="statusMessage">
-                    <span class="status-icon">✓</span>
-                    <span id="statusText">Preparazione dei dettagli</span>
+                   <span class="status-icon">✓</span>
+                   <span id="statusText"></span>
                 </div>
             </div>
             
@@ -1630,10 +1630,13 @@ function loadOrderDetails(maxRetries = 3) {
     const paymentElem = document.getElementById('paymentValue');
 
     // Visualizza subito ID se presente in URL
-    const orderIdParam = urlParams.get('id_ordine');
-    if (orderIdParam && orderNumElem) {
-        orderNumElem.textContent = `Ordine #${orderIdParam}`;
+const orderIdParam = urlParams.get('id_ordine');
+if (orderIdParam) {
+    const orderValueElem = document.getElementById('orderNumberValue');
+    if (orderValueElem) {
+        orderValueElem.textContent = `#${orderIdParam}`;
     }
+}
 
     if (!sessionId) {
         completeLoadingSequence();
@@ -1736,29 +1739,31 @@ window.handleDetailsResponse = function(response) {
     const emailElem = document.getElementById('emailValue');
     const paymentElem = document.getElementById('paymentValue');
     const orderNumElem = document.getElementById('orderNumber');
-    const deliveryElem = document.querySelector('.info-card:nth-child(2) .info-value');
+    const deliveryElem = document.getElementById('deliveryValue');
 
     let currentOrderId = null;
 
     if (response && !response.error) {
-        // ✅ INIZIALIZZA i18n PRIMA DI USARLO
         const i18n = window.i18nPDP();
         
         if (response.email && emailElem) {
             emailElem.textContent = response.email;
+            emailElem.removeAttribute('data-i18n'); // ✅ Rimuovi attributo per evitare traduzione
             localStorage.setItem('lh360_user_email', response.email);
             console.log('📧 Email salvata per tracking:', response.email);
         }
+        
         if (paymentElem) {
             if (response.last4) {
                 paymentElem.textContent = `•••• ${response.last4}`;
+                paymentElem.removeAttribute('data-i18n'); // ✅ Rimuovi attributo
             } else {
-                // ✅ TRADUZIONE DINAMICA
                 paymentElem.textContent = i18n ? i18n.t('success_payment_online') : 'Pagamento Online';
+                // Mantieni data-i18n per questo caso
             }
         }
-        if (response.order_id && orderNumElem) {
-            // ✅ AGGIORNA SOLO IL VALORE, NON L'INTERA RIGA
+        
+        if (response.order_id) {
             const orderValueElem = document.getElementById('orderNumberValue');
             if (orderValueElem) {
                 orderValueElem.textContent = `#${response.order_id}`;
@@ -1766,10 +1771,9 @@ window.handleDetailsResponse = function(response) {
             currentOrderId = response.order_id;
         }
         
-        // ✅ Usa consegna prevista dal backend
-        const deliveryElem = document.getElementById('deliveryValue');
         if (response.consegna_prevista && deliveryElem) {
             deliveryElem.textContent = response.consegna_prevista;
+            deliveryElem.removeAttribute('data-i18n'); // ✅ Rimuovi attributo
         }
     }
 
@@ -1806,80 +1810,75 @@ window.handleDetailsResponse = function(response) {
             month: 'long',
             year: 'numeric'
         });
-        // ✅ Calcola il totale finale corretto con tutti gli sconti
-const subtotal = _persistentCart.reduce((sum, item) => {
-    const finalPrice = (item.discountPrice && item.discountPrice < item.price) 
-        ? parseFloat(item.discountPrice) 
-        : parseFloat(item.price) || 0;
-    return sum + finalPrice * (parseInt(item.qty) || 1);
-}, 0);
+        
+        const subtotal = _persistentCart.reduce((sum, item) => {
+            const finalPrice = (item.discountPrice && item.discountPrice < item.price) 
+                ? parseFloat(item.discountPrice) 
+                : parseFloat(item.price) || 0;
+            return sum + finalPrice * (parseInt(item.qty) || 1);
+        }, 0);
 
-const totalDiscount = _appliedDiscounts.totalDiscount || 0;
-const subtotalAfterDiscount = subtotal - totalDiscount;
-const shippingCost = subtotalAfterDiscount >= 150 ? 0 : 15;
-const finalTotal = subtotal + shippingCost - totalDiscount;
+        const totalDiscount = _appliedDiscounts.totalDiscount || 0;
+        const subtotalAfterDiscount = subtotal - totalDiscount;
+        const shippingCost = subtotalAfterDiscount >= 150 ? 0 : 15;
+        const finalTotal = subtotal + shippingCost - totalDiscount;
 
-// ✅ Determina categoria ordine LEGGENDOLA DAL CARRELLO
-let orderCategory = 'Prodotto';
-if (_persistentCart.length > 0) {
-    // Recupera le categorie direttamente dai prodotti (già salvate nel carrello)
-    const categories = _persistentCart
-        .map(item => item.category || 'Prodotto')
-        .filter(Boolean);
-    
-    const uniqueCategories = [...new Set(categories)];
-    
-    if (uniqueCategories.length === 1) {
-        // Tutti i prodotti hanno la stessa categoria
-        orderCategory = uniqueCategories[0];
-    } else if (uniqueCategories.length > 1) {
-        // Categorie diverse → Lifestyle Collections
-        orderCategory = 'Lifestyle Collections';
-    }
-}
+        let orderCategory = 'Prodotto';
+        if (_persistentCart.length > 0) {
+            const categories = _persistentCart
+                .map(item => item.category || 'Prodotto')
+                .filter(Boolean);
+            
+            const uniqueCategories = [...new Set(categories)];
+            
+            if (uniqueCategories.length === 1) {
+                orderCategory = uniqueCategories[0];
+            } else if (uniqueCategories.length > 1) {
+                orderCategory = 'Lifestyle Collections';
+            }
+        }
 
-// ✅ Calcola prezzi adjusted (con sconto combo/coupon distribuito)
-const adjustedProducts = _persistentCart.map(item => {
-    const finalPrice = (item.discountPrice && item.discountPrice < item.price) 
-        ? parseFloat(item.discountPrice) 
-        : parseFloat(item.price) || 0;
-    
-    const itemQty = parseInt(item.qty) || 1;
-    
-    let adjustedPrice = finalPrice;
-    
-    if (totalDiscount > 0 && subtotal > 0) {
-        const itemSubtotal = finalPrice * itemQty;
-        const discountRatio = itemSubtotal / subtotal;
-        const itemDiscount = totalDiscount * discountRatio;
-        adjustedPrice = finalPrice - (itemDiscount / itemQty);
-        adjustedPrice = Math.max(0.50, adjustedPrice);
-    }
-    
-    return {
-        name: item.title || 'Prodotto',
-        quantity: itemQty,
-        price: parseFloat(adjustedPrice.toFixed(2)),
-        originalPrice: finalPrice,
-        image: item.image || '',
-        sku: item.sku || '',
-        category: item.category || 'Prodotto'  // ✅ AGGIUNTO
-    };
-});
+        const adjustedProducts = _persistentCart.map(item => {
+            const finalPrice = (item.discountPrice && item.discountPrice < item.price) 
+                ? parseFloat(item.discountPrice) 
+                : parseFloat(item.price) || 0;
+            
+            const itemQty = parseInt(item.qty) || 1;
+            let adjustedPrice = finalPrice;
+            
+            if (totalDiscount > 0 && subtotal > 0) {
+                const itemSubtotal = finalPrice * itemQty;
+                const discountRatio = itemSubtotal / subtotal;
+                const itemDiscount = totalDiscount * discountRatio;
+                adjustedPrice = finalPrice - (itemDiscount / itemQty);
+                adjustedPrice = Math.max(0.50, adjustedPrice);
+            }
+            
+            return {
+                name: item.title || 'Prodotto',
+                quantity: itemQty,
+                price: parseFloat(adjustedPrice.toFixed(2)),
+                originalPrice: finalPrice,
+                image: item.image || '',
+                sku: item.sku || '',
+                category: item.category || 'Prodotto'
+            };
+        });
 
-const orderDetails = {
-    id: currentOrderId,
-    data: formattedDate,
-    stato: 'In Preparazione',
-    totale: finalTotal.toFixed(2),
-    consegna_prevista: response.consegna_prevista || 'Da definire',
-    category: orderCategory,
-    products: adjustedProducts, // ✅ Usa i prodotti con prezzi adjusted
-    email: response?.email || '',
-    timestamp: confirmedTime
-};
+        const orderDetails = {
+            id: currentOrderId,
+            data: formattedDate,
+            stato: 'In Preparazione',
+            totale: finalTotal.toFixed(2),
+            consegna_prevista: response.consegna_prevista || 'Da definire',
+            category: orderCategory,
+            products: adjustedProducts,
+            email: response?.email || '',
+            timestamp: confirmedTime
+        };
+        
         localStorage.setItem('lh360_pending_order', JSON.stringify(orderDetails));
-        console.log('✅ Ordine salvato in localStorage (con dati persistenti):', orderDetails);
+        console.log('✅ Ordine salvato in localStorage:', orderDetails);
     }
 
     fetchOrderTrackingData(currentOrderId, confirmedTime, deliveryElem);
@@ -2416,24 +2415,10 @@ function updateAllTranslations() {
     const i18n = window.i18nPDP();
     if (!i18n) return;
     
-    // LISTA ELEMENTI DA NON TRADURRE (valori dinamici già popolati)
-    const skipElements = ['orderNumberValue', 'emailValue', 'deliveryValue', 'paymentValue'];
-    
-    // 1. TRADUCI ELEMENTI STATICI
+    // 1. TRADUCI SOLO ELEMENTI CON data-i18n (quelli senza sono valori dinamici)
     document.querySelectorAll('[data-i18n]').forEach(el => {
         const key = el.getAttribute('data-i18n');
         const translation = i18n.t(key);
-        
-        // ✅ Skip elementi dinamici che hanno già un valore reale
-        if (skipElements.includes(el.id)) return;
-        
-        // ✅ Skip elementi che non sono più "Loading..." (hanno valori reali)
-        if (el.classList.contains('info-value') && 
-            !el.textContent.toLowerCase().includes('loading') &&
-            !el.textContent.toLowerCase().includes('caricamento') &&
-            el.textContent.trim() !== '...') {
-            return;
-        }
         
         if (translation) {
             if (el.tagName === 'INPUT' && el.hasAttribute('data-i18n-placeholder')) {
@@ -2449,7 +2434,7 @@ function updateAllTranslations() {
         loadPurchasedItems();
     }
     
-    // 3. AGGIORNA TIMELINE CON TRADUZIONI (ma mantieni date effettive)
+    // 3. AGGIORNA TIMELINE (mantieni date reali, traduci solo placeholder)
     updateTimelineDates(i18n);
     
     console.log(`✅ Traduzioni aggiornate: ${i18n.currentLang.toUpperCase()}`);
@@ -2478,6 +2463,7 @@ document.addEventListener('DOMContentLoaded', () => {
     </script>    
 </body>
 </html>
+
 
 
 
