@@ -1301,13 +1301,13 @@ function getAllStatusMessages() {
     if (!i18n) return []; // Se i18n non è ancora pronto, ritorna array vuoto
     
     return [
-        { icon: '🔒', key: 'success_loader_msg1', duration: 1500 },
-        { icon: '✓', key: 'success_loader_msg2', duration: 1500 },
-        { icon: '📋', key: 'success_loader_msg3', duration: 1800 },
-        { icon: '✓', key: 'success_loader_msg4', duration: 1200 },
-        { icon: '📧', key: 'success_loader_msg5', duration: 1500, triggerEmail: true, skipOnRefresh: true },
-        { icon: '✓', key: 'success_loader_msg6', duration: 1200, skipOnRefresh: true },
-        { icon: '🎉', key: 'success_loader_msg7', duration: 1000 }
+        { icon: '💳', key: 'success_loader_payment_verify', duration: 1500 },
+        { icon: '✔', key: 'success_loader_payment_confirmed', duration: 1500 },
+        { icon: '📋', key: 'success_loader_order_registering', duration: 1800 },
+        { icon: '✔', key: 'success_loader_order_registered', duration: 1200 },
+        { icon: '📧', key: 'success_loader_email_sending', duration: 1500, triggerEmail: true, skipOnRefresh: true },
+        { icon: '✔', key: 'success_loader_email_sent', duration: 1200, skipOnRefresh: true },
+        { icon: '🎉', key: 'success_loader_ready', duration: 1000 }
     ];
 }
 
@@ -1762,17 +1762,22 @@ window.handleDetailsResponse = function(response) {
         }
         if (response.order_id) {
     const orderValueElem = document.getElementById('orderNumberValue');
-    if (orderValueElem) {
+    const orderNumberContainer = document.getElementById('orderNumber');
+    const i18n = window.i18nPDP();
+    
+    if (orderValueElem && i18n) {
         orderValueElem.textContent = `#${response.order_id}`;
     }
-    currentOrderId = response.order_id;
     
-    // ✅ FIX: Forza aggiornamento label "Ordine"
-    const orderLabelElem = document.querySelector('#orderNumber [data-i18n="success_order_number"]');
-    if (orderLabelElem) {
-        const i18n = window.i18nPDP();
-        if (i18n) orderLabelElem.textContent = i18n.t('success_order_number');
+    // ✅ FIX COMPLETO: Traduci label "Ordine" immediatamente
+    if (orderNumberContainer && i18n) {
+        const labelSpan = orderNumberContainer.querySelector('[data-i18n="success_order_number"]');
+        if (labelSpan) {
+            labelSpan.textContent = i18n.t('success_order_number');
+        }
     }
+    
+    currentOrderId = response.order_id;
 }
         
         // ✅ Usa consegna prevista dal backend
@@ -2154,45 +2159,63 @@ function updateTimeline(data) {
         }
 
         const dateElem = dateElems[step];
-        if (dateElem) {
-            const actualDate = data.status_dates[step];
-            
-            // ✅ CASO SPECIALE: "In Preparazione"
-            if (step === 'preparing') {
-                if (index < currentIndex) {
-                    dateElem.textContent = i18n ? i18n.t('success_timeline_preparation_complete') : 'preparazione completata';
-                } else if (index === currentIndex) {
-                    dateElem.textContent = i18n ? i18n.t('success_timeline_in_progress') : 'in corso';
-                } else {
-                    dateElem.textContent = data.estimated_dates[step] || (i18n ? i18n.t('success_timeline_to_define') : 'da definire');
-                }
-                return;
-            }
-            
-            // ✅ Per le altre fasi (confirmed, shipped, delivered)
-            if (actualDate) {
-                // Se c'è una data effettiva, formattala (minuscolo)
-                const date = new Date(actualDate);
-                const day = date.getDate();
-                
-                // ✅ NOMI MESI TRADOTTI
-                const monthKey = `pdp_month_${getItalianMonthName(date.getMonth())}`;
-                const month = i18n ? i18n.t(monthKey) : getItalianMonthName(date.getMonth());
-                
-                const time = date.toLocaleTimeString(i18n?.currentLang === 'en' ? 'en-US' : 'it-IT', { hour: '2-digit', minute: '2-digit' });
-                dateElem.textContent = `${day} ${month}, ${time}`;
-            } else {
-                // ✅ FASE DELIVERED: Formato sintetico con prefisso "previsto:"
-                if (step === 'delivered') {
-                    const estimatedDate = data.estimated_dates[step] || (i18n ? i18n.t('success_timeline_to_define') : 'da definire');
-                    dateElem.textContent = formatShortDelivery(estimatedDate);
-                } else {
-                    // ✅ Altre fasi non completate: usa traduzione generica
-                    const estimated = data.estimated_dates[step] || (i18n ? i18n.t('success_timeline_to_define') : 'da definire');
-                    dateElem.textContent = estimated.toLowerCase();
-                }
-            }
+if (dateElem) {
+    const actualDate = data.status_dates[step];
+    
+    // ✅ CASO SPECIALE: "In Preparazione"
+    if (step === 'preparing') {
+        if (index < currentIndex) {
+            dateElem.textContent = i18n ? i18n.t('success_timeline_preparation_complete') : 'preparazione completata';
+        } else if (index === currentIndex) {
+            dateElem.textContent = i18n ? i18n.t('success_timeline_in_progress') : 'in corso';
+        } else {
+            dateElem.textContent = data.estimated_dates[step] || (i18n ? i18n.t('success_timeline_to_define') : 'da definire');
         }
+        return;
+    }
+    
+    // ✅ Per le altre fasi (confirmed, shipped, delivered)
+    if (actualDate) {
+        // Se c'è una data effettiva, formattala con traduzione corretta
+        const date = new Date(actualDate);
+        const day = date.getDate();
+        
+        // ✅ NOMI MESI TRADOTTI
+        const monthKey = `pdp_month_${getItalianMonthName(date.getMonth())}`;
+        const month = i18n ? i18n.t(monthKey) : getItalianMonthName(date.getMonth());
+        
+        // ✅ FORMATO DATA CORRETTO PER LINGUA
+        const year = date.getFullYear();
+        const time = date.toLocaleTimeString(i18n?.currentLang === 'en' ? 'en-US' : 'it-IT', { hour: '2-digit', minute: '2-digit' });
+        
+        // Formattazione per lingua
+        if (i18n?.currentLang === 'en') {
+            // Inglese: "January 14, 2026, 6:42 PM"
+            const capitalizedMonth = month.charAt(0).toUpperCase() + month.slice(1);
+            dateElem.textContent = `${capitalizedMonth} ${day}, ${year}, ${time}`;
+        } else if (i18n?.currentLang === 'de') {
+            // Tedesco: "14. Januar 2026, 18:42"
+            const capitalizedMonth = month.charAt(0).toUpperCase() + month.slice(1);
+            dateElem.textContent = `${day}. ${capitalizedMonth} ${year}, ${time}`;
+        } else if (i18n?.currentLang === 'es') {
+            // Spagnolo: "14 de enero de 2026, 18:42"
+            dateElem.textContent = `${day} de ${month} de ${year}, ${time}`;
+        } else {
+            // Italiano e Francese: "14 gennaio 2026, 18:42"
+            dateElem.textContent = `${day} ${month} ${year}, ${time}`;
+        }
+    } else {
+        // ✅ FASE DELIVERED: Formato sintetico con prefisso "previsto:"
+        if (step === 'delivered') {
+            const estimatedDate = data.estimated_dates[step] || (i18n ? i18n.t('success_timeline_to_define') : 'da definire');
+            dateElem.textContent = formatShortDelivery(estimatedDate);
+        } else {
+            // ✅ Altre fasi non completate: usa traduzione generica
+            const estimated = data.estimated_dates[step] || (i18n ? i18n.t('success_timeline_to_define') : 'da definire');
+            dateElem.textContent = estimated.toLowerCase();
+        }
+    }
+}
     });
 
     const timelineElem = document.querySelector('.timeline');
@@ -2445,6 +2468,21 @@ function updateAllTranslations() {
             }
         }
     });
+
+    // 1.5. ✅ FIX: Aggiorna label "Ordine" se presente
+const orderNumberContainer = document.getElementById('orderNumber');
+if (orderNumberContainer) {
+    const labelSpan = orderNumberContainer.querySelector('[data-i18n="success_order_number"]');
+    const valueSpan = document.getElementById('orderNumberValue');
+    if (labelSpan) {
+        labelSpan.textContent = i18n.t('success_order_number');
+    }
+}
+
+// 2. AGGIORNA PREZZI CON NUOVA VALUTA
+if (typeof loadPurchasedItems === 'function') {
+    loadPurchasedItems();
+}
     
     // 2. AGGIORNA PREZZI CON NUOVA VALUTA
     if (typeof loadPurchasedItems === 'function') {
@@ -2497,3 +2535,4 @@ document.addEventListener('DOMContentLoaded', () => {
     </script>    
 </body>
 </html>
+
