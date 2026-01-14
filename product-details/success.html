@@ -1311,10 +1311,18 @@ function getAllStatusMessages() {
     ];
 }
 
-const statusMessages = isRefresh 
-    ? getAllStatusMessages().filter(msg => !msg.skipOnRefresh)
-    : getAllStatusMessages();
+/**
+ * ✅ NUOVA FUNZIONE: Inizializza messaggi di caricamento con i18n pronto
+ */
+function initializeStatusMessages() {
+    statusMessages = isRefresh 
+        ? getAllStatusMessages().filter(msg => !msg.skipOnRefresh)
+        : getAllStatusMessages();
+    
+    console.log('✅ Messaggi di caricamento inizializzati:', statusMessages.length);
+}
 
+let statusMessages = []; // ✅ FIX: Inizializza vuoto, verrà popolato dopo
 let currentStatusIndex = 0;
 let progressInterval;
 
@@ -1323,6 +1331,9 @@ window.addEventListener('load', async () => {
     
     // ✅ ASPETTA CHE i18n SIA PRONTO
     await initializeTranslations();
+    
+    // ✅ FIX: Inizializza messaggi DOPO che i18n è pronto
+    initializeStatusMessages();
     
     // ✅ FIX: Traduci messaggio iniziale del loader
     const statusTextElem = document.getElementById('statusText');
@@ -2108,6 +2119,94 @@ if (rangeMatch) {
     return `previsto: ${str}`;
 }
 
+/**
+ * ✅ NUOVA FUNZIONE: Traduce le date già visualizzate nella timeline
+ */
+function translateTimelineDates() {
+    const i18n = window.i18nPDP();
+    if (!i18n) return;
+    
+    const dateElems = {
+        confirmed: document.getElementById('date-confirmed'),
+        preparing: document.getElementById('date-preparing'),
+        shipped: document.getElementById('date-shipped'),
+        delivered: document.getElementById('date-delivered')
+    };
+    
+    Object.keys(dateElems).forEach(step => {
+        const elem = dateElems[step];
+        if (!elem) return;
+        
+        const text = elem.textContent.trim();
+        
+        // Se è una data formattata (contiene numeri e anno)
+        if (/\d{1,2}.*\d{4}/.test(text)) {
+            // Prova a parsare la data dal testo
+            const dateMatch = text.match(/(\d{1,2})\s+(\w+)\s+(\d{4}),?\s+(\d{1,2}):(\d{2})/);
+            if (dateMatch) {
+                // Ricostruisci la data
+                const day = parseInt(dateMatch[1]);
+                const monthName = dateMatch[2].toLowerCase();
+                const year = parseInt(dateMatch[3]);
+                const hours = parseInt(dateMatch[4]);
+                const minutes = dateMatch[5];
+                
+                // Trova l'indice del mese (usando i nomi italiani come riferimento)
+                const italianMonths = ['gennaio', 'febbraio', 'marzo', 'aprile', 'maggio', 'giugno', 
+                                      'luglio', 'agosto', 'settembre', 'ottobre', 'novembre', 'dicembre'];
+                let monthIndex = italianMonths.findIndex(m => monthName.includes(m.substring(0, 3)));
+                
+                // Fallback: prova con nomi inglesi/francesi
+                if (monthIndex === -1) {
+                    const englishMonths = ['january', 'february', 'march', 'april', 'may', 'june',
+                                          'july', 'august', 'september', 'october', 'november', 'december'];
+                    monthIndex = englishMonths.findIndex(m => monthName.includes(m.substring(0, 3)));
+                }
+                
+                if (monthIndex !== -1) {
+                    const date = new Date(year, monthIndex, day, hours, parseInt(minutes));
+                    
+                    // Re-formatta con la lingua corrente
+                    const monthKey = `pdp_month_${getItalianMonthName(monthIndex)}`;
+                    const month = i18n.t(monthKey);
+                    
+                    // Formatta l'ora secondo la lingua
+                    const time = formatTimeByLanguage(hours, minutes, i18n.currentLang);
+                    
+                    // Formatta data completa
+                    if (i18n.currentLang === 'en') {
+                        const capitalizedMonth = month.charAt(0).toUpperCase() + month.slice(1);
+                        elem.textContent = `${capitalizedMonth} ${day}, ${year}, ${time}`;
+                    } else if (i18n.currentLang === 'de') {
+                        const capitalizedMonth = month.charAt(0).toUpperCase() + month.slice(1);
+                        elem.textContent = `${day}. ${capitalizedMonth} ${year}, ${time}`;
+                    } else if (i18n.currentLang === 'es') {
+                        elem.textContent = `${day} de ${month} de ${year}, ${time}`;
+                    } else {
+                        elem.textContent = `${day} ${month} ${year}, ${time}`;
+                    }
+                }
+            }
+        }
+    });
+}
+
+/**
+ * ✅ HELPER: Formatta ora secondo la lingua (12h o 24h)
+ */
+function formatTimeByLanguage(hours, minutes, lang) {
+    if (lang === 'en') {
+        // Formato 12h per inglese
+        const period = hours >= 12 ? 'PM' : 'AM';
+        const displayHours = hours % 12 || 12;
+        return `${displayHours}:${minutes} ${period}`;
+    } else {
+        // Formato 24h per le altre lingue
+        const displayHours = hours.toString().padStart(2, '0');
+        return `${displayHours}:${minutes}`;
+    }
+}
+        
 function updateTimeline(data) {
     const i18n = window.i18nPDP();
     
@@ -2186,7 +2285,9 @@ if (dateElem) {
         
         // ✅ FORMATO DATA CORRETTO PER LINGUA
         const year = date.getFullYear();
-        const time = date.toLocaleTimeString(i18n?.currentLang === 'en' ? 'en-US' : 'it-IT', { hour: '2-digit', minute: '2-digit' });
+        const hours = date.getHours();
+        const minutes = date.getMinutes().toString().padStart(2, '0');
+        const time = formatTimeByLanguage(hours, minutes, i18n?.currentLang || 'it');
         
         // Formattazione per lingua
         if (i18n?.currentLang === 'en') {
@@ -2460,7 +2561,7 @@ function updateAllTranslations() {
         const key = el.getAttribute('data-i18n');
         const translation = i18n.t(key);
         
-        if (translation && el.id !== 'orderNumberValue') { // Non tradurre il numero ordine
+        if (translation && el.id !== 'orderNumberValue') {
             if (el.tagName === 'INPUT' && el.hasAttribute('data-i18n-placeholder')) {
                 el.placeholder = translation;
             } else {
@@ -2468,8 +2569,8 @@ function updateAllTranslations() {
             }
         }
     });
-
-    // 1.5. ✅ FIX: Aggiorna label "Ordine" se presente
+    
+        // 1.5. ✅ FIX: Aggiorna label "Ordine" se presente
 const orderNumberContainer = document.getElementById('orderNumber');
 if (orderNumberContainer) {
     const labelSpan = orderNumberContainer.querySelector('[data-i18n="success_order_number"]');
@@ -2479,34 +2580,53 @@ if (orderNumberContainer) {
     }
 }
 
-// 2. AGGIORNA PREZZI CON NUOVA VALUTA
-if (typeof loadPurchasedItems === 'function') {
-    loadPurchasedItems();
-}
-    
     // 2. AGGIORNA PREZZI CON NUOVA VALUTA
     if (typeof loadPurchasedItems === 'function') {
         loadPurchasedItems();
     }
     
-    // 3. AGGIORNA TIMELINE CON TRADUZIONI
-    // (se i dati sono già caricati, ri-renderizza con nuove traduzioni)
+    // 3. ✅ FIX COMPLETO: Ri-renderizza timeline con nuove traduzioni
     const confirmedStep = document.getElementById('step-confirmed');
-    if (confirmedStep && confirmedStep.classList.contains('completed')) {
-        // Timeline già popolata, aggiorna solo le label
+    if (confirmedStep) {
+        // Recupera i dati della timeline dal DOM o da variabile globale
+        const currentStatus = confirmedStep.classList.contains('active') ? 'confirmed' :
+                             document.getElementById('step-preparing').classList.contains('active') ? 'preparing' :
+                             document.getElementById('step-shipped').classList.contains('active') ? 'shipped' : 'delivered';
+        
+        // Re-traduce i sottostati manualmente
         const preparingDate = document.getElementById('date-preparing');
-        if (preparingDate && preparingDate.textContent === 'in corso') {
-            preparingDate.textContent = i18n.t('success_timeline_in_progress');
+        const shippedDate = document.getElementById('date-shipped');
+        const deliveredDate = document.getElementById('date-delivered');
+        
+        if (preparingDate) {
+            const text = preparingDate.textContent.toLowerCase();
+            if (text.includes('in corso') || text.includes('in progress') || text.includes('en cours')) {
+                preparingDate.textContent = i18n.t('success_timeline_in_progress');
+            } else if (text.includes('completat') || text.includes('complete') || text.includes('terminé')) {
+                preparingDate.textContent = i18n.t('success_timeline_preparation_complete');
+            } else if (text.includes('da programmare') || text.includes('to be scheduled') || text.includes('à programmer')) {
+                preparingDate.textContent = i18n.t('success_timeline_to_schedule');
+            }
         }
         
-        const toSchedule = document.querySelectorAll('.timeline-date');
-        toSchedule.forEach(el => {
-            if (el.textContent === 'da programmare') {
-                el.textContent = i18n.t('success_timeline_to_schedule');
-            } else if (el.textContent === 'da definire') {
-                el.textContent = i18n.t('success_timeline_to_define');
+        if (shippedDate) {
+            const text = shippedDate.textContent.toLowerCase();
+            if (text.includes('da programmare') || text.includes('to be scheduled') || text.includes('à programmer')) {
+                shippedDate.textContent = i18n.t('success_timeline_to_schedule');
+            } else if (text.includes('da definire') || text.includes('to be defined') || text.includes('à définir')) {
+                shippedDate.textContent = i18n.t('success_timeline_to_define');
             }
-        });
+        }
+        
+        if (deliveredDate) {
+            const text = deliveredDate.textContent.toLowerCase();
+            if (text.includes('da definire') || text.includes('to be defined') || text.includes('à définir')) {
+                deliveredDate.textContent = i18n.t('success_timeline_to_define');
+            }
+        }
+        
+        // ✅ NUOVO: Re-formatta le date effettive già mostrate
+        translateTimelineDates();
     }
     
     console.log(`✅ Traduzioni aggiornate: ${i18n.currentLang.toUpperCase()}`);
@@ -2535,3 +2655,4 @@ document.addEventListener('DOMContentLoaded', () => {
     </script>    
 </body>
 </html>
+
