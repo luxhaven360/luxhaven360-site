@@ -352,6 +352,49 @@ formatTime(time) {
     return `${displayHours}${config.separator}${minutes}`;
   }
 }
+
+/**
+ * Formatta data in formato short localizzato per ogni lingua
+ * IT: 15 gen, 16:10
+ * EN: Jan 15, 4:10 PM
+ * FR: 15 janv., 16:10
+ * DE: 15. Jan., 16:10
+ * ES: 15 ene, 16:10
+ */
+formatShortDate(date) {
+  if (!date || !(date instanceof Date)) return '';
+  
+  const day = date.getDate();
+  const monthIndex = date.getMonth();
+  const hours = date.getHours();
+  const minutes = date.getMinutes().toString().padStart(2, '0');
+  
+  // Configurazione mesi abbreviati per lingua
+  const monthsConfig = {
+    it: ['gen', 'feb', 'mar', 'apr', 'mag', 'giu', 'lug', 'ago', 'set', 'ott', 'nov', 'dic'],
+    en: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'],
+    fr: ['janv.', 'févr.', 'mars', 'avr.', 'mai', 'juin', 'juil.', 'août', 'sept.', 'oct.', 'nov.', 'déc.'],
+    de: ['Jan.', 'Feb.', 'März', 'Apr.', 'Mai', 'Juni', 'Juli', 'Aug.', 'Sept.', 'Okt.', 'Nov.', 'Dez.'],
+    es: ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sept', 'oct', 'nov', 'dic']
+  };
+  
+  const months = monthsConfig[this.currentLang] || monthsConfig.it;
+  const month = months[monthIndex];
+  
+  // Formato orario in base alla lingua
+  if (this.currentLang === 'en') {
+    // Inglese: 12h con AM/PM
+    const period = hours >= 12 ? 'PM' : 'AM';
+    const displayHours = hours % 12 || 12;
+    return `${month} ${day}, ${displayHours}:${minutes} ${period}`;
+  } else if (this.currentLang === 'de') {
+    // Tedesco: giorno con punto
+    return `${day}. ${month}, ${hours}:${minutes}`;
+  } else {
+    // IT, FR, ES: formato standard
+    return `${day} ${month}, ${hours}:${minutes}`;
+  }
+}
 }
 
 // Inizializza sistema i18n
