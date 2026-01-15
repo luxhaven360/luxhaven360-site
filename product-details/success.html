@@ -2147,7 +2147,9 @@ function updateTimeline(data) {
         if (dateElem) {
             const actualDate = data.status_dates[step];
             
-            // ✅ CASO SPECIALE: "In Preparazione"
+            // ✅ RIMUOVI data-i18n per evitare sovrascrittura
+            dateElem.removeAttribute('data-i18n');
+            
             if (step === 'preparing') {
                 if (index < currentIndex) {
                     dateElem.textContent = i18n ? i18n.t('success_timeline_preparation_complete') : 'preparazione completata';
@@ -2159,25 +2161,15 @@ function updateTimeline(data) {
                 return;
             }
             
-            // ✅ Per le altre fasi (confirmed, shipped, delivered)
             if (actualDate) {
-                // Se c'è una data effettiva, formattala (minuscolo)
-                const date = new Date(actualDate);
-                const day = date.getDate();
-                
-                // ✅ NOMI MESI TRADOTTI
-                const monthKey = `pdp_month_${getItalianMonthName(date.getMonth())}`;
-                const month = i18n ? i18n.t(monthKey) : getItalianMonthName(date.getMonth());
-                
-                const time = date.toLocaleTimeString(i18n?.currentLang === 'en' ? 'en-US' : 'it-IT', { hour: '2-digit', minute: '2-digit' });
-                dateElem.textContent = `${day} ${month}, ${time}`;
+                // ✅ USA LA NUOVA FUNZIONE formatShortDate di i18n
+                const formattedDate = i18n ? i18n.formatShortDate(new Date(actualDate)) : formatDateFallback(new Date(actualDate));
+                dateElem.textContent = formattedDate;
             } else {
-                // ✅ FASE DELIVERED: Formato sintetico con prefisso "previsto:"
                 if (step === 'delivered') {
                     const estimatedDate = data.estimated_dates[step] || (i18n ? i18n.t('success_timeline_to_define') : 'da definire');
                     dateElem.textContent = formatShortDelivery(estimatedDate);
                 } else {
-                    // ✅ Altre fasi non completate: usa traduzione generica
                     const estimated = data.estimated_dates[step] || (i18n ? i18n.t('success_timeline_to_define') : 'da definire');
                     dateElem.textContent = estimated.toLowerCase();
                 }
@@ -2190,6 +2182,15 @@ function updateTimeline(data) {
         const progress = (currentIndex / (stepOrder.length - 1)) * 100;
         timelineElem.style.setProperty('--progress-percent', `${progress}%`);
     }
+}
+
+// ✅ AGGIUNGI FUNZIONE FALLBACK
+function formatDateFallback(date) {
+    const day = date.getDate();
+    const monthNames = ['gen', 'feb', 'mar', 'apr', 'mag', 'giu', 'lug', 'ago', 'set', 'ott', 'nov', 'dic'];
+    const month = monthNames[date.getMonth()];
+    const time = date.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
+    return `${day} ${month}, ${time}`;
 }
 
 // ✅ HELPER: Nome mese italiano
@@ -2463,6 +2464,7 @@ document.addEventListener('DOMContentLoaded', () => {
     </script>    
 </body>
 </html>
+
 
 
 
