@@ -1288,6 +1288,7 @@ try {
 let loadTimeout;
 let startTime;
 let emailSent = false;
+let timelineState = null; // ✅ NUOVO: Memorizza stato timeline        
 const sessionId = new URLSearchParams(window.location.search).get('session_id');
 const isRefresh = sessionId ? localStorage.getItem(`lh360_success_loaded_${sessionId}`) === 'true' : false;
 
@@ -1955,19 +1956,19 @@ function updateTimelineFromOrderData(order, confirmedTime, deliveryElem) {
     }
 
     const timelineData = {
-        current_status: mapStatusToStep(stato),
-        status_dates: {
-            confirmed: confirmedTime,
-            preparing: null,
-            shipped: stato === 'In Transito' || stato === 'Consegnato' ? new Date().toISOString() : null,
-            delivered: stato === 'Consegnato' ? new Date().toISOString() : null
-        },
-        estimated_dates: {
-            preparing: 'In corso',
-            shipped: 'Da programmare',
-            delivered: consegnaPrevista  // ✅ USA VALORE DAL BACKEND
-        }
-    };
+    current_status: mapStatusToStep(stato),
+    status_dates: {
+        confirmed: confirmedTime,
+        preparing: null,
+        shipped: stato === 'In Transito' || stato === 'Consegnato' ? new Date().toISOString() : null,
+        delivered: stato === 'Consegnato' ? new Date().toISOString() : null
+    },
+    estimated_dates: {
+    preparing: 'In corso',
+    shipped: 'Da programmare',
+    delivered: deliveryDate  // ✅ USA IL VALORE GIÀ IMPOSTATO
+}
+};
 
     updateTimeline(timelineData);
 }
@@ -2105,6 +2106,9 @@ if (rangeMatch) {
 }
 
 function updateTimeline(data) {
+    // ✅ SALVA LO STATO per riuso al cambio lingua
+    timelineState = data;
+    
     const i18n = window.i18nPDP();
     
     const steps = {
@@ -2122,10 +2126,10 @@ function updateTimeline(data) {
     };
 
     const icons = {
-        confirmed: '✓',
-        preparing: '📦',
-        shipped: '🚚',
-        delivered: '🏠'
+        confirmed: 'âœ"',
+        preparing: 'ðŸ"¦',
+        shipped: 'ðŸšš',
+        delivered: 'ðŸ '
     };
 
     const stepOrder = ['confirmed', 'preparing', 'shipped', 'delivered'];
@@ -2148,7 +2152,7 @@ function updateTimeline(data) {
         const dot = elem.querySelector('.timeline-dot');
         if (dot) {
             if (index < currentIndex) {
-                dot.innerHTML = '✓';
+                dot.innerHTML = 'âœ"';
             } else {
                 dot.innerHTML = icons[step];
             }
@@ -2156,33 +2160,49 @@ function updateTimeline(data) {
 
         const dateElem = dateElems[step];
         if (dateElem) {
-            const actualDate = data.status_dates[step];
-            
-            // ✅ RIMUOVI data-i18n per evitare sovrascrittura
+            // ✅ RIMUOVI data-i18n per gestione manuale
             dateElem.removeAttribute('data-i18n');
             
-            if (step === 'preparing') {
+            const actualDate = data.status_dates[step];
+            
+            // ✅ GESTIONE SPECIFICA PER OGNI STEP
+            if (step === 'confirmed') {
+                // Data confermato: formatta sempre con i18n
+                if (actualDate) {
+                    const formattedDate = i18n ? i18n.formatShortDate(new Date(actualDate)) : formatDateFallback(new Date(actualDate));
+                    dateElem.textContent = formattedDate;
+                } else {
+                    dateElem.textContent = i18n ? i18n.t('success_timeline_date_loading') : 'Caricamento...';
+                }
+            } else if (step === 'preparing') {
+                // In preparazione: stato testuale tradotto
                 if (index < currentIndex) {
                     dateElem.textContent = i18n ? i18n.t('success_timeline_preparation_complete') : 'preparazione completata';
                 } else if (index === currentIndex) {
                     dateElem.textContent = i18n ? i18n.t('success_timeline_in_progress') : 'in corso';
                 } else {
-                    dateElem.textContent = data.estimated_dates[step] || (i18n ? i18n.t('success_timeline_to_define') : 'da definire');
+                    dateElem.textContent = i18n ? i18n.t('success_timeline_to_define') : 'da definire';
                 }
-                return;
-            }
-            
-            if (actualDate) {
-                // ✅ USA LA NUOVA FUNZIONE formatShortDate di i18n
-                const formattedDate = i18n ? i18n.formatShortDate(new Date(actualDate)) : formatDateFallback(new Date(actualDate));
-                dateElem.textContent = formattedDate;
-            } else {
-                if (step === 'delivered') {
-                    const estimatedDate = data.estimated_dates[step] || (i18n ? i18n.t('success_timeline_to_define') : 'da definire');
-                    dateElem.textContent = formatShortDelivery(estimatedDate);
+            } else if (step === 'shipped') {
+                // Spedito: data se disponibile, altrimenti "da programmare" tradotto
+                if (actualDate) {
+                    const formattedDate = i18n ? i18n.formatShortDate(new Date(actualDate)) : formatDateFallback(new Date(actualDate));
+                    dateElem.textContent = formattedDate;
                 } else {
-                    const estimated = data.estimated_dates[step] || (i18n ? i18n.t('success_timeline_to_define') : 'da definire');
-                    dateElem.textContent = estimated.toLowerCase();
+                    dateElem.textContent = i18n ? i18n.t('success_timeline_to_schedule') : 'da programmare';
+                }
+            } else if (step === 'delivered') {
+                // Consegnato: data o stima tradotta
+                if (actualDate) {
+                    const formattedDate = i18n ? i18n.formatShortDate(new Date(actualDate)) : formatDateFallback(new Date(actualDate));
+                    dateElem.textContent = formattedDate;
+                } else {
+                    const estimatedDate = data.estimated_dates[step];
+                    if (estimatedDate && estimatedDate !== 'da definire' && estimatedDate !== 'Da definire') {
+                        dateElem.textContent = formatShortDelivery(estimatedDate);
+                    } else {
+                        dateElem.textContent = i18n ? i18n.t('success_timeline_to_define') : 'da definire';
+                    }
                 }
             }
         }
@@ -2390,36 +2410,64 @@ async function initializeTranslations() {
 }
 
 /**
- * ✅ Aggiorna solo le label della timeline senza perdere le date
+ * ✅ Ri-renderizza la timeline con le traduzioni aggiornate
  */
 function updateTimelineDates(i18n) {
-    const steps = ['confirmed', 'preparing', 'shipped', 'delivered'];
+    if (!timelineState) {
+        console.warn('⚠️ timelineState non disponibile, skip update');
+        return;
+    }
     
-    steps.forEach(step => {
-        const dateElem = document.getElementById(`date-${step}`);
-        if (!dateElem) return;
+    // ✅ Richiama updateTimeline con lo stato salvato
+    updateTimeline(timelineState);
+}
+
+/**
+ * ✅ NUOVO: Aggiorna la card CONSEGNA PREVISTA con data localizzata
+ */
+function updateDeliveryCard() {
+    if (!timelineState || !timelineState.estimated_dates) return;
+    
+    const i18n = window.i18nPDP();
+    if (!i18n) return;
+    
+    const deliveryElem = document.getElementById('deliveryValue');
+    if (!deliveryElem) return;
+    
+    const deliveryDate = timelineState.estimated_dates.delivered;
+    
+    // Se c'è una data di consegna prevista valida
+    if (deliveryDate && deliveryDate !== 'da definire' && deliveryDate !== 'Da definire') {
+        // Prova a parsare la data italiana
+        const parsedDate = parseItalianDate(deliveryDate);
         
-        const currentText = dateElem.textContent.trim().toLowerCase();
-        
-        // ✅ NON tradurre se contiene numeri (è una data reale)
-        if (/\d/.test(currentText) && !currentText.includes('loading') && !currentText.includes('caricamento')) {
-            // È una data effettiva, mantienila
-            return;
+        if (parsedDate) {
+            // Formatta con mese completo localizzato
+            const day = parsedDate.getDate();
+            const monthIndex = parsedDate.getMonth();
+            
+            const monthsConfig = {
+                it: ['Gennaio', 'Febbraio', 'Marzo', 'Aprile', 'Maggio', 'Giugno', 'Luglio', 'Agosto', 'Settembre', 'Ottobre', 'Novembre', 'Dicembre'],
+                en: ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'],
+                fr: ['Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin', 'Juillet', 'Août', 'Septembre', 'Octobre', 'Novembre', 'Décembre'],
+                de: ['Januar', 'Februar', 'März', 'April', 'Mai', 'Juni', 'Juli', 'August', 'September', 'Oktober', 'November', 'Dezember'],
+                es: ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre']
+            };
+            
+            const months = monthsConfig[i18n.currentLang] || monthsConfig.it;
+            const formattedDate = `${day} ${months[monthIndex]}`;
+            
+            deliveryElem.textContent = formattedDate;
+            deliveryElem.removeAttribute('data-i18n');
+        } else {
+            // Se non parsabile, usa il valore originale
+            deliveryElem.textContent = deliveryDate;
+            deliveryElem.removeAttribute('data-i18n');
         }
-        
-        // Traduci solo i placeholder
-        if (currentText === 'loading...' || currentText === 'caricamento...') {
-            dateElem.textContent = i18n.t('success_timeline_date_loading');
-        } else if (currentText === 'in corso' || currentText === 'in progress' || currentText === 'en cours') {
-            dateElem.textContent = i18n.t('success_timeline_in_progress');
-        } else if (currentText.includes('programmare') || currentText.includes('schedule') || currentText.includes('programmer')) {
-            dateElem.textContent = i18n.t('success_timeline_to_schedule');
-        } else if (currentText.includes('definire') || currentText.includes('define') || currentText.includes('définir')) {
-            dateElem.textContent = i18n.t('success_timeline_to_define');
-        } else if (currentText.includes('preparazione') || currentText.includes('preparation') || currentText.includes('préparation') || currentText.includes('vorbereitung')) {
-            dateElem.textContent = i18n.t('success_timeline_preparation_complete');
-        }
-    });
+    } else {
+        // Fallback tradotto
+        deliveryElem.textContent = i18n.t('success_timeline_to_define');
+    }
 }
 
 /**
@@ -2451,6 +2499,9 @@ function updateAllTranslations() {
     // 3. AGGIORNA TIMELINE (mantieni date reali, traduci solo placeholder)
     updateTimelineDates(i18n);
     
+    // 4. ✅ NUOVO: AGGIORNA CARD CONSEGNA PREVISTA
+    updateDeliveryCard();
+    
     console.log(`✅ Traduzioni aggiornate: ${i18n.currentLang.toUpperCase()}`);
 }
 
@@ -2477,6 +2528,7 @@ document.addEventListener('DOMContentLoaded', () => {
     </script>    
 </body>
 </html>
+
 
 
 
