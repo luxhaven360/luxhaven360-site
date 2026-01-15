@@ -1312,7 +1312,21 @@ function getAllStatusMessages() {
     ];
 }
 
-let statusMessages = []; // ✅ Inizializzazione vuota, verrà popolato quando i18n è pronto
+// ✅ INIZIALIZZA statusMessages IMMEDIATAMENTE con valori di default (chiavi i18n)
+let statusMessages = [
+    { icon: '🔒', key: 'success_loader_payment_verify', duration: 1500 },
+    { icon: '✓', key: 'success_loader_payment_confirmed', duration: 1500 },
+    { icon: '📋', key: 'success_loader_order_registering', duration: 1800 },
+    { icon: '✓', key: 'success_loader_order_registered', duration: 1200 },
+    { icon: '📧', key: 'success_loader_email_sending', duration: 1500, triggerEmail: true, skipOnRefresh: true },
+    { icon: '✓', key: 'success_loader_email_sent', duration: 1200, skipOnRefresh: true },
+    { icon: '🎉', key: 'success_loader_ready', duration: 1000 }
+];
+
+// ✅ FILTRA SOLO SE È REFRESH (mantieni la struttura con key)
+if (isRefresh) {
+    statusMessages = statusMessages.filter(msg => !msg.skipOnRefresh);
+}
 
 let currentStatusIndex = 0;
 let progressInterval;
@@ -1320,20 +1334,17 @@ let progressInterval;
 window.addEventListener('load', async () => {
     startTime = Date.now();
     
-    // ✅ ASPETTA CHE i18n SIA PRONTO
-    await initializeTranslations();
-    
-    // ✅ POPOLA statusMessages DOPO che i18n è pronto
-    statusMessages = isRefresh 
-        ? getAllStatusMessages().filter(msg => !msg.skipOnRefresh)
-        : getAllStatusMessages();
-    
+    // ✅ AVVIA CARICAMENTO IMMEDIATAMENTE (prima di aspettare i18n)
     setupButtons();
     startLoadingSequence();
     loadPurchasedItems();
     loadOrderDetails();
     
-    // Timeout di sicurezza esteso a 12 secondi
+    // ✅ Inizializza traduzioni in background (non bloccare la UI)
+    // initializeTranslations() rimane async ma non lo aspettiamo qui: aggiornerà i testi quando pronto.
+    initializeTranslations();
+
+    // Timeout di sicurezza
     loadTimeout = setTimeout(() => {
         console.warn('Timeout caricamento dati: forzatura visualizzazione.');
         completeLoadingSequence();
@@ -1371,7 +1382,7 @@ function updateStatusMessage() {
         // Aggiorna contenuto
         statusIconElem.textContent = message.icon;
         
-        // ✅ TRADUZIONE DINAMICA
+        // ✅ TRADUZIONE DINAMICA con fallback
         const i18n = window.i18nPDP();
         const translatedText = i18n ? i18n.t(message.key) : message.key;
         statusTextElem.textContent = translatedText;
@@ -1379,7 +1390,7 @@ function updateStatusMessage() {
         // Fade in
         statusMessageElem.style.opacity = '1';
         
-        // 🆕 TRIGGER INVIO EMAIL quando appare il messaggio corretto
+        // Trigger email
         if (message.triggerEmail && !emailSent) {
             sendInvoiceEmail();
         }
@@ -2390,22 +2401,24 @@ function updateTimelineDates(i18n) {
         
         const currentText = dateElem.textContent.trim().toLowerCase();
         
-        // ✅ Traduci solo i placeholder, mantieni le date reali
+        // ✅ NON tradurre se contiene numeri (è una data reale)
+        if (/\d/.test(currentText) && !currentText.includes('loading') && !currentText.includes('caricamento')) {
+            // È una data effettiva, mantienila
+            return;
+        }
+        
+        // Traduci solo i placeholder
         if (currentText === 'loading...' || currentText === 'caricamento...') {
             dateElem.textContent = i18n.t('success_timeline_date_loading');
-        } else if (currentText === 'in corso' || currentText === 'in progress') {
+        } else if (currentText === 'in corso' || currentText === 'in progress' || currentText === 'en cours') {
             dateElem.textContent = i18n.t('success_timeline_in_progress');
-        } else if (currentText === 'da programmare' || currentText === 'to be scheduled' || currentText === 'to schedule') {
+        } else if (currentText.includes('programmare') || currentText.includes('schedule') || currentText.includes('programmer')) {
             dateElem.textContent = i18n.t('success_timeline_to_schedule');
-        } else if (currentText === 'da definire' || currentText === 'to be defined' || currentText === 'to define') {
+        } else if (currentText.includes('definire') || currentText.includes('define') || currentText.includes('définir')) {
             dateElem.textContent = i18n.t('success_timeline_to_define');
-        } else if (currentText === 'preparazione completata' || currentText.includes('preparation complete')) {
+        } else if (currentText.includes('preparazione') || currentText.includes('preparation') || currentText.includes('préparation') || currentText.includes('vorbereitung')) {
             dateElem.textContent = i18n.t('success_timeline_preparation_complete');
-        } else if (currentText.startsWith('previsto:') || currentText.startsWith('expected:')) {
-            // ✅ Mantieni le date con formato "previsto: 27-31 dic"
-            // Non tradurre, sono già formattate correttamente
         }
-        // ✅ Se è una data effettiva (contiene numeri e mesi), NON tradurla
     });
 }
 
@@ -2464,6 +2477,7 @@ document.addEventListener('DOMContentLoaded', () => {
     </script>    
 </body>
 </html>
+
 
 
 
