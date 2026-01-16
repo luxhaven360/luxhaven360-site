@@ -2906,3 +2906,7 @@ tracking_error_timeout_title: "⏱️ Carga Retrasada",
 tracking_error_timeout_text: "La solicitud está tardando más de lo esperado. Verifica tu conexión a internet e intenta nuevamente.",
   }
 };
+
+// Espongo esplicitamente l'oggetto su window per garantire che sia accessibile
+// anche se il file viene caricato come modulo o dichiarato con const/let.
+if (typeof window !== 'undefined') window.translationsPDP = translationsPDP;
