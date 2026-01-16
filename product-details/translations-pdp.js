@@ -2906,3 +2906,8 @@ tracking_error_timeout_title: "⏱️ Carga Retrasada",
 tracking_error_timeout_text: "La solicitud está tardando más de lo esperado. Verifica tu conexión a internet e intenta nuevamente.",
   }
 };
+
+// espone l'oggetto sul global scope così il resto degli script lo vede
+if (typeof window !== 'undefined') {
+  window.translationsPDP = (typeof translationsPDP !== 'undefined') ? translationsPDP : {};
+}
