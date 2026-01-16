@@ -2310,30 +2310,27 @@ async function handleSendCode(e) {
     const url = `${WEB_APP_URL}?${params.toString()}`;
 
     try {
-        // USIAMO FETCH INVECE DI SCRIPT
-        // credentials: 'omit' è la chiave: rimuove i cookie e bypassa l'errore Google Drive
-        const response = await fetch(url, {
-            method: 'GET',
-            credentials: 'omit', 
-            redirect: 'follow'
-        });
+    const response = await fetch(url, {
+        method: 'GET',
+        credentials: 'omit',
+        redirect: 'follow'
+    });
 
-        if (!response.ok) throw new Error('Errore di rete: ' + response.status);
+    // ✅ NUOVO: Log completo della risposta
+    const text = await response.text();
+    console.log('📥 Risposta verifica codice (raw):', text);
+    
+    const jsonMatch = text.match(/^\s*cb_ignore\s*\(([\s\S]*)\)\s*;?\s*$/);
+    
+    if (!jsonMatch) {
+        console.error('❌ Parsing JSONP fallito. Risposta ricevuta:', text.substring(0, 500));
+        throw new Error('Risposta server non valida');
+    }
+    
+    const resp = JSON.parse(jsonMatch[1]);
+    console.log('✅ Risposta parsata:', resp);
 
-        const text = await response.text();
-        
-        // Puliamo la risposta JSONP per ottenere il JSON puro
-        // Il backend restituisce: cb_ignore({...})
-        // Noi estraiamo solo: {...}
-        const jsonMatch = text.match(/^\s*cb_ignore\s*\(([\s\S]*)\)\s*;?\s*$/);
-        
-        if (!jsonMatch) {
-            throw new Error('Risposta server non valida');
-        }
-
-        const resp = JSON.parse(jsonMatch[1]);
-
-        if (resp.success) {
+    if (resp.success) {
             currentRecoveryEmail = email;
             document.getElementById('displayEmail').innerText = email;
             
@@ -2548,6 +2545,7 @@ function closeInvalidRecoveryEmailModal() {
     </script>
 </body>
 </html>
+
 
 
 
