@@ -1780,9 +1780,25 @@ function formatPrice(price, currency = 'EUR') {
     // INIZIALIZZAZIONE PAGINA
     // ========================================
     window.addEventListener('DOMContentLoaded', async () => {
-        // 1. Estrai SKU dall'URL
-        const urlParams = new URLSearchParams(window.location.search);
-        const sku = urlParams.get('sku');
+    // ✅ ATTENDI INIZIALIZZAZIONE i18n
+    await new Promise(resolve => {
+        const checkI18n = setInterval(() => {
+            if (window.i18nPDP && window.i18nPDP()) {
+                clearInterval(checkI18n);
+                resolve();
+            }
+        }, 50);
+        
+        // Timeout sicurezza (max 2 secondi)
+        setTimeout(() => {
+            clearInterval(checkI18n);
+            resolve();
+        }, 2000);
+    });
+    
+    // 1. Estrai SKU dall'URL
+    const urlParams = new URLSearchParams(window.location.search);
+    const sku = urlParams.get('sku');
         
         if (!sku) {
             alert('Errore: SKU prodotto mancante');
@@ -2727,6 +2743,13 @@ function getDistanceConfigForProduct(product) {
     // INIZIALIZZAZIONE COMPONENTI
     // ========================================
     function initializeComponents(product) {
+    // ✅ ATTENDI CHE i18n SIA PRONTO
+    const i18n = window.i18nPDP();
+    if (!i18n) {
+        console.error('❌ Sistema i18n non inizializzato');
+        return;
+    }
+    
     const skuPrefix = product.sku.split('-')[0].toUpperCase();
     
     // Distance selection (se non già gestito dinamicamente)
@@ -4146,7 +4169,7 @@ if (!document.getElementById('bookingAnimations')) {
     }
 
     function renderCalendar() {
-    const i18n = window.i18nPDP();
+    const i18n = window.i18nPDP(); // ✅ RECUPERA ISTANZA i18n
     const year = currentMonth.getFullYear();
     const month = currentMonth.getMonth();
     
@@ -4155,7 +4178,7 @@ if (!document.getElementById('bookingAnimations')) {
     const daysInMonth = lastDay.getDate();
     const startingDayOfWeek = firstDay.getDay();
 
-    // ✅ Mesi tradotti
+    // ✅ MESI TRADOTTI (usa i18n invece di array fissi)
     const monthNames = [
         i18n.t('booking_calendar_months.gennaio'),
         i18n.t('booking_calendar_months.febbraio'),
@@ -4171,7 +4194,7 @@ if (!document.getElementById('bookingAnimations')) {
         i18n.t('booking_calendar_months.dicembre')
     ];
     
-    // ✅ Giorni tradotti
+    // ✅ GIORNI TRADOTTI
     const dayNames = [
         i18n.t('booking_calendar_days.sun'),
         i18n.t('booking_calendar_days.mon'),
@@ -4191,7 +4214,7 @@ if (!document.getElementById('bookingAnimations')) {
         <div class="calendar-grid">
     `;
     
-    // ✅ Aggiungi header giorni tradotti
+    // ✅ AGGIUNGI HEADER GIORNI TRADOTTI
     dayNames.forEach(day => {
         html += `<div class="calendar-day-header">${day}</div>`;
     });
@@ -4222,7 +4245,7 @@ if (!document.getElementById('bookingAnimations')) {
 }
 
     /**
- * 🌍 Aggiorna calendario per nuova lingua
+ * 🌐 Aggiorna calendario per nuova lingua
  */
 function updateCalendarLanguage() {
     if (calendar && calendar.style.display === 'block') {
