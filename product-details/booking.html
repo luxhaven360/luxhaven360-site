@@ -2412,6 +2412,45 @@ if (skuPrefix === 'EX') {
     updatePriceSummary();
 }
 
+    /**
+ * 💰 Aggiorna tutti i prezzi per la lingua corrente
+ */
+function updateAllPricesForLanguage() {
+    const i18n = window.i18nPDP();
+    if (!i18n || !bookingData.productData) return;
+    
+    const config = bookingData.productData.typeConfig;
+    const product = bookingData.productData;
+    
+    // 1. Aggiorna label prezzo principale
+    const priceLabelEl = document.querySelector('.price-label');
+    if (priceLabelEl && config) {
+        if (config.showDynamicPrice) {
+            priceLabelEl.textContent = i18n.t('booking_price_label');
+        } else {
+            priceLabelEl.textContent = i18n.t('booking_price_on_request');
+        }
+    }
+    
+    // 2. Aggiorna valore prezzo con formattazione corretta
+    const priceEl = document.querySelector('.product-price');
+    if (priceEl && product.price) {
+        priceEl.textContent = i18n.formatPrice(product.price, 'EUR');
+    }
+    
+    // 3. Aggiorna prezzi nella griglia distanze
+    document.querySelectorAll('.distance-option').forEach(option => {
+        const price = parseInt(option.dataset.price);
+        const priceSpan = option.querySelector('.text-xl.font-semibold');
+        if (priceSpan && price) {
+            priceSpan.textContent = i18n.formatPrice(price, 'EUR');
+        }
+    });
+    
+    // 4. Aggiorna riepilogo prezzi sidebar
+    updatePriceSummary();
+}
+
     // ========================================
     // LOADER UTILITIES
     // ========================================
@@ -3059,6 +3098,14 @@ if (emailInput) {
         handleExperienceDateLock(product);
 
         finalizeLoaderHide();       
+
+document.addEventListener('languageChanged', function(e) {
+    const summaryTitle = document.querySelector('.summary-product-title');
+    if (summaryTitle && bookingData.productData) {
+        // Il nome prodotto è già nella lingua corretta dal backend
+        summaryTitle.textContent = bookingData.productData.title;
+    }
+});
     }
 
         function finalizeLoaderHide() {
@@ -4098,57 +4145,90 @@ if (!document.getElementById('bookingAnimations')) {
     }
 
     function renderCalendar() {
-        const year = currentMonth.getFullYear();
-        const month = currentMonth.getMonth();
-        
-        const firstDay = new Date(year, month, 1);
-        const lastDay = new Date(year, month + 1, 0);
-        const daysInMonth = lastDay.getDate();
-        const startingDayOfWeek = firstDay.getDay();
+    const i18n = window.i18nPDP();
+    const year = currentMonth.getFullYear();
+    const month = currentMonth.getMonth();
+    
+    const firstDay = new Date(year, month, 1);
+    const lastDay = new Date(year, month + 1, 0);
+    const daysInMonth = lastDay.getDate();
+    const startingDayOfWeek = firstDay.getDay();
 
-        const monthNames = ['Gennaio', 'Febbraio', 'Marzo', 'Aprile', 'Maggio', 'Giugno',
-                          'Luglio', 'Agosto', 'Settembre', 'Ottobre', 'Novembre', 'Dicembre'];
-        
-        let html = `
-            <div class="calendar-header">
-                <button id="calendarPrevBtn" class="calendar-nav" onclick="previousMonth(event)">◄</button>
-                <div class="text-lg font-bold gradient-text">${monthNames[month]} ${year}</div>
-                <button id="calendarNextBtn" class="calendar-nav" onclick="nextMonth(event)">►</button>
-            </div>
-            <div class="calendar-grid">
-                <div class="calendar-day-header">Dom</div>
-                <div class="calendar-day-header">Lun</div>
-                <div class="calendar-day-header">Mar</div>
-                <div class="calendar-day-header">Mer</div>
-                <div class="calendar-day-header">Gio</div>
-                <div class="calendar-day-header">Ven</div>
-                <div class="calendar-day-header">Sab</div>
-        `;
+    // ✅ Mesi tradotti
+    const monthNames = [
+        i18n.t('booking_calendar_months.gennaio'),
+        i18n.t('booking_calendar_months.febbraio'),
+        i18n.t('booking_calendar_months.marzo'),
+        i18n.t('booking_calendar_months.aprile'),
+        i18n.t('booking_calendar_months.maggio'),
+        i18n.t('booking_calendar_months.giugno'),
+        i18n.t('booking_calendar_months.luglio'),
+        i18n.t('booking_calendar_months.agosto'),
+        i18n.t('booking_calendar_months.settembre'),
+        i18n.t('booking_calendar_months.ottobre'),
+        i18n.t('booking_calendar_months.novembre'),
+        i18n.t('booking_calendar_months.dicembre')
+    ];
+    
+    // ✅ Giorni tradotti
+    const dayNames = [
+        i18n.t('booking_calendar_days.sun'),
+        i18n.t('booking_calendar_days.mon'),
+        i18n.t('booking_calendar_days.tue'),
+        i18n.t('booking_calendar_days.wed'),
+        i18n.t('booking_calendar_days.thu'),
+        i18n.t('booking_calendar_days.fri'),
+        i18n.t('booking_calendar_days.sat')
+    ];
+    
+    let html = `
+        <div class="calendar-header">
+            <button id="calendarPrevBtn" class="calendar-nav" onclick="previousMonth(event)">◄</button>
+            <div class="text-lg font-bold gradient-text">${monthNames[month]} ${year}</div>
+            <button id="calendarNextBtn" class="calendar-nav" onclick="nextMonth(event)">►</button>
+        </div>
+        <div class="calendar-grid">
+    `;
+    
+    // ✅ Aggiungi header giorni tradotti
+    dayNames.forEach(day => {
+        html += `<div class="calendar-day-header">${day}</div>`;
+    });
 
-        // Empty cells before first day
-        for (let i = 0; i < startingDayOfWeek; i++) {
-            html += '<div class="calendar-day empty"></div>';
-        }
-
-        // Days of the month
-        for (let day = 1; day <= daysInMonth; day++) {
-            const currentDate = new Date(year, month, day);
-            const isDisabled = currentDate < minDate || currentDate > maxDate;
-            const isSelected = bookingData.selectedDate && 
-                             currentDate.toDateString() === bookingData.selectedDate.toDateString();
-            
-            const classes = ['calendar-day'];
-            if (isDisabled) classes.push('disabled');
-            if (isSelected) classes.push('selected');
-
-            html += `<div class="${classes.join(' ')}" 
-                         onclick="selectDate(${year}, ${month}, ${day}, ${isDisabled})">${day}</div>`;
-        }
-
-        html += '</div>';
-        calendar.innerHTML = html;
-        updateCalendarNavButtons();
+    // Empty cells before first day
+    for (let i = 0; i < startingDayOfWeek; i++) {
+        html += '<div class="calendar-day empty"></div>';
     }
+
+    // Days of the month
+    for (let day = 1; day <= daysInMonth; day++) {
+        const currentDate = new Date(year, month, day);
+        const isDisabled = currentDate < minDate || currentDate > maxDate;
+        const isSelected = bookingData.selectedDate && 
+                         currentDate.toDateString() === bookingData.selectedDate.toDateString();
+        
+        const classes = ['calendar-day'];
+        if (isDisabled) classes.push('disabled');
+        if (isSelected) classes.push('selected');
+
+        html += `<div class="${classes.join(' ')}" 
+                     onclick="selectDate(${year}, ${month}, ${day}, ${isDisabled})">${day}</div>`;
+    }
+
+    html += '</div>';
+    calendar.innerHTML = html;
+    updateCalendarNavButtons();
+}
+
+    /**
+ * 🌍 Aggiorna calendario per nuova lingua
+ */
+function updateCalendarLanguage() {
+    if (calendar && calendar.style.display === 'block') {
+        renderCalendar();
+        positionCalendar();
+    }
+}
 
     function monthIsBefore(aYear, aMonth, bYear, bMonth) {
         return aYear < bYear || (aYear === bYear && aMonth < bMonth);
