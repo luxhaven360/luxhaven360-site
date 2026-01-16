@@ -571,6 +571,7 @@ textarea[placeholder="Hai richieste particolari?"] {
 /* Responsive Mobile */
 @media (max-width: 768px) {
     .pdp-lang-selector {
+        position: fixed;
         top: 1rem;
         right: 1rem;
         padding: 0.5rem 1rem;
@@ -4704,10 +4705,106 @@ document.addEventListener('languageChanged', function(e) {
                                            'booking_config_ex_badge');
         }
         
+                // ✅ AGGIUNGI: Aggiorna tabelle prestazioni/caratteristiche
+        const table1Title = document.querySelector('.table-1-title');
+        const table2Title = document.querySelector('.table-2-title');
+        
+        if (table1Title) {
+            table1Title.textContent = i18n.t(config.type === 'supercar' ? 'booking_config_sc_table1' :
+                                             config.type === 'immobili' ? 'booking_config_pr_table1' :
+                                             'booking_config_ex_table1');
+        }
+        
+        if (table2Title) {
+            table2Title.textContent = i18n.t(config.type === 'supercar' ? 'booking_config_sc_table2' :
+                                             config.type === 'immobili' ? 'booking_config_pr_table2' :
+                                             'booking_config_ex_table2');
+        }
+        
+        // ✅ Aggiorna label nelle tabelle
+        updateTableLabels();
+        
         // Aggiorna prezzi con nuova valuta
         updatePriceSummary();
     }
 });
+
+/**
+ * 🏷️ Aggiorna label tabelle prestazioni/caratteristiche
+ */
+function updateTableLabels() {
+    const i18n = window.i18nPDP();
+    const config = bookingData.productData?.typeConfig;
+    if (!config) return;
+    
+    const product = bookingData.productData;
+    
+    // Tabella 1
+    const table1Body = document.querySelector('.table-1-body');
+    if (table1Body && product.prestazioni) {
+        table1Body.innerHTML = '';
+        product.prestazioni.forEach((value, index) => {
+            const labelKey = `booking_config_${config.type === 'supercar' ? 'sc' : config.type === 'immobili' ? 'pr' : 'ex'}_specs`;
+            const labels = i18n.t(labelKey);
+            const label = Array.isArray(labels) ? labels[index] : `Campo ${index + 1}`;
+            
+            table1Body.innerHTML += `
+                <div class="spec-item">
+                    <span style="color: #a59173;">${label}</span>
+                    <span class="font-semibold">${value}</span>
+                </div>
+            `;
+        });
+    }
+    
+    // Tabella 2
+    const table2Body = document.querySelector('.table-2-body');
+    if (table2Body && product.caratteristiche) {
+        table2Body.innerHTML = '';
+        product.caratteristiche.forEach((value, index) => {
+            const labelKey = `booking_config_${config.type === 'supercar' ? 'sc' : config.type === 'immobili' ? 'pr' : 'ex'}_specs`;
+            const labels = i18n.t(labelKey);
+            const label = Array.isArray(labels) ? labels[index + 4] : `Campo ${index + 5}`; // +4 offset per tabella 2
+            
+            table2Body.innerHTML += `
+                <div class="spec-item">
+                    <span style="color: #a59173;">${label}</span>
+                    <span class="font-semibold">${value}</span>
+                </div>
+            `;
+        });
+    }
+}
+
+        /**
+ * 🕐 Aggiorna formattazione orari nel dropdown
+ */
+function updateTimeFormatLanguage() {
+    const i18n = window.i18nPDP();
+    const timeSelect = document.getElementById('bookingTime');
+    
+    if (!timeSelect || !bookingData.productData) return;
+    
+    const product = bookingData.productData;
+    const currentValue = timeSelect.value;
+    
+    // Ricostruisci options con formattazione corretta
+    timeSelect.innerHTML = `<option value="">${i18n.t('booking_time_placeholder')}</option>`;
+    
+    if (product.orari && Array.isArray(product.orari) && product.orari.length > 0) {
+        product.orari.forEach(orario => {
+            if (orario) {
+                const formattedTime = i18n.formatTime(orario);
+                timeSelect.innerHTML += `<option value="${orario}">${formattedTime}</option>`;
+            }
+        });
+    }
+    
+    // Ripristina selezione precedente
+    if (currentValue) {
+        timeSelect.value = currentValue;
+    }
+}
 </script>
 </body>
 </html>
