@@ -1856,6 +1856,10 @@ async function loadOrders() {
     const emptyEl = document.getElementById('emptyState');
     const recoverySection = document.getElementById('recoverySection');
 
+    if (ordersListEl) ordersListEl.style.display = 'none';
+    if (emptyEl) emptyEl.style.display = 'none';
+    if (recoverySection) recoverySection.style.display = 'none';
+
     // Assicuriamoci che lo stato iniziale sia visibile
     if (loadingEl) loadingEl.style.display = 'block';
     if (ordersListEl) ordersListEl.style.display = 'none';
@@ -1879,6 +1883,7 @@ async function loadOrders() {
         const pendingOrders = getPendingOrdersFromLocalStorage();
         if (pendingOrders.length === 0) {
             if (ordersListEl) ordersListEl.style.display = 'none';
+            if (recoverySection) recoverySection.style.display = 'none'; 
             showEmptyState('Nessun ordine trovato', 'Non è stato trovato un ordine recente in questo dispositivo.');
         } else {
             if (emptyEl) emptyEl.style.display = 'none';
@@ -1897,21 +1902,25 @@ const showRecovery = urlParams.get('show_recovery') === 'true';
 if (!userEmail) {
     // ✅ Se logout esplicito o URL richiede recovery → mostra sempre il modulo
     if (showRecovery) {
-        console.log('🔐 Logout eseguito - mostro modulo recupero');
-        if (loadingEl) loadingEl.style.display = 'none';
-        if (recoverySection) recoverySection.style.display = 'block';
-        ordersRendered = true;
-        return;
-    }
+    console.log('🔍 Logout eseguito - mostro modulo recupero');
+    if (loadingEl) loadingEl.style.display = 'none';
+    if (ordersListEl) ordersListEl.style.display = 'none';
+    if (emptyEl) emptyEl.style.display = 'none';
+    if (recoverySection) recoverySection.style.display = 'block';
+    ordersRendered = true;
+    return;
+}
     
     // ✅ Altrimenti controlla se ci sono ordini attivi nel sistema
     console.log('Nessuna email salvata. Controllo se esistono ordini attivi nel sistema...');
+    
+    let checkTimeoutId; 
     
     try {
         const checkUrl = `${WEB_APP_URL}?get_active_count=1&callback=cb_ignore&t=${Date.now()}`;
         
         const checkController = new AbortController();
-        const checkTimeoutId = setTimeout(() => checkController.abort(), 20000);
+        checkTimeoutId = setTimeout(() => checkController.abort(), 20000);
         
         const checkResp = await fetch(checkUrl, { 
             method: 'GET', 
@@ -1936,6 +1945,7 @@ if (!userEmail) {
                 } else {
                     console.log('Nessun ordine attivo globale. Mostro empty state.');
                     if (loadingEl) loadingEl.style.display = 'none';
+                    if (recoverySection) recoverySection.style.display = 'none';
                     showEmptyState('Nessun ordine trovato', 'Effettua un ordine per visualizzare qui il tracking.');
                 }
             } else {
@@ -2053,6 +2063,7 @@ if (!userEmail) {
 
         if (allOrders.length === 0) {
             if (ordersListEl) ordersListEl.style.display = 'none';
+            if (recoverySection) recoverySection.style.display = 'none';
             showEmptyState();
         } else {
             // Nascondi stato vuoto (se visibile) e mostra lista
@@ -2146,6 +2157,9 @@ function renderOrdersPage() {
     pageOrders.forEach((order, index) => {
         ordersList.innerHTML += createOrderCard(order, start + index);
     });
+
+    const recoverySection = document.getElementById('recoverySection');  
+    if (recoverySection) recoverySection.style.display = 'none';
     
     ordersList.style.display = 'flex';
     
@@ -2525,5 +2539,6 @@ function closeInvalidRecoveryEmailModal() {
     </script>
 </body>
 </html>
+
 
 
