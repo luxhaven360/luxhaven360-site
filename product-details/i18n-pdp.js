@@ -128,9 +128,9 @@ class I18nPDP {
     localStorage.setItem('lh360_lang', langCode);
     this.currentLang = langCode;
 
-    // ✅ NON chiamare translatePage() qui per evitare di sovrascrivere valori dinamici
-    // La traduzione verrà gestita dall'evento languageChanged
-
+    // ✅ AGGIUNGI: Traduci TUTTA la pagina immediatamente
+    this.translatePage();
+    
     this.updateLanguageSelector();
 
     // Aggiorna prezzi con nuova valuta
@@ -138,9 +138,13 @@ class I18nPDP {
         updateAllPricesForLanguage();
     }
 
-    // Aggiorna badge disponibilità
-    if (typeof updateAllBadgesForLanguage === 'function') {
-        updateAllBadgesForLanguage();
+    // ✅ AGGIUNGI: Aggiorna calendar e orari
+    if (typeof updateCalendarLanguage === 'function') {
+        updateCalendarLanguage();
+    }
+    
+    if (typeof updateTimeFormatLanguage === 'function') {
+        updateTimeFormatLanguage();
     }
 
     // Dispatch event
