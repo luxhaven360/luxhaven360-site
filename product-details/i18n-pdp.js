@@ -104,20 +104,50 @@ class I18nPDP {
     });
   }
 
-  t(key, replacements = {}) {
-    const lang = this.translations[this.currentLang];
-    let text = lang[key] || key;
+   // Risolve path tipo 'booking_calendar_months.gennaio' in oggetti annidati
+  _getByPath(obj, path) {
+    if (!obj || !path) return undefined;
+    return path.split('.').reduce((acc, part) => {
+      if (acc && Object.prototype.hasOwnProperty.call(acc, part)) {
+        return acc[part];
+      }
+      return undefined;
+    }, obj);
+  }
 
-    // Sostituisci placeholder (es: {n}, {code}, {percent})
+  t(key, replacements = {}) {
+    // lingua corrente
+    const langObj = this.translations && this.translations[this.currentLang] ? this.translations[this.currentLang] : {};
+
+    // prova a risolvere la key con dot-notation (es: booking_calendar_months.gennaio)
+    let val = this._getByPath(langObj, key);
+
+    // fallback: prova anche senza dot (per chiavi piatte)
+    if (val === undefined && Object.prototype.hasOwnProperty.call(langObj, key)) {
+      val = langObj[key];
+    }
+
+    // se ancora undefined => ritorna la key (utile per debug)
+    let text = (val !== undefined && val !== null) ? val : key;
+
+    // se l'entry è un oggetto/array, prova a convertirlo in stringa (per sicurezza)
+    if (typeof text === 'object') {
+      try {
+        text = JSON.stringify(text);
+      } catch (e) {
+        text = String(text);
+      }
+    }
+
+    // Sostituisci placeholders {n} ecc.
     Object.keys(replacements).forEach(placeholder => {
-        const value = replacements[placeholder];
-        // ✅ FIX: Assicurati che il valore non sia undefined
-        const safeValue = (value !== undefined && value !== null) ? value : '';
-        text = text.replace(new RegExp(`\\{${placeholder}\\}`, 'g'), safeValue);
+      const value = replacements[placeholder];
+      const safeValue = (value !== undefined && value !== null) ? value : '';
+      text = String(text).replace(new RegExp(`\\{${placeholder}\\}`, 'g'), safeValue);
     });
 
     return text;
-}
+  }
 
   changeLanguage(langCode) {
     if (!this.translations[langCode]) {
