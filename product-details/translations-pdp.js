@@ -632,9 +632,10 @@ tracking_error_network: "Errore server:",
 tracking_error_timeout_title: "⏱️ Caricamento rallentato",
 tracking_error_timeout_text: "La richiesta sta impiegando più tempo del previsto. Controlla la connessione internet e riprova.",
 tracking_error_generic: "Verifica la connessione internet. Se il problema persiste, contatta il supporto.",
+tracking_error_timeout_title: "⏱️ Caricamento rallentato",
+tracking_error_timeout_text: "La richiesta sta impiegando più tempo del previsto. Controlla la connessione internet e riprova.",
   },
 
-  
   en: {
     // ============================================
     // CART.HTML - CART
@@ -1198,6 +1199,8 @@ tracking_error_network: "Server error:",
 tracking_error_timeout_title: "⏱️ Loading Delayed",
 tracking_error_timeout_text: "The request is taking longer than expected. Check your internet connection and try again.",
 tracking_error_generic: "Check your internet connection. If the problem persists, contact support.",
+tracking_error_timeout_title: "⏱️ Loading Delayed",
+tracking_error_timeout_text: "The request is taking longer than expected. Check your internet connection and try again.",    
   },
   
   fr: {
@@ -1763,6 +1766,8 @@ tracking_error_network: "Erreur serveur :",
 tracking_error_timeout_title: "⏱️ Chargement Ralenti",
 tracking_error_timeout_text: "La requête prend plus de temps que prévu. Vérifiez votre connexion internet et réessayez.",
 tracking_error_generic: "Vérifiez votre connexion internet. Si le problème persiste, contactez le support.",
+tracking_error_timeout_title: "⏱️ Chargement Ralenti",
+tracking_error_timeout_text: "La requête prend plus de temps que prévu. Vérifiez votre connexion internet et réessayez.",
   },
   
   de: {
@@ -2329,6 +2334,8 @@ tracking_error_network: "Serverfehler:",
 tracking_error_timeout_title: "⏱️ Ladevorgang Verzögert",
 tracking_error_timeout_text: "Die Anfrage dauert länger als erwartet. Überprüfen Sie Ihre Internetverbindung und versuchen Sie es erneut.",
 tracking_error_generic: "Überprüfen Sie Ihre Internetverbindung. Wenn das Problem weiterhin besteht, wenden Sie sich an den Support.",
+tracking_error_timeout_title: "⏱️ Ladevorgang Verzögert",
+tracking_error_timeout_text: "Die Anfrage dauert länger als erwartet. Überprüfen Sie Ihre Internetverbindung und versuchen Sie es erneut.",
   },
   
   es: {
@@ -2895,5 +2902,7 @@ tracking_error_network: "Error del servidor:",
 tracking_error_timeout_title: "⏱️ Carga Retrasada",
 tracking_error_timeout_text: "La solicitud está tardando más de lo esperado. Verifica tu conexión a internet e intenta nuevamente.",
 tracking_error_generic: "Verifica tu conexión a internet. Si el problema persiste, contacta con soporte.",
+tracking_error_timeout_title: "⏱️ Carga Retrasada",
+tracking_error_timeout_text: "La solicitud está tardando más de lo esperado. Verifica tu conexión a internet e intenta nuevamente.",
   }
 };
