@@ -1892,71 +1892,77 @@ async function loadOrders() {
 
     // --- MODIFICA RICHIESTA: Controllo preliminare Email ---
     const userEmail = localStorage.getItem('lh360_user_email');
+const urlParams = new URLSearchParams(window.location.search);
+const showRecovery = urlParams.get('show_recovery') === 'true';
 
-    if (!userEmail) {
-        console.log('Nessuna email salvata. Controllo se esistono ordini attivi nel sistema...');
+if (!userEmail) {
+    // ✅ Se logout esplicito o URL richiede recovery → mostra sempre il modulo
+    if (showRecovery) {
+        console.log('🔐 Logout eseguito - mostro modulo recupero');
+        if (loadingEl) loadingEl.style.display = 'none';
+        if (recoverySection) recoverySection.style.display = 'block';
+        ordersRendered = true;
+        return;
+    }
+    
+    // ✅ Altrimenti controlla se ci sono ordini attivi nel sistema
+    console.log('Nessuna email salvata. Controllo se esistono ordini attivi nel sistema...');
+    
+    try {
+        const checkUrl = `${WEB_APP_URL}?get_active_count=1&callback=cb_ignore&t=${Date.now()}`;
         
-        // Chiamata per verificare se ci sono ordini attivi in generale
-try {
-    const checkUrl = `${WEB_APP_URL}?get_active_count=1&callback=cb_ignore&t=${Date.now()}`;
-    
-    // Aggiungi timeout anche qui
-    const checkController = new AbortController();
-    const checkTimeoutId = setTimeout(() => checkController.abort(), 20000); // 20s
-    
-    const checkResp = await fetch(checkUrl, { 
-        method: 'GET', 
-        credentials: 'omit', 
-        redirect: 'follow',
-        signal: checkController.signal // AGGIUNTO
-    });
-    
-    clearTimeout(checkTimeoutId); // AGGIUNTO
+        const checkController = new AbortController();
+        const checkTimeoutId = setTimeout(() => checkController.abort(), 20000);
+        
+        const checkResp = await fetch(checkUrl, { 
+            method: 'GET', 
+            credentials: 'omit', 
+            redirect: 'follow',
+            signal: checkController.signal
+        });
+        
+        clearTimeout(checkTimeoutId);
 
-            if (checkResp.ok) {
-                const text = await checkResp.text();
-                // Parsing JSONP (cb_ignore({...}))
-                const jsonMatch = text.match(/^\s*cb_ignore\s*\(([\s\S]*)\)\s*;?\s*$/);
+        if (checkResp.ok) {
+            const text = await checkResp.text();
+            const jsonMatch = text.match(/^\s*cb_ignore\s*\(([\s\S]*)\)\s*;?\s*$/);
+            
+            if (jsonMatch && jsonMatch[1]) {
+                const data = JSON.parse(jsonMatch[1]);
                 
-                if (jsonMatch && jsonMatch[1]) {
-                    const data = JSON.parse(jsonMatch[1]);
-                    
-                    if (data && data.count > 0) {
-                        // CI SONO ordini attivi -> Mostra modulo recupero
-                        console.log(`Trovati ${data.count} ordini attivi globali. Mostro recupero.`);
-                        if (loadingEl) loadingEl.style.display = 'none';
-                        if (recoverySection) recoverySection.style.display = 'block';
-                    } else {
-                        // NON CI SONO ordini attivi -> Mostra stato vuoto
-                        console.log('Nessun ordine attivo globale. Mostro empty state.');
-                        if (loadingEl) loadingEl.style.display = 'none';
-                        showEmptyState('Nessun ordine trovato', 'Effettua un ordine per visualizzare qui il tracking.');
-                    }
-                } else {
-                    // Fallback in caso di parse fallito: mostra recupero per sicurezza
-                    console.warn('Parse JSONP fallito durante check ordini. Mostro recupero.');
+                if (data && data.count > 0) {
+                    console.log(`Trovati ${data.count} ordini attivi globali. Mostro recupero.`);
                     if (loadingEl) loadingEl.style.display = 'none';
                     if (recoverySection) recoverySection.style.display = 'block';
+                } else {
+                    console.log('Nessun ordine attivo globale. Mostro empty state.');
+                    if (loadingEl) loadingEl.style.display = 'none';
+                    showEmptyState('Nessun ordine trovato', 'Effettua un ordine per visualizzare qui il tracking.');
                 }
             } else {
-                 throw new Error('Network response was not ok during check');
+                console.warn('Parse JSONP fallito durante check ordini. Mostro recupero.');
+                if (loadingEl) loadingEl.style.display = 'none';
+                if (recoverySection) recoverySection.style.display = 'block';
             }
-        } catch (e) {
-    clearTimeout(checkTimeoutId); // AGGIUNTO: pulisci timeout anche qui
-    
-    if (e.name === 'AbortError') {
-        console.warn('⚠️ Timeout check ordini attivi (>20s)');
-    } else {
-        console.error('❌ Errore durante check ordini attivi:', e);
-    }
-    
-    if (loadingEl) loadingEl.style.display = 'none';
-    if (recoverySection) recoverySection.style.display = 'block';
-}
+        } else {
+            throw new Error('Network response was not ok during check');
+        }
+    } catch (e) {
+        clearTimeout(checkTimeoutId);
         
-        ordersRendered = true;
-        return; 
+        if (e.name === 'AbortError') {
+            console.warn('⚠️ Timeout check ordini attivi (>20s)');
+        } else {
+            console.error('❌ Errore durante check ordini attivi:', e);
+        }
+        
+        if (loadingEl) loadingEl.style.display = 'none';
+        if (recoverySection) recoverySection.style.display = 'block';
     }
+    
+    ordersRendered = true;
+    return; 
+}
 
     // Se l'email c'è, proseguiamo col caricamento normale
     console.log('🔍 Ricerca ordini per email:', userEmail);
@@ -2457,8 +2463,13 @@ function confirmLogout() {
         modal.classList.remove('active');
     }
     
+    // ✅ Reset dello stato prima del reload
+    ordersRendered = false;
+    allOrdersCache = [];
+    currentOrderPage = 0;
+    
     setTimeout(() => {
-        window.location.href = 'tracking-order.html?view=all';
+        window.location.href = 'tracking-order.html?view=all&show_recovery=true';
     }, 300);
 }
 
@@ -2515,3 +2526,4 @@ function closeInvalidRecoveryEmailModal() {
     </script>
 </body>
 </html>
+
