@@ -1898,11 +1898,13 @@ async function loadOrders() {
     // --- MODIFICA RICHIESTA: Controllo preliminare Email ---
     const userEmail = localStorage.getItem('lh360_user_email');
 const showRecovery = urlParams.get('show_recovery') === 'true';
+// ✅ NUOVO: Controlla anche sessionStorage per persistenza tra navigazioni
+const forceRecovery = sessionStorage.getItem('lh360_show_recovery') === 'true';
 
 if (!userEmail) {
-    // ✅ Se logout esplicito o URL richiede recovery → mostra sempre il modulo
-    if (showRecovery) {
-    console.log('🔍 Logout eseguito - mostro modulo recupero');
+    // ✅ Se logout esplicito o URL/session richiede recovery → mostra sempre il modulo
+    if (showRecovery || forceRecovery) {
+    console.log('🔐 Logout eseguito - mostro modulo recupero');
     if (loadingEl) loadingEl.style.display = 'none';
     if (ordersListEl) ordersListEl.style.display = 'none';
     if (emptyEl) emptyEl.style.display = 'none';
@@ -2402,12 +2404,16 @@ async function handleVerifyCode(e) {
         const resp = JSON.parse(jsonMatch[1]);
 
         if (resp.success) {
-            localStorage.setItem('lh360_user_email', currentRecoveryEmail);
-            document.getElementById('recoverySection').style.display = 'none';
-            document.getElementById('loadingState').style.display = 'block';
-            ordersRendered = false;
-            loadOrders(); 
-        } else {
+    localStorage.setItem('lh360_user_email', currentRecoveryEmail);
+    
+    // ✅ NUOVO: Rimuovi flag recovery al login riuscito
+    sessionStorage.removeItem('lh360_show_recovery');
+    
+    document.getElementById('recoverySection').style.display = 'none';
+    document.getElementById('loadingState').style.display = 'block';
+    ordersRendered = false;
+    loadOrders(); 
+} else {
             throw new Error(resp.error || 'Codice non valido');
         }
 
@@ -2470,6 +2476,9 @@ function closeLogoutModal() {
 
 function confirmLogout() {
     localStorage.removeItem('lh360_user_email');
+    
+    // ✅ NUOVO: Salva flag in sessionStorage per persistere durante la navigazione
+    sessionStorage.setItem('lh360_show_recovery', 'true');
     
     const modal = document.getElementById('logoutModal');
     if (modal) {
@@ -2539,6 +2548,7 @@ function closeInvalidRecoveryEmailModal() {
     </script>
 </body>
 </html>
+
 
 
 
