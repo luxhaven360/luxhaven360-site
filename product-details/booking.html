@@ -1781,30 +1781,18 @@ function restoreOriginalDistancePricing() {
  * Formatta il prezzo per booking.html
  * Output: "€1.265" (euro PRIMA del numero)
  */
-function formatPrice(price, currency = 'EUR') {
-    const amount = parseFloat(price) || 0;
-    
-    // Determina decimali
-    let decimals = 0;
-    if (amount < 100) decimals = 2;
-    else if (amount < 500) decimals = 2;
-    else if (amount < 1000) decimals = amount % 1 !== 0 ? 2 : 0;
-    else decimals = 0;
-    
-    // Formatta manualmente
-    let formatted = amount.toFixed(decimals);
-    
-    // Sostituisci punto decimale con virgola
-    formatted = formatted.replace('.', ',');
-    
-    // Aggiungi separatore migliaia (punto)
-    let parts = formatted.split(',');
-    parts[0] = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, '.');
-    
-    // Simbolo valuta PRIMA del numero
-    const symbol = currency === 'EUR' ? '€' : currency;
-    
-    return `${symbol}${parts.join(',')}`;
+  function formatPrice(price, currency = 'EUR') {
+    const i18n = window.i18nPDP();
+    if (!i18n) {
+        console.warn('⚠️ i18n non disponibile, uso formato italiano di fallback');
+        const amount = parseFloat(price) || 0;
+        let decimals = amount < 500 ? 2 : 0;
+        let formatted = amount.toFixed(decimals).replace('.', ',');
+        let parts = formatted.split(',');
+        parts[0] = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+        return `€${parts.join(',')}`;
+    }
+    return i18n.formatPrice(price, currency);
 }
     
     let bookingData = {
@@ -2001,39 +1989,56 @@ if (config.showDynamicPrice) {
     // ✅ 6. DESCRIZIONE
     document.querySelector('.product-description').textContent = product.desc;
     
-    // ✅ 7. TABELLA PRESTAZIONI
-    const table1Title = document.querySelector('.table-1-title');
-    const table1Body = document.querySelector('.table-1-body');
+    // ✅ 7. TABELLA PRESTAZIONI (con traduzioni dinamiche)
+const table1Title = document.querySelector('.table-1-title');
+const table1Body = document.querySelector('.table-1-body');
+
+// Determina chiave traduzione per titolo tabella 1
+const table1TitleKey = config.type === 'supercar' ? 'booking_config_sc_table1' :
+                       config.type === 'immobili' ? 'booking_config_pr_table1' :
+                       'booking_config_ex_table1';
+table1Title.textContent = i18n.t(table1TitleKey);
+table1Body.innerHTML = '';
+
+// Determina chiave traduzione per label tabella 1
+const specsKey = config.type === 'supercar' ? 'booking_config_sc_specs' :
+                 config.type === 'immobili' ? 'booking_config_pr_specs' :
+                 'booking_config_ex_specs';
+
+product.prestazioni.forEach((value, index) => {
+    const labels = i18n.t(specsKey);
+    const label = Array.isArray(labels) ? labels[index] : `Campo ${index + 1}`;
     
-    table1Title.textContent = config.tables.first.title;
-    table1Body.innerHTML = '';
+    table1Body.innerHTML += `
+        <div class="spec-item">
+            <span style="color: #a59173;">${label}</span>
+            <span class="font-semibold">${value}</span>
+        </div>
+    `;
+});
+
+// ✅ 8. TABELLA CARATTERISTICHE (con traduzioni dinamiche)
+const table2Title = document.querySelector('.table-2-title');
+const table2Body = document.querySelector('.table-2-body');
+
+// Titolo tabella 2
+const table2TitleKey = config.type === 'supercar' ? 'booking_config_sc_table2' :
+                       config.type === 'immobili' ? 'booking_config_pr_table2' :
+                       'booking_config_ex_table2';
+table2Title.textContent = i18n.t(table2TitleKey);
+table2Body.innerHTML = '';
+
+product.caratteristiche.forEach((value, index) => {
+    const labels = i18n.t(specsKey);
+    const label = Array.isArray(labels) ? labels[index + 4] : `Campo ${index + 5}`; // +4 offset per tabella 2
     
-    product.prestazioni.forEach((value, index) => {
-        const label = config.tables.first.labels[index] || `Campo ${index + 1}`;
-        table1Body.innerHTML += `
-            <div class="spec-item">
-                <span style="color: #a59173;">${label}</span>
-                <span class="font-semibold">${value}</span>
-            </div>
-        `;
-    });
-    
-    // ✅ 8. TABELLA CARATTERISTICHE
-    const table2Title = document.querySelector('.table-2-title');
-    const table2Body = document.querySelector('.table-2-body');
-    
-    table2Title.textContent = config.tables.second.title;
-    table2Body.innerHTML = '';
-    
-    product.caratteristiche.forEach((value, index) => {
-        const label = config.tables.second.labels[index] || `Campo ${index + 1}`;
-        table2Body.innerHTML += `
-            <div class="spec-item">
-                <span style="color: #a59173;">${label}</span>
-                <span class="font-semibold">${value}</span>
-            </div>
-        `;
-    });
+    table2Body.innerHTML += `
+        <div class="spec-item">
+            <span style="color: #a59173;">${label}</span>
+            <span class="font-semibold">${value}</span>
+        </div>
+    `;
+});
     
     // ✅ 9. ORARI DISPONIBILI
     const timeSelect = document.getElementById('bookingTime');
@@ -2486,50 +2491,6 @@ if (skuPrefix === 'EX') {
         bookingData.basePrice = product.price || 0;
     }
 
-    updatePriceSummary();
-}
-
-    /**
- * 💰 Aggiorna tutti i prezzi per la lingua corrente
- */
-function updateAllPricesForLanguage() {
-    const i18n = window.i18nPDP();
-    if (!i18n || !bookingData.productData) return;
-    
-    const config = bookingData.productData.typeConfig;
-    const product = bookingData.productData;
-    
-    // 1. Aggiorna label prezzo principale (con chiave dinamica)
-const priceLabelEl = document.querySelector('.price-label');
-if (priceLabelEl && config) {
-    let priceLabelKey = 'booking_price_label';
-    if (config.type === 'supercar') {
-        priceLabelKey = 'booking_price_sc_label';
-    } else if (config.type === 'immobili') {
-        priceLabelKey = 'booking_price_pr_label';
-    } else if (config.type === 'esperienze') {
-        priceLabelKey = 'booking_price_ex_label';
-    }
-    
-    priceLabelEl.textContent = i18n.t(priceLabelKey);
-}
-    
-    // 2. Aggiorna valore prezzo con formattazione corretta
-    const priceEl = document.querySelector('.product-price');
-    if (priceEl && product.price) {
-        priceEl.textContent = i18n.formatPrice(product.price, 'EUR');
-    }
-    
-    // 3. Aggiorna prezzi nella griglia distanze
-    document.querySelectorAll('.distance-option').forEach(option => {
-        const price = parseInt(option.dataset.price);
-        const priceSpan = option.querySelector('.text-xl.font-semibold');
-        if (priceSpan && price) {
-            priceSpan.textContent = i18n.formatPrice(price, 'EUR');
-        }
-    });
-    
-    // 4. Aggiorna riepilogo prezzi sidebar
     updatePriceSummary();
 }
 
@@ -3250,6 +3211,50 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 });
 
+/**
+ * 💰 Aggiorna tutti i prezzi per la lingua corrente
+ */
+function updateAllPricesForLanguage() {
+    const i18n = window.i18nPDP();
+    if (!i18n || !bookingData.productData) return;
+    
+    const config = bookingData.productData.typeConfig;
+    const product = bookingData.productData;
+    
+    // 1. Aggiorna label prezzo principale (con chiave dinamica)
+    const priceLabelEl = document.querySelector('.price-label');
+    if (priceLabelEl && config) {
+        let priceLabelKey = 'booking_price_label';
+        if (config.type === 'supercar') {
+            priceLabelKey = 'booking_price_sc_label';
+        } else if (config.type === 'immobili') {
+            priceLabelKey = 'booking_price_pr_label';
+        } else if (config.type === 'esperienze') {
+            priceLabelKey = 'booking_price_ex_label';
+        }
+        
+        priceLabelEl.textContent = i18n.t(priceLabelKey);
+    }
+    
+    // 2. Aggiorna valore prezzo con formattazione corretta
+    const priceEl = document.querySelector('.product-price');
+    if (priceEl && product.price) {
+        priceEl.textContent = i18n.formatPrice(product.price, 'EUR');
+    }
+    
+    // 3. Aggiorna prezzi nella griglia distanze
+    document.querySelectorAll('.distance-option').forEach(option => {
+        const price = parseInt(option.dataset.price);
+        const priceSpan = option.querySelector('.text-xl.font-semibold');
+        if (priceSpan && price) {
+            priceSpan.textContent = i18n.formatPrice(price, 'EUR');
+        }
+    });
+    
+    // 4. Aggiorna riepilogo prezzi sidebar
+    updatePriceSummary();
+}
+        
         /**
  * Inizializza selezione distanza per prodotti con chilometraggio dinamico
  */
@@ -4764,7 +4769,7 @@ function disableBookingForComingSoon() {
 // 🌍 LANGUAGE CHANGE LISTENER
 // ========================================
 document.addEventListener('languageChanged', function(e) {
-    console.log('🌍 Lingua cambiata:', e.detail.lang);
+    console.log('🌐 Lingua cambiata:', e.detail.lang);
     
     // Riapplica traduzioni dinamiche se necessario
     if (bookingData.productData) {
@@ -4794,34 +4799,18 @@ document.addEventListener('languageChanged', function(e) {
                                            'booking_config_ex_badge');
         }
         
-                // ✅ AGGIUNGI: Aggiorna tabelle prestazioni/caratteristiche
-        const table1Title = document.querySelector('.table-1-title');
-        const table2Title = document.querySelector('.table-2-title');
-        
-        if (table1Title) {
-            table1Title.textContent = i18n.t(config.type === 'supercar' ? 'booking_config_sc_table1' :
-                                             config.type === 'immobili' ? 'booking_config_pr_table1' :
-                                             'booking_config_ex_table1');
-        }
-        
-        if (table2Title) {
-            table2Title.textContent = i18n.t(config.type === 'supercar' ? 'booking_config_sc_table2' :
-                                             config.type === 'immobili' ? 'booking_config_pr_table2' :
-                                             'booking_config_ex_table2');
-        }
-        
-        // ✅ Aggiorna label nelle tabelle
+        // ✅ NUOVO: Aggiorna tabelle (titoli + label)
         updateTableLabels();
         
         // Aggiorna prezzi con nuova valuta
         updatePriceSummary();
     }
 
-        // ✅ Aggiorna dropdown paesi
-        updatePhoneDropdownLanguage();
+    // ✅ Aggiorna dropdown paesi
+    updatePhoneDropdownLanguage();
 
-        // ✅ Aggiorna etichette distanze
-        updateDistanceLabels();
+    // ✅ Aggiorna etichette distanze
+    updateDistanceLabels();
 });
 
 /**
@@ -4830,17 +4819,36 @@ document.addEventListener('languageChanged', function(e) {
 function updateTableLabels() {
     const i18n = window.i18nPDP();
     const config = bookingData.productData?.typeConfig;
-    if (!config) return;
+    if (!config || !i18n) return;
     
     const product = bookingData.productData;
     
-    // Tabella 1
+    // ✅ AGGIORNA TITOLI TABELLE
+    const table1Title = document.querySelector('.table-1-title');
+    const table2Title = document.querySelector('.table-2-title');
+    
+    const table1TitleKey = config.type === 'supercar' ? 'booking_config_sc_table1' :
+                           config.type === 'immobili' ? 'booking_config_pr_table1' :
+                           'booking_config_ex_table1';
+    
+    const table2TitleKey = config.type === 'supercar' ? 'booking_config_sc_table2' :
+                           config.type === 'immobili' ? 'booking_config_pr_table2' :
+                           'booking_config_ex_table2';
+    
+    if (table1Title) table1Title.textContent = i18n.t(table1TitleKey);
+    if (table2Title) table2Title.textContent = i18n.t(table2TitleKey);
+    
+    // ✅ CHIAVE SPECS UNIFICATA
+    const specsKey = config.type === 'supercar' ? 'booking_config_sc_specs' :
+                     config.type === 'immobili' ? 'booking_config_pr_specs' :
+                     'booking_config_ex_specs';
+    
+    // Tabella 1 - Prestazioni/Dettagli
     const table1Body = document.querySelector('.table-1-body');
     if (table1Body && product.prestazioni) {
         table1Body.innerHTML = '';
         product.prestazioni.forEach((value, index) => {
-            const labelKey = `booking_config_${config.type === 'supercar' ? 'sc' : config.type === 'immobili' ? 'pr' : 'ex'}_specs`;
-            const labels = i18n.t(labelKey);
+            const labels = i18n.t(specsKey);
             const label = Array.isArray(labels) ? labels[index] : `Campo ${index + 1}`;
             
             table1Body.innerHTML += `
@@ -4852,14 +4860,13 @@ function updateTableLabels() {
         });
     }
     
-    // Tabella 2
+    // Tabella 2 - Caratteristiche/Specifiche
     const table2Body = document.querySelector('.table-2-body');
     if (table2Body && product.caratteristiche) {
         table2Body.innerHTML = '';
         product.caratteristiche.forEach((value, index) => {
-            const labelKey = `booking_config_${config.type === 'supercar' ? 'sc' : config.type === 'immobili' ? 'pr' : 'ex'}_specs`;
-            const labels = i18n.t(labelKey);
-            const label = Array.isArray(labels) ? labels[index + 4] : `Campo ${index + 5}`; // +4 offset per tabella 2
+            const labels = i18n.t(specsKey);
+            const label = Array.isArray(labels) ? labels[index + 4] : `Campo ${index + 5}`;
             
             table2Body.innerHTML += `
                 <div class="spec-item">
