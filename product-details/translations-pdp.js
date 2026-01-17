@@ -347,7 +347,10 @@ booking_badge: "Esperienza Esclusiva",
 
 // Product Section (dynamic from backend)
 booking_location_separator: ", ",
-booking_price_label: "da / esperienza",
+booking_price_label: "da / esperienza", // Fallback generico
+booking_price_sc_label: "a partire da",
+booking_price_pr_label: "su richiesta", 
+booking_price_ex_label: "esperienza su misura",
 
 // Distance Selection
 booking_distance_title: "Scegli il Tuo Percorso",
@@ -931,6 +934,9 @@ booking_badge: "Exclusive Experience",
 
 booking_location_separator: ", ",
 booking_price_label: "from / experience",
+booking_price_sc_label: "from",
+booking_price_pr_label: "on request",
+booking_price_ex_label: "tailor-made experience",
 
 booking_distance_title: "Choose Your Route",
 booking_distance_rapid: "Quick experience",
@@ -1498,6 +1504,9 @@ booking_badge: "Expérience Exclusive",
 
 booking_location_separator: ", ",
 booking_price_label: "à partir de / expérience",
+booking_price_sc_label: "à partir de",
+booking_price_pr_label: "sur demande",
+booking_price_ex_label: "expérience sur mesure",
 
 booking_distance_title: "Choisissez Votre Parcours",
 booking_distance_rapid: "Expérience rapide",
@@ -2059,6 +2068,9 @@ booking_badge: "Exklusives Erlebnis",
 
 booking_location_separator: ", ",
 booking_price_label: "ab / Erlebnis",
+booking_price_sc_label: "ab",
+booking_price_pr_label: "auf Anfrage",
+booking_price_ex_label: "maßgeschneidertes Erlebnis",
 
 booking_distance_title: "Wählen Sie Ihre Route",
 booking_distance_rapid: "Schnelles Erlebnis",
@@ -2627,6 +2639,9 @@ booking_badge: "Experiencia Exclusiva",
 
 booking_location_separator: ", ",
 booking_price_label: "desde / experiencia",
+booking_price_sc_label: "desde",
+booking_price_pr_label: "bajo consulta",
+booking_price_ex_label: "experiencia a medida",
 
 booking_distance_title: "Elige Tu Recorrido",
 booking_distance_rapid: "Experiencia rápida",
