@@ -158,7 +158,7 @@ class I18nPDP {
     localStorage.setItem('lh360_lang', langCode);
     this.currentLang = langCode;
 
-    // âœ… Traduci TUTTA la pagina immediatamente
+    // ✅ AGGIUNGI: Traduci TUTTA la pagina immediatamente
     this.translatePage();
     
     this.updateLanguageSelector();
@@ -168,7 +168,7 @@ class I18nPDP {
         updateAllPricesForLanguage();
     }
 
-    // âœ… Aggiorna calendar e orari
+    // ✅ AGGIUNGI: Aggiorna calendar e orari
     if (typeof updateCalendarLanguage === 'function') {
         updateCalendarLanguage();
     }
@@ -176,20 +176,11 @@ class I18nPDP {
     if (typeof updateTimeFormatLanguage === 'function') {
         updateTimeFormatLanguage();
     }
-    
-    // âœ… NUOVO: Forza aggiornamento dropdown paesi
-    if (typeof updatePhoneDropdownLanguage === 'function') {
-        // Ritardo minimo per assicurare DOM pronto
-        setTimeout(() => {
-            updatePhoneDropdownLanguage();
-            console.log('âœ… Dropdown telefono aggiornato immediatamente');
-        }, 50);
-    }
 
-    // Dispatch event (per altri listener)
+    // Dispatch event
     document.dispatchEvent(new CustomEvent('languageChanged', { detail: { lang: langCode } }));
 
-    console.log(`âœ… Lingua PDP cambiata: ${langCode.toUpperCase()}`);
+    console.log(`✅ Lingua PDP cambiata: ${langCode.toUpperCase()}`);
 }
 
   setupLanguageSelector() {
@@ -449,3 +440,4 @@ document.addEventListener('DOMContentLoaded', () => {
 
 // Esporta per uso globale
 window.i18nPDP = () => i18nPDPInstance;
+
