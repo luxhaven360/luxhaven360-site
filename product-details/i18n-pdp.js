@@ -158,7 +158,7 @@ class I18nPDP {
     localStorage.setItem('lh360_lang', langCode);
     this.currentLang = langCode;
 
-    // ✅ AGGIUNGI: Traduci TUTTA la pagina immediatamente
+    // ✅ Traduci TUTTA la pagina immediatamente
     this.translatePage();
     
     this.updateLanguageSelector();
@@ -168,13 +168,18 @@ class I18nPDP {
         updateAllPricesForLanguage();
     }
 
-    // ✅ AGGIUNGI: Aggiorna calendar e orari
+    // ✅ Aggiorna calendar e orari
     if (typeof updateCalendarLanguage === 'function') {
         updateCalendarLanguage();
     }
     
     if (typeof updateTimeFormatLanguage === 'function') {
         updateTimeFormatLanguage();
+    }
+
+    // ✅ NUOVO: Aggiorna dropdown paesi telefono
+    if (typeof updatePhoneDropdownLanguage === 'function') {
+        updatePhoneDropdownLanguage();
     }
 
     // Dispatch event
