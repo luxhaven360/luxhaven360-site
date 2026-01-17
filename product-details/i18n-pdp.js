@@ -90,11 +90,14 @@ class I18nPDP {
     });
 
     // Traduci placeholder
-    document.querySelectorAll('[data-i18n-placeholder]').forEach(el => {
-      const key = el.getAttribute('data-i18n-placeholder');
-      const translation = this.t(key);
-      if (translation) el.placeholder = translation;
-    });
+document.querySelectorAll('[data-i18n-placeholder]').forEach(el => {
+    // ✅ SALTA L'INPUT TELEFONO (gestito dal selector dinamico)
+    if (el.type === 'tel') return;
+    
+    const key = el.getAttribute('data-i18n-placeholder');
+    const translation = this.t(key);
+    if (translation) el.placeholder = translation;
+});
 
     // Traduci title
     document.querySelectorAll('[data-i18n-title]').forEach(el => {
