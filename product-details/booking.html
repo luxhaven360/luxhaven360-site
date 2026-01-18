@@ -1934,13 +1934,22 @@ function restoreOriginalDistancePricing() {
         
         return data.product;
     } catch (error) {
-        console.error('❌ Fetch error details:', {
-            message: error.message,
-            stack: error.stack,
-            url: url
-        });
-        throw error;
-    }
+    console.error('❌ Fetch error details:', {
+        message: error.message,
+        stack: error.stack,
+        url: url
+    });
+    
+    // ✅ MOSTRA ERRORE SPECIFICO
+    const errorMsg = error.message.includes('Failed to fetch') 
+        ? 'Errore di connessione. Verifica la tua connessione internet.'
+        : error.message.includes('HTTP error') 
+        ? 'Il server ha restituito un errore. Riprova tra qualche minuto.'
+        : 'Errore imprevisto durante il caricamento. Contatta l'assistenza se il problema persiste.';
+    
+    alert(errorMsg);
+    throw error;
+}
 }
 
     // ========================================
@@ -2100,7 +2109,7 @@ product.caratteristiche.forEach((value, index) => {
         }
     }
 
-    // ✅ 10a. CHILOMETRAGGIO DINAMICO (SOLO SUPERCAR)
+    // ✅ 10a. CHILOMETRAGGIO DINAMICO (SOLO SUPERCAR) - CON VALIDAZIONE
 const skuPrefix = product.sku.split('-')[0].toUpperCase();
 
 if (skuPrefix === 'SC') {
@@ -2109,32 +2118,53 @@ if (skuPrefix === 'SC') {
     
     distanceGrid.innerHTML = '';
     
-    // 🆕 RILEVA SE COMBO (doppia supercar)
+    // Rileva se combo
     const isCombo = product.sku.includes(' + ') || product.sku.includes('+');
     
-    // 🆕 USA PREZZI COMBO SE DISPONIBILI, ALTRIMENTI NORMALI
+    // Usa prezzi combo se disponibili, altrimenti normali
     const prices = (isCombo && product.comboPrices && product.comboPrices.length > 0) 
         ? product.comboPrices 
         : product.chilometraggioPrices;
     
+    // ✅ VALIDAZIONE: Se non ci sono prezzi, mostra errore e esci
     if (!prices || prices.length === 0) {
-        console.warn('⚠️ Prezzi non disponibili per questa supercar');
+        console.error('❌ Nessun prezzo disponibile per questa supercar');
+        distanceGrid.innerHTML = `
+            <div style="grid-column: 1/-1; text-align: center; padding: 32px; color: #ef4444; background: rgba(239,68,68,0.1); border: 2px dashed rgba(239,68,68,0.3); border-radius: 16px;">
+                <svg style="width: 48px; height: 48px; margin: 0 auto 16px;" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+                </svg>
+                <div style="font-size: 18px; font-weight: 600; margin-bottom: 8px;">Prezzi Non Disponibili</div>
+                <div style="font-size: 14px; color: #c9a891;">Contatta l'amministratore per configurare i prezzi di questo prodotto.</div>
+            </div>
+        `;
         return;
     }
     
-    // ✅ USA CONFIGURAZIONE PERSONALIZZATA (gestisce km/minuti e valori custom)
+    // Usa configurazione personalizzata
     const distanceConfig = getDistanceConfigForProduct(product);
     const kmOptions = distanceConfig.options;
     
-   kmOptions.forEach((distance, index) => {
-    if (index < prices.length) {
+    kmOptions.forEach((distance, index) => {
+        // ✅ SKIP se non c'è prezzo per questa distanza
+        if (index >= prices.length) {
+            console.warn(`⚠️ Prezzo mancante per ${distance.value} ${distance.unit}, skip`);
+            return;
+        }
+        
         const price = prices[index];
+        
+        // ✅ VALIDAZIONE prezzo
+        if (!price || isNaN(price) || price <= 0) {
+            console.warn(`⚠️ Prezzo non valido per ${distance.value} ${distance.unit}: ${price}`);
+            return;
+        }
         
         const option = document.createElement('div');
         option.className = 'distance-option';
         option.dataset.km = distance.value;
         option.dataset.price = price;
-        option.dataset.unit = distance.unit; // ✅ AGGIUNGI UNITÀ
+        option.dataset.unit = distance.unit;
         
         option.innerHTML = `
             <div class="text-2xl font-bold gradient-text mb-2">${distance.value} ${distance.unit}</div>
@@ -2143,12 +2173,24 @@ if (skuPrefix === 'SC') {
         `;
         
         distanceGrid.appendChild(option);
-    }
-});
+    });
     
+    // ✅ VALIDAZIONE: Se nessuna opzione è stata creata, mostra errore
+    if (distanceGrid.children.length === 0) {
+        console.error('❌ Nessuna opzione distanza valida creata');
+        distanceGrid.innerHTML = `
+            <div style="grid-column: 1/-1; text-align: center; padding: 32px; color: #ef4444; background: rgba(239,68,68,0.1); border: 2px dashed rgba(239,68,68,0.3); border-radius: 16px;">
+                <div style="font-size: 18px; font-weight: 600; margin-bottom: 8px;">Configurazione Prezzi Incompleta</div>
+                <div style="font-size: 14px; color: #c9a891;">Verifica che ci siano almeno ${kmOptions.length} prezzi validi nel foglio "Prodotti Prenotabili".</div>
+            </div>
+        `;
+        return;
+    }
+    
+    // Inizializza listeners
     initDistanceSelection(product);
     
-    console.log(`🏎️ Prezzi ${isCombo ? 'COMBO' : 'SINGOLA'} caricati:`, prices);
+    console.log(`✅ Prezzi ${isCombo ? 'COMBO' : 'SINGOLA'} caricati:`, prices);
 }
     
     // ✅ 10b. BENEFIT NEL RIEPILOGO (restanti)
