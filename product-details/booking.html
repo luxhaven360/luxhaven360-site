@@ -1924,32 +1924,74 @@ function restoreOriginalDistancePricing() {
             throw new Error(`HTTP error! status: ${response.status}`);
         }
         
-        const data = await response.json();
+        // ✅ PRIMA leggi come testo per vedere il contenuto grezzo
+        const textContent = await response.text();
+        console.log('📄 Raw response (first 500 chars):', textContent.substring(0, 500));
+        
+        // ✅ POI prova a parsare come JSON
+        let data;
+        try {
+            data = JSON.parse(textContent);
+            console.log('✅ JSON parsed successfully');
+        } catch (jsonError) {
+            console.error('❌ JSON Parse Error:', jsonError);
+            console.error('📄 Full response text:', textContent);
+            throw new Error('Risposta server non valida (JSON malformato)');
+        }
         
         console.log('📦 Data received:', data);
         
         if (!data.success) {
+            console.error('❌ Server returned error:', data.error);
             throw new Error(data.error || 'Errore recupero dati');
         }
         
+        // ✅ VALIDA struttura prodotto
+        if (!data.product) {
+            throw new Error('Dati prodotto mancanti nella risposta');
+        }
+        
+        console.log('✅ Product data valid');
+        console.log('   - SKU:', data.product.sku);
+        console.log('   - Title:', data.product.title);
+        console.log('   - Chilometraggio prices:', data.product.chilometraggioPrices);
+        console.log('   - Combo prices:', data.product.comboPrices);
+        
         return data.product;
     } catch (error) {
-    console.error('❌ Fetch error details:', {
-        message: error.message,
-        stack: error.stack,
-        url: url
-    });
-    
-    // ✅ MOSTRA ERRORE SPECIFICO
-    const errorMsg = error.message.includes('Failed to fetch') 
-        ? 'Errore di connessione. Verifica la tua connessione internet.'
-        : error.message.includes('HTTP error') 
-        ? 'Il server ha restituito un errore. Riprova tra qualche minuto.'
-        : "Errore imprevisto durante il caricamento. Contatta l'assistenza se il problema persiste.";
-    
-    alert(errorMsg);
-    throw error;
-}
+        console.error('❌ Fetch error details:', {
+            message: error.message,
+            stack: error.stack,
+            url: url
+        });
+        
+        // ✅ MOSTRA ERRORE SPECIFICO ALL'UTENTE
+        const errorModal = document.createElement('div');
+        errorModal.style.cssText = `
+            position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            background: linear-gradient(135deg, rgba(20, 15, 12, 0.98), rgba(30, 20, 15, 0.98));
+            border: 2px solid rgba(239, 68, 68, 0.4); border-radius: 24px; padding: 40px;
+            z-index: 999999; max-width: 600px; width: 90%;
+        `;
+        
+        errorModal.innerHTML = `
+            <div style="text-align: center;">
+                <div style="color: #ef4444; font-size: 48px; margin-bottom: 20px;">⚠️</div>
+                <h2 style="color: #ef4444; font-size: 24px; margin-bottom: 16px;">Errore Caricamento Prodotto</h2>
+                <p style="color: #c9a891; font-size: 15px; line-height: 1.6; margin-bottom: 24px;">
+                    ${error.message}
+                </p>
+                <button onclick="window.history.back()" style="
+                    background: linear-gradient(135deg, #d4af37, #c9a02c);
+                    color: #0a0a0a; font-weight: 600; padding: 14px 32px;
+                    border: none; border-radius: 12px; cursor: pointer;
+                ">Torna Indietro</button>
+            </div>
+        `;
+        
+        document.body.appendChild(errorModal);
+        throw error;
+    }
 }
 
     // ========================================
