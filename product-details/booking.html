@@ -1309,7 +1309,7 @@ function initPhoneSelector() {
  * 🌐 Aggiorna etichette distanze per nuova lingua
  */
 function updateDistanceLabels() {
-    const i18n = window.i18nPDP();
+    const i18n = window.i18nPDP && window.i18nPDP();
     if (!i18n || !bookingData.productData) return;
     
     document.querySelectorAll('.distance-option').forEach(option => {
@@ -1319,7 +1319,6 @@ function updateDistanceLabels() {
         
         if (!labelDiv) return;
         
-        // Mappa km → chiave traduzione
         const labelMap = {
             '10': 'booking_distance_rapid',
             '20': 'booking_distance_popular',
@@ -1331,7 +1330,7 @@ function updateDistanceLabels() {
         };
         
         const labelKey = labelMap[km];
-        if (labelKey) {
+        if (labelKey && typeof i18n.t === 'function') {
             labelDiv.textContent = i18n.t(labelKey);
         }
     });
@@ -1858,12 +1857,15 @@ function restoreOriginalDistancePricing() {
     console.log('🚀 DOMContentLoaded START');
     
     try {
-        // ✅ ATTENDI INIZIALIZZAZIONE i18n
+        // ✅ ATTENDI i18n con timeout più lungo
         console.log('⏳ Attesa inizializzazione i18n...');
+        let i18nReady = false;
+        
         await new Promise(resolve => {
             const checkI18n = setInterval(() => {
                 if (window.i18nPDP && window.i18nPDP()) {
                     clearInterval(checkI18n);
+                    i18nReady = true;
                     console.log('✅ i18n pronto');
                     resolve();
                 }
@@ -1871,9 +1873,11 @@ function restoreOriginalDistancePricing() {
             
             setTimeout(() => {
                 clearInterval(checkI18n);
-                console.log('⚠️ Timeout i18n, proseguo comunque');
+                if (!i18nReady) {
+                    console.log('⚠️ Timeout i18n, proseguo con fallback italiano');
+                }
                 resolve();
-            }, 2000);
+            }, 3000); // Aumentato a 3 secondi
         });
         
         // 1. Estrai SKU dall'URL
@@ -2905,52 +2909,58 @@ function getDistanceConfigForProduct(product) {
     const sku = product.sku.toUpperCase();
     const title = product.title.toLowerCase();
     
-    // 🔥 CASO 1: COMBO DIRETTE (SKU con "+") - PRIORITÀ MASSIMA
+    // ✅ RECUPERA i18n con fallback sicuro
+    const i18n = window.i18nPDP && window.i18nPDP();
+    
+    // ✅ Funzione helper per traduzioni con fallback
+    const t = (key, fallback) => {
+        if (i18n && typeof i18n.t === 'function') {
+            return i18n.t(key);
+        }
+        return fallback; // Usa fallback se i18n non è pronto
+    };
+    
+    // 🔥 CASO 1: COMBO DIRETTE (SKU con "+")
     const isCombo = sku.includes('+');
     
     if (isCombo) {
-        // Normalizza SKU per check (rimuovi spazi)
         const normalizedSku = sku.replace(/\s+/g, '');
         
-        // ✅ Verifica se è una delle 3 combo specifiche in COMBO_PRICING
         const hasCustomPricing = Object.keys(COMBO_PRICING).some(key => {
             const normalizedKey = key.replace(/\s+/g, '');
             return normalizedKey === normalizedSku;
         });
         
         if (hasCustomPricing) {
-            // 🎯 COMBO SPECIALI (California/Portofino/488 + Huracán) → km personalizzati
             console.log(`🎯 Combo speciale rilevata: ${sku}, uso km personalizzati (90)`);
-            const i18n = window.i18nPDP();
             return {
                 options: [
-                    { value: 10, unit: 'km', label: i18n.t('booking_distance_rapid') },
-                    { value: 20, unit: 'km', label: i18n.t('booking_distance_popular') },
-                    { value: 30, unit: 'km', label: i18n.t('booking_distance_complete') },
-                    { value: 60, unit: 'km', label: i18n.t('booking_distance_extended') },
-                    { value: 90, unit: 'km', label: i18n.t('booking_distance_long') },
-                    { value: 120, unit: 'km', label: i18n.t('booking_distance_ultimate') }
+                    { value: 10, unit: 'km', label: t('booking_distance_rapid', 'Esperienza rapida') },
+                    { value: 20, unit: 'km', label: t('booking_distance_popular', 'Più popolare') },
+                    { value: 30, unit: 'km', label: t('booking_distance_complete', 'Esperienza completa') },
+                    { value: 60, unit: 'km', label: t('booking_distance_extended', 'Tour esteso') },
+                    { value: 90, unit: 'km', label: t('booking_distance_long', 'Avventura lunga') },
+                    { value: 120, unit: 'km', label: t('booking_distance_ultimate', 'Esperienza definitiva') }
                 ]
             };
         } else {
-            // 🔗 ALTRE COMBO → km default
             console.log(`🔗 Combo standard rilevata: ${sku}, uso km default (70)`);
             return {
                 options: [
-                    { value: 10, unit: 'km', label: i18n.t('booking_distance_rapid') },
-                    { value: 20, unit: 'km', label: i18n.t('booking_distance_popular') },
-                    { value: 30, unit: 'km', label: i18n.t('booking_distance_complete') },
-                    { value: 60, unit: 'km', label: i18n.t('booking_distance_extended') },
-                    { value: 70, unit: 'km', label: 'Avventura lunga' },
-                    { value: 120, unit: 'km', label: i18n.t('booking_distance_ultimate') }
+                    { value: 10, unit: 'km', label: t('booking_distance_rapid', 'Esperienza rapida') },
+                    { value: 20, unit: 'km', label: t('booking_distance_popular', 'Più popolare') },
+                    { value: 30, unit: 'km', label: t('booking_distance_complete', 'Esperienza completa') },
+                    { value: 60, unit: 'km', label: t('booking_distance_extended', 'Tour esteso') },
+                    { value: 70, unit: 'km', label: t('booking_distance_long', 'Avventura lunga') },
+                    { value: 120, unit: 'km', label: t('booking_distance_ultimate', 'Esperienza definitiva') }
                 ]
             };
         }
     }
     
-    // 🚗 CASO 2: Ferrari 458 Spider (SOLO SE NON È COMBO)
+    // 🚗 CASO 2: Ferrari 458 Spider
     if (title.includes('ferrari 458 spider')) {
-        console.log('🏎️ Ferrari 458 Spider, uso km custom');
+        console.log('🎏 Ferrari 458 Spider, uso km custom');
         return {
             options: [
                 { value: 9, unit: 'km', label: 'Esperienza rapida' },
@@ -2963,9 +2973,9 @@ function getDistanceConfigForProduct(product) {
         };
     }
     
-    // 🚗 CASO 3: McLaren 720s Performance (SOLO SE NON È COMBO)
+    // 🚗 CASO 3: McLaren 720s
     if (title.includes('mclaren 720s')) {
-        console.log('🏎️ McLaren 720s, uso minuti');
+        console.log('🎏 McLaren 720s, uso minuti');
         return {
             options: [
                 { value: 10, unit: 'min', label: 'Esperienza rapida' },
@@ -2978,16 +2988,16 @@ function getDistanceConfigForProduct(product) {
         };
     }
     
-    // 🔹 CASO 4: Default (km standard con 70)
-    console.log('📍 Configurazione default, uso km standard (70)');
+    // 🔹 CASO 4: Default
+    console.log('🔍 Configurazione default, uso km standard (70)');
     return {
         options: [
-            { value: 10, unit: 'km', label: i18n.t('booking_distance_rapid') },
-            { value: 20, unit: 'km', label: i18n.t('booking_distance_popular') },
-            { value: 30, unit: 'km', label: i18n.t('booking_distance_complete') },
-            { value: 60, unit: 'km', label: i18n.t('booking_distance_extended') },
-            { value: 70, unit: 'km', label: 'Avventura lunga' },
-            { value: 120, unit: 'km', label: i18n.t('booking_distance_ultimate') }
+            { value: 10, unit: 'km', label: t('booking_distance_rapid', 'Esperienza rapida') },
+            { value: 20, unit: 'km', label: t('booking_distance_popular', 'Più popolare') },
+            { value: 30, unit: 'km', label: t('booking_distance_complete', 'Esperienza completa') },
+            { value: 60, unit: 'km', label: t('booking_distance_extended', 'Tour esteso') },
+            { value: 70, unit: 'km', label: t('booking_distance_long', 'Avventura lunga') },
+            { value: 120, unit: 'km', label: t('booking_distance_ultimate', 'Esperienza definitiva') }
         ]
     };
 }
