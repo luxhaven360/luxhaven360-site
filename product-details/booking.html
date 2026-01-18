@@ -2008,10 +2008,11 @@ if (config.showDynamicPrice) {
     priceLabelEl.textContent = i18n.t(priceLabelKey);
 }
     
-    // ✅ 5. BENEFIT (primi 3 come badge)
-    const benefitContainer = document.querySelector('.benefit-badges');
-    benefitContainer.innerHTML = '';
-    
+    // ✅ 5. BENEFIT (primi 3 come badge) con validazione
+const benefitContainer = document.querySelector('.benefit-badges');
+benefitContainer.innerHTML = '';
+
+if (product.benefit && Array.isArray(product.benefit) && product.benefit.length > 0) {
     product.benefit.slice(0, 3).forEach(benefit => {
         benefitContainer.innerHTML += `
             <span class="feature-badge">
@@ -2022,6 +2023,17 @@ if (config.showDynamicPrice) {
             </span>
         `;
     });
+} else {
+    // Fallback se non ci sono benefit
+    benefitContainer.innerHTML = `
+        <span class="feature-badge">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+            </svg>
+            Esperienza esclusiva
+        </span>
+    `;
+}
     
     // ✅ 6. DESCRIZIONE
     document.querySelector('.product-description').textContent = product.desc;
@@ -2151,11 +2163,15 @@ if (skuPrefix === 'SC') {
     console.log(`🏎️ Prezzi ${isCombo ? 'COMBO' : 'SINGOLA'} caricati:`, prices);
 }
     
-    // ✅ 10b. BENEFIT NEL RIEPILOGO (restanti)
-    const summaryBenefits = document.querySelector('.summary-benefits');
-    summaryBenefits.innerHTML = '';
+    // ✅ 10b. BENEFIT NEL RIEPILOGO (restanti + fallback)
+const summaryBenefits = document.querySelector('.summary-benefits');
+summaryBenefits.innerHTML = '';
 
-    product.benefit.slice(3).forEach(benefit => {
+// Mostra benefit dal 4° in poi, oppure almeno i primi 3 se non ce ne sono altri
+const benefitsToShow = product.benefit.length > 3 ? product.benefit.slice(3) : product.benefit.slice(0, Math.min(3, product.benefit.length));
+
+if (benefitsToShow.length > 0) {
+    benefitsToShow.forEach(benefit => {
         summaryBenefits.innerHTML += `
             <div class="flex items-center gap-2 text-sm" style="color: #c9a891;">
                 <svg class="w-5 h-5 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -2165,6 +2181,17 @@ if (skuPrefix === 'SC') {
             </div>
         `;
     });
+} else {
+    // Fallback: mostra almeno un benefit generico
+    summaryBenefits.innerHTML = `
+        <div class="flex items-center gap-2 text-sm" style="color: #c9a891;">
+            <svg class="w-5 h-5 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+            </svg>
+            Esperienza premium curata nei minimi dettagli
+        </div>
+    `;
+}
 
     // ✅ 10c. CARD SECONDA SUPERCAR DINAMICA (SKIP se già combo)
 const isExistingCombo = product.isExistingCombo === true || product.sku.includes('+');
@@ -2440,23 +2467,24 @@ if (skuPrefix === 'SC') {
         summaryTitle.textContent = product.title;
     }
 
-    // ✅ 13. POLITICHE DINAMICHE
-    const policiesCard = document.querySelector('.policies-card');
-    if (policiesCard && product.politiche && Array.isArray(product.politiche)) {
-        const policiesBody = policiesCard.querySelector('.space-y-3');
-        if (policiesBody) {
-            policiesBody.innerHTML = '';
-            
-            product.politiche.forEach(policy => {
-                const policyDiv = document.createElement('div');
-                policyDiv.innerHTML = `
-                    <strong style="color: #f5f5f0;">${policy.label}:</strong> 
-                    ${policy.description}
-                `;
-                policiesBody.appendChild(policyDiv);
-            });
-        }
+    // ✅ 13. POLITICHE DINAMICHE (con fallback su statiche)
+const policiesCard = document.querySelector('.policies-card');
+if (policiesCard && product.politiche && Array.isArray(product.politiche) && product.politiche.length > 0) {
+    // Se ci sono politiche dinamiche dal prodotto, usale
+    const policiesBody = policiesCard.querySelector('.space-y-3');
+    if (policiesBody) {
+        policiesBody.innerHTML = '';
+        
+        product.politiche.forEach(policy => {
+            const policyDiv = document.createElement('div');
+            policyDiv.innerHTML = `
+                <strong style="color: #f5f5f0;">${policy.label}:</strong> 
+                ${policy.description}
+            `;
+            policiesBody.appendChild(policyDiv);
+        });
     }
+}
 
         // ========================================
 // ✅ GESTIONE STATI ESPERIENZE (BOOKING.HTML)
