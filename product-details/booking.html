@@ -1855,27 +1855,35 @@ function restoreOriginalDistancePricing() {
     // INIZIALIZZAZIONE PAGINA
     // ========================================
     window.addEventListener('DOMContentLoaded', async () => {
-    // ✅ ATTENDI INIZIALIZZAZIONE i18n
-    await new Promise(resolve => {
-        const checkI18n = setInterval(() => {
-            if (window.i18nPDP && window.i18nPDP()) {
-                clearInterval(checkI18n);
-                resolve();
-            }
-        }, 50);
-        
-        // Timeout sicurezza (max 2 secondi)
-        setTimeout(() => {
-            clearInterval(checkI18n);
-            resolve();
-        }, 2000);
-    });
+    console.log('🚀 DOMContentLoaded START');
     
-    // 1. Estrai SKU dall'URL
-    const urlParams = new URLSearchParams(window.location.search);
-    const sku = urlParams.get('sku');
+    try {
+        // ✅ ATTENDI INIZIALIZZAZIONE i18n
+        console.log('⏳ Attesa inizializzazione i18n...');
+        await new Promise(resolve => {
+            const checkI18n = setInterval(() => {
+                if (window.i18nPDP && window.i18nPDP()) {
+                    clearInterval(checkI18n);
+                    console.log('✅ i18n pronto');
+                    resolve();
+                }
+            }, 50);
+            
+            setTimeout(() => {
+                clearInterval(checkI18n);
+                console.log('⚠️ Timeout i18n, proseguo comunque');
+                resolve();
+            }, 2000);
+        });
+        
+        // 1. Estrai SKU dall'URL
+        console.log('🔍 Estrazione SKU dall\'URL...');
+        const urlParams = new URLSearchParams(window.location.search);
+        const sku = urlParams.get('sku');
+        console.log('   SKU trovato:', sku);
         
         if (!sku) {
+            console.error('❌ SKU mancante');
             alert('Errore: SKU prodotto mancante');
             window.history.back();
             return;
@@ -1884,27 +1892,65 @@ function restoreOriginalDistancePricing() {
         bookingData.sku = sku;
         
         // 2. Mostra loader
+        console.log('🔄 Mostra loader...');
         showPageLoader();
+        console.log('✅ Loader mostrato');
         
         // 3. Fetch dati prodotto
+        console.log('🌐 Fetch dati prodotto...');
         try {
             const productData = await fetchProductDetails(sku);
+            console.log('✅ Dati prodotto ricevuti:', productData);
             bookingData.productData = productData;
+            console.log('✅ bookingData.productData assegnato');
             
-            // 4. Renderizza pagina dinamicamente
-            renderPage(productData);
-            
-            // 5. Inizializza componenti interattivi
-            initializeComponents(productData);
-            
-        } catch (error) {
-            console.error('Errore caricamento prodotto:', error);
-            alert('Impossibile caricare i dettagli del prodotto. Riprova.');
-            window.history.back();
-        } finally {
-            hidePageLoader();
+        } catch (fetchError) {
+            console.error('❌ Errore fetch:', fetchError);
+            throw fetchError; // Re-throw per il catch esterno
         }
-    });
+        
+        // 4. Renderizza pagina dinamicamente
+        console.log('🎨 Inizio renderPage...');
+        try {
+            renderPage(bookingData.productData);
+            console.log('✅ renderPage completato');
+        } catch (renderError) {
+            console.error('❌ Errore renderPage:', renderError);
+            console.error('   Stack:', renderError.stack);
+            throw new Error('Errore durante il rendering: ' + renderError.message);
+        }
+        
+        // 5. Inizializza componenti interattivi
+        console.log('🔧 Inizio initializeComponents...');
+        try {
+            initializeComponents(bookingData.productData);
+            console.log('✅ initializeComponents completato');
+        } catch (initError) {
+            console.error('❌ Errore initializeComponents:', initError);
+            console.error('   Stack:', initError.stack);
+            throw new Error('Errore durante l\'inizializzazione: ' + initError.message);
+        }
+        
+        console.log('✅ Caricamento pagina completato con successo');
+        
+    } catch (error) {
+        console.error('❌ ERRORE GLOBALE:', error);
+        console.error('   Message:', error.message);
+        console.error('   Stack:', error.stack);
+        
+        alert('Impossibile caricare i dettagli del prodotto.\n\nDettagli: ' + error.message);
+        
+        // Aspetta un attimo prima di tornare indietro per dare tempo di vedere l'errore
+        setTimeout(() => {
+            window.history.back();
+        }, 1000);
+        
+    } finally {
+        console.log('🏁 Nascondo loader...');
+        hidePageLoader();
+        console.log('✅ Loader nascosto');
+    }
+});
 
     // ========================================
     // FETCH DATI BACKEND
@@ -2151,88 +2197,147 @@ product.caratteristiche.forEach((value, index) => {
         }
     }
 
-    // ✅ 10a. CHILOMETRAGGIO DINAMICO (SOLO SUPERCAR) - CON VALIDAZIONE
+    // ✅ 10a. CHILOMETRAGGIO DINAMICO (SOLO SUPERCAR) - CON LOGGING DETTAGLIATO
 const skuPrefix = product.sku.split('-')[0].toUpperCase();
 
 if (skuPrefix === 'SC') {
-    const distanceGrid = document.getElementById('distanceOptions');
-    if (!distanceGrid) return;
+    console.log('🚗 Rendering griglia distanze per SUPERCAR...');
     
+    const distanceGrid = document.getElementById('distanceOptions');
+    if (!distanceGrid) {
+        console.error('❌ distanceGrid non trovato nel DOM');
+        return;
+    }
+    
+    console.log('✅ distanceGrid trovato');
     distanceGrid.innerHTML = '';
     
-    // Rileva se combo
-    const isCombo = product.sku.includes(' + ') || product.sku.includes('+');
-    
-    // Usa prezzi combo se disponibili, altrimenti normali
-    const prices = (isCombo && product.comboPrices && product.comboPrices.length > 0) 
-        ? product.comboPrices 
-        : product.chilometraggioPrices;
-    
-    // ✅ VALIDAZIONE: Se non ci sono prezzi, mostra errore e esci
-    if (!prices || prices.length === 0) {
-        console.error('❌ Nessun prezzo disponibile per questa supercar');
-        distanceGrid.innerHTML = `
-            <div style="grid-column: 1/-1; text-align: center; padding: 32px; color: #ef4444; background: rgba(239,68,68,0.1); border: 2px dashed rgba(239,68,68,0.3); border-radius: 16px;">
-                <svg style="width: 48px; height: 48px; margin: 0 auto 16px;" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
-                </svg>
-                <div style="font-size: 18px; font-weight: 600; margin-bottom: 8px;">Prezzi Non Disponibili</div>
-                <div style="font-size: 14px; color: #c9a891;">Contatta l'amministratore per configurare i prezzi di questo prodotto.</div>
-            </div>
-        `;
-        return;
-    }
-    
-    // Usa configurazione personalizzata
-    const distanceConfig = getDistanceConfigForProduct(product);
-    const kmOptions = distanceConfig.options;
-    
-    kmOptions.forEach((distance, index) => {
-        // ✅ SKIP se non c'è prezzo per questa distanza
-        if (index >= prices.length) {
-            console.warn(`⚠️ Prezzo mancante per ${distance.value} ${distance.unit}, skip`);
-            return;
+    try {
+        // Rileva se combo
+        const isCombo = product.sku.includes(' + ') || product.sku.includes('+');
+        console.log(`   isCombo: ${isCombo}`);
+        
+        // Usa prezzi combo se disponibili, altrimenti normali
+        let prices = [];
+        
+        if (isCombo) {
+            console.log('   Tipo: COMBO');
+            console.log('   product.comboPrices:', product.comboPrices);
+            
+            if (product.comboPrices && Array.isArray(product.comboPrices) && product.comboPrices.length > 0) {
+                prices = product.comboPrices;
+                console.log(`   ✅ Uso comboPrices: ${prices.length} prezzi`);
+            } else {
+                console.warn('   ⚠️ comboPrices non disponibile, fallback a chilometraggioPrices');
+                prices = product.chilometraggioPrices || [];
+            }
+        } else {
+            console.log('   Tipo: SINGOLA');
+            console.log('   product.chilometraggioPrices:', product.chilometraggioPrices);
+            prices = product.chilometraggioPrices || [];
+            console.log(`   ✅ Uso chilometraggioPrices: ${prices.length} prezzi`);
         }
         
-        const price = prices[index];
-        
-        // ✅ VALIDAZIONE prezzo
-        if (!price || isNaN(price) || price <= 0) {
-            console.warn(`⚠️ Prezzo non valido per ${distance.value} ${distance.unit}: ${price}`);
-            return;
+        // ✅ VALIDAZIONE: Se non ci sono prezzi, mostra errore
+        if (!prices || !Array.isArray(prices) || prices.length === 0) {
+            console.error('❌ Array prezzi vuoto o non valido:', prices);
+            distanceGrid.innerHTML = `
+                <div style="grid-column: 1/-1; text-align: center; padding: 32px; color: #ef4444; background: rgba(239,68,68,0.1); border: 2px dashed rgba(239,68,68,0.3); border-radius: 16px;">
+                    <svg style="width: 48px; height: 48px; margin: 0 auto 16px;" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+                    </svg>
+                    <div style="font-size: 18px; font-weight: 600; margin-bottom: 8px;">Prezzi Non Disponibili</div>
+                    <div style="font-size: 14px; color: #c9a891;">
+                        Tipo: ${isCombo ? 'COMBO' : 'SINGOLA'}<br>
+                        SKU: ${product.sku}<br>
+                        Contatta l'amministratore per configurare i prezzi.
+                    </div>
+                </div>
+            `;
+            console.log('⚠️ Messaggio errore mostrato, continuo rendering...');
+            // NON fare return qui, continua il rendering delle altre sezioni
+        } else {
+            console.log(`✅ ${prices.length} prezzi validi trovati, inizio rendering...`);
+            
+            // Usa configurazione personalizzata
+            const distanceConfig = getDistanceConfigForProduct(product);
+            const kmOptions = distanceConfig.options;
+            
+            console.log(`   Configurazione distanze: ${kmOptions.length} opzioni`);
+            
+            let renderedCount = 0;
+            
+            kmOptions.forEach((distance, index) => {
+                // Skip se non c'è prezzo per questa distanza
+                if (index >= prices.length) {
+                    console.warn(`   [${index}] ⚠️ Prezzo mancante per ${distance.value} ${distance.unit}, skip`);
+                    return;
+                }
+                
+                const price = prices[index];
+                
+                // Validazione prezzo
+                if (!price || isNaN(price) || price <= 0) {
+                    console.warn(`   [${index}] ⚠️ Prezzo non valido: ${price}, skip`);
+                    return;
+                }
+                
+                console.log(`   [${index}] ✅ ${distance.value} ${distance.unit} = €${price}`);
+                
+                const option = document.createElement('div');
+                option.className = 'distance-option';
+                option.dataset.km = distance.value;
+                option.dataset.price = price;
+                option.dataset.unit = distance.unit;
+                
+                option.innerHTML = `
+                    <div class="text-2xl font-bold gradient-text mb-2">${distance.value} ${distance.unit}</div>
+                    <div class="text-xl font-semibold mb-1">${formatPrice(price)}</div>
+                    <div class="text-sm" style="color: #a59173;">${distance.label}</div>
+                `;
+                
+                distanceGrid.appendChild(option);
+                renderedCount++;
+            });
+            
+            console.log(`✅ ${renderedCount} opzioni distanza renderizzate`);
+            
+            // Validazione finale
+            if (renderedCount === 0) {
+                console.error('❌ Nessuna opzione valida renderizzata');
+                distanceGrid.innerHTML = `
+                    <div style="grid-column: 1/-1; text-align: center; padding: 32px; color: #ef4444;">
+                        <div style="font-size: 18px; font-weight: 600; margin-bottom: 8px;">Configurazione Prezzi Incompleta</div>
+                        <div style="font-size: 14px; color: #c9a891;">
+                            Trovati ${prices.length} prezzi ma nessuno valido.<br>
+                            Verifica il formato nel foglio "Prodotti Prenotabili".
+                        </div>
+                    </div>
+                `;
+            } else {
+                // Inizializza listeners solo se ci sono opzioni
+                console.log('🔧 Inizializzazione listeners distanze...');
+                initDistanceSelection(product);
+                console.log('✅ Listeners inizializzati');
+            }
         }
         
-        const option = document.createElement('div');
-        option.className = 'distance-option';
-        option.dataset.km = distance.value;
-        option.dataset.price = price;
-        option.dataset.unit = distance.unit;
+        console.log(`✅ Sezione chilometraggio completata (tipo: ${isCombo ? 'COMBO' : 'SINGOLA'})`);
         
-        option.innerHTML = `
-            <div class="text-2xl font-bold gradient-text mb-2">${distance.value} ${distance.unit}</div>
-            <div class="text-xl font-semibold mb-1">${formatPrice(price)}</div>
-            <div class="text-sm" style="color: #a59173;">${distance.label}</div>
-        `;
+    } catch (distanceError) {
+        console.error('❌ ERRORE durante rendering griglia distanze:', distanceError);
+        console.error('   Stack:', distanceError.stack);
         
-        distanceGrid.appendChild(option);
-    });
-    
-    // ✅ VALIDAZIONE: Se nessuna opzione è stata creata, mostra errore
-    if (distanceGrid.children.length === 0) {
-        console.error('❌ Nessuna opzione distanza valida creata');
         distanceGrid.innerHTML = `
-            <div style="grid-column: 1/-1; text-align: center; padding: 32px; color: #ef4444; background: rgba(239,68,68,0.1); border: 2px dashed rgba(239,68,68,0.3); border-radius: 16px;">
-                <div style="font-size: 18px; font-weight: 600; margin-bottom: 8px;">Configurazione Prezzi Incompleta</div>
-                <div style="font-size: 14px; color: #c9a891;">Verifica che ci siano almeno ${kmOptions.length} prezzi validi nel foglio "Prodotti Prenotabili".</div>
+            <div style="grid-column: 1/-1; text-align: center; padding: 32px; color: #ef4444;">
+                <div style="font-size: 18px; font-weight: 600; margin-bottom: 8px;">Errore Rendering Prezzi</div>
+                <div style="font-size: 14px; color: #c9a891;">${distanceError.message}</div>
             </div>
         `;
-        return;
+        
+        // NON fare throw, continua il rendering delle altre sezioni
+        console.log('⚠️ Errore gestito, continuo rendering...');
     }
-    
-    // Inizializza listeners
-    initDistanceSelection(product);
-    
-    console.log(`✅ Prezzi ${isCombo ? 'COMBO' : 'SINGOLA'} caricati:`, prices);
 }
     
     // ✅ 10b. BENEFIT NEL RIEPILOGO (restanti)
