@@ -267,6 +267,7 @@ document.querySelectorAll('[data-i18n-placeholder]').forEach(el => {
   formatPrice(price, originalCurrency = 'EUR') {
     const amount = parseFloat(price) || 0;
     
+    // Configurazione per lingua
     const localeConfig = {
       it: { 
         currency: 'EUR', 
@@ -312,7 +313,7 @@ document.querySelectorAll('[data-i18n-placeholder]').forEach(el => {
     
     const config = localeConfig[this.currentLang] || localeConfig.it;
     
-    // Conversione valuta
+    // 💱 CONVERSIONE VALUTA con tassi dinamici
     let convertedAmount = amount;
     if (originalCurrency !== config.currency) {
       const fromRate = this.exchangeRates[originalCurrency] || 1;
@@ -320,7 +321,7 @@ document.querySelectorAll('[data-i18n-placeholder]').forEach(el => {
       convertedAmount = (amount / fromRate) * toRate;
     }
     
-    // Formattazione numero
+    // 📢 FORMATTAZIONE NUMERO
     let formatted = convertedAmount.toFixed(config.decimals);
     formatted = formatted.replace('.', config.decimal);
     
@@ -328,11 +329,11 @@ document.querySelectorAll('[data-i18n-placeholder]').forEach(el => {
     parts[0] = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, config.thousands);
     formatted = parts.join(config.decimal);
     
-    // ✅ AGGIUNTA: Usa &nbsp; per evitare wrap
+    // 💲 POSIZIONAMENTO SIMBOLO
     if (config.symbolPosition === 'before') {
-      return `${config.symbol}&nbsp;${formatted}`;
+      return `${config.symbol}${formatted}`;
     } else {
-      return `${formatted}&nbsp;${config.symbol}`;
+      return `${formatted} ${config.symbol}`;
     }
   }
 
