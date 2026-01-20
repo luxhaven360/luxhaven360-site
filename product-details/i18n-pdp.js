@@ -267,7 +267,6 @@ document.querySelectorAll('[data-i18n-placeholder]').forEach(el => {
   formatPrice(price, originalCurrency = 'EUR') {
     const amount = parseFloat(price) || 0;
     
-    // Configurazione per lingua
     const localeConfig = {
       it: { 
         currency: 'EUR', 
@@ -291,7 +290,9 @@ document.querySelectorAll('[data-i18n-placeholder]').forEach(el => {
         symbolPosition: 'after',
         thousands: ' ', 
         decimal: ',',
-        decimals: amount < 500 ? 2 : 0
+        decimals: amount < 500 ? 2 : 0,
+        // NUOVO: Aggiungi separatore non-breaking per francese
+        space: '\u00A0' // spazio non-breaking
       },
       de: { 
         currency: 'EUR', 
@@ -299,7 +300,8 @@ document.querySelectorAll('[data-i18n-placeholder]').forEach(el => {
         symbolPosition: 'after',
         thousands: '.', 
         decimal: ',',
-        decimals: amount < 500 ? 2 : 0
+        decimals: amount < 500 ? 2 : 0,
+        space: '\u00A0'
       },
       es: { 
         currency: 'EUR', 
@@ -307,13 +309,14 @@ document.querySelectorAll('[data-i18n-placeholder]').forEach(el => {
         symbolPosition: 'after',
         thousands: '.', 
         decimal: ',',
-        decimals: amount < 500 ? 2 : 0
+        decimals: amount < 500 ? 2 : 0,
+        space: '\u00A0'
       }
     };
     
     const config = localeConfig[this.currentLang] || localeConfig.it;
     
-    // 💱 CONVERSIONE VALUTA con tassi dinamici
+    // Conversione valuta
     let convertedAmount = amount;
     if (originalCurrency !== config.currency) {
       const fromRate = this.exchangeRates[originalCurrency] || 1;
@@ -321,7 +324,7 @@ document.querySelectorAll('[data-i18n-placeholder]').forEach(el => {
       convertedAmount = (amount / fromRate) * toRate;
     }
     
-    // 📢 FORMATTAZIONE NUMERO
+    // Formattazione numero
     let formatted = convertedAmount.toFixed(config.decimals);
     formatted = formatted.replace('.', config.decimal);
     
@@ -329,13 +332,15 @@ document.querySelectorAll('[data-i18n-placeholder]').forEach(el => {
     parts[0] = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, config.thousands);
     formatted = parts.join(config.decimal);
     
-    // 💲 POSIZIONAMENTO SIMBOLO
+    // MODIFICATO: Usa spazio non-breaking se presente
+    const separator = config.space || ' ';
+    
     if (config.symbolPosition === 'before') {
-  return `${config.symbol}${formatted}`;
-} else {
-  return `${formatted}\u00A0${config.symbol}`; // ✅ \u00A0 = spazio non-breaking (come &nbsp;)
+      return `${config.symbol}${formatted}`;
+    } else {
+      return `${formatted}${separator}${config.symbol}`;
+    }
 }
-  }
 
   /**
    * Formatta numero con separatore decimale corretto per la lingua
