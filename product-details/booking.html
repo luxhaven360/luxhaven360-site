@@ -2198,7 +2198,7 @@ product.caratteristiche.forEach((value, index) => {
     // ✅ 9. ORARI DISPONIBILI
     const timeSelect = document.getElementById('bookingTime');
     if (timeSelect) {
-        timeSelect.innerHTML = '<option value="">Seleziona orario</option>';
+        timeSelect.innerHTML = `<option value="">${i18n.t('booking_time_placeholder')}</option>`;
         
         console.log('📅 Orari ricevuti:', product.orari);
         
@@ -2606,17 +2606,26 @@ if (skuPrefix === 'SC') {
         ];
 
         services.forEach(service => {
-            const checkbox = document.createElement('label');
-            checkbox.className = 'checkbox-container';
-            checkbox.innerHTML = `
-               <input type="checkbox" class="extra-service" data-price="${service.price}" data-service="${service.id}">
-               <div>
-                  <div class="font-semibold mb-1">${i18n.t(service.labelKey)}</div>
-                  <div class="text-sm" style="color: #a59173;">+${i18n.formatPrice(service.price)} - ${i18n.t(service.descKey)}</div>
-               </div>
-            `;
-            extraServicesContainer.appendChild(checkbox);
-        });
+    const descKeys = getServiceDescriptionKeys();
+    let descKey = descKeys[service.id];
+    
+    // Se non c'è descrizione speciale, mostra solo il prezzo
+    let descriptionHTML = '';
+    if (descKey) {
+        descriptionHTML = ` - ${i18n.t(descKey)}`;
+    }
+    
+    const checkbox = document.createElement('label');
+    checkbox.className = 'checkbox-container';
+    checkbox.innerHTML = `
+       <input type="checkbox" class="extra-service" data-price="${service.price}" data-service="${service.id}">
+       <div>
+          <div class="font-semibold mb-1">${i18n.t(service.labelKey)}</div>
+          <div class="text-sm" style="color: #a59173;">+${i18n.formatPrice(service.price)}${descriptionHTML}</div>
+       </div>
+    `;
+    extraServicesContainer.appendChild(checkbox);
+});
             
         // ✅ Aggiungi passeggeri se 4 posti
         if (product.numPosti >= 4) {
@@ -5226,18 +5235,138 @@ function isFerrariLamborghiniCombo() {
 }
 
 /**
- * Ottiene prezzi corretti in base al tipo di combo
+ * Rileva il tipo di prodotto/combo per applicare logica prezzi corretta
+ * @returns {'DOUBLE_FERRARI'|'SINGLE_FERRARI_MCLAREN'|'FERRARI_LAMBORGHINI'|'OTHER'}
+ */
+function detectProductType() {
+    if (!bookingData.productData) return 'OTHER';
+    
+    const sku = bookingData.productData.sku.toUpperCase();
+    const title = bookingData.productData.title.toLowerCase();
+    
+    // Caso 1: Combo con "+"
+    if (sku.includes('+')) {
+        const parts = sku.split('+').map(s => s.trim());
+        
+        // Verifica se entrambe le parti sono Ferrari
+        const isFirstFerrari = parts[0].startsWith('SC-00') && 
+                              (title.includes('ferrari') || title.includes('california') || 
+                               title.includes('portofino') || title.includes('458') || 
+                               title.includes('488') || title.includes('f8') || title.includes('sf90'));
+        
+        const titleParts = title.split('+');
+        const isSecondFerrari = titleParts.length > 1 && 
+                               (titleParts[1].includes('ferrari') || titleParts[1].includes('california') || 
+                                titleParts[1].includes('portofino') || titleParts[1].includes('458') || 
+                                titleParts[1].includes('488') || titleParts[1].includes('f8'));
+        
+        // Se entrambe Ferrari → DOUBLE_FERRARI
+        if (isFirstFerrari && isSecondFerrari) {
+            console.log('🏎️ Rilevata DOUBLE_FERRARI combo');
+            return 'DOUBLE_FERRARI';
+        }
+        
+        // Se una è Ferrari e l'altra Lamborghini → FERRARI_LAMBORGHINI
+        const hasFerrari = title.includes('ferrari');
+        const hasLamborghini = title.includes('lamborghini') || title.includes('huracán');
+        
+        if (hasFerrari && hasLamborghini) {
+            console.log('🏎️ Rilevata FERRARI_LAMBORGHINI combo');
+            return 'FERRARI_LAMBORGHINI';
+        }
+    }
+    
+    // Caso 2: Singola Ferrari o McLaren
+    if (title.includes('ferrari') || title.includes('mclaren 720s')) {
+        console.log('🏎️ Rilevata SINGLE_FERRARI_MCLAREN');
+        return 'SINGLE_FERRARI_MCLAREN';
+    }
+    
+    console.log('❓ Prodotto tipo OTHER');
+    return 'OTHER';
+}
+        
+/**
+ * Ottiene prezzi corretti in base al tipo di prodotto/combo
  */
 function getServicePrices() {
-    const isCombo = isFerrariLamborghiniCombo();
+    const productType = detectProductType();
     
-    return {
-        photo: isCombo ? 35 : 290,      // Combo: €35, Standard: €290
-        videoHd: isCombo ? 45 : 490,    // Combo: €45, Standard: €490
-        video360: isCombo ? 30 : 690,   // Combo: €30, Standard: €690
-        passenger1: isCombo ? 25 : 50,  // Combo: €25, Standard: €50
-        passenger2: isCombo ? 45 : 100  // Combo: €45, Standard: €100
-    };
+    switch (productType) {
+        case 'DOUBLE_FERRARI':
+            return {
+                photo: 55,
+                videoHd: 35,
+                video360: 55,
+                passenger1: 25,
+                passenger2: 45
+            };
+        
+        case 'SINGLE_FERRARI_MCLAREN':
+            return {
+                photo: 35,
+                videoHd: 25,
+                video360: 30,
+                passenger1: 25,
+                passenger2: 45
+            };
+        
+        case 'FERRARI_LAMBORGHINI':
+            return {
+                photo: 35,
+                videoHd: 45,
+                video360: 25,
+                passenger1: 25,
+                passenger2: 45
+            };
+        
+        default:
+            // Fallback per altri prodotti
+            return {
+                photo: 290,
+                videoHd: 490,
+                video360: 690,
+                passenger1: 50,
+                passenger2: 100
+            };
+    }
+}
+
+/**
+ * Ottiene chiavi traduzione descrizioni servizi in base al tipo prodotto
+ */
+function getServiceDescriptionKeys() {
+    const productType = detectProductType();
+    
+    switch (productType) {
+        case 'DOUBLE_FERRARI':
+            return {
+                photo: 'booking_service_photo_desc_double_ferrari',
+                videoHd: 'booking_service_video_hd_desc_double_ferrari',
+                video360: 'booking_service_video_360_desc_double_ferrari'
+            };
+        
+        case 'SINGLE_FERRARI_MCLAREN':
+            return {
+                photo: null, // Nessuna descrizione speciale
+                videoHd: null,
+                video360: 'booking_service_video_360_desc_single_ferrari'
+            };
+        
+        case 'FERRARI_LAMBORGHINI':
+            return {
+                photo: 'booking_service_photo_desc_combo',
+                videoHd: 'booking_service_video_hd_desc_combo',
+                video360: 'booking_service_video_360_desc_combo'
+            };
+        
+        default:
+            return {
+                photo: 'booking_service_photo_desc_standard',
+                videoHd: 'booking_service_video_hd_desc_standard',
+                video360: 'booking_service_video_360_desc_standard'
+            };
+    }
 }
 
 /**
@@ -5251,9 +5380,13 @@ function updateExtraServicesLanguage() {
     if (!container) return;
     
     const prices = getServicePrices();
-    const isCombo = isFerrariLamborghiniCombo();
+    const descKeys = getServiceDescriptionKeys();
     
-    console.log('🔄 Aggiornamento servizi extra:', { isCombo, prices });
+    console.log('🔄 Aggiornamento servizi extra:', { 
+        productType: detectProductType(), 
+        prices, 
+        descKeys 
+    });
     
     // Aggiorna servizi standard
     container.querySelectorAll('.extra-service').forEach(checkbox => {
@@ -5264,28 +5397,39 @@ function updateExtraServicesLanguage() {
         const titleDiv = parentLabel.querySelector('.font-semibold');
         const descDiv = parentLabel.querySelector('.text-sm');
         
+        // Aggiorna prezzo nel dataset
+        let newPrice = 0;
+        let labelKey = '';
+        let descKey = null;
+        
         if (serviceId === 'photo') {
-            if (titleDiv) titleDiv.textContent = i18n.t('booking_service_photo_title');
-            if (descDiv) {
-                const descKey = isCombo ? 'booking_service_photo_desc_combo' : 'booking_service_photo_desc_standard';
-                descDiv.innerHTML = `+${i18n.formatPrice(prices.photo)} - ${i18n.t(descKey)}`;
-            }
-            checkbox.dataset.price = prices.photo;
+            newPrice = prices.photo;
+            labelKey = 'booking_service_photo_title';
+            descKey = descKeys.photo;
         } else if (serviceId === 'video-hd') {
-            if (titleDiv) titleDiv.textContent = i18n.t('booking_service_video_hd_title');
-            if (descDiv) {
-                const descKey = isCombo ? 'booking_service_video_hd_desc_combo' : 'booking_service_video_hd_desc_standard';
-                descDiv.innerHTML = `+${i18n.formatPrice(prices.videoHd)} - ${i18n.t(descKey)}`;
-            }
-            checkbox.dataset.price = prices.videoHd;
+            newPrice = prices.videoHd;
+            labelKey = 'booking_service_video_hd_title';
+            descKey = descKeys.videoHd;
         } else if (serviceId === 'video-360') {
-            if (titleDiv) titleDiv.textContent = i18n.t('booking_service_video_360_title');
-            if (descDiv) {
-                const descKey = isCombo ? 'booking_service_video_360_desc_combo' : 'booking_service_video_360_desc_standard';
-                descDiv.innerHTML = `+${i18n.formatPrice(prices.video360)} - ${i18n.t(descKey)}`;
-            }
-            checkbox.dataset.price = prices.video360;
+            newPrice = prices.video360;
+            labelKey = 'booking_service_video_360_title';
+            descKey = descKeys.video360;
         }
+        
+        // Aggiorna titolo
+        if (titleDiv) titleDiv.textContent = i18n.t(labelKey);
+        
+        // Aggiorna descrizione con prezzo formattato
+        if (descDiv) {
+            let descriptionHTML = '';
+            if (descKey) {
+                descriptionHTML = ` - ${i18n.t(descKey)}`;
+            }
+            descDiv.innerHTML = `+${i18n.formatPrice(newPrice)}${descriptionHTML}`;
+        }
+        
+        // Aggiorna data-price
+        checkbox.dataset.price = newPrice;
     });
     
     // Aggiorna passeggeri
@@ -5303,7 +5447,7 @@ function updateExtraServicesLanguage() {
         }
     });
     
-    console.log('✅ Servizi extra aggiornati con traduzioni e prezzi');
+    console.log('✅ Servizi extra aggiornati con traduzioni e prezzi dinamici');
 }      
         
 </script>
