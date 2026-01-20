@@ -496,16 +496,14 @@ textarea[placeholder="Hai richieste particolari?"] {
   box-sizing: border-box !important;
 }
 
-/* ✅ Previeni wrap del simbolo valuta nei prezzi */
-#totalPrice, 
-#basePrice, 
+/* Fix prezzi multi-riga */
+#totalPrice,
+#basePrice,
 #secondCarPriceAmount,
-.distance-option .text-xl.font-semibold,
-.product-price,
-.text-3xl.font-bold.gradient-text {
-  white-space: nowrap !important;
+.price-summary .font-semibold,
+.product-price {
+    white-space: nowrap !important;
 }
-
 
 /* ============================================
    SELETTORE LINGUA PREMIUM (PDP PAGES)
@@ -2149,14 +2147,16 @@ const table1TitleKey = config.type === 'supercar' ? 'booking_config_sc_table1' :
 table1Title.textContent = i18n.t(table1TitleKey);
 table1Body.innerHTML = '';
 
-// Determina chiave traduzione per label tabella 1
-const specsKey = config.type === 'supercar' ? 'booking_config_sc_specs' :
-                 config.type === 'immobili' ? 'booking_config_pr_specs' :
-                 'booking_config_ex_specs';
+// Array delle chiavi traduzione per le label
+const table1LabelsKeys = config.type === 'supercar' 
+    ? ['booking_spec_power', 'booking_spec_acceleration', 'booking_spec_top_speed', 'booking_spec_drivetrain']
+    : config.type === 'immobili'
+    ? ['booking_spec_surface', 'booking_spec_location', 'booking_spec_bedrooms', 'booking_spec_bathrooms']
+    : ['booking_spec_duration', 'booking_spec_max_participants', 'booking_spec_time_slot', 'booking_spec_meeting_point'];
 
 product.prestazioni.forEach((value, index) => {
-    const labels = i18n.t(specsKey);
-    const label = Array.isArray(labels) ? labels[index] : `Campo ${index + 1}`;
+    const labelKey = table1LabelsKeys[index];
+    const label = labelKey ? i18n.t(labelKey) : `Campo ${index + 1}`;
     
     table1Body.innerHTML += `
         <div class="spec-item">
@@ -2177,9 +2177,16 @@ const table2TitleKey = config.type === 'supercar' ? 'booking_config_sc_table2' :
 table2Title.textContent = i18n.t(table2TitleKey);
 table2Body.innerHTML = '';
 
+// Array delle chiavi traduzione per le label
+const table2LabelsKeys = config.type === 'supercar' 
+    ? ['booking_spec_engine', 'booking_spec_displacement', 'booking_spec_transmission', 'booking_spec_seats']
+    : config.type === 'immobili'
+    ? ['booking_spec_type', 'booking_spec_heating', 'booking_spec_parking', 'booking_spec_outdoors']
+    : ['booking_spec_accessibility', 'booking_spec_included_services', 'booking_spec_requirements', 'booking_spec_accommodation'];
+
 product.caratteristiche.forEach((value, index) => {
-    const labels = i18n.t(specsKey);
-    const label = Array.isArray(labels) ? labels[index + 4] : `Campo ${index + 5}`; // +4 offset per tabella 2
+    const labelKey = table2LabelsKeys[index];
+    const label = labelKey ? i18n.t(labelKey) : `Campo ${index + 5}`;
     
     table2Body.innerHTML += `
         <div class="spec-item">
@@ -3611,6 +3618,78 @@ function initDistanceSelection(product) {
         bookingData.total = total;
         document.getElementById('totalPrice').textContent = formatPrice(total);
     }
+
+    /**
+ * 🏷️ Aggiorna label tabelle prestazioni/caratteristiche
+ */
+function updateTableLabels() {
+    const i18n = window.i18nPDP();
+    const config = bookingData.productData?.typeConfig;
+    if (!config || !i18n) return;
+    
+    const product = bookingData.productData;
+    
+    // ✅ AGGIORNA TITOLI TABELLE
+    const table1Title = document.querySelector('.table-1-title');
+    const table2Title = document.querySelector('.table-2-title');
+    
+    const table1TitleKey = config.type === 'supercar' ? 'booking_config_sc_table1' :
+                           config.type === 'immobili' ? 'booking_config_pr_table1' :
+                           'booking_config_ex_table1';
+    
+    const table2TitleKey = config.type === 'supercar' ? 'booking_config_sc_table2' :
+                           config.type === 'immobili' ? 'booking_config_pr_table2' :
+                           'booking_config_ex_table2';
+    
+    if (table1Title) table1Title.textContent = i18n.t(table1TitleKey);
+    if (table2Title) table2Title.textContent = i18n.t(table2TitleKey);
+    
+    // ✅ AGGIORNA LABEL TABELLA 1
+    const table1LabelsKeys = config.type === 'supercar' 
+        ? ['booking_spec_power', 'booking_spec_acceleration', 'booking_spec_top_speed', 'booking_spec_drivetrain']
+        : config.type === 'immobili'
+        ? ['booking_spec_surface', 'booking_spec_location', 'booking_spec_bedrooms', 'booking_spec_bathrooms']
+        : ['booking_spec_duration', 'booking_spec_max_participants', 'booking_spec_time_slot', 'booking_spec_meeting_point'];
+    
+    const table1Body = document.querySelector('.table-1-body');
+    if (table1Body && product.prestazioni) {
+        table1Body.innerHTML = '';
+        product.prestazioni.forEach((value, index) => {
+            const labelKey = table1LabelsKeys[index];
+            const label = labelKey ? i18n.t(labelKey) : `Campo ${index + 1}`;
+            
+            table1Body.innerHTML += `
+                <div class="spec-item">
+                    <span style="color: #a59173;">${label}</span>
+                    <span class="font-semibold">${value}</span>
+                </div>
+            `;
+        });
+    }
+    
+    // ✅ AGGIORNA LABEL TABELLA 2
+    const table2LabelsKeys = config.type === 'supercar' 
+        ? ['booking_spec_engine', 'booking_spec_displacement', 'booking_spec_transmission', 'booking_spec_seats']
+        : config.type === 'immobili'
+        ? ['booking_spec_type', 'booking_spec_heating', 'booking_spec_parking', 'booking_spec_outdoors']
+        : ['booking_spec_accessibility', 'booking_spec_included_services', 'booking_spec_requirements', 'booking_spec_accommodation'];
+    
+    const table2Body = document.querySelector('.table-2-body');
+    if (table2Body && product.caratteristiche) {
+        table2Body.innerHTML = '';
+        product.caratteristiche.forEach((value, index) => {
+            const labelKey = table2LabelsKeys[index];
+            const label = labelKey ? i18n.t(labelKey) : `Campo ${index + 5}`;
+            
+            table2Body.innerHTML += `
+                <div class="spec-item">
+                    <span style="color: #a59173;">${label}</span>
+                    <span class="font-semibold">${value}</span>
+                </div>
+            `;
+        });
+    }
+}
 
         // ✅ GESTIONE RITORNO DA CHECKOUT STRIPE
 window.addEventListener('pageshow', function(event) {
@@ -5068,77 +5147,6 @@ document.addEventListener('languageChanged', function(e) {
     // ✅ Aggiorna etichette distanze
     updateDistanceLabels();
 });
-
-/**
- * 🏷️ Aggiorna label tabelle prestazioni/caratteristiche
- */
-function updateTableLabels() {
-    const i18n = window.i18nPDP();
-    const config = bookingData.productData?.typeConfig;
-    if (!config || !i18n) return;
-    
-    const product = bookingData.productData;
-    
-    // ✅ AGGIUNGERE QUESTE 4 RIGHE:
-    // Determina chiave specs in base al tipo prodotto
-    const specsKey = config.type === 'supercar' ? 'booking_config_sc_specs' :
-                     config.type === 'immobili' ? 'booking_config_pr_specs' :
-                     'booking_config_ex_specs';
-    
-    // ✅ Aggiorna titoli tabelle (resto del codice rimane uguale)
-    const table1Title = document.querySelector('.table-1-title');
-    const table2Title = document.querySelector('.table-2-title');
-    
-    const table1TitleKey = config.type === 'supercar' ? 'booking_config_sc_table1' :
-                           config.type === 'immobili' ? 'booking_config_pr_table1' :
-                           'booking_config_ex_table1';
-    
-    const table2TitleKey = config.type === 'supercar' ? 'booking_config_sc_table2' :
-                           config.type === 'immobili' ? 'booking_config_pr_table2' :
-                           'booking_config_ex_table2';
-    
-    if (table1Title) table1Title.textContent = i18n.t(table1TitleKey);
-    if (table2Title) table2Title.textContent = i18n.t(table2TitleKey);
-    
-    // ✅ CHIAVE SPECS UNIFICATA
-    const specsKey = config.type === 'supercar' ? 'booking_config_sc_specs' :
-                     config.type === 'immobili' ? 'booking_config_pr_specs' :
-                     'booking_config_ex_specs';
-    
-    // Tabella 1 - Prestazioni/Dettagli
-    const table1Body = document.querySelector('.table-1-body');
-    if (table1Body && product.prestazioni) {
-        table1Body.innerHTML = '';
-        product.prestazioni.forEach((value, index) => {
-            const labels = i18n.t(specsKey);
-            const label = Array.isArray(labels) ? labels[index] : `Campo ${index + 1}`;
-            
-            table1Body.innerHTML += `
-                <div class="spec-item">
-                    <span style="color: #a59173;">${label}</span>
-                    <span class="font-semibold">${value}</span>
-                </div>
-            `;
-        });
-    }
-    
-    // Tabella 2 - Caratteristiche/Specifiche
-    const table2Body = document.querySelector('.table-2-body');
-    if (table2Body && product.caratteristiche) {
-        table2Body.innerHTML = '';
-        product.caratteristiche.forEach((value, index) => {
-            const labels = i18n.t(specsKey);
-            const label = Array.isArray(labels) ? labels[index + 4] : `Campo ${index + 5}`;
-            
-            table2Body.innerHTML += `
-                <div class="spec-item">
-                    <span style="color: #a59173;">${label}</span>
-                    <span class="font-semibold">${value}</span>
-                </div>
-            `;
-        });
-    }
-}
 
         /**
  * 🕐 Aggiorna formattazione orari nel dropdown
