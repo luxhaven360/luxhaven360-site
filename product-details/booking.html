@@ -2579,29 +2579,48 @@ if (skuPrefix === 'SC') {
             extraServicesContainer.innerHTML = '';
             
             // Aggiungi checkbox servizi standard
-            const services = [
-                { id: 'photo', label: 'Servizio Fotografico Professionale', price: 290, desc: 'Su una vettura a scelta' },
-                { id: 'video-hd', label: 'Video HD Professionale', price: 490, desc: 'Disponibile su entrambe le vetture' },
-                { id: 'video-360', label: 'Video 360° Immersivo', price: 690, desc: 'Su una vettura (marchi diversi)' }
-            ];
-            
-            services.forEach(service => {
-                const checkbox = document.createElement('label');
-                checkbox.className = 'checkbox-container';
-                checkbox.innerHTML = `
-                   <input type="checkbox" class="extra-service" data-price="${service.price}" data-service="${service.id}">
-                   <div>
-                      <div class="font-semibold mb-1">${service.label}</div>
-                      <div class="text-sm" style="color: #a59173;">+${formatPrice(service.price)} - ${service.desc}</div>
-                   </div>
-                `;
-                extraServicesContainer.appendChild(checkbox);
-            });
+            const prices = getServicePrices();
+const isCombo = isFerrariLamborghiniCombo();
+
+const services = [
+    { 
+        id: 'photo', 
+        labelKey: 'booking_service_photo_title',
+        price: prices.photo, 
+        descKey: isCombo ? 'booking_service_photo_desc_combo' : 'booking_service_photo_desc_standard'
+    },
+    { 
+        id: 'video-hd', 
+        labelKey: 'booking_service_video_hd_title',
+        price: prices.videoHd, 
+        descKey: isCombo ? 'booking_service_video_hd_desc_combo' : 'booking_service_video_hd_desc_standard'
+    },
+    { 
+        id: 'video-360', 
+        labelKey: 'booking_service_video_360_title',
+        price: prices.video360, 
+        descKey: isCombo ? 'booking_service_video_360_desc_combo' : 'booking_service_video_360_desc_standard'
+    }
+];
+
+services.forEach(service => {
+    const checkbox = document.createElement('label');
+    checkbox.className = 'checkbox-container';
+    checkbox.innerHTML = `
+       <input type="checkbox" class="extra-service" data-price="${service.price}" data-service="${service.id}">
+       <div>
+          <div class="font-semibold mb-1" data-i18n="${service.labelKey}">${i18n.t(service.labelKey)}</div>
+          <div class="text-sm" style="color: #a59173;">+${i18n.formatPrice(service.price)} - <span data-i18n="${service.descKey}">${i18n.t(service.descKey)}</span></div>
+       </div>
+    `;
+    extraServicesContainer.appendChild(checkbox);
+});
             
             // ✅ Aggiungi passeggeri se 4 posti
             if (product.numPosti >= 4) {
                 const maxExtraPassengers = product.numPosti - 2;
-                const pricePerPassenger = 50;
+                const prices = getServicePrices();
+                const pricePerPassenger = prices.passenger1; // 25€ per combo, 50€ standard
                 
                 const passengerContainer = document.createElement('div');
                 passengerContainer.className = 'checkbox-container';
@@ -2621,7 +2640,7 @@ if (skuPrefix === 'SC') {
                                 <input type="radio" name="extraPassengers" value="2" class="passenger-radio" style="width: 18px; height: 18px; accent-color: #D4AF37; cursor: pointer;">
                                 <div>
                                     <div style="font-size: 14px; font-weight: 600; color: #fff;">${maxExtraPassengers} Passeggeri</div>
-                                    <div style="font-size: 12px; color: #a59173;">+${formatPrice(pricePerPassenger * maxExtraPassengers)}</div>
+                                    <div style="font-size: 12px; color: #a59173;">+${i18n.formatPrice(isFerrariLamborghiniCombo() ? prices.passenger2 : pricePerPassenger * maxExtraPassengers)}</div>
                                 </div>
                             </label>
                         </div>
@@ -5183,6 +5202,94 @@ function updateTimeFormatLanguage() {
         timeSelect.value = currentValue;
     }
 }
+
+/**
+ * Rileva se il prodotto attuale è una combo Ferrari + Lamborghini
+ */
+function isFerrariLamborghiniCombo() {
+    if (!bookingData.productData) return false;
+    
+    const title = bookingData.productData.title.toLowerCase();
+    const hasFerrari = title.includes('ferrari');
+    const hasLamborghini = title.includes('lamborghini') || title.includes('huracán');
+    
+    return hasFerrari && hasLamborghini;
+}
+
+/**
+ * Ottiene prezzi corretti in base al tipo di combo
+ */
+function getServicePrices() {
+    const isCombo = isFerrariLamborghiniCombo();
+    
+    return {
+        photo: isCombo ? 35 : 290,
+        videoHd: isCombo ? 45 : 490,
+        video360: isCombo ? 30 : 690,
+        passenger1: isCombo ? 25 : 50,
+        passenger2: isCombo ? 45 : 100
+    };
+}
+
+/**
+ * ðŸŒ Aggiorna servizi aggiuntivi per nuova lingua
+ */
+function updateExtraServicesLanguage() {
+    const i18n = window.i18nPDP();
+    if (!i18n) return;
+    
+    const container = document.getElementById('extraServicesContainer');
+    if (!container) return;
+    
+    const prices = getServicePrices();
+    const isCombo = isFerrariLamborghiniCombo();
+    
+    // Aggiorna servizi standard
+    container.querySelectorAll('.extra-service').forEach(checkbox => {
+        const serviceId = checkbox.dataset.service;
+        const label = checkbox.nextElementSibling;
+        if (!label) return;
+        
+        const titleDiv = label.querySelector('.font-semibold');
+        const descDiv = label.querySelector('.text-sm');
+        
+        if (serviceId === 'photo') {
+            if (titleDiv) titleDiv.textContent = i18n.t('booking_service_photo_title');
+            if (descDiv) {
+                const descKey = isCombo ? 'booking_service_photo_desc_combo' : 'booking_service_photo_desc_standard';
+                descDiv.innerHTML = `+${i18n.formatPrice(prices.photo)} - ${i18n.t(descKey)}`;
+            }
+        } else if (serviceId === 'video-hd') {
+            if (titleDiv) titleDiv.textContent = i18n.t('booking_service_video_hd_title');
+            if (descDiv) {
+                const descKey = isCombo ? 'booking_service_video_hd_desc_combo' : 'booking_service_video_hd_desc_standard';
+                descDiv.innerHTML = `+${i18n.formatPrice(prices.videoHd)} - ${i18n.t(descKey)}`;
+            }
+        } else if (serviceId === 'video-360') {
+            if (titleDiv) titleDiv.textContent = i18n.t('booking_service_video_360_title');
+            if (descDiv) {
+                const descKey = isCombo ? 'booking_service_video_360_desc_combo' : 'booking_service_video_360_desc_standard';
+                descDiv.innerHTML = `+${i18n.formatPrice(prices.video360)} - ${i18n.t(descKey)}`;
+            }
+        }
+    });
+    
+    // Aggiorna passeggeri
+    const passengerOptions = container.querySelectorAll('label:has(.passenger-radio)');
+    passengerOptions.forEach((label, index) => {
+        const titleDiv = label.querySelector('div[style*="font-size: 14px"]');
+        const priceDiv = label.querySelector('div[style*="font-size: 12px"]');
+        
+        if (index === 0) {
+            if (titleDiv) titleDiv.textContent = i18n.t('booking_passengers_one_label');
+            if (priceDiv) priceDiv.textContent = `+${i18n.formatPrice(prices.passenger1)}`;
+        } else {
+            if (titleDiv) titleDiv.textContent = i18n.t('booking_passengers_two_label');
+            if (priceDiv) priceDiv.textContent = `+${i18n.formatPrice(prices.passenger2)}`;
+        }
+    });
+}        
+        
 </script>
 </body>
 </html>
