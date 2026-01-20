@@ -189,6 +189,10 @@ document.querySelectorAll('[data-i18n-placeholder]').forEach(el => {
         updateDistanceLabels();
     }
 
+    if (typeof updateExtraServicesLanguage === 'function') {
+        updateExtraServicesLanguage();
+    }
+
     document.dispatchEvent(new CustomEvent('languageChanged', { detail: { lang: langCode } }));
 
     console.log(`✅ Lingua PDP cambiata: ${langCode.toUpperCase()}`);
