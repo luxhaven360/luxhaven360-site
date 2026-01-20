@@ -331,10 +331,10 @@ document.querySelectorAll('[data-i18n-placeholder]').forEach(el => {
     
     // 💲 POSIZIONAMENTO SIMBOLO
     if (config.symbolPosition === 'before') {
-      return `${config.symbol}${formatted}`;
-    } else {
-      return `${formatted} ${config.symbol}`;
-    }
+    return `${config.symbol}${formatted}`;
+} else {
+    return `${formatted}&nbsp;${config.symbol}`; // ← Usa &nbsp;
+}
   }
 
   /**
