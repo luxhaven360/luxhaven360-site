@@ -161,17 +161,18 @@ document.querySelectorAll('[data-i18n-placeholder]').forEach(el => {
     localStorage.setItem('lh360_lang', langCode);
     this.currentLang = langCode;
 
-    // ✅ Traduci TUTTA la pagina immediatamente
     this.translatePage();
-    
     this.updateLanguageSelector();
 
-    // Aggiorna prezzi con nuova valuta
     if (typeof updateAllPricesForLanguage === 'function') {
         updateAllPricesForLanguage();
     }
+    
+    // ✅ NUOVO: Aggiorna tabelle
+    if (typeof updateTableLabels === 'function') {
+        updateTableLabels();
+    }
 
-    // ✅ Aggiorna calendar e orari
     if (typeof updateCalendarLanguage === 'function') {
         updateCalendarLanguage();
     }
@@ -180,12 +181,10 @@ document.querySelectorAll('[data-i18n-placeholder]').forEach(el => {
         updateTimeFormatLanguage();
     }
 
-    // ✅ NUOVO: Aggiorna dropdown paesi telefono
     if (typeof updatePhoneDropdownLanguage === 'function') {
         updatePhoneDropdownLanguage();
     }
 
-    // Dispatch event
     document.dispatchEvent(new CustomEvent('languageChanged', { detail: { lang: langCode } }));
 
     console.log(`✅ Lingua PDP cambiata: ${langCode.toUpperCase()}`);
