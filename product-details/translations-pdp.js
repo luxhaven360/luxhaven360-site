@@ -411,11 +411,12 @@ booking_spec_accommodation: "Alloggio",
 // === SERVIZI AGGIUNTIVI ===
 // Servizi foto/video
 booking_service_photo_title: "Servizio Fotografico Professionale",
-booking_service_photo_desc_ferrari: "Solo sulla Ferrari",
-booking_service_video_hd_title: "Video HD Professionale",
-booking_service_video_hd_desc: "Disponibile su entrambe le vetture",
-booking_service_video_360_title: "Video 360° Immersivo",
-booking_service_video_360_desc_ferrari: "Solo sulla Ferrari",
+booking_service_photo_desc_standard: "Disponibile su entrambe le vetture",
+booking_service_photo_desc_combo: "Solo sulla Ferrari",
+booking_service_video_hd_desc_standard: "Disponibile su entrambe le vetture",
+booking_service_video_hd_desc_combo: "Disponibile su entrambe le vetture",
+booking_service_video_360_desc_standard: "Disponibile su entrambe le vetture",
+booking_service_video_360_desc_combo: "Solo sulla Ferrari",
 
 // Passeggeri
 booking_passengers_section_title: "Aggiungi Passeggeri",
@@ -1034,11 +1035,12 @@ booking_spec_accommodation: "Accommodation",
 // === ADDITIONAL SERVICES ===
 // Photo/video services
 booking_service_photo_title: "Professional Photography Service",
-booking_service_photo_desc_ferrari: "Ferrari only",
-booking_service_video_hd_title: "Professional HD Video",
-booking_service_video_hd_desc: "Available on both vehicles",
-booking_service_video_360_title: "Immersive 360° Video",
-booking_service_video_360_desc_ferrari: "Ferrari only",
+booking_service_photo_desc_standard: "Available on both vehicles",
+booking_service_photo_desc_combo: "Ferrari only",
+booking_service_video_hd_desc_standard: "Available on both vehicles",
+booking_service_video_hd_desc_combo: "Available on both vehicles",
+booking_service_video_360_desc_standard: "Available on both vehicles",
+booking_service_video_360_desc_combo: "Ferrari only",
 
 // Passengers
 booking_passengers_section_title: "Add Passengers",
@@ -1644,11 +1646,12 @@ booking_spec_accommodation: "Hébergement",
 // === SERVICES SUPPLÉMENTAIRES ===
 // Services photo/vidéo
 booking_service_photo_title: "Service Photographique Professionnel",
-booking_service_photo_desc_ferrari: "Ferrari uniquement",
-booking_service_video_hd_title: "Vidéo HD Professionnelle",
-booking_service_video_hd_desc: "Disponible sur les deux véhicules",
-booking_service_video_360_title: "Vidéo 360° Immersive",
-booking_service_video_360_desc_ferrari: "Ferrari uniquement",
+booking_service_photo_desc_standard: "Disponible sur les deux véhicules",
+booking_service_photo_desc_combo: "Ferrari uniquement",
+booking_service_video_hd_desc_standard: "Disponible sur les deux véhicules",
+booking_service_video_hd_desc_combo: "Disponible sur les deux véhicules",
+booking_service_video_360_desc_standard: "Disponible sur les deux véhicules",
+booking_service_video_360_desc_combo: "Ferrari uniquement",
 
 // Passagers
 booking_passengers_section_title: "Ajouter des Passagers",
@@ -2248,11 +2251,12 @@ booking_spec_accommodation: "Unterkunft",
 // === ZUSÄTZLICHE SERVICES ===
 // Foto-/Video-Services
 booking_service_photo_title: "Professioneller Fotografie-Service",
-booking_service_photo_desc_ferrari: "Nur Ferrari",
-booking_service_video_hd_title: "Professionelles HD-Video",
-booking_service_video_hd_desc: "Verfügbar auf beiden Fahrzeugen",
-booking_service_video_360_title: "Immersives 360°-Video",
-booking_service_video_360_desc_ferrari: "Nur Ferrari",
+booking_service_photo_desc_standard: "Verfügbar auf beiden Fahrzeugen",
+booking_service_photo_desc_combo: "Nur Ferrari",
+booking_service_video_hd_desc_standard: "Verfügbar auf beiden Fahrzeugen",
+booking_service_video_hd_desc_combo: "Verfügbar auf beiden Fahrzeugen",
+booking_service_video_360_desc_standard: "Verfügbar auf beiden Fahrzeugen",
+booking_service_video_360_desc_combo: "Nur Ferrari",
 
 // Passagiere
 booking_passengers_section_title: "Passagiere Hinzufügen",
@@ -2859,11 +2863,12 @@ booking_spec_accommodation: "Alojamiento",
 // === SERVICIOS ADICIONALES ===
 // Servicios foto/vídeo
 booking_service_photo_title: "Servicio Fotográfico Profesional",
-booking_service_photo_desc_ferrari: "Solo en Ferrari",
-booking_service_video_hd_title: "Vídeo HD Profesional",
-booking_service_video_hd_desc: "Disponible en ambos vehículos",
-booking_service_video_360_title: "Vídeo 360° Inmersivo",
-booking_service_video_360_desc_ferrari: "Solo en Ferrari",
+booking_service_photo_desc_standard: "Disponible en ambos vehículos",
+booking_service_photo_desc_combo: "Solo en Ferrari",
+booking_service_video_hd_desc_standard: "Disponible en ambos vehículos",
+booking_service_video_hd_desc_combo: "Disponible en ambos vehículos",
+booking_service_video_360_desc_standard: "Disponible en ambos vehículos",
+booking_service_video_360_desc_combo: "Solo en Ferrari",
 
 // Pasajeros
 booking_passengers_section_title: "Añadir Pasajeros",
