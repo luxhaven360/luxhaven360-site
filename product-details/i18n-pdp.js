@@ -185,6 +185,10 @@ document.querySelectorAll('[data-i18n-placeholder]').forEach(el => {
         updatePhoneDropdownLanguage();
     }
 
+    if (typeof updateDistanceLabels === 'function') {
+        updateDistanceLabels();
+    }
+
     document.dispatchEvent(new CustomEvent('languageChanged', { detail: { lang: langCode } }));
 
     console.log(`✅ Lingua PDP cambiata: ${langCode.toUpperCase()}`);
