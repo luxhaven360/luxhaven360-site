@@ -3156,55 +3156,52 @@ document.querySelectorAll('.huracan-passenger-radio').forEach(radio => {
   
   newRadio.addEventListener('click', function(e) {
     const quantity = parseInt(this.value);
-    const pricePerPassenger = 50;
-    const totalPrice = pricePerPassenger * quantity;
     
-    // ✅ NUOVO: Se già selezionato, deseleziona
+    // ✅ Usa prezzi dinamici
+    const prices = getServicePrices();
+    const totalPrice = quantity === 1 ? prices.passenger1 : prices.passenger2;
+    
     if (this.dataset.wasChecked === 'true') {
-      this.checked = false;
-      this.dataset.wasChecked = 'false';
-      
-      bookingData.extraServices = bookingData.extraServices.filter(s => s.service !== 'extra-passengers');
-      
-      document.querySelectorAll('.huracan-passenger-option').forEach(lbl => {
-        lbl.style.borderColor = 'rgba(80, 60, 45, 0.4)';
-        lbl.style.background = 'rgba(20, 15, 12, 0.8)';
-      });
-      
-      updatePriceSummary();
-      return;
+        this.checked = false;
+        this.dataset.wasChecked = 'false';
+        
+        bookingData.extraServices = bookingData.extraServices.filter(s => s.service !== 'extra-passengers');
+        
+        document.querySelectorAll('.huracan-passenger-option').forEach(lbl => {
+            lbl.style.borderColor = 'rgba(80, 60, 45, 0.4)';
+            lbl.style.background = 'rgba(20, 15, 12, 0.8)';
+        });
+        
+        updatePriceSummary();
+        return;
     }
     
-    // Rimuovi precedenti
     bookingData.extraServices = bookingData.extraServices.filter(s => s.service !== 'extra-passengers');
     
-    // Aggiungi nuovo
     bookingData.extraServices.push({ 
-      service: 'extra-passengers', 
-      price: totalPrice,
-      quantity: quantity
+        service: 'extra-passengers', 
+        price: totalPrice,  // ✅ Usa prezzo corretto
+        quantity: quantity
     });
     
-    // Marca selezione
     document.querySelectorAll('.huracan-passenger-radio').forEach(r => {
-      r.dataset.wasChecked = 'false';
+        r.dataset.wasChecked = 'false';
     });
     this.dataset.wasChecked = 'true';
     
-    // Reset stili
     document.querySelectorAll('.huracan-passenger-option').forEach(lbl => {
-      lbl.style.borderColor = 'rgba(80, 60, 45, 0.4)';
-      lbl.style.background = 'rgba(20, 15, 12, 0.8)';
+        lbl.style.borderColor = 'rgba(80, 60, 45, 0.4)';
+        lbl.style.background = 'rgba(20, 15, 12, 0.8)';
     });
     
     const selectedLabel = this.closest('.huracan-passenger-option');
     if (selectedLabel) {
-      selectedLabel.style.borderColor = '#D4AF37';
-      selectedLabel.style.background = 'rgba(212, 175, 55, 0.12)';
+        selectedLabel.style.borderColor = '#D4AF37';
+        selectedLabel.style.background = 'rgba(212, 175, 55, 0.12)';
     }
     
     updatePriceSummary();
-  });
+});
 });
                 }, 100);
             }
@@ -3319,18 +3316,18 @@ setTimeout(() => {
         document.querySelectorAll('.passenger-radio').forEach(radio => {
     radio.addEventListener('click', function(e) {
         const quantity = parseInt(this.value);
-        const pricePerPassenger = 50;
-        const totalPrice = pricePerPassenger * quantity;
         
-        // ✅ NUOVO: Se già selezionato, deseleziona
+        // ✅ Usa prezzi dinamici da getServicePrices()
+        const prices = getServicePrices();
+        const totalPrice = quantity === 1 ? prices.passenger1 : prices.passenger2;
+        
+        // ✅ Se già selezionato, deseleziona
         if (this.dataset.wasChecked === 'true') {
             this.checked = false;
             this.dataset.wasChecked = 'false';
             
-            // Rimuovi servizio passeggeri
             bookingData.extraServices = bookingData.extraServices.filter(s => s.service !== 'extra-passengers');
             
-            // Reset stili tutti i label
             document.querySelectorAll('label:has(.passenger-radio)').forEach(lbl => {
                 lbl.style.borderColor = 'rgba(212, 175, 55, 0.3)';
                 lbl.style.background = 'rgba(212, 175, 55, 0.08)';
@@ -3340,29 +3337,24 @@ setTimeout(() => {
             return;
         }
         
-        // Rimuovi eventuali servizi passeggeri precedenti
         bookingData.extraServices = bookingData.extraServices.filter(s => s.service !== 'extra-passengers');
         
-        // Aggiungi nuovo servizio
         bookingData.extraServices.push({ 
             service: 'extra-passengers', 
-            price: totalPrice,
+            price: totalPrice,  // ✅ Usa prezzo corretto
             quantity: quantity
         });
         
-        // Marca questo come selezionato, gli altri no
         document.querySelectorAll('.passenger-radio').forEach(r => {
             r.dataset.wasChecked = 'false';
         });
         this.dataset.wasChecked = 'true';
         
-        // ✅ Reset stili tutti i label
         document.querySelectorAll('label:has(.passenger-radio)').forEach(lbl => {
             lbl.style.borderColor = 'rgba(212, 175, 55, 0.3)';
             lbl.style.background = 'rgba(212, 175, 55, 0.08)';
         });
         
-        // Evidenzia label selezionato
         const selectedLabel = this.closest('label');
         if (selectedLabel) {
             selectedLabel.style.borderColor = '#D4AF37';
@@ -3625,14 +3617,17 @@ function initDistanceSelection(product) {
         
         bookingData.extraServices.forEach(service => {
     total += service.price;
-    const serviceNames = {
-        'photo': 'Servizio Fotografico',
-        'video-hd': 'Video HD',
-        'video-360': 'Video 360°',
-        'extra-passengers': 'Passeggeri Extra'
+    const i18n = window.i18nPDP();
+    
+    // ✅ Usa chiavi di traduzione
+    const serviceNameKeys = {
+        'photo': 'booking_summary_photo',
+        'video-hd': 'booking_summary_video_hd',
+        'video-360': 'booking_summary_video_360',
+        'extra-passengers': 'booking_summary_passengers'
     };
     
-    let serviceName = serviceNames[service.service];
+    let serviceName = i18n.t(serviceNameKeys[service.service]);
     
     // ✅ Aggiungi quantità per passeggeri
     if (service.service === 'extra-passengers' && service.quantity) {
