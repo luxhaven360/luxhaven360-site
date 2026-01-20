@@ -369,18 +369,58 @@ booking_second_car_subtitle: "Vivi un'esperienza ancora più straordinaria combi
 booking_second_car_checkbox: "Aggiungi Seconda Supercar",
 booking_second_car_includes: "Include servizi fotografici e video",
 
-// Extra Services (Huracán specific)
-booking_services_title: "Servizi Aggiuntivi Disponibili",
-booking_services_subtitle: "Personalizza la tua esperienza con servizi esclusivi",
-booking_service_photo: "Servizio Fotografico Professionale",
-booking_service_photo_desc: "Su una vettura a scelta",
-booking_service_video_hd: "Video HD Professionale",
+// === SPECS LABELS - SUPERCAR ===
+// Tabella 1: Prestazioni
+booking_spec_power: "Potenza",
+booking_spec_acceleration: "0-100 km/h",
+booking_spec_top_speed: "Velocità massima",
+booking_spec_drivetrain: "Trazione",
+
+// Tabella 2: Caratteristiche
+booking_spec_engine: "Motore",
+booking_spec_displacement: "Cilindrata",
+booking_spec_transmission: "Trasmissione",
+booking_spec_seats: "Posti",
+
+// === SPECS LABELS - IMMOBILI ===
+// Tabella 1: Dettagli Principali
+booking_spec_surface: "Superficie",
+booking_spec_location: "Posizione",
+booking_spec_bedrooms: "Camere da letto",
+booking_spec_bathrooms: "Bagni",
+
+// Tabella 2: Specifiche & Comfort
+booking_spec_type: "Tipologia",
+booking_spec_heating: "Riscaldamento",
+booking_spec_parking: "Posti Auto / Garage",
+booking_spec_outdoors: "Esterni",
+
+// === SPECS LABELS - ESPERIENZE ===
+// Tabella 1: Dettagli Esperienza
+booking_spec_duration: "Durata",
+booking_spec_max_participants: "Partecipanti max",
+booking_spec_time_slot: "Orario / Fascia",
+booking_spec_meeting_point: "Ritrovo",
+
+// Tabella 2: Requisiti & Servizi
+booking_spec_accessibility: "Accessibilità",
+booking_spec_included_services: "Servizi Inclusi",
+booking_spec_requirements: "Requisiti",
+booking_spec_accommodation: "Alloggio",
+
+// === SERVIZI AGGIUNTIVI ===
+// Servizi foto/video
+booking_service_photo_title: "Servizio Fotografico Professionale",
+booking_service_photo_desc_ferrari: "Solo sulla Ferrari",
+booking_service_video_hd_title: "Video HD Professionale",
 booking_service_video_hd_desc: "Disponibile su entrambe le vetture",
-booking_service_video_360: "Video 360° Immersivo",
-booking_service_video_360_desc: "Su una vettura (marchi diversi)",
-booking_passengers_title: "Aggiungi Passeggeri",
-booking_passengers_one: "1 Passeggero",
-booking_passengers_two: "2 Passeggeri",
+booking_service_video_360_title: "Video 360° Immersivo",
+booking_service_video_360_desc_ferrari: "Solo sulla Ferrari",
+
+// Passeggeri
+booking_passengers_section_title: "Aggiungi Passeggeri",
+booking_passengers_one_label: "1 Passeggero",
+booking_passengers_two_label: "2 Passeggeri",
 
 // Date & Time Section
 booking_datetime_title: "Data e Orario",
@@ -952,17 +992,58 @@ booking_second_car_subtitle: "Experience something even more extraordinary by co
 booking_second_car_checkbox: "Add Second Supercar",
 booking_second_car_includes: "Includes photo and video services",
 
-booking_services_title: "Additional Services Available",
-booking_services_subtitle: "Customize your experience with exclusive services",
-booking_service_photo: "Professional Photography Service",
-booking_service_photo_desc: "On one vehicle of your choice",
-booking_service_video_hd: "Professional HD Video",
+// === SPECS LABELS - SUPERCAR ===
+// Table 1: Performance
+booking_spec_power: "Power",
+booking_spec_acceleration: "0-100 km/h",
+booking_spec_top_speed: "Top Speed",
+booking_spec_drivetrain: "Drivetrain",
+
+// Table 2: Features
+booking_spec_engine: "Engine",
+booking_spec_displacement: "Displacement",
+booking_spec_transmission: "Transmission",
+booking_spec_seats: "Seats",
+
+// === SPECS LABELS - REAL ESTATE ===
+// Table 1: Main Details
+booking_spec_surface: "Surface Area",
+booking_spec_location: "Location",
+booking_spec_bedrooms: "Bedrooms",
+booking_spec_bathrooms: "Bathrooms",
+
+// Table 2: Specifications & Comfort
+booking_spec_type: "Type",
+booking_spec_heating: "Heating",
+booking_spec_parking: "Parking / Garage",
+booking_spec_outdoors: "Outdoors",
+
+// === SPECS LABELS - EXPERIENCES ===
+// Table 1: Experience Details
+booking_spec_duration: "Duration",
+booking_spec_max_participants: "Max Participants",
+booking_spec_time_slot: "Time / Slot",
+booking_spec_meeting_point: "Meeting Point",
+
+// Table 2: Requirements & Services
+booking_spec_accessibility: "Accessibility",
+booking_spec_included_services: "Included Services",
+booking_spec_requirements: "Requirements",
+booking_spec_accommodation: "Accommodation",
+
+// === ADDITIONAL SERVICES ===
+// Photo/video services
+booking_service_photo_title: "Professional Photography Service",
+booking_service_photo_desc_ferrari: "Ferrari only",
+booking_service_video_hd_title: "Professional HD Video",
 booking_service_video_hd_desc: "Available on both vehicles",
-booking_service_video_360: "Immersive 360° Video",
-booking_service_video_360_desc: "On one vehicle (different brands)",
-booking_passengers_title: "Add Passengers",
-booking_passengers_one: "1 Passenger",
-booking_passengers_two: "2 Passengers",
+booking_service_video_360_title: "Immersive 360° Video",
+booking_service_video_360_desc_ferrari: "Ferrari only",
+
+// Passengers
+booking_passengers_section_title: "Add Passengers",
+booking_passengers_one_label: "1 Passenger",
+booking_passengers_two_label: "2 Passengers",
 
 booking_datetime_title: "Date & Time",
 booking_date_label: "Date",
@@ -1521,17 +1602,58 @@ booking_second_car_subtitle: "Vivez une expérience encore plus extraordinaire e
 booking_second_car_checkbox: "Ajouter Deuxième Supercar",
 booking_second_car_includes: "Inclut services photo et vidéo",
 
-booking_services_title: "Services Supplémentaires Disponibles",
-booking_services_subtitle: "Personnalisez votre expérience avec des services exclusifs",
-booking_service_photo: "Service Photographique Professionnel",
-booking_service_photo_desc: "Sur un véhicule au choix",
-booking_service_video_hd: "Vidéo HD Professionnelle",
+// === SPECS LABELS - SUPERCAR ===
+// Tableau 1 : Performances
+booking_spec_power: "Puissance",
+booking_spec_acceleration: "0-100 km/h",
+booking_spec_top_speed: "Vitesse Max",
+booking_spec_drivetrain: "Transmission",
+
+// Tableau 2 : Caractéristiques
+booking_spec_engine: "Moteur",
+booking_spec_displacement: "Cylindrée",
+booking_spec_transmission: "Boîte",
+booking_spec_seats: "Places",
+
+// === SPECS LABELS - IMMOBILIER ===
+// Tableau 1 : Détails Principaux
+booking_spec_surface: "Surface",
+booking_spec_location: "Emplacement",
+booking_spec_bedrooms: "Chambres",
+booking_spec_bathrooms: "Salles de bain",
+
+// Tableau 2 : Spécifications & Confort
+booking_spec_type: "Type",
+booking_spec_heating: "Chauffage",
+booking_spec_parking: "Parking / Garage",
+booking_spec_outdoors: "Extérieurs",
+
+// === SPECS LABELS - EXPÉRIENCES ===
+// Tableau 1 : Détails Expérience
+booking_spec_duration: "Durée",
+booking_spec_max_participants: "Participants max",
+booking_spec_time_slot: "Horaire / Créneau",
+booking_spec_meeting_point: "Point de rencontre",
+
+// Tableau 2 : Exigences & Services
+booking_spec_accessibility: "Accessibilité",
+booking_spec_included_services: "Services inclus",
+booking_spec_requirements: "Exigences",
+booking_spec_accommodation: "Hébergement",
+
+// === SERVICES SUPPLÉMENTAIRES ===
+// Services photo/vidéo
+booking_service_photo_title: "Service Photographique Professionnel",
+booking_service_photo_desc_ferrari: "Ferrari uniquement",
+booking_service_video_hd_title: "Vidéo HD Professionnelle",
 booking_service_video_hd_desc: "Disponible sur les deux véhicules",
-booking_service_video_360: "Vidéo 360° Immersive",
-booking_service_video_360_desc: "Sur un véhicule (marques différentes)",
-booking_passengers_title: "Ajouter des Passagers",
-booking_passengers_one: "1 Passager",
-booking_passengers_two: "2 Passagers",
+booking_service_video_360_title: "Vidéo 360° Immersive",
+booking_service_video_360_desc_ferrari: "Ferrari uniquement",
+
+// Passagers
+booking_passengers_section_title: "Ajouter des Passagers",
+booking_passengers_one_label: "1 Passager",
+booking_passengers_two_label: "2 Passagers",
 
 booking_datetime_title: "Date et Heure",
 booking_date_label: "Date",
@@ -2084,17 +2206,58 @@ booking_second_car_subtitle: "Erleben Sie etwas noch Außergewöhnlicheres, inde
 booking_second_car_checkbox: "Zweiten Supercar Hinzufügen",
 booking_second_car_includes: "Beinhaltet Foto- und Videodienste",
 
-booking_services_title: "Zusätzliche Verfügbare Dienste",
-booking_services_subtitle: "Passen Sie Ihr Erlebnis mit exklusiven Diensten an",
-booking_service_photo: "Professioneller Fotografie-Service",
-booking_service_photo_desc: "Auf einem Fahrzeug Ihrer Wahl",
-booking_service_video_hd: "Professionelles HD-Video",
+// === SPECS LABELS - SUPERCAR ===
+// Tabelle 1: Leistung
+booking_spec_power: "Leistung",
+booking_spec_acceleration: "0-100 km/h",
+booking_spec_top_speed: "Höchstgeschwindigkeit",
+booking_spec_drivetrain: "Antrieb",
+
+// Tabelle 2: Eigenschaften
+booking_spec_engine: "Motor",
+booking_spec_displacement: "Hubraum",
+booking_spec_transmission: "Getriebe",
+booking_spec_seats: "Sitze",
+
+// === SPECS LABELS - IMMOBILIEN ===
+// Tabelle 1: Hauptdetails
+booking_spec_surface: "Fläche",
+booking_spec_location: "Lage",
+booking_spec_bedrooms: "Schlafzimmer",
+booking_spec_bathrooms: "Badezimmer",
+
+// Tabelle 2: Spezifikationen & Komfort
+booking_spec_type: "Typ",
+booking_spec_heating: "Heizung",
+booking_spec_parking: "Parkplätze / Garage",
+booking_spec_outdoors: "Außenbereich",
+
+// === SPECS LABELS - ERLEBNISSE ===
+// Tabelle 1: Erlebnis-Details
+booking_spec_duration: "Dauer",
+booking_spec_max_participants: "Max. Teilnehmer",
+booking_spec_time_slot: "Uhrzeit / Zeitfenster",
+booking_spec_meeting_point: "Treffpunkt",
+
+// Tabelle 2: Anforderungen & Services
+booking_spec_accessibility: "Zugänglichkeit",
+booking_spec_included_services: "Enthaltene Services",
+booking_spec_requirements: "Anforderungen",
+booking_spec_accommodation: "Unterkunft",
+
+// === ZUSÄTZLICHE SERVICES ===
+// Foto-/Video-Services
+booking_service_photo_title: "Professioneller Fotografie-Service",
+booking_service_photo_desc_ferrari: "Nur Ferrari",
+booking_service_video_hd_title: "Professionelles HD-Video",
 booking_service_video_hd_desc: "Verfügbar auf beiden Fahrzeugen",
-booking_service_video_360: "Immersives 360°-Video",
-booking_service_video_360_desc: "Auf einem Fahrzeug (verschiedene Marken)",
-booking_passengers_title: "Passagiere Hinzufügen",
-booking_passengers_one: "1 Passagier",
-booking_passengers_two: "2 Passagiere",
+booking_service_video_360_title: "Immersives 360°-Video",
+booking_service_video_360_desc_ferrari: "Nur Ferrari",
+
+// Passagiere
+booking_passengers_section_title: "Passagiere Hinzufügen",
+booking_passengers_one_label: "1 Passagier",
+booking_passengers_two_label: "2 Passagiere",
 
 booking_datetime_title: "Datum & Uhrzeit",
 booking_date_label: "Datum",
@@ -2654,17 +2817,58 @@ booking_second_car_subtitle: "Vive una experiencia aún más extraordinaria comb
 booking_second_car_checkbox: "Añadir Segundo Supercar",
 booking_second_car_includes: "Incluye servicios fotográficos y video",
 
-booking_services_title: "Servicios Adicionales Disponibles",
-booking_services_subtitle: "Personaliza tu experiencia con servicios exclusivos",
-booking_service_photo: "Servicio Fotográfico Profesional",
-booking_service_photo_desc: "En un vehículo a elección",
-booking_service_video_hd: "Video HD Profesional",
+// === SPECS LABELS - SUPERCAR ===
+// Tabla 1: Prestaciones
+booking_spec_power: "Potencia",
+booking_spec_acceleration: "0-100 km/h",
+booking_spec_top_speed: "Velocidad Máxima",
+booking_spec_drivetrain: "Tracción",
+
+// Tabla 2: Características
+booking_spec_engine: "Motor",
+booking_spec_displacement: "Cilindrada",
+booking_spec_transmission: "Transmisión",
+booking_spec_seats: "Plazas",
+
+// === SPECS LABELS - INMUEBLES ===
+// Tabla 1: Detalles Principales
+booking_spec_surface: "Superficie",
+booking_spec_location: "Ubicación",
+booking_spec_bedrooms: "Habitaciones",
+booking_spec_bathrooms: "Baños",
+
+// Tabla 2: Especificaciones & Confort
+booking_spec_type: "Tipología",
+booking_spec_heating: "Calefacción",
+booking_spec_parking: "Plazas de aparcamiento / Garaje",
+booking_spec_outdoors: "Exteriores",
+
+// === SPECS LABELS - EXPERIENCIAS ===
+// Tabla 1: Detalles Experiencia
+booking_spec_duration: "Duración",
+booking_spec_max_participants: "Participantes máx",
+booking_spec_time_slot: "Horario / Franja",
+booking_spec_meeting_point: "Punto de encuentro",
+
+// Tabla 2: Requisitos & Servicios
+booking_spec_accessibility: "Accesibilidad",
+booking_spec_included_services: "Servicios incluidos",
+booking_spec_requirements: "Requisitos",
+booking_spec_accommodation: "Alojamiento",
+
+// === SERVICIOS ADICIONALES ===
+// Servicios foto/vídeo
+booking_service_photo_title: "Servicio Fotográfico Profesional",
+booking_service_photo_desc_ferrari: "Solo en Ferrari",
+booking_service_video_hd_title: "Vídeo HD Profesional",
 booking_service_video_hd_desc: "Disponible en ambos vehículos",
-booking_service_video_360: "Video 360° Inmersivo",
-booking_service_video_360_desc: "En un vehículo (marcas diferentes)",
-booking_passengers_title: "Añadir Pasajeros",
-booking_passengers_one: "1 Pasajero",
-booking_passengers_two: "2 Pasajeros",
+booking_service_video_360_title: "Vídeo 360° Inmersivo",
+booking_service_video_360_desc_ferrari: "Solo en Ferrari",
+
+// Pasajeros
+booking_passengers_section_title: "Añadir Pasajeros",
+booking_passengers_one_label: "1 Pasajero",
+booking_passengers_two_label: "2 Pasajeros",
 
 booking_datetime_title: "Fecha y Horario",
 booking_date_label: "Fecha",
