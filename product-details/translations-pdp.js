@@ -438,6 +438,12 @@ booking_passengers_section_title: "Aggiungi Passeggeri",
 booking_passengers_one_label: "1 Passeggero",
 booking_passengers_two_label: "2 Passeggeri",
 
+// Riepilogo servizi
+booking_summary_photo: "Servizio Fotografico",
+booking_summary_video_hd: "Video HD",
+booking_summary_video_360: "Video 360°",
+booking_summary_passengers: "Passeggeri Extra",
+
 // Date & Time Section
 booking_datetime_title: "Data e Orario",
 booking_date_label: "Data",
@@ -1072,6 +1078,11 @@ booking_passengers_section_title: "Add Passengers",
 booking_passengers_one_label: "1 Passenger",
 booking_passengers_two_label: "2 Passengers",
 
+booking_summary_photo: "Photography Service",
+booking_summary_video_hd: "HD Video",
+booking_summary_video_360: "360° Video",
+booking_summary_passengers: "Extra Passengers",
+
 booking_datetime_title: "Date & Time",
 booking_date_label: "Date",
 booking_date_placeholder: "Select date",
@@ -1693,6 +1704,11 @@ booking_passengers_section_title: "Ajouter des Passagers",
 booking_passengers_one_label: "1 Passager",
 booking_passengers_two_label: "2 Passagers",
 
+booking_summary_photo: "Service Photographique",
+booking_summary_video_hd: "Vidéo HD",
+booking_summary_video_360: "Vidéo 360°",
+booking_summary_passengers: "Passagers Supplémentaires",
+
 booking_datetime_title: "Date et Heure",
 booking_date_label: "Date",
 booking_date_placeholder: "Sélectionner la date",
@@ -2307,6 +2323,11 @@ booking_service_video_360_desc_single_ferrari: "Mit 360-Grad-Kamera aufgenommen"
 booking_passengers_section_title: "Passagiere Hinzufügen",
 booking_passengers_one_label: "1 Passagier",
 booking_passengers_two_label: "2 Passagiere",
+
+booking_summary_photo: "Fotografie-Service",
+booking_summary_video_hd: "HD-Video",
+booking_summary_video_360: "360°-Video",
+booking_summary_passengers: "Zusätzliche Passagiere",
 
 booking_datetime_title: "Datum & Uhrzeit",
 booking_date_label: "Datum",
@@ -2929,6 +2950,11 @@ booking_service_video_360_desc_single_ferrari: "Capturado con cámara de 360 gra
 booking_passengers_section_title: "Añadir Pasajeros",
 booking_passengers_one_label: "1 Pasajero",
 booking_passengers_two_label: "2 Pasajeros",
+
+booking_summary_photo: "Servicio Fotográfico",
+booking_summary_video_hd: "Video HD",
+booking_summary_video_360: "Video 360°",
+booking_summary_passengers: "Pasajeros Extra",
 
 booking_datetime_title: "Fecha y Horario",
 booking_date_label: "Fecha",
