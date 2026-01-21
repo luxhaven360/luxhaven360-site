@@ -4,7 +4,7 @@ function showSection(sectionId) {
     // ✅ STEP 1: PAUSA TUTTI I VIDEO ATTIVI (cleanup)
     document.querySelectorAll('video').forEach(video => {
         video.pause();
-        video.currentTime = 0; // Reset al frame iniziale
+        video.currentTime = 0;
     });
     
     // ✅ STEP 2: NASCONDI TUTTE LE SEZIONI E HERO
@@ -21,27 +21,23 @@ function showSection(sectionId) {
             hero.classList.add('active');
         }
     } else {
-        // Nascondi hero se si va su altra sezione
         const hero = document.querySelector('.hero');
         if (hero) {
             hero.style.display = 'none';
             hero.classList.remove('active');
         }
         
-        // Mostra la sezione target
         const el = document.getElementById(sectionId);
         if (el) {
             el.classList.add('active');
             el.style.display = 'block';
             el.style.opacity = '1';
             
-            // ✅ NUOVO: Avvia video nella sezione appena aperta
             setTimeout(() => {
                 playVideosInSection(el);
-            }, 100); // Piccolo delay per garantire rendering
+            }, 100);
         }
         
-        // ✅ MOSTRA FILTRO CATEGORIE SE SHOP
         if (sectionId === 'shop') {
             const filterContainer = document.getElementById('categoryFilterContainer');
             if (filterContainer && document.querySelector('.category-pill')) {
@@ -49,7 +45,6 @@ function showSection(sectionId) {
             }
         }
         
-        // ✅ RIPRISTINA FILTRI IMMOBILI/SUPERCAR AL CAMBIO SEZIONE
         if (sectionId === 'properties' || sectionId === 'supercars') {
             console.log(`🔄 Cambio sezione: ${sectionId}, ripristino filtri`);
             setTimeout(() => {
@@ -58,12 +53,23 @@ function showSection(sectionId) {
         }
     }
     
-    // ✅ CHIUDI MENU MOBILE
     const navLinks = document.getElementById('navLinks');
     if (navLinks) navLinks.classList.remove('active');
     
-    // ✅ SCROLL TO TOP
     window.scrollTo({ top: 0, behavior: 'smooth' });
+    
+    // ✅✅✅ AGGIUNGI QUESTO BLOCCO ALLA FINE ✅✅✅
+    // Ri-traduci pulsanti dopo cambio sezione
+    setTimeout(() => {
+        if (window.i18n && typeof window.i18n === 'function') {
+            const i18nInstance = window.i18n();
+            if (i18nInstance && typeof i18nInstance.translatePage === 'function') {
+                console.log('🔄 Ri-traduzione elementi dopo cambio sezione...');
+                i18nInstance.translatePage();
+                console.log('✅ Ri-traduzione completata');
+            }
+        }
+    }, 200); // Delay per aspettare rendering DOM
     
     console.log(`✅ Sezione "${sectionId}" attiva`);
 }
@@ -1660,6 +1666,7 @@ function showValidationError(message, type) {
     if (overlay.parentNode) overlay.remove();
   }, 5000);
 }
+
 
 
 
