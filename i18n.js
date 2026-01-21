@@ -108,14 +108,28 @@ class I18n {
  * Aggiorna pulsanti dinamici (chiamato dopo cambio lingua)
  */
 updateDynamicButtons() {
+    console.log('🔄 updateDynamicButtons chiamato');
+    
     // Aggiorna tutti i pulsanti con data-i18n
-    document.querySelectorAll('button[data-i18n]').forEach(btn => {
+    const buttons = document.querySelectorAll('button[data-i18n]');
+    console.log(`📊 Trovati ${buttons.length} pulsanti con data-i18n`);
+    
+    buttons.forEach((btn, index) => {
         const key = btn.getAttribute('data-i18n');
+        console.log(`  Pulsante ${index}: key="${key}"`);
+        
         const translation = this.t(key);
+        console.log(`  Traduzione: "${translation}"`);
+        
         if (translation) {
             btn.textContent = translation;
+            console.log(`  ✅ Aggiornato pulsante ${index}`);
+        } else {
+            console.log(`  ❌ Nessuna traduzione trovata per "${key}"`);
         }
     });
+    
+    console.log('✅ updateDynamicButtons completato');
 }
 
   /**
