@@ -7,6 +7,8 @@ const translations = {
     nav_stays: "Esperienze",
     nav_shop: "Shop",
     nav_contact: "Contatti",
+    nav_tracking_title: "Traccia i tuoi ordini",
+    nav_cart_title: "Carrello",
     
     // HERO
     hero_tagline: "Eccellenza Senza Compromessi",
@@ -113,6 +115,8 @@ const translations = {
     nav_stays: "Experiences",
     nav_shop: "Shop",
     nav_contact: "Contact",
+    nav_tracking_title: "Track your orders",
+    nav_cart_title: "Shopping Cart",
     
     // HERO
     hero_tagline: "Excellence Without Compromise",
@@ -219,6 +223,8 @@ const translations = {
     nav_stays: "Expériences",
     nav_shop: "Boutique",
     nav_contact: "Contact",
+    nav_tracking_title: "Suivez vos commandes",
+    nav_cart_title: "Panier",
     
     // HERO
     hero_tagline: "Excellence Sans Compromis",
@@ -325,6 +331,8 @@ const translations = {
     nav_stays: "Erlebnisse",
     nav_shop: "Shop",
     nav_contact: "Kontakt",
+    nav_tracking_title: "Verfolgen Sie Ihre Bestellungen",
+    nav_cart_title: "Warenkorb",
     
     // HERO
     hero_tagline: "Exzellenz Ohne Kompromisse",
@@ -431,6 +439,8 @@ const translations = {
     nav_stays: "Experiencias",
     nav_shop: "Tienda",
     nav_contact: "Contacto",
+    nav_tracking_title: "Rastrear pedidos",
+    nav_cart_title: "Carrito",
     
     // HERO
     hero_tagline: "Excelencia Sin Compromiso",
