@@ -594,11 +594,15 @@ const isProperty = prod.category === 'properties';
 const ctaKey = prod.cta || defaultCta || 'card_cta_buy';
 const ctaText = window.i18n ? window.i18n().t(ctaKey) : ctaKey;
 
+// ✅ CREA IL BUTTON SENZA CHILDREN INIZIALMENTE
 const btn = el('button', { 
     class: 'btn', 
     style: 'margin-top: 1.5rem; width: 100%;',
-    'data-i18n': ctaKey  // ✅ Aggiungi attributo per traduzione automatica
-}, [document.createTextNode(ctaText)]);
+    'data-i18n': ctaKey
+}, []); // ← Array vuoto invece di TextNode
+
+// ✅ POI imposta il testo usando textContent
+btn.textContent = ctaText;
 
 btn.dataset.sku = prod.sku || '';
 btn.dataset.title = prod.title || '';
@@ -1666,6 +1670,7 @@ function showValidationError(message, type) {
     if (overlay.parentNode) overlay.remove();
   }, 5000);
 }
+
 
 
 
