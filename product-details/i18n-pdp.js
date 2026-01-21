@@ -74,13 +74,18 @@ class I18nPDP {
     }
   }
 
-  translatePage() {
-    // Traduci elementi con data-i18n
-    document.querySelectorAll('[data-i18n]').forEach(el => {
+  /**
+ * Traduce tutti gli elementi con data-i18n
+ */
+translatePage() {
+    const elements = document.querySelectorAll('[data-i18n]');
+    
+    elements.forEach(el => {
       const key = el.getAttribute('data-i18n');
       const translation = this.t(key);
       
       if (translation) {
+        // Gestisci HTML se presente nel data-attribute
         if (el.getAttribute('data-i18n-html') === 'true') {
           el.innerHTML = translation;
         } else {
@@ -89,22 +94,33 @@ class I18nPDP {
       }
     });
 
-    // Traduci placeholder
-document.querySelectorAll('[data-i18n-placeholder]').forEach(el => {
-    // ✅ SALTA L'INPUT TELEFONO (gestito dal selector dinamico)
-    if (el.type === 'tel') return;
-    
-    const key = el.getAttribute('data-i18n-placeholder');
-    const translation = this.t(key);
-    if (translation) el.placeholder = translation;
-});
+    // Traduci placeholder e attributi
+    document.querySelectorAll('[data-i18n-placeholder]').forEach(el => {
+      const key = el.getAttribute('data-i18n-placeholder');
+      const translation = this.t(key);
+      if (translation) el.placeholder = translation;
+    });
 
-    // Traduci title
     document.querySelectorAll('[data-i18n-title]').forEach(el => {
       const key = el.getAttribute('data-i18n-title');
       const translation = this.t(key);
       if (translation) el.title = translation;
     });
+
+    // ✅✅✅ AGGIUNGI QUESTO BLOCCO QUI ✅✅✅
+    // Aggiorna pulsanti dinamici delle card
+    console.log('🔘 Aggiornamento pulsanti dinamici...');
+    const buttons = document.querySelectorAll('button[data-i18n]');
+    console.log(`  Trovati ${buttons.length} pulsanti`);
+    
+    buttons.forEach(btn => {
+      const key = btn.getAttribute('data-i18n');
+      const translation = this.t(key);
+      if (translation) {
+        btn.textContent = translation;
+      }
+    });
+    console.log('  ✅ Pulsanti aggiornati');
   }
 
    // Risolve path tipo 'booking_calendar_months.gennaio' in oggetti annidati
