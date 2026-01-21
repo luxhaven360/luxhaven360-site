@@ -152,8 +152,7 @@ translatePage() {
     this.translatePage();
     this.updateLanguageSelector();
 
-    // ✅✅✅ AGGIUNGI QUESTO BLOCCO ✅✅✅
-    // Ri-traduci pulsanti dopo un breve delay (per aspettare che il DOM sia pronto)
+    // ✅✅✅ PRIMO AGGIORNAMENTO PULSANTI ✅✅✅
     setTimeout(() => {
         console.log('🔄 Ri-traduzione pulsanti con delay...');
         const buttons = document.querySelectorAll('button[data-i18n]');
@@ -168,6 +167,23 @@ translatePage() {
         });
         console.log('  ✅ Pulsanti aggiornati con delay');
     }, 100);
+
+    // ✅✅✅ AGGIUNGI QUESTO NUOVO BLOCCO ✅✅✅
+    // Secondo aggiornamento per pulsanti creati dinamicamente
+    setTimeout(() => {
+        console.log('🔄 Secondo passaggio traduzione pulsanti...');
+        const buttons = document.querySelectorAll('button[data-i18n]');
+        console.log(`  Pulsanti rilevati: ${buttons.length}`);
+        
+        buttons.forEach(btn => {
+            const key = btn.getAttribute('data-i18n');
+            const translation = this.t(key);
+            if (translation) {
+                btn.textContent = translation;
+            }
+        });
+        console.log('  ✅ Secondo passaggio completato');
+    }, 500); // Delay maggiore per aspettare rendering DOM
 
     // Aggiorna prezzi
     if (typeof updateAllPricesForLanguage === 'function') {
