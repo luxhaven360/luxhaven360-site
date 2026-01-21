@@ -585,17 +585,17 @@ const isProperty = prod.category === 'properties';
     }
 
     // button con traduzione dinamica
-    const ctaKey = prod.cta || defaultCta || 'card_cta_buy';
-    const ctaText = window.i18n ? window.i18n().t(ctaKey) : ctaKey;
+const ctaKey = prod.cta || defaultCta || 'card_cta_buy';
+const ctaText = window.i18n ? window.i18n().t(ctaKey) : ctaKey;
 
-    const btn = el('button', { 
-        class: 'btn', 
-        style: 'margin-top: 1.5rem; width: 100%;',
-        'data-i18n': ctaKey  // ✅ Aggiungi attributo per traduzione automatica
-    }, [document.createTextNode(ctaText)]);
+const btn = el('button', { 
+    class: 'btn', 
+    style: 'margin-top: 1.5rem; width: 100%;',
+    'data-i18n': ctaKey  // ✅ Aggiungi attributo per traduzione automatica
+}, [document.createTextNode(ctaText)]);
 
-    btn.dataset.sku = prod.sku || '';
-    btn.dataset.title = prod.title || '';
+btn.dataset.sku = prod.sku || '';
+btn.dataset.title = prod.title || '';
     if (prod.stripe_link) btn.dataset.stripeLink = prod.stripe_link;
     if (prod.action) btn.dataset.action = prod.action;
 
@@ -1660,6 +1660,7 @@ function showValidationError(message, type) {
     if (overlay.parentNode) overlay.remove();
   }, 5000);
 }
+
 
 
 
