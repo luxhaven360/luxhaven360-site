@@ -136,10 +136,10 @@ document.addEventListener('click', (e) => {
 // ---------------------- Dynamic products loading ----------------------
 
 const SECTIONS = [
-    { id: 'properties', gridId: 'propertiesGrid', defaultCta: 'Richiedi Visita' },
-    { id: 'supercars', gridId: 'supercarsGrid', defaultCta: 'Test Drive' },
-    { id: 'stays', gridId: 'staysGrid', defaultCta: 'Prenota Ora' },
-    { id: 'shop', gridId: 'shopGrid', defaultCta: 'Acquista' }
+    { id: 'properties', gridId: 'propertiesGrid', defaultCta: 'card_cta_visit' },
+    { id: 'supercars', gridId: 'supercarsGrid', defaultCta: 'card_cta_testdrive' },
+    { id: 'stays', gridId: 'staysGrid', defaultCta: 'card_cta_book' },
+    { id: 'shop', gridId: 'shopGrid', defaultCta: 'card_cta_buy' }
 ];
 
 // 💱 Tassi di cambio globali (aggiornati dinamicamente dal backend)
@@ -584,8 +584,15 @@ const isProperty = prod.category === 'properties';
         }
     }
 
-    // button
-    const btn = el('button', { class: 'btn', style: 'margin-top: 1.5rem; width: 100%;' }, [document.createTextNode(prod.cta || defaultCta || 'Scopri')]);
+    // button con traduzione dinamica
+    const ctaKey = prod.cta || defaultCta || 'card_cta_buy';
+    const ctaText = window.i18n ? window.i18n().t(ctaKey) : ctaKey;
+
+    const btn = el('button', { 
+        class: 'btn', 
+        style: 'margin-top: 1.5rem; width: 100%;',
+        'data-i18n': ctaKey  // ✅ Aggiungi attributo per traduzione automatica
+    }, [document.createTextNode(ctaText)]);
 
     btn.dataset.sku = prod.sku || '';
     btn.dataset.title = prod.title || '';
@@ -1653,6 +1660,7 @@ function showValidationError(message, type) {
     if (overlay.parentNode) overlay.remove();
   }, 5000);
 }
+
 
 
 
