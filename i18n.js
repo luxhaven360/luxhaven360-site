@@ -105,6 +105,20 @@ class I18n {
   }
 
   /**
+ * Aggiorna pulsanti dinamici (chiamato dopo cambio lingua)
+ */
+updateDynamicButtons() {
+    // Aggiorna tutti i pulsanti con data-i18n
+    document.querySelectorAll('button[data-i18n]').forEach(btn => {
+        const key = btn.getAttribute('data-i18n');
+        const translation = this.t(key);
+        if (translation) {
+            btn.textContent = translation;
+        }
+    });
+}
+
+  /**
    * Ottieni traduzione per chiave
    */
   t(key, replacements = {}) {
@@ -139,16 +153,19 @@ class I18n {
     // Traduci pagina
     this.translatePage();
     this.updateLanguageSelector();
+    
+    // ✅ NUOVO: Aggiorna pulsanti dinamici
+    this.updateDynamicButtons();
 
      // Aggiorna prezzi
-if (typeof updateAllPricesForLanguage === 'function') {
-    updateAllPricesForLanguage();
-}
+    if (typeof updateAllPricesForLanguage === 'function') {
+        updateAllPricesForLanguage();
+    }
 
      // Aggiorna badge
-if (typeof updateAllBadgesForLanguage === 'function') {
-    updateAllBadgesForLanguage();
-}
+    if (typeof updateAllBadgesForLanguage === 'function') {
+        updateAllBadgesForLanguage();
+    }
 
     // Dispatch event
     document.dispatchEvent(new CustomEvent('languageChanged', { detail: { lang: langCode } }));
