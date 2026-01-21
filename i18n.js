@@ -71,9 +71,9 @@ class I18n {
 }
 
   /**
-   * Traduce tutti gli elementi con data-i18n
-   */
-  translatePage() {
+ * Traduce tutti gli elementi con data-i18n
+ */
+translatePage() {
     const elements = document.querySelectorAll('[data-i18n]');
     
     elements.forEach(el => {
@@ -102,35 +102,22 @@ class I18n {
       const translation = this.t(key);
       if (translation) el.title = translation;
     });
-  }
 
-  /**
- * Aggiorna pulsanti dinamici (chiamato dopo cambio lingua)
- */
-updateDynamicButtons() {
-    console.log('🔄 updateDynamicButtons chiamato');
-    
-    // Aggiorna tutti i pulsanti con data-i18n
+    // ✅✅✅ AGGIUNGI QUESTO BLOCCO QUI ✅✅✅
+    // Aggiorna pulsanti dinamici delle card
+    console.log('🔘 Aggiornamento pulsanti dinamici...');
     const buttons = document.querySelectorAll('button[data-i18n]');
-    console.log(`📊 Trovati ${buttons.length} pulsanti con data-i18n`);
+    console.log(`  Trovati ${buttons.length} pulsanti`);
     
-    buttons.forEach((btn, index) => {
-        const key = btn.getAttribute('data-i18n');
-        console.log(`  Pulsante ${index}: key="${key}"`);
-        
-        const translation = this.t(key);
-        console.log(`  Traduzione: "${translation}"`);
-        
-        if (translation) {
-            btn.textContent = translation;
-            console.log(`  ✅ Aggiornato pulsante ${index}`);
-        } else {
-            console.log(`  ❌ Nessuna traduzione trovata per "${key}"`);
-        }
+    buttons.forEach(btn => {
+      const key = btn.getAttribute('data-i18n');
+      const translation = this.t(key);
+      if (translation) {
+        btn.textContent = translation;
+      }
     });
-    
-    console.log('✅ updateDynamicButtons completato');
-}
+    console.log('  ✅ Pulsanti aggiornati');
+  }
 
   /**
    * Ottieni traduzione per chiave
