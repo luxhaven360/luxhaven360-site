@@ -580,7 +580,7 @@ booking_status_unavailable: "Prenotazione Non Ancora Disponibile",
 
 // Loader Messages
 booking_title_loader: "Preparazione Esperienza",
-booking_loader_subtitle: "Stiamo personalizzando ogni dettaglio per te",
+booking_loader_subtitle: "Stiamo personalizzando ogni dettaglio per te...",
 booking_loader_checkout_title: "Finalizzazione Prenotazione",
 booking_loader_checkout_subtitle: "Accesso al checkout sicuro in corso...",
 booking_loader_ssl: "✓ Connessione crittografata SSL",
@@ -1209,7 +1209,7 @@ booking_status_coming_message: "This experience will soon be available for booki
 booking_status_unavailable: "Booking Not Yet Available",
 
 booking_title_loader: "Experience Preparation",
-booking_loader_subtitle: "We're customizing every detail for you",
+booking_loader_subtitle: "We're customizing every detail for you...",
 booking_loader_checkout_title: "Booking Finalization",
 booking_loader_checkout_subtitle: "Accessing secure checkout...",
 booking_loader_ssl: "✓ SSL encrypted connection",
@@ -1835,7 +1835,7 @@ booking_status_coming_message: "Cette expérience sera bientôt disponible à la
 booking_status_unavailable: "Réservation Pas Encore Disponible",
 
 booking_title_loader: "Préparation Expérience",
-booking_loader_subtitle: "Nous personnalisons chaque détail pour vous",
+booking_loader_subtitle: "Nous personnalisons chaque détail pour vous...",
 booking_loader_checkout_title: "Finalisation Réservation",
 booking_loader_checkout_subtitle: "Accès au paiement sécurisé en cours...",
 booking_loader_ssl: "✓ Connexion SSL cryptée",
@@ -2455,7 +2455,7 @@ booking_status_coming_message: "Dieses Erlebnis wird bald zur Buchung verfügbar
 booking_status_unavailable: "Buchung Noch Nicht Verfügbar",
 
 booking_title_loader: "Erlebnis-Vorbereitung",
-booking_loader_subtitle: "Wir passen jedes Detail für Sie an",
+booking_loader_subtitle: "Wir passen jedes Detail für Sie an...",
 booking_loader_checkout_title: "Buchungsabschluss",
 booking_loader_checkout_subtitle: "Zugriff auf sichere Kasse läuft...",
 booking_loader_ssl: "✓ SSL-verschlüsselte Verbindung",
@@ -3082,7 +3082,7 @@ booking_status_coming_message: "Esta experiencia estará pronto disponible para 
 booking_status_unavailable: "Reserva Aún No Disponible",
 
 booking_title_loader: "Preparación Experiencia",
-booking_loader_subtitle: "Estamos personalizando cada detalle para ti",
+booking_loader_subtitle: "Estamos personalizando cada detalle para ti...",
 booking_loader_checkout_title: "Finalización Reserva",
 booking_loader_checkout_subtitle: "Acceso al checkout seguro en curso...",
 booking_loader_ssl: "✓ Conexión SSL cifrada",
