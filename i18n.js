@@ -134,10 +134,7 @@ translatePage() {
     return text;
   }
 
-  /**
-   * Cambia lingua e ricarica pagina
-   */
-   changeLanguage(langCode) {
+  changeLanguage(langCode) {
     if (!this.translations[langCode]) {
         console.error(`Lingua "${langCode}" non supportata`);
         return;
@@ -154,16 +151,30 @@ translatePage() {
     // Traduci pagina
     this.translatePage();
     this.updateLanguageSelector();
-    
-    // ✅ NUOVO: Aggiorna pulsanti dinamici
-    this.updateDynamicButtons();
 
-     // Aggiorna prezzi
+    // ✅✅✅ AGGIUNGI QUESTO BLOCCO ✅✅✅
+    // Ri-traduci pulsanti dopo un breve delay (per aspettare che il DOM sia pronto)
+    setTimeout(() => {
+        console.log('🔄 Ri-traduzione pulsanti con delay...');
+        const buttons = document.querySelectorAll('button[data-i18n]');
+        console.log(`  Pulsanti trovati: ${buttons.length}`);
+        
+        buttons.forEach(btn => {
+            const key = btn.getAttribute('data-i18n');
+            const translation = this.t(key);
+            if (translation) {
+                btn.textContent = translation;
+            }
+        });
+        console.log('  ✅ Pulsanti aggiornati con delay');
+    }, 100);
+
+    // Aggiorna prezzi
     if (typeof updateAllPricesForLanguage === 'function') {
         updateAllPricesForLanguage();
     }
 
-     // Aggiorna badge
+    // Aggiorna badge
     if (typeof updateAllBadgesForLanguage === 'function') {
         updateAllBadgesForLanguage();
     }
