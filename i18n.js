@@ -73,7 +73,7 @@ class I18n {
   /**
  * Traduce tutti gli elementi con data-i18n
  */
-translatePage() {
+  translatePage() {
     const elements = document.querySelectorAll('[data-i18n]');
     
     elements.forEach(el => {
@@ -103,17 +103,28 @@ translatePage() {
       if (translation) el.title = translation;
     });
 
-    // ✅✅✅ AGGIUNGI QUESTO BLOCCO QUI ✅✅✅
-    // Aggiorna pulsanti dinamici delle card
+    // ✅✅✅ MODIFICA QUESTO BLOCCO CON DEBUG ✅✅✅
     console.log('🔘 Aggiornamento pulsanti dinamici...');
     const buttons = document.querySelectorAll('button[data-i18n]');
     console.log(`  Trovati ${buttons.length} pulsanti`);
+    console.log(`  Lingua corrente: ${this.currentLang}`);
     
     buttons.forEach(btn => {
       const key = btn.getAttribute('data-i18n');
       const translation = this.t(key);
-      if (translation) {
+      
+      // ✅ DEBUG: Mostra cosa sta succedendo
+      console.log(`  🔍 Key: "${key}" → Translation: "${translation}"`);
+      
+      if (translation && translation !== key) {
+        // ✅ FORZA aggiornamento con innerHTML invece di textContent
+        btn.innerHTML = '';
         btn.textContent = translation;
+        
+        // ✅ VERIFICA se il testo è cambiato
+        console.log(`  ✅ Button aggiornato: "${btn.textContent}"`);
+      } else {
+        console.warn(`  ⚠️ Traduzione mancante per key: "${key}"`);
       }
     });
     console.log('  ✅ Pulsanti aggiornati');
