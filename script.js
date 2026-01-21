@@ -248,6 +248,13 @@ const localeConfig = {
 
 // funzione per creare una card prodotto
 function createProductCard(prod, defaultCta) {
+    // ✅✅✅ AGGIUNGI QUESTO BLOCCO ALL'INIZIO ✅✅✅
+    // Verifica che i18n sia disponibile
+    let i18nInstance = null;
+    if (window.i18n && typeof window.i18n === 'function') {
+        i18nInstance = window.i18n();
+    }
+    
     // container
     const card = el('div', { class: 'card' });
 
@@ -590,19 +597,17 @@ const isProperty = prod.category === 'properties';
         }
     }
 
-    // button con traduzione dinamica
-const ctaKey = prod.cta || defaultCta || 'card_cta_buy';
-const ctaText = window.i18n ? window.i18n().t(ctaKey) : ctaKey;
-
-// ✅ CREA IL BUTTON SENZA CHILDREN INIZIALMENTE
-const btn = el('button', { 
-    class: 'btn', 
-    style: 'margin-top: 1.5rem; width: 100%;',
-    'data-i18n': ctaKey
-}, []); // ← Array vuoto invece di TextNode
-
-// ✅ POI imposta il testo usando textContent
-btn.textContent = ctaText;
+        // button con traduzione dinamica
+    const ctaKey = prod.cta || defaultCta || 'card_cta_buy';
+    const ctaText = i18nInstance ? i18nInstance.t(ctaKey) : ctaKey; // ✅ USA istanza verificata
+    
+    const btn = el('button', { 
+        class: 'btn', 
+        style: 'margin-top: 1.5rem; width: 100%;',
+        'data-i18n': ctaKey
+    }, []); // ✅ Array vuoto
+    
+    btn.textContent = ctaText; // ✅ Imposta testo dopo creazione
 
 btn.dataset.sku = prod.sku || '';
 btn.dataset.title = prod.title || '';
@@ -1670,6 +1675,7 @@ function showValidationError(message, type) {
     if (overlay.parentNode) overlay.remove();
   }, 5000);
 }
+
 
 
 
