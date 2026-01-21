@@ -54,7 +54,7 @@ class I18n {
   /**
    * Inizializza sistema i18n
    */
-  init() {
+   init() {
     console.log(`🌍 Lingua attiva: ${this.currentLang.toUpperCase()}`);
     
     // Traduci pagina
@@ -68,6 +68,39 @@ class I18n {
     
     // Listener per contenuti dinamici
     this.observeDynamicContent();
+    
+    // ✅✅✅ AGGIUNGI QUESTO OBSERVER PER I PULSANTI ✅✅✅
+    // Observer specifico per pulsanti con data-i18n
+    const buttonObserver = new MutationObserver((mutations) => {
+      let needsUpdate = false;
+      
+      mutations.forEach(mutation => {
+        mutation.addedNodes.forEach(node => {
+          if (node.nodeType === 1) {
+            // Se è un button con data-i18n
+            if (node.tagName === 'BUTTON' && node.hasAttribute('data-i18n')) {
+              needsUpdate = true;
+            }
+            // O contiene buttons con data-i18n
+            if (node.querySelectorAll && node.querySelectorAll('button[data-i18n]').length > 0) {
+              needsUpdate = true;
+            }
+          }
+        });
+      });
+      
+      if (needsUpdate) {
+        console.log('🔄 Nuovi pulsanti rilevati, aggiornamento automatico...');
+        setTimeout(() => {
+          this.translatePage();
+        }, 50);
+      }
+    });
+    
+    buttonObserver.observe(document.body, {
+      childList: true,
+      subtree: true
+    });
 }
 
   /**
