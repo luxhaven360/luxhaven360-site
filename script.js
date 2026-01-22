@@ -613,6 +613,7 @@ if (ctaTextToKey[ctaKey]) {
 }
 
 const ctaText = i18nInstance ? i18nInstance.t(ctaKey) : ctaKey;
+console.log(`🔍 CTA Debug - Prod: ${prod.title}, Original: "${prod.cta}", Mapped Key: "${ctaKey}", Final Text: "${ctaText}"`);
     
     const btn = el('button', { 
         class: 'btn', 
@@ -1688,6 +1689,7 @@ function showValidationError(message, type) {
     if (overlay.parentNode) overlay.remove();
   }, 5000);
 }
+
 
 
 
