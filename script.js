@@ -597,9 +597,22 @@ const isProperty = prod.category === 'properties';
         }
     }
 
-        // button con traduzione dinamica
-    const ctaKey = prod.cta || defaultCta || 'card_cta_buy';
-    const ctaText = i18nInstance ? i18nInstance.t(ctaKey) : ctaKey; // ✅ USA istanza verificata
+        // ✅ MAPPATURA TESTO → CHIAVE DI TRADUZIONE
+const ctaTextToKey = {
+    'Test Drive': 'card_cta_testdrive',
+    'Richiedi Visita': 'card_cta_visit',
+    'Prenota Ora': 'card_cta_book',
+    'Acquista': 'card_cta_buy',
+    // Aggiungi eventuali altre varianti
+};
+
+// Se prod.cta contiene testo letterale, converti in chiave
+let ctaKey = prod.cta || defaultCta || 'card_cta_buy';
+if (ctaTextToKey[ctaKey]) {
+    ctaKey = ctaTextToKey[ctaKey];
+}
+
+const ctaText = i18nInstance ? i18nInstance.t(ctaKey) : ctaKey;
     
     const btn = el('button', { 
         class: 'btn', 
@@ -1675,6 +1688,7 @@ function showValidationError(message, type) {
     if (overlay.parentNode) overlay.remove();
   }, 5000);
 }
+
 
 
 
