@@ -46,6 +46,40 @@ class I18nPDP {
     this.loadExchangeRates();
     
     this.translatePage();
+
+    // LISTENER PER SINCRONIZZAZIONE LINGUA TRA PAGINE
+    window.addEventListener('pageshow', (event) => {
+      const savedLang = localStorage.getItem('lh360_lang');
+      
+      if (savedLang && savedLang !== this.currentLang && this.translations[savedLang]) {
+        console.log(`ðŸ"„ [PDP] Sincronizzazione lingua: ${this.currentLang} â†' ${savedLang}`);
+        this.currentLang = savedLang;
+        
+        // Aggiorna URL
+        const url = new URL(window.location);
+        url.searchParams.set('lang', savedLang);
+        window.history.replaceState({}, '', url.toString());
+        
+        // Ri-traduci pagina
+        this.translatePage();
+        this.updateLanguageSelector();
+        this.updateInternalLinks(savedLang);
+        
+        // Aggiorna elementi dinamici
+        if (typeof updateAllPricesForLanguage === 'function') {
+          setTimeout(() => updateAllPricesForLanguage(), 100);
+        }
+        if (typeof updateTableLabels === 'function') {
+          setTimeout(() => updateTableLabels(), 100);
+        }
+        if (typeof updateCalendarLanguage === 'function') {
+          updateCalendarLanguage();
+        }
+        
+        console.log(`âœ… [PDP] Lingua aggiornata a: ${savedLang.toUpperCase()}`);
+      }
+    });
+    
     this.setupLanguageSelector();
     this.updateInternalLinks(this.currentLang);
     this.observeDynamicContent();
