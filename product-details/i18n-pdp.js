@@ -47,6 +47,7 @@ class I18nPDP {
     
     this.translatePage();
     this.setupLanguageSelector();
+    this.updateInternalLinks(this.currentLang);
     this.observeDynamicContent();
   }
 
@@ -161,6 +162,14 @@ document.querySelectorAll('[data-i18n-placeholder]').forEach(el => {
     localStorage.setItem('lh360_lang', langCode);
     this.currentLang = langCode;
 
+    // Aggiorna URL con query parameter
+    const url = new URL(window.location);
+    url.searchParams.set('lang', langCode);
+    window.history.replaceState({}, '', url.toString());
+    
+    // Sincronizza link interni
+    this.updateInternalLinks(langCode);
+
     this.translatePage();
     this.updateLanguageSelector();
 
@@ -196,6 +205,35 @@ document.querySelectorAll('[data-i18n-placeholder]').forEach(el => {
     document.dispatchEvent(new CustomEvent('languageChanged', { detail: { lang: langCode } }));
 
     console.log(`✅ Lingua PDP cambiata: ${langCode.toUpperCase()}`);
+}
+
+  /**
+ * Aggiorna tutti i link interni con il query parameter lingua
+ */
+updateInternalLinks(langCode) {
+    document.querySelectorAll('a[href]').forEach(link => {
+        const href = link.getAttribute('href');
+        
+        if (!href || 
+            href.startsWith('http') || 
+            href.startsWith('mailto:') || 
+            href.startsWith('tel:') ||
+            href.startsWith('#')) {
+            return;
+        }
+        
+        try {
+            if (href.includes('?')) {
+                const url = new URL(href, window.location.origin);
+                url.searchParams.set('lang', langCode);
+                link.setAttribute('href', url.pathname + url.search);
+            } else {
+                link.setAttribute('href', `${href}?lang=${langCode}`);
+            }
+        } catch (e) {
+            // Ignora errori
+        }
+    });
 }
 
   setupLanguageSelector() {
