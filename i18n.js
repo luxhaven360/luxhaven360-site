@@ -62,6 +62,37 @@ class I18n {
     
     // Setup selettore lingua
     this.setupLanguageSelector();
+
+     // LISTENER PER SINCRONIZZAZIONE LINGUA TRA PAGINE
+    window.addEventListener('pageshow', (event) => {
+      // Ricarica lingua da localStorage (potrebbe essere cambiata in altra pagina)
+      const savedLang = localStorage.getItem('lh360_lang');
+      
+      if (savedLang && savedLang !== this.currentLang && this.translations[savedLang]) {
+        console.log(`ðŸ"„ Sincronizzazione lingua rilevata: ${this.currentLang} â†' ${savedLang}`);
+        this.currentLang = savedLang;
+        
+        // Aggiorna URL senza ricaricare
+        const url = new URL(window.location);
+        url.searchParams.set('lang', savedLang);
+        window.history.replaceState({}, '', url.toString());
+        
+        // Ri-traduci TUTTA la pagina
+        this.translatePage();
+        this.updateLanguageSelector();
+        this.updateInternalLinks(savedLang);
+        
+        // Aggiorna prezzi e badge
+        if (typeof updateAllPricesForLanguage === 'function') {
+          setTimeout(() => updateAllPricesForLanguage(), 100);
+        }
+        if (typeof updateAllBadgesForLanguage === 'function') {
+          setTimeout(() => updateAllBadgesForLanguage(), 100);
+        }
+        
+        console.log(`âœ… Lingua aggiornata automaticamente a: ${savedLang.toUpperCase()}`);
+      }
+    });
     
     // ✅ Aggiorna UI selettore con lingua corrente
     this.updateLanguageSelector();
