@@ -16,19 +16,19 @@ class I18n {
    * Rileva lingua da URL o localStorage
    */
    detectLanguage() {
-    // 1. Check URL query parameter (?lang=xx)
+    // 1. Check localStorage (PRIORITÀ MASSIMA - sincronizzato tra pagine)
+    const savedLang = localStorage.getItem('lh360_lang');
+    if (savedLang && this.translations[savedLang]) {
+        return savedLang;
+    }
+
+    // 2. Check URL query parameter (?lang=xx)
     const urlParams = new URLSearchParams(window.location.search);
     const langFromUrl = urlParams.get('lang');
     
     if (langFromUrl && this.translations[langFromUrl]) {
         localStorage.setItem('lh360_lang', langFromUrl);
         return langFromUrl;
-    }
-
-    // 2. Check localStorage
-    const savedLang = localStorage.getItem('lh360_lang');
-    if (savedLang && this.translations[savedLang]) {
-        return savedLang;
     }
 
     // 3. Check browser language
@@ -65,6 +65,9 @@ class I18n {
     
     // ✅ Aggiorna UI selettore con lingua corrente
     this.updateLanguageSelector();
+
+    // ✅ Sincronizza query parameter nei link al caricamento pagina
+    this.updateInternalLinks(this.currentLang);
     
     // Listener per contenuti dinamici
     this.observeDynamicContent();
@@ -192,6 +195,9 @@ class I18n {
     url.searchParams.set('lang', langCode);
     window.history.replaceState({}, '', url.toString());
 
+    // Sincronizza query parameter per tutti i link interni
+    this.updateInternalLinks(langCode);
+
     // Traduci pagina
     this.translatePage();
     this.updateLanguageSelector();
@@ -243,6 +249,41 @@ class I18n {
     document.dispatchEvent(new CustomEvent('languageChanged', { detail: { lang: langCode } }));
 
     console.log(`✅ Lingua cambiata: ${langCode.toUpperCase()}`);
+}
+
+  /**
+ * Aggiorna tutti i link interni con il query parameter lingua
+ */
+updateInternalLinks(langCode) {
+    // Seleziona tutti i link interni (non esterni)
+    document.querySelectorAll('a[href]').forEach(link => {
+        const href = link.getAttribute('href');
+        
+        // Salta link esterni, ancore, mailto, tel
+        if (!href || 
+            href.startsWith('http') || 
+            href.startsWith('mailto:') || 
+            href.startsWith('tel:') ||
+            href.startsWith('#')) {
+            return;
+        }
+        
+        // Aggiorna query parameter
+        try {
+            // Se è un path relativo
+            if (href.includes('?')) {
+                // URL con query esistente
+                const url = new URL(href, window.location.origin);
+                url.searchParams.set('lang', langCode);
+                link.setAttribute('href', url.pathname + url.search);
+            } else {
+                // URL senza query
+                link.setAttribute('href', `${href}?lang=${langCode}`);
+            }
+        } catch (e) {
+            // Ignora errori di parsing
+        }
+    });
 }
 
   /**
