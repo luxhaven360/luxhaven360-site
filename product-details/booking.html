@@ -3781,6 +3781,24 @@ function formatDateForBooking(date) {
     return `${year}-${month}-${day}`;
 }
 
+    /**
+ * ðŸŒ Recupera la lingua corrente dall'URL
+ * @returns {string} Codice lingua ('it', 'en', 'fr', 'de', 'es')
+ */
+function getCurrentLanguage() {
+    const urlParams = new URLSearchParams(window.location.search);
+    const langParam = urlParams.get('lang');
+    
+    // Normalizza e valida
+    const validLangs = ['it', 'en', 'fr', 'de', 'es'];
+    const detectedLang = (langParam || 'it').toLowerCase();
+    
+    const finalLang = validLangs.includes(detectedLang) ? detectedLang : 'it';
+    
+    console.log(`ðŸŒ Lingua rilevata per email: ${finalLang}`);
+    return finalLang;
+}
+
     // ========================================
     // CONFERMA PRENOTAZIONE
     // ========================================
@@ -3987,21 +4005,22 @@ if (bookingData.secondCar) {
     
     try {
         // ✅ CASO 1: IMMOBILI (PR) - NO STRIPE, SOLO EMAIL
-        if (skuPrefix === 'PR') {
-            const bookingPayload = {
-                sku: bookingData.sku,
-                product_title: bookingData.productData.title,
-                date: formatDateForBooking(date),
-                time: time,
-                distance: 'N/A',  // ✅ FORZATO a N/A per immobili (PR)
-                customer_name: `${firstName.value.trim()} ${lastName.value.trim()}`,
-                customer_email: emailInput.value.trim().toLowerCase(),
-                customer_phone: `${selectedCountry.code} ${phoneInput.value.trim()}`,
-                customer_country: selectedCountry.country,
-                notes: notes,
-                location: bookingData.productData.luogo || '',
-                total: 0  // Immobili senza prezzo
-            };
+if (skuPrefix === 'PR') {
+    const bookingPayload = {
+        sku: bookingData.sku,
+        product_title: bookingData.productData.title,
+        date: formatDateForBooking(date),
+        time: time,
+        distance: 'N/A',
+        customer_name: `${firstName.value.trim()} ${lastName.value.trim()}`,
+        customer_email: emailInput.value.trim().toLowerCase(),
+        customer_phone: `${selectedCountry.code} ${phoneInput.value.trim()}`,
+        customer_country: selectedCountry.country,
+        notes: notes,
+        location: bookingData.productData.luogo || '',
+        total: 0,
+        language: getCurrentLanguage() // âœ… NUOVO: Passa lingua email
+    };
             
             const response = await fetch(WEB_APP_URL, {
                 method: 'POST',
@@ -4034,7 +4053,6 @@ if (bookingData.secondCar) {
                 is_booking: true,
                 booking_metadata: {
     sku: (() => {
-        // ✅ Se combo attiva, passa SKU combinato
         if (bookingData.secondCar) {
             const checkbox = document.getElementById('secondCarCheckbox');
             const comboSku = checkbox ? checkbox.dataset.comboSku : '';
@@ -4043,7 +4061,6 @@ if (bookingData.secondCar) {
         return bookingData.sku;
     })(),
     product_title: (() => {
-        // ✅ Se combo attiva, passa nome combinato
         if (bookingData.secondCar) {
             const checkbox = document.getElementById('secondCarCheckbox');
             const comboName = checkbox ? checkbox.dataset.comboName : '';
@@ -4061,7 +4078,8 @@ if (bookingData.secondCar) {
     notes: notes,
     second_car: bookingData.secondCar,
     extra_services: JSON.stringify(bookingData.extraServices),
-    total_amount: bookingData.total  // ✅ ASSICURATI CHE SIA total_amount non solo total
+    total_amount: bookingData.total,
+    language: getCurrentLanguage() // âœ… NUOVO: Passa lingua email
 },
                 cancel_url: window.location.href,
                 success_url: `${window.location.origin}/luxhaven360-site/success-booking.html`
