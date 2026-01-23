@@ -3581,6 +3581,8 @@ function initDistanceSelection(product) {
             bookingData.basePrice = parseInt(firstOption.dataset.price);
         }
         
+        // ✅ NUOVO: TRIGGER ESPLICITO UPDATE RIEPILOGO
+        console.log(`✅ Distanza default impostata: ${bookingData.distance}`);
         updatePriceSummary();
     }
 }
@@ -3910,25 +3912,27 @@ if (!time) {
         return;
     }
 
-    // RECUPERA LINGUA CORRENTE
+    // 🌐 RECUPERA LINGUA E VALUTA CORRENTI
 const currentLang = (() => {
-  const urlParams = new URLSearchParams(window.location.search);
-  const langParam = urlParams.get('lang');
-  
-  // Se c'è lang nell'URL, usalo
-  if (langParam && ['it', 'en', 'fr', 'de', 'es'].includes(langParam)) {
-    return langParam;
-  }
-  
-  // Altrimenti usa i18n se disponibile
-  const i18n = window.i18nPDP && window.i18nPDP();
-  if (i18n && i18n.currentLang) {
-    return i18n.currentLang;
-  }
-  
-  // Fallback a italiano
-  return 'it';
+    const urlParams = new URLSearchParams(window.location.search);
+    const langParam = urlParams.get('lang');
+    
+    if (langParam && ['it', 'en', 'fr', 'de', 'es'].includes(langParam)) {
+        return langParam;
+    }
+    
+    const i18n = window.i18nPDP && window.i18nPDP();
+    if (i18n && i18n.currentLang) {
+        return i18n.currentLang;
+    }
+    
+    return 'it';
 })();
+
+// ✅ NUOVO: Determina valuta in base alla lingua
+const currentCurrency = currentLang === 'en' ? 'USD' : 'EUR';
+
+console.log(`💰 Valuta checkout: ${currentCurrency} (lingua: ${currentLang})`);
 
 console.log(`📧 Lingua email rilevata: ${currentLang}`);
     
@@ -3956,13 +3960,12 @@ if (bookingData.secondCar) {
             title: `${comboFullName}`,
             price: totalComboPrice,
             qty: 1,
-            currency: 'EUR',
+            currency: currentCurrency, // ✅ USA VALUTA CORRENTE
             image: bookingData.productData.mainImage || '',
             description: bookingData.distance || ''
         });
     }
 } else {
-    // ✅ DESCRIZIONE: solo se km validi (non N/A e non EX)
     const hasValidDistance = bookingData.distance && 
                              bookingData.distance !== 'N/A' && 
                              skuPrefix !== 'EX';
@@ -3972,36 +3975,35 @@ if (bookingData.secondCar) {
         title: `${bookingData.productData.title}`,
         price: bookingData.basePrice,
         qty: 1,
-        currency: 'EUR',
+        currency: currentCurrency, // ✅ USA VALUTA CORRENTE
         image: bookingData.productData.mainImage || '',
         description: hasValidDistance ? bookingData.distance : ''
     });
 }
 
     // 🎯 SEZIONE SERVIZI AGGIUNTIVI (SE PRESENTI)
-    if (bookingData.extraServices.length > 0) {
-        const serviceNames = {
-            'photo': 'Servizio Fotografico',
-            'video-hd': 'Video HD',
-            'video-360': 'Video 360°',
-            'extra-passengers': 'Passeggeri Extra'
-        };
+if (bookingData.extraServices.length > 0) {
+    const serviceNames = {
+        'photo': 'Servizio Fotografico',
+        'video-hd': 'Video HD',
+        'video-360': 'Video 360°',
+        'extra-passengers': 'Passeggeri Extra'
+    };
+    
+    bookingData.extraServices.forEach(service => {
+        let serviceName = serviceNames[service.service] || service.service;
+        if (service.quantity) serviceName += ` (${service.quantity})`;
         
-        bookingData.extraServices.forEach(service => {
-            let serviceName = serviceNames[service.service] || service.service;
-            if (service.quantity) serviceName += ` (${service.quantity})`;
-            
-            // ✅ PREFISSO VISIVO PER SERVIZI
-            lineItems.push({
-                sku: `SVC-${service.service}`,
-                title: `» ${serviceName}`,
-                price: service.price,
-                qty: 1,
-                currency: 'EUR',
-                description: 'servizio extra'  // ✅ MINUSCOLO
-            });
+        lineItems.push({
+            sku: `SVC-${service.service}`,
+            title: `» ${serviceName}`,
+            price: service.price,
+            qty: 1,
+            currency: currentCurrency, // ✅ USA VALUTA CORRENTE
+            description: 'servizio extra'
         });
-    }
+    });
+}
     
     // ✅ 9. LOGICA DIFFERENZIATA PER TIPO PRODOTTO
     showBookingLoader();
@@ -4104,7 +4106,8 @@ const checkoutData = {
     second_car: bookingData.secondCar,
     extra_services: JSON.stringify(bookingData.extraServices),
     total_amount: bookingData.total,  // ✅ ASSICURATI CHE SIA total_amount non solo total
-    language: currentLang
+    language: currentLang,
+    currency: currentCurrency
 },
                 cancel_url: window.location.href,
                 success_url: `${window.location.origin}/luxhaven360-site/success-booking.html`
