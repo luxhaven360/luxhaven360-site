@@ -3581,8 +3581,6 @@ function initDistanceSelection(product) {
             bookingData.basePrice = parseInt(firstOption.dataset.price);
         }
         
-        // ✅ NUOVO: TRIGGER ESPLICITO UPDATE RIEPILOGO
-        console.log(`✅ Distanza default impostata: ${bookingData.distance}`);
         updatePriceSummary();
     }
 }
@@ -3912,27 +3910,25 @@ if (!time) {
         return;
     }
 
-    // 🌐 RECUPERA LINGUA E VALUTA CORRENTI
+    // RECUPERA LINGUA CORRENTE
 const currentLang = (() => {
-    const urlParams = new URLSearchParams(window.location.search);
-    const langParam = urlParams.get('lang');
-    
-    if (langParam && ['it', 'en', 'fr', 'de', 'es'].includes(langParam)) {
-        return langParam;
-    }
-    
-    const i18n = window.i18nPDP && window.i18nPDP();
-    if (i18n && i18n.currentLang) {
-        return i18n.currentLang;
-    }
-    
-    return 'it';
+  const urlParams = new URLSearchParams(window.location.search);
+  const langParam = urlParams.get('lang');
+  
+  // Se c'è lang nell'URL, usalo
+  if (langParam && ['it', 'en', 'fr', 'de', 'es'].includes(langParam)) {
+    return langParam;
+  }
+  
+  // Altrimenti usa i18n se disponibile
+  const i18n = window.i18nPDP && window.i18nPDP();
+  if (i18n && i18n.currentLang) {
+    return i18n.currentLang;
+  }
+  
+  // Fallback a italiano
+  return 'it';
 })();
-
-// ✅ NUOVO: Determina valuta in base alla lingua
-const currentCurrency = currentLang === 'en' ? 'USD' : 'EUR';
-
-console.log(`💰 Valuta checkout: ${currentCurrency} (lingua: ${currentLang})`);
 
 console.log(`📧 Lingua email rilevata: ${currentLang}`);
     
@@ -3960,12 +3956,13 @@ if (bookingData.secondCar) {
             title: `${comboFullName}`,
             price: totalComboPrice,
             qty: 1,
-            currency: currentCurrency, // ✅ USA VALUTA CORRENTE
+            currency: 'EUR',
             image: bookingData.productData.mainImage || '',
             description: bookingData.distance || ''
         });
     }
 } else {
+    // ✅ DESCRIZIONE: solo se km validi (non N/A e non EX)
     const hasValidDistance = bookingData.distance && 
                              bookingData.distance !== 'N/A' && 
                              skuPrefix !== 'EX';
@@ -3975,35 +3972,36 @@ if (bookingData.secondCar) {
         title: `${bookingData.productData.title}`,
         price: bookingData.basePrice,
         qty: 1,
-        currency: currentCurrency, // ✅ USA VALUTA CORRENTE
+        currency: 'EUR',
         image: bookingData.productData.mainImage || '',
         description: hasValidDistance ? bookingData.distance : ''
     });
 }
 
     // 🎯 SEZIONE SERVIZI AGGIUNTIVI (SE PRESENTI)
-if (bookingData.extraServices.length > 0) {
-    const serviceNames = {
-        'photo': 'Servizio Fotografico',
-        'video-hd': 'Video HD',
-        'video-360': 'Video 360°',
-        'extra-passengers': 'Passeggeri Extra'
-    };
-    
-    bookingData.extraServices.forEach(service => {
-        let serviceName = serviceNames[service.service] || service.service;
-        if (service.quantity) serviceName += ` (${service.quantity})`;
+    if (bookingData.extraServices.length > 0) {
+        const serviceNames = {
+            'photo': 'Servizio Fotografico',
+            'video-hd': 'Video HD',
+            'video-360': 'Video 360°',
+            'extra-passengers': 'Passeggeri Extra'
+        };
         
-        lineItems.push({
-            sku: `SVC-${service.service}`,
-            title: `» ${serviceName}`,
-            price: service.price,
-            qty: 1,
-            currency: currentCurrency, // ✅ USA VALUTA CORRENTE
-            description: 'servizio extra'
+        bookingData.extraServices.forEach(service => {
+            let serviceName = serviceNames[service.service] || service.service;
+            if (service.quantity) serviceName += ` (${service.quantity})`;
+            
+            // ✅ PREFISSO VISIVO PER SERVIZI
+            lineItems.push({
+                sku: `SVC-${service.service}`,
+                title: `» ${serviceName}`,
+                price: service.price,
+                qty: 1,
+                currency: 'EUR',
+                description: 'servizio extra'  // ✅ MINUSCOLO
+            });
         });
-    });
-}
+    }
     
     // ✅ 9. LOGICA DIFFERENZIATA PER TIPO PRODOTTO
     showBookingLoader();
@@ -4072,46 +4070,42 @@ const currentLang = (() => {
 
 console.log(`🔧 Lingua email rilevata: ${currentLang}`);
 
-// ✅ CALCOLA VALORI PRIMA DI CREARE L'OGGETTO
-const finalSku = (() => {
-    if (bookingData.secondCar) {
-        const checkbox = document.getElementById('secondCarCheckbox');
-        const comboSku = checkbox ? checkbox.dataset.comboSku : '';
-        return comboSku ? `${bookingData.sku}+${comboSku}` : bookingData.sku;
-    }
-    return bookingData.sku;
-})();
-
-const finalProductTitle = (() => {
-    if (bookingData.secondCar) {
-        const checkbox = document.getElementById('secondCarCheckbox');
-        const comboName = checkbox ? checkbox.dataset.comboName : '';
-        return comboName ? `${bookingData.productData.title} + ${comboName}` : bookingData.productData.title;
-    }
-    return bookingData.productData.title;
-})();
-
 const checkoutData = {
     cart: lineItems,
     shipping: 0,
     is_booking: true,
     booking_metadata: {
-        sku: finalSku,
-        product_title: finalProductTitle,
-        date: formatDateForBooking(date),
-        time: time,
-        distance: bookingData.distance || 'N/A',
-        customer_name: `${firstName.value.trim()} ${lastName.value.trim()}`,
-        customer_email: emailInput.value.trim().toLowerCase(),
-        customer_phone: `${selectedCountry.code} ${phoneInput.value.trim()}`,
-        customer_country: selectedCountry.country,
-        notes: notes,
-        second_car: bookingData.secondCar,
-        extra_services: JSON.stringify(bookingData.extraServices),
-        total_amount: bookingData.total,  // ✅ ASSICURATI CHE SIA total_amount non solo total
-        language: currentLang,
-        currency: currentCurrency
-    },
+        sku: (() => {
+            // ✅ Se combo attiva, passa SKU combinato
+        if (bookingData.secondCar) {
+            const checkbox = document.getElementById('secondCarCheckbox');
+            const comboSku = checkbox ? checkbox.dataset.comboSku : '';
+            return comboSku ? `${bookingData.sku}+${comboSku}` : bookingData.sku;
+        }
+        return bookingData.sku;
+    })(),
+    product_title: (() => {
+        // ✅ Se combo attiva, passa nome combinato
+        if (bookingData.secondCar) {
+            const checkbox = document.getElementById('secondCarCheckbox');
+            const comboName = checkbox ? checkbox.dataset.comboName : '';
+            return comboName ? `${bookingData.productData.title} + ${comboName}` : bookingData.productData.title;
+        }
+        return bookingData.productData.title;
+    })(),
+    date: formatDateForBooking(date),
+    time: time,
+    distance: bookingData.distance || 'N/A',
+    customer_name: `${firstName.value.trim()} ${lastName.value.trim()}`,
+    customer_email: emailInput.value.trim().toLowerCase(),
+    customer_phone: `${selectedCountry.code} ${phoneInput.value.trim()}`,
+    customer_country: selectedCountry.country,
+    notes: notes,
+    second_car: bookingData.secondCar,
+    extra_services: JSON.stringify(bookingData.extraServices),
+    total_amount: bookingData.total,  // ✅ ASSICURATI CHE SIA total_amount non solo total
+    language: currentLang
+},
                 cancel_url: window.location.href,
                 success_url: `${window.location.origin}/luxhaven360-site/success-booking.html`
             };
