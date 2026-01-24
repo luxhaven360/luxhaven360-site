@@ -2681,6 +2681,20 @@ if (skuPrefix === 'SC') {
     if (extraServicesSection) extraServicesSection.style.display = 'none';
 }
 
+    // ✅ FORZA SELEZIONE IMMEDIATA DELLA PRIMA OPZIONE
+setTimeout(() => {
+    const firstDistanceOption = distanceGrid.querySelector('.distance-option');
+    if (firstDistanceOption && !bookingData.distance) {
+        const value = firstDistanceOption.dataset.km;
+        const unit = firstDistanceOption.dataset.unit || 'km';
+        bookingData.distance = `${value} ${unit}`;
+        bookingData.basePrice = parseInt(firstDistanceOption.dataset.price);
+        
+        console.log(`🎯 Distanza default forzata: ${bookingData.distance}`);
+        updatePriceSummary();
+    }
+}, 100);
+
     // ✅ 12. AGGIORNA NOME PRODOTTO NEL RIEPILOGO (SIDEBAR)
     const summaryTitle = document.querySelector('.summary-product-title');
     if (summaryTitle) {
@@ -3569,20 +3583,22 @@ function initDistanceSelection(product) {
     });
     
     // Auto-select prima opzione se presente
-    const firstOption = document.querySelector('.distance-option');
-    if (firstOption) {
-        firstOption.classList.add('selected');
-    
-        const value = firstOption.dataset.km;
-        const unit = firstOption.dataset.unit || 'km';
-        bookingData.distance = `${value} ${unit}`;
-    
-        if (skuPrefix === 'SC' || skuPrefix === 'EX') {
-           bookingData.basePrice = parseInt(firstOption.dataset.price);
-        }
-    
-        updatePriceSummary();
+const firstOption = document.querySelector('.distance-option');
+if (firstOption) {
+    firstOption.classList.add('selected');
+
+    const value = firstOption.dataset.km;
+    const unit = firstOption.dataset.unit || 'km';
+    bookingData.distance = `${value} ${unit}`;
+
+    if (skuPrefix === 'SC' || skuPrefix === 'EX') {
+       bookingData.basePrice = parseInt(firstOption.dataset.price);
     }
+
+    // ✅ FORZA AGGIORNAMENTO IMMEDIATO
+    console.log(`✅ Distanza auto-selezionata: ${bookingData.distance}`);
+    updatePriceSummary();
+}
 }
 
     // ========================================
@@ -3790,12 +3806,24 @@ function formatDateForBooking(date) {
     const skuPrefix = bookingData.productData?.sku.split('-')[0].toUpperCase();
     const requiresDistance = skuPrefix !== 'EX' && skuPrefix !== 'SC';
 
-    // ✅ 1. VALIDAZIONE DISTANZA
-    if (requiresDistance && !bookingData.distance) {
+    // ✅ 1. VALIDAZIONE DISTANZA CON FALLBACK
+if (requiresDistance && !bookingData.distance) {
+    // Tentativo recupero automatico
+    const firstOption = document.querySelector('.distance-option.selected') || 
+                        document.querySelector('.distance-option');
+    
+    if (firstOption) {
+        const value = firstOption.dataset.km;
+        const unit = firstOption.dataset.unit || 'km';
+        bookingData.distance = `${value} ${unit}`;
+        bookingData.basePrice = parseInt(firstOption.dataset.price);
+        console.log(`🔄 Distanza recuperata al momento del checkout: ${bookingData.distance}`);
+    } else {
         const i18n = window.i18nPDP();
         showValidationError(i18n.t('booking_error_distance'), 'distance');
         return;
     }
+}
 
     // ✅ 2. VALIDAZIONE DATA E ORARIO
 const isExperience = skuPrefix === 'EX';
@@ -3967,15 +3995,29 @@ if (bookingData.secondCar) {
                              bookingData.distance !== 'N/A' && 
                              skuPrefix !== 'EX';
     
-    lineItems.push({
-        sku: bookingData.sku,
-        title: `${bookingData.productData.title}`,
-        price: bookingData.basePrice,
-        qty: 1,
-        currency: 'EUR',
-        image: bookingData.productData.mainImage || '',
-        description: hasValidDistance ? bookingData.distance : ''
-    });
+    // ✅ RECUPERO SICURO DISTANZA
+let distanceDescription = '';
+if (hasValidDistance) {
+    distanceDescription = bookingData.distance;
+} else if (skuPrefix === 'SC') {
+    // Fallback: recupera da opzione selezionata
+    const selectedOption = document.querySelector('.distance-option.selected');
+    if (selectedOption) {
+        const value = selectedOption.dataset.km;
+        const unit = selectedOption.dataset.unit || 'km';
+        distanceDescription = `${value} ${unit}`;
+    }
+}
+
+lineItems.push({
+    sku: bookingData.sku,
+    title: `${bookingData.productData.title}`,
+    price: bookingData.basePrice,
+    qty: 1,
+    currency: 'EUR',
+    image: bookingData.productData.mainImage || '',
+    description: distanceDescription
+});
 }
 
     // 🎯 SEZIONE SERVIZI AGGIUNTIVI (SE PRESENTI)
