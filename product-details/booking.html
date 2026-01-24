@@ -581,11 +581,14 @@ textarea[placeholder="Hai richieste particolari?"] {
 @media (max-width: 768px) {
     .pdp-lang-selector {
         position: fixed;
-        bottom: 1.5rem; /* âœ… Spostato in basso */
-        right: 1rem;
-        top: auto; /* âœ… Rimosso top */
+        top: auto; /* ✅ Rimuovi ancoraggio superiore */
+        bottom: 1.5rem; /* ✅ Posiziona in basso */
+        left: 50%; /* ✅ Centra orizzontalmente */
+        transform: translateX(-50%); /* ✅ Centra perfettamente */
+        right: auto; /* ✅ Rimuovi ancoraggio destro */
         padding: 0.5rem 1rem;
-        z-index: 9998; /* âœ… Leggermente sotto altri overlay */
+        z-index: 9998; /* ✅ Sotto i modal ma sopra il contenuto */
+        box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.5); /* ✅ Ombra verso l'alto */
     }
     
     .pdp-lang-option {
@@ -1287,12 +1290,6 @@ function initPhoneSelector() {
 `;
 
     document.body.appendChild(dropdown);
-
-    // Traduci placeholder immediatamente
-const searchInput = dropdown.querySelector('.country-search');
-if (searchInput && i18n) {
-    searchInput.placeholder = i18n.t('booking_phone_search');
-}
     
     // Sostituisci struttura
     container.insertBefore(wrapper, phoneInput);
@@ -1488,6 +1485,11 @@ dropdown.querySelectorAll('.country-option').forEach(option => {
         });
     }
 }
+
+// ✅ APPLICA TRADUZIONE PLACEHOLDER AL CARICAMENTO
+setTimeout(() => {
+    updatePhoneDropdownLanguage();
+}, 100);
 
 /**
  * 🌍 Aggiorna nomi paesi nel dropdown telefono (FUNZIONE GLOBALE)
@@ -1910,7 +1912,7 @@ function restoreOriginalDistancePricing() {
         console.log('🔍 Estrazione SKU dall\'URL...');
         const urlParams = new URLSearchParams(window.location.search);
         const sku = urlParams.get('sku');
-        console.log('SKU trovato:', sku);
+        console.log('   SKU trovato:', sku);
         
         if (!sku) {
             console.error('❌ SKU mancante');
@@ -1946,7 +1948,7 @@ function restoreOriginalDistancePricing() {
             console.log('✅ renderPage completato');
         } catch (renderError) {
             console.error('❌ Errore renderPage:', renderError);
-            console.error('Stack:', renderError.stack);
+            console.error('   Stack:', renderError.stack);
             throw new Error('Errore durante il rendering: ' + renderError.message);
         }
         
@@ -1957,7 +1959,7 @@ function restoreOriginalDistancePricing() {
             console.log('✅ initializeComponents completato');
         } catch (initError) {
             console.error('❌ Errore initializeComponents:', initError);
-            console.error('Stack:', initError.stack);
+            console.error('   Stack:', initError.stack);
             throw new Error('Errore durante l\'inizializzazione: ' + initError.message);
         }
         
@@ -1965,8 +1967,8 @@ function restoreOriginalDistancePricing() {
         
     } catch (error) {
         console.error('❌ ERRORE GLOBALE:', error);
-        console.error('Message:', error.message);
-        console.error('Stack:', error.stack);
+        console.error('   Message:', error.message);
+        console.error('   Stack:', error.stack);
         
         alert('Impossibile caricare i dettagli del prodotto.\n\nDettagli: ' + error.message);
         
@@ -2214,27 +2216,30 @@ product.caratteristiche.forEach((value, index) => {
 });
     
     // ✅ 9. ORARI DISPONIBILI
-    const timeSelect = document.getElementById('bookingTime');
-    if (timeSelect) {
-        timeSelect.innerHTML = `<option value="">${i18n.t('booking_time_placeholder')}</option>`;
-        
-        console.log('📅 Orari ricevuti:', product.orari);
-        
-        if (product.orari && Array.isArray(product.orari) && product.orari.length > 0) {
-            product.orari.forEach(orario => {
-                if (orario) {
-                    console.log('  ✅ Aggiunto orario:', orario);
-                    timeSelect.innerHTML += `<option value="${orario}">${orario}</option>`;
-                }
-            });
-        } else {
-            console.warn('⚠️ Nessun orario disponibile per questo prodotto');
-            const defaultTimes = ['09:00', '10:00', '11:00', '14:00', '15:00', '16:00', '17:00'];
-            defaultTimes.forEach(time => {
-                timeSelect.innerHTML += `<option value="${time}">${time}</option>`;
-            });
-        }
+const timeSelect = document.getElementById('bookingTime');
+if (timeSelect) {
+    timeSelect.innerHTML = `<option value="">${i18n.t('booking_time_placeholder')}</option>`;
+    
+    console.log('📅 Orari ricevuti:', product.orari);
+    
+    if (product.orari && Array.isArray(product.orari) && product.orari.length > 0) {
+        product.orari.forEach(orario => {
+            if (orario) {
+                console.log('  ✅ Aggiunto orario:', orario);
+                // ✅ USA FORMATTAZIONE i18n SUBITO
+                const formattedTime = i18n.formatTime(orario);
+                timeSelect.innerHTML += `<option value="${orario}">${formattedTime}</option>`;
+            }
+        });
+    } else {
+        console.warn('⚠️ Nessun orario disponibile per questo prodotto');
+        const defaultTimes = ['09:00', '10:00', '11:00', '14:00', '15:00', '16:00', '17:00'];
+        defaultTimes.forEach(time => {
+            const formattedTime = i18n.formatTime(time);
+            timeSelect.innerHTML += `<option value="${time}">${formattedTime}</option>`;
+        });
     }
+}
 
     // ✅ 10a. CHILOMETRAGGIO DINAMICO (SOLO SUPERCAR) - CON LOGGING DETTAGLIATO
 const skuPrefix = product.sku.split('-')[0].toUpperCase();
@@ -2790,9 +2795,6 @@ if (skuPrefix === 'EX') {
             console.warn('⚠️ Data esperienza non valida:', product.data_esperienza);
         }
     }
-
-    // Formatta orari subito dopo il rendering
-    updateTimeFormatLanguage();
 }
 
     // ✅ 16. GESTIONE SUPERCAR (SC) - Usa prezzo base prodotto
@@ -3447,9 +3449,6 @@ if (emailInput) {
         
         // Initialize calendar
         initCalendar();
-
-        // Formatta orari al caricamento iniziale
-        updateTimeFormatLanguage();
 
         // ✅ BLOCCO DATA/ORARIO PER ESPERIENZE (SKU "EX")
         handleExperienceDateLock(product);
@@ -4218,6 +4217,8 @@ const checkoutData = {
  * Mostra errore di validazione generico
  */
 function showValidationError(message, field) {
+    const i18n = window.i18nPDP(); // ✅ RECUPERA i18n
+    
     const toast = document.createElement('div');
     toast.style.cssText = `
         position: fixed;
