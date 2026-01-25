@@ -2072,6 +2072,35 @@ function restoreOriginalDistancePricing() {
 });
 
     // ========================================
+// 📱 AGGIORNAMENTO IMMAGINI SU RESIZE
+// ========================================
+let resizeTimer;
+window.addEventListener('resize', () => {
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(() => {
+        // Ricarica immagini se cambia device
+        if (bookingData.productData) {
+            const newImages = filterImagesForDevice(bookingData.productData);
+            if (newImages.length > 0) {
+                currentImageIndex = 0; // Reset indice
+                productImages = newImages; // Aggiorna array globale
+                
+                // Aggiorna immagine corrente
+                const heroImg = document.getElementById('mainProductImage');
+                if (heroImg) {
+                    heroImg.src = newImages[0];
+                }
+                
+                // Reinizializza slider
+                initImageSlider(newImages, bookingData.productData.title);
+                
+                console.log('🔄 Immagini aggiornate per nuovo device');
+            }
+        }
+    }, 300); // Debounce 300ms
+});
+
+    // ========================================
     // FETCH DATI BACKEND
     // ========================================
     async function fetchProductDetails(sku) {
@@ -2160,6 +2189,82 @@ function restoreOriginalDistancePricing() {
 }
 
     // ========================================
+// 🎨 FILTRO IMMAGINI SMART PER SEZIONE E DISPOSITIVO
+// ========================================
+
+/**
+ * Filtra le immagini in base a:
+ * - Sezione (SUPERCAR / IMMOBILI / ESPERIENZE)
+ * - Dispositivo (desktop / mobile)
+ * 
+ * REGOLE:
+ * 
+ * SUPERCAR (SC):
+ *   Desktop → Solo colonna Q (Immagine 1-5)
+ *   Mobile  → Solo colonna R (Immagine 6-10)
+ * 
+ * IMMOBILI (PR) / ESPERIENZE (EX):
+ *   Desktop → Colonne Q + R (max 10 immagini)
+ *   Mobile  → Colonne S + T (max 10 immagini)
+ * 
+ * @param {Object} product - Prodotto da backend
+ * @returns {Array<string>} - Immagini filtrate
+ */
+function filterImagesForDevice(product) {
+    if (!product || !product.images || product.images.length === 0) {
+        return [];
+    }
+    
+    const skuPrefix = product.sku.split('-')[0].toUpperCase();
+    const isMobile = window.innerWidth <= 768;
+    
+    // 📊 LOG DEBUG (rimuovibile dopo test)
+    console.log('🎯 Filtro immagini:', {
+        sku: product.sku,
+        prefix: skuPrefix,
+        device: isMobile ? 'MOBILE' : 'DESKTOP',
+        totalImages: product.images.length
+    });
+    
+    // 🎨 Le immagini arrivano già ordinate dal backend:
+    // [0-4]   → Colonna Q (Immagine 1-5)
+    // [5-9]   → Colonna R (Immagine 6-10)
+    // [10-14] → Colonna S (Immagine 11-15)
+    // [15-19] → Colonna T (Immagine 16-20)
+    
+    let filteredImages = [];
+    
+    // 🚗 SEZIONE SUPERCAR
+    if (skuPrefix === 'SC') {
+        if (isMobile) {
+            // Mobile → Solo colonna R (indici 5-9)
+            filteredImages = product.images.slice(5, 10).filter(Boolean);
+        } else {
+            // Desktop → Solo colonna Q (indici 0-4)
+            filteredImages = product.images.slice(0, 5).filter(Boolean);
+        }
+    }
+    // 🏠 SEZIONE IMMOBILI / ✨ ESPERIENZE
+    else if (skuPrefix === 'PR' || skuPrefix === 'EX') {
+        if (isMobile) {
+            // Mobile → Colonne S + T (indici 10-19)
+            filteredImages = product.images.slice(10, 20).filter(Boolean);
+        } else {
+            // Desktop → Colonne Q + R (indici 0-9)
+            filteredImages = product.images.slice(0, 10).filter(Boolean);
+        }
+    }
+    // 🔹 FALLBACK (altri prodotti)
+    else {
+        filteredImages = product.images.filter(Boolean);
+    }
+    
+    console.log(`✅ ${filteredImages.length} immagini filtrate per ${isMobile ? 'mobile' : 'desktop'}`);
+    
+    return filteredImages;
+}
+
+    // ========================================
     // RENDERING DINAMICO PAGINA
     // ========================================
     function renderPage(product) {
@@ -2177,16 +2282,22 @@ document.querySelector('.badge-text').textContent = i18n.t(config.type === 'supe
                                                             config.type === 'immobili' ? 'booking_config_pr_badge' : 
                                                             'booking_config_ex_badge');
     
-    // ✅ 2. IMMAGINE HERO + INIZIALIZZA SLIDER
+    // ✅ 2. IMMAGINE HERO + INIZIALIZZA SLIDER CON FILTRO SMART
 const heroImg = document.querySelector('#mainProductImage');
-if (product.mainImage) {
-    heroImg.src = product.mainImage;
-    heroImg.alt = product.title;
-}
 
-// ✅ INIZIALIZZA SLIDER IMMAGINI
-if (product.images && product.images.length > 0) {
-    initImageSlider(product.images, product.title);
+// 🎯 Filtra immagini in base a sezione e dispositivo
+const filteredImages = filterImagesForDevice(product);
+
+if (filteredImages.length > 0) {
+    heroImg.src = filteredImages[0];
+    heroImg.alt = product.title;
+    
+    // ✅ INIZIALIZZA SLIDER CON IMMAGINI FILTRATE
+    initImageSlider(filteredImages, product.title);
+} else {
+    // Fallback se nessuna immagine disponibile
+    heroImg.src = product.mainImage || '';
+    heroImg.alt = product.title;
 }
     
     // ✅ 3. DETTAGLI PRODOTTO
