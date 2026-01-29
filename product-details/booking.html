@@ -337,6 +337,50 @@
             opacity: 0.3;
             cursor: not-allowed;
         }
+
+        /* ✨ DOMENICHE BLOCCATE PER LAMBORGHINI - STILE PREMIUM */
+        .calendar-day.sunday-blocked {
+            background: linear-gradient(135deg, 
+                rgba(30, 20, 15, 0.95) 0%, 
+                rgba(45, 24, 16, 0.98) 100%);
+            color: #8b7355 !important;
+            cursor: not-allowed !important;
+            position: relative;
+            border: 1.5px solid rgba(212, 175, 55, 0.15);
+            font-weight: 500;
+            opacity: 0.7;
+        }
+        
+        .calendar-day.sunday-blocked::before {
+            content: '🏎️';
+            position: absolute;
+            top: 2px;
+            right: 2px;
+            font-size: 10px;
+            opacity: 0.4;
+        }
+        
+        .calendar-day.sunday-blocked::after {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background: repeating-linear-gradient(
+                45deg,
+                transparent,
+                transparent 3px,
+                rgba(212, 175, 55, 0.03) 3px,
+                rgba(212, 175, 55, 0.03) 6px
+            );
+            pointer-events: none;
+        }
+        
+        .calendar-day.sunday-blocked:hover {
+            background: linear-gradient(135deg, 
+                rgba(30, 20, 15, 0.95) 0%, 
+                rgba(45, 24, 16, 0.98) 100%) !important;
+            transform: none !important;
+            box-shadow: none !important;
+        }
         
         .calendar-day.empty {
             background: transparent;
@@ -1976,6 +2020,56 @@ function getComboKey(mainSku, comboSku) {
     return null;
 }
 
+/**
+ * 🏎️ Verifica se la prenotazione include una Lamborghini
+ * Controlla:
+ * 1. Supercar principale è Lamborghini
+ * 2. Combo contiene Lamborghini
+ * 3. Seconda supercar aggiunta è Lamborghini
+ */
+function hasLamborghiniInBooking() {
+    if (!bookingData.productData) return false;
+    
+    const title = bookingData.productData.title.toLowerCase();
+    const sku = bookingData.productData.sku.toUpperCase();
+    
+    // CASO 1: Supercar singola Lamborghini
+    if (title.includes('lamborghini')) {
+        console.log('🚫 Lamborghini rilevata come supercar principale');
+        return true;
+    }
+    
+    // CASO 2: Combo che contiene Lamborghini (SKU contiene "+")
+    if (sku.includes('+')) {
+        // Verifica se uno degli SKU della combo è Lamborghini
+        const skuParts = sku.split('+').map(s => s.trim());
+        
+        // SC-006 è la Lamborghini Huracán Spyder
+        if (skuParts.includes('SC-006')) {
+            console.log('🚫 Lamborghini rilevata nella combo');
+            return true;
+        }
+    }
+    
+    // CASO 3: Seconda supercar aggiunta è Lamborghini
+    if (bookingData.secondCar) {
+        const checkbox = document.getElementById('secondCarCheckbox');
+        if (checkbox) {
+            const comboSku = checkbox.dataset.comboSku;
+            const comboName = checkbox.dataset.comboName || '';
+            
+            // Verifica SKU o nome della seconda auto
+            if (comboSku === 'SC-006' || comboName.toLowerCase().includes('lamborghini')) {
+                console.log('🚫 Lamborghini rilevata come seconda supercar');
+                return true;
+            }
+        }
+    }
+    
+    console.log('✅ Nessuna Lamborghini nella prenotazione');
+    return false;
+}
+
 function calculateIndividualComboPrices(comboBasePrice) {
     // ✅ NUOVA LOGICA:
     // 1. Recupera il prezzo fisso della seconda supercar dal foglio Google
@@ -3444,6 +3538,13 @@ if (skuPrefix === 'SC') {
         } else {
             // Ripristina prezzi originali
             restoreOriginalDistancePricing();
+
+            // ✅ RE-RENDER CALENDARIO SE C'È LAMBORGHINI
+            // (aggiunto dopo restoreOriginalDistancePricing())
+            if (hasLamborghiniInBooking()) {
+                console.log('🔄 Re-rendering calendario per Lamborghini');
+                renderCalendar();
+            }
         }
         
         // Toggle visibilità servizi HuracÃ¡n
@@ -3579,6 +3680,13 @@ document.querySelectorAll('.huracan-passenger-radio').forEach(radio => {
             } else {
                 // Ripristina prezzi originali quando si deseleziona
                 restoreOriginalDistancePricing();
+
+                // ✅ RE-RENDER CALENDARIO SE C'È LAMBORGHINI
+                // (aggiunto dopo restoreOriginalDistancePricing())
+                if (hasLamborghiniInBooking()) {
+                    console.log('🔄 Re-rendering calendario per Lamborghini');
+                    renderCalendar();
+                }
             }
             
             document.getElementById('secondCarPrice').classList.toggle('hidden', !this.checked);
@@ -5160,12 +5268,20 @@ if (!document.getElementById('bookingAnimations')) {
     // Days of the month
     for (let day = 1; day <= daysInMonth; day++) {
         const currentDate = new Date(year, month, day);
-        const isDisabled = currentDate < minDate || currentDate > maxDate;
+        const dayOfWeek = currentDate.getDay(); // 0 = Domenica, 1 = Lunedì, ..., 6 = Sabato
+        
+        // ✅ BLOCCO DOMENICHE PER LAMBORGHINI
+        const isSunday = dayOfWeek === 0;
+        const hasLamborghini = hasLamborghiniInBooking();
+        const isSundayBlocked = isSunday && hasLamborghini;
+        
+        const isDisabled = currentDate < minDate || currentDate > maxDate || isSundayBlocked;
         const isSelected = bookingData.selectedDate && 
                          currentDate.toDateString() === bookingData.selectedDate.toDateString();
         
         const classes = ['calendar-day'];
-        if (isDisabled) classes.push('disabled');
+        if (isDisabled && !isSundayBlocked) classes.push('disabled');
+        if (isSundayBlocked) classes.push('sunday-blocked');
         if (isSelected) classes.push('selected');
 
         html += `<div class="${classes.join(' ')}" 
@@ -5252,7 +5368,18 @@ function updateCalendarLanguage() {
     function selectDate(year, month, day, isDisabled) {
         if (isDisabled) return;
         
-        bookingData.selectedDate = new Date(year, month, day);
+        const selectedDate = new Date(year, month, day);
+        const dayOfWeek = selectedDate.getDay();
+        const isSunday = dayOfWeek === 0;
+        
+        // ✅ BLOCCO DOMENICA PER LAMBORGHINI
+        if (isSunday && hasLamborghiniInBooking()) {
+            console.warn('🚫 Tentativo di prenotare domenica con Lamborghini bloccato');
+            showSundayBlockedMessage();
+            return;
+        }
+        
+        bookingData.selectedDate = selectedDate;
         const formatted = bookingData.selectedDate.toLocaleDateString('it-IT', {
             day: '2-digit',
             month: '2-digit',
@@ -5263,6 +5390,109 @@ function updateCalendarLanguage() {
         renderCalendar();
     }
 
+    /**
+ * 💬 Mostra messaggio elegante quando si tenta di prenotare domenica con Lamborghini
+ */
+function showSundayBlockedMessage() {
+    const i18n = window.i18nPDP && window.i18nPDP();
+    
+    // Messaggi multilingua (puoi estenderli)
+    const messages = {
+        it: 'Le domeniche non sono disponibili per le prenotazioni con Lamborghini',
+        en: 'Sundays are not available for Lamborghini bookings',
+        fr: 'Les dimanches ne sont pas disponibles pour les réservations Lamborghini',
+        de: 'Sonntage sind nicht verfügbar für Lamborghini-Buchungen',
+        es: 'Los domingos no están disponibles para reservas de Lamborghini'
+    };
+    
+    const currentLang = (i18n && i18n.currentLang) || 'it';
+    const message = messages[currentLang] || messages.it;
+    
+    // Toast notification premium
+    const toast = document.createElement('div');
+    toast.style.cssText = `
+        position: fixed;
+        top: 30px;
+        right: 30px;
+        background: linear-gradient(135deg, rgba(20, 15, 12, 0.98), rgba(30, 20, 15, 0.98));
+        backdrop-filter: blur(20px);
+        color: #f5f5f0;
+        padding: 20px 28px;
+        border-radius: 16px;
+        box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6), 0 0 0 1.5px rgba(212, 175, 55, 0.3);
+        z-index: 999999;
+        min-width: 320px;
+        max-width: 480px;
+        animation: slideInRight 0.4s ease;
+        display: flex;
+        align-items: center;
+        gap: 16px;
+    `;
+    
+    toast.innerHTML = `
+        <div style="
+            width: 48px;
+            height: 48px;
+            background: linear-gradient(135deg, rgba(212, 175, 55, 0.15), rgba(255, 215, 0, 0.08));
+            border: 2px solid rgba(212, 175, 55, 0.3);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+        ">
+            <svg style="width: 24px; height: 24px; color: #D4AF37;" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+            </svg>
+        </div>
+        <div style="flex: 1;">
+            <div style="font-weight: 600; font-size: 15px; margin-bottom: 4px; color: #D4AF37;">
+                🏎️ Lamborghini
+            </div>
+            <div style="font-size: 14px; color: #c9a891; line-height: 1.5;">
+                ${message}
+            </div>
+        </div>
+    `;
+    
+    document.body.appendChild(toast);
+    
+    // Animazione ingresso
+    const style = document.createElement('style');
+    style.textContent = `
+        @keyframes slideInRight {
+            from {
+                opacity: 0;
+                transform: translateX(100px);
+            }
+            to {
+                opacity: 1;
+                transform: translateX(0);
+            }
+        }
+        @keyframes slideOutRight {
+            from {
+                opacity: 1;
+                transform: translateX(0);
+            }
+            to {
+                opacity: 0;
+                transform: translateX(100px);
+            }
+        }
+    `;
+    document.head.appendChild(style);
+    
+    // Rimozione automatica dopo 4 secondi
+    setTimeout(() => {
+        toast.style.animation = 'slideOutRight 0.3s ease';
+        setTimeout(() => {
+            toast.remove();
+            style.remove();
+        }, 300);
+    }, 4000);
+}
+        
     // ========================================
     // ANIMATION ON SCROLL
     // ========================================
