@@ -1961,19 +1961,59 @@ function restoreOriginalDistancePricing() {
 }
 
 /**
- * 💰 Calcola prezzi individuali delle due supercar per combo
- * In modo che la somma sia uguale al prezzo base della combo
+ * Genera la chiave per COMBO_PRICING normalizzando gli SKU
  */
+function getComboKey(mainSku, comboSku) {
+    // Normalizza SKU rimuovendo spazi
+    const key1 = `${mainSku.trim()}+${comboSku.trim()}`;
+    const key2 = `${comboSku.trim()}+${mainSku.trim()}`;
+    
+    // Verifica quale chiave esiste in COMBO_PRICING
+    if (COMBO_PRICING[key1]) return key1;
+    if (COMBO_PRICING[key2]) return key2;
+    
+    console.warn(`⚠️ Nessuna combo trovata per ${mainSku} + ${comboSku}`);
+    return null;
+}
+
 function calculateIndividualComboPrices(comboBasePrice) {
-    // Dividi il prezzo base in due parti:
-    // - Prima auto: 49.7% del prezzo combo
-    // - Seconda auto: 50.3% del prezzo combo
-    const firstCarPrice = Math.round(comboBasePrice * 0.497);
-    const secondCarPrice = comboBasePrice - firstCarPrice;
+    // ✅ NUOVA LOGICA:
+    // 1. Recupera il prezzo fisso della seconda supercar dal foglio Google
+    // 2. Sottrai questo prezzo dal totale combo per ottenere il prezzo della prima auto
+    
+    const checkbox = document.getElementById('secondCarCheckbox');
+    if (!checkbox) {
+        console.error('❌ Checkbox seconda auto non trovata');
+        return { firstCarPrice: comboBasePrice, secondCarPrice: 0 };
+    }
+    
+    const comboSku = checkbox.dataset.comboSku; // SKU della seconda supercar (es. SC-006)
+    
+    // Recupera il prezzo base della seconda supercar dal foglio "Prodotti Prenotabili"
+    // Questo valore è memorizzato in bookingData.productData.supercarComboPrice
+    // che rappresenta il prezzo base della combo dal foglio Google
+    const supercarComboBasePrice = bookingData.productData?.supercarComboPrice || 0;
+    const mainCarBasePrice = bookingData.productData?.price || 0;
+    
+    // Il "prezzo fisso" della seconda supercar è la differenza tra:
+    // il prezzo base della combo e il prezzo della prima auto
+    const secondCarFixedPrice = Math.max(0, supercarComboBasePrice - mainCarBasePrice);
+    
+    // Calcola il prezzo della prima auto come:
+    // Prezzo totale combo - Prezzo fisso seconda auto
+    const firstCarPrice = Math.max(0, comboBasePrice - secondCarFixedPrice);
+    
+    console.log('💰 Calcolo prezzi combo:', {
+        comboBasePrice,
+        supercarComboBasePrice,
+        mainCarBasePrice,
+        secondCarFixedPrice,
+        firstCarPrice
+    });
     
     return {
         firstCarPrice,
-        secondCarPrice
+        secondCarPrice: secondCarFixedPrice
     };
 }
 
@@ -3897,36 +3937,48 @@ if (firstOption) {
         const comboSku = checkbox.dataset.comboSku;
         const comboName = checkbox.dataset.comboName || 'Seconda Supercar';
         
-        // ✅ CALCOLA PREZZI INDIVIDUALI CORRETTI
+        // ✅ NUOVA LOGICA: Prezzo fisso seconda auto
         const comboKey = getComboKey(mainSku, comboSku);
         const comboPricing = COMBO_PRICING[comboKey];
         
         if (comboPricing) {
-            // Trova il prezzo base della combo per il km selezionato
+            // Trova il prezzo della combo per il km selezionato
             const selectedOption = document.querySelector('.distance-option.selected');
             const selectedKm = selectedOption ? parseInt(selectedOption.dataset.km) : comboPricing.km[0];
             const kmIndex = comboPricing.km.indexOf(selectedKm);
-            const comboBasePrice = kmIndex >= 0 ? comboPricing.prices[kmIndex] : comboPricing.prices[0];
+            const comboTotalPrice = kmIndex >= 0 ? comboPricing.prices[kmIndex] : comboPricing.prices[0];
             
-            // Calcola i prezzi individuali
-            const { firstCarPrice, secondCarPrice } = calculateIndividualComboPrices(comboBasePrice);
+            // ✅ CALCOLA PREZZO FISSO SECONDA AUTO
+            // Il prezzo fisso è calcolato dal prezzo base della combo (primo km)
+            const supercarComboBasePrice = bookingData.productData?.supercarComboPrice || 0;
+            const mainCarBasePrice = bookingData.productData?.price || 0;
+            const secondCarFixedPrice = Math.max(0, supercarComboBasePrice - mainCarBasePrice);
             
-            // ✅ AGGIORNA IL RIEPILOGO CON I PREZZI CORRETTI
-            // Aggiorna il prezzo base (prima auto)
+            // ✅ CALCOLA PREZZO PRIMA AUTO
+            // Prezzo prima auto = Totale combo km selezionato - Prezzo fisso seconda auto
+            const firstCarPrice = Math.max(0, comboTotalPrice - secondCarFixedPrice);
+            
+            console.log('💰 Ricalcolo prezzi combo:', {
+                selectedKm,
+                comboTotalPrice,
+                secondCarFixedPrice,
+                firstCarPrice
+            });
+            
+            // ✅ AGGIORNA IL RIEPILOGO
             bookingData.basePrice = firstCarPrice;
             document.getElementById('basePrice').textContent = formatPrice(firstCarPrice);
             
-            // Aggiorna il nome e prezzo della seconda auto nel riepilogo
             const secondCarNameSpan = document.getElementById('secondCarName');
             const secondCarPriceSpan = document.getElementById('secondCarPriceAmount');
             
             if (secondCarNameSpan) secondCarNameSpan.textContent = comboName;
-            if (secondCarPriceSpan) secondCarPriceSpan.textContent = formatPrice(secondCarPrice);
+            if (secondCarPriceSpan) secondCarPriceSpan.textContent = formatPrice(secondCarFixedPrice);
             
-            // Aggiungi al totale
-            total = firstCarPrice + secondCarPrice;
+            // Totale = prima auto + seconda auto
+            total = firstCarPrice + secondCarFixedPrice;
         } else {
-            // Fallback per combo non speciali (comportamento originale)
+            // Fallback per combo non speciali
             const comboPrice = parseInt(checkbox.dataset.comboPrice) || 0;
             total += comboPrice;
         }
