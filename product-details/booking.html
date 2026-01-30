@@ -3693,41 +3693,47 @@ document.querySelectorAll('.huracan-passenger-radio').forEach(radio => {
 }
     } else {
     // ✅ Altre supercar: comportamento standard CON gestione prezzi combo
-    if (secondCarCheckbox) {
-        secondCarCheckbox.addEventListener('change', function() {
-            bookingData.secondCar = this.checked;
-            const comboPrice = parseInt(this.dataset.comboPrice) || 1490;
-            const comboName = this.dataset.comboName || 'Seconda Supercar';
-            
-            // ⭐ APPLICA/RIPRISTINA PREZZI COMBO IN TEMPO REALE
-            if (this.checked) {
-                if (hasCustomComboPricing()) {
-                    console.log('🎯 Combo speciale rilevata, aggiornamento prezzi immediato');
-                    applyComboDistancePricing();
-                }
-            } else {
-                // Ripristina prezzi originali quando si deseleziona
-                restoreOriginalDistancePricing();
-
-                // ✅ RE-RENDER CALENDARIO SE C'È LAMBORGHINI
-                // (aggiunto dopo restoreOriginalDistancePricing())
-                if (hasLamborghiniInBooking()) {
-                    console.log('🔄 Re-rendering calendario per Lamborghini');
-                    renderCalendar();
-                }
+if (secondCarCheckbox) {
+    secondCarCheckbox.addEventListener('change', function() {
+        bookingData.secondCar = this.checked;
+        const comboPrice = parseInt(this.dataset.comboPrice) || 1490;
+        const comboName = this.dataset.comboName || 'Seconda Supercar';
+        const comboSku = this.dataset.comboSku || null;
+        
+        // ⭐ APPLICA/RIPRISTINA PREZZI COMBO IN TEMPO REALE
+        if (this.checked) {
+            if (hasCustomComboPricing()) {
+                console.log('🎯 Combo speciale rilevata, aggiornamento prezzi immediato');
+                applyComboDistancePricing();
             }
             
-            document.getElementById('secondCarPrice').classList.toggle('hidden', !this.checked);
+            // ✅ AGGIORNA SERVIZI DINAMICAMENTE
+            updateServicesForCombo(true, comboSku);
+        } else {
+            // Ripristina prezzi originali quando si deseleziona
+            restoreOriginalDistancePricing();
+
+            // ✅ RE-RENDER CALENDARIO SE C'È LAMBORGHINI
+            if (hasLamborghiniInBooking()) {
+                console.log('🔄 Re-rendering calendario per Lamborghini');
+                renderCalendar();
+            }
             
-            const secondCarNameSpan = document.getElementById('secondCarName');
-            const secondCarPriceSpan = document.getElementById('secondCarPriceAmount');
-            
-            if (secondCarNameSpan) secondCarNameSpan.textContent = comboName;
-            if (secondCarPriceSpan) secondCarPriceSpan.textContent = formatPrice(comboPrice);
-            
-            updatePriceSummary();
-        });
-    }
+            // ✅ RIPRISTINA SERVIZI ORIGINALI
+            updateServicesForCombo(false);
+        }
+        
+        document.getElementById('secondCarPrice').classList.toggle('hidden', !this.checked);
+        
+        const secondCarNameSpan = document.getElementById('secondCarName');
+        const secondCarPriceSpan = document.getElementById('secondCarPriceAmount');
+        
+        if (secondCarNameSpan) secondCarNameSpan.textContent = comboName;
+        if (secondCarPriceSpan) secondCarPriceSpan.textContent = formatPrice(comboPrice);
+        
+        updatePriceSummary();
+    });
+}
 }
 }
 
@@ -6098,7 +6104,7 @@ function getServicePrices() {
             return {
                 photo: 35,
                 videoHd: 45,
-                video360: 25,
+                video360: 30,
                 passenger1: 25,
                 passenger2: 45
             };
@@ -6232,6 +6238,123 @@ function updateExtraServicesLanguage() {
     
     console.log('✅ Servizi extra aggiornati con traduzioni e prezzi dinamici');
 }      
+
+/**
+ * 🔄 Aggiorna dinamicamente servizi quando si aggiunge/rimuove seconda supercar
+ */
+function updateServicesForCombo(isComboActive, comboSku = null) {
+    const extraServicesContainer = document.getElementById('extraServicesContainer');
+    if (!extraServicesContainer) return;
+    
+    console.log('🔄 Aggiornamento servizi per combo:', { isComboActive, comboSku });
+    
+    // Determina se è combo Ferrari + Lamborghini
+    let isFerrariLamborghini = false;
+    
+    if (isComboActive && comboSku) {
+        const mainTitle = bookingData.productData.title.toLowerCase();
+        const comboTitle = comboSku.toLowerCase();
+        
+        const hasFerrari = mainTitle.includes('ferrari') || comboTitle.includes('ferrari');
+        const hasLamborghini = mainTitle.includes('lamborghini') || 
+                              mainTitle.includes('huracán') || 
+                              comboTitle.includes('lamborghini') || 
+                              comboTitle.includes('huracán');
+        
+        isFerrariLamborghini = hasFerrari && hasLamborghini;
+    }
+    
+    console.log('🎯 Combo Ferrari+Lamborghini rilevata:', isFerrariLamborghini);
+    
+    // Calcola prezzi e descrizioni
+    const prices = isFerrariLamborghini ? {
+        photo: 35,
+        videoHd: 45,
+        video360: 30,
+        passenger1: 25,
+        passenger2: 45
+    } : (bookingData.productData.title.toLowerCase().includes('ferrari') ? {
+        photo: 35,
+        videoHd: 25,
+        video360: 30,
+        passenger1: 25,
+        passenger2: 45
+    } : {
+        photo: 290,
+        videoHd: 490,
+        video360: 690,
+        passenger1: 50,
+        passenger2: 100
+    });
+    
+    const descKeys = isFerrariLamborghini ? {
+        photo: 'booking_service_photo_desc_combo',
+        videoHd: 'booking_service_video_hd_desc_combo',
+        video360: 'booking_service_video_360_desc_combo'
+    } : null;
+    
+    const i18n = window.i18nPDP();
+    
+    // Aggiorna checkbox servizi
+    extraServicesContainer.querySelectorAll('.extra-service').forEach(checkbox => {
+        const serviceId = checkbox.dataset.service;
+        const parentLabel = checkbox.closest('.checkbox-container');
+        if (!parentLabel) return;
+        
+        const descDiv = parentLabel.querySelector('.text-sm');
+        let newPrice = 0;
+        let descKey = null;
+        
+        if (serviceId === 'photo') {
+            newPrice = prices.photo;
+            descKey = descKeys?.photo;
+        } else if (serviceId === 'video-hd') {
+            newPrice = prices.videoHd;
+            descKey = descKeys?.videoHd;
+        } else if (serviceId === 'video-360') {
+            newPrice = prices.video360;
+            descKey = descKeys?.video360;
+        }
+        
+        // Aggiorna prezzo nel DOM e dataset
+        if (descDiv && i18n) {
+            let descriptionHTML = '';
+            if (descKey) {
+                descriptionHTML = ` - ${i18n.t(descKey)}`;
+            }
+            descDiv.innerHTML = `+${i18n.formatPrice(newPrice)}${descriptionHTML}`;
+        }
+        
+        // Aggiorna data-price per calcoli
+        checkbox.dataset.price = newPrice;
+        
+        // Se era selezionato, aggiorna anche il bookingData
+        if (checkbox.checked) {
+            const existingService = bookingData.extraServices.find(s => s.service === serviceId);
+            if (existingService) {
+                existingService.price = newPrice;
+            }
+        }
+    });
+    
+    // Aggiorna passeggeri
+    const passengerOptions = extraServicesContainer.querySelectorAll('label:has(.passenger-radio)');
+    passengerOptions.forEach((label, index) => {
+        const priceDiv = label.querySelector('div[style*="font-size: 12px"]');
+        if (priceDiv && i18n) {
+            if (index === 0) {
+                priceDiv.textContent = `+${i18n.formatPrice(prices.passenger1)}`;
+            } else {
+                priceDiv.textContent = `+${i18n.formatPrice(prices.passenger2)}`;
+            }
+        }
+    });
+    
+    // Ricalcola il totale
+    updatePriceSummary();
+    
+    console.log('✅ Servizi aggiornati dinamicamente');
+}
 
 // ========================================
 // 📱 GESTIONE DROPDOWN LINGUA MOBILE
