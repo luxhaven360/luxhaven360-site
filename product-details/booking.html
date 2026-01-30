@@ -2988,6 +2988,7 @@ if (skuPrefix === 'SC' && product.supercarComboSku && !isExistingCombo) {
                 if (checkbox) {
                     checkbox.dataset.comboPrice = additionalPrice;
                     checkbox.dataset.comboName = secondCar.title;
+                    checkbox.dataset.comboTitle = secondCar.title; // ✅ SALVA IL TITOLO COMPLETO
                 }
                 
                 secondCarSection.style.display = 'block';
@@ -3692,13 +3693,20 @@ document.querySelectorAll('.huracan-passenger-radio').forEach(radio => {
     });
 }
     } else {
-    // ✅ Altre supercar: comportamento standard CON gestione prezzi combo
+      // ✅ Altre supercar: comportamento standard CON gestione prezzi combo
 if (secondCarCheckbox) {
     secondCarCheckbox.addEventListener('change', function() {
         bookingData.secondCar = this.checked;
         const comboPrice = parseInt(this.dataset.comboPrice) || 1490;
         const comboName = this.dataset.comboName || 'Seconda Supercar';
         const comboSku = this.dataset.comboSku || null;
+        const comboTitle = this.dataset.comboTitle || null; // ✅ RECUPERA IL TITOLO
+        
+        console.log('🎯 Checkbox seconda supercar:', { 
+            checked: this.checked, 
+            comboSku, 
+            comboTitle 
+        });
         
         // ⭐ APPLICA/RIPRISTINA PREZZI COMBO IN TEMPO REALE
         if (this.checked) {
@@ -3707,8 +3715,8 @@ if (secondCarCheckbox) {
                 applyComboDistancePricing();
             }
             
-            // ✅ AGGIORNA SERVIZI DINAMICAMENTE
-            updateServicesForCombo(true, comboSku);
+            // ✅ AGGIORNA SERVIZI DINAMICAMENTE (passa SKU e TITOLO)
+            updateServicesForCombo(true, comboSku, comboTitle);
         } else {
             // Ripristina prezzi originali quando si deseleziona
             restoreOriginalDistancePricing();
@@ -3720,7 +3728,7 @@ if (secondCarCheckbox) {
             }
             
             // ✅ RIPRISTINA SERVIZI ORIGINALI
-            updateServicesForCombo(false);
+            updateServicesForCombo(false, null, null);
         }
         
         document.getElementById('secondCarPrice').classList.toggle('hidden', !this.checked);
@@ -6242,31 +6250,37 @@ function updateExtraServicesLanguage() {
 /**
  * 🔄 Aggiorna dinamicamente servizi quando si aggiunge/rimuove seconda supercar
  */
-function updateServicesForCombo(isComboActive, comboSku = null) {
+function updateServicesForCombo(isComboActive, comboSku = null, comboTitle = null) {
     const extraServicesContainer = document.getElementById('extraServicesContainer');
     if (!extraServicesContainer) return;
     
-    console.log('🔄 Aggiornamento servizi per combo:', { isComboActive, comboSku });
+    console.log('🔄 Aggiornamento servizi per combo:', { isComboActive, comboSku, comboTitle });
     
     // Determina se è combo Ferrari + Lamborghini
     let isFerrariLamborghini = false;
     
-    if (isComboActive && comboSku) {
+    if (isComboActive && comboTitle) {
         const mainTitle = bookingData.productData.title.toLowerCase();
-        const comboTitle = comboSku.toLowerCase();
+        const comboTitleLower = comboTitle.toLowerCase();
         
-        const hasFerrari = mainTitle.includes('ferrari') || comboTitle.includes('ferrari');
+        const hasFerrari = mainTitle.includes('ferrari') || comboTitleLower.includes('ferrari');
         const hasLamborghini = mainTitle.includes('lamborghini') || 
                               mainTitle.includes('huracán') || 
-                              comboTitle.includes('lamborghini') || 
-                              comboTitle.includes('huracán');
+                              comboTitleLower.includes('lamborghini') || 
+                              comboTitleLower.includes('huracán');
         
         isFerrariLamborghini = hasFerrari && hasLamborghini;
+        
+        console.log('🔍 Rilevamento combo:', {
+            mainTitle,
+            comboTitle: comboTitleLower,
+            hasFerrari,
+            hasLamborghini,
+            isFerrariLamborghini
+        });
     }
     
-    console.log('🎯 Combo Ferrari+Lamborghini rilevata:', isFerrariLamborghini);
-    
-    // Calcola prezzi e descrizioni
+    // Calcola prezzi e descrizioni in base alla combo
     const prices = isFerrariLamborghini ? {
         photo: 35,
         videoHd: 45,
@@ -6293,6 +6307,9 @@ function updateServicesForCombo(isComboActive, comboSku = null) {
         video360: 'booking_service_video_360_desc_combo'
     } : null;
     
+    console.log('💰 Prezzi calcolati:', prices);
+    console.log('📝 Chiavi descrizioni:', descKeys);
+    
     const i18n = window.i18nPDP();
     
     // Aggiorna checkbox servizi
@@ -6315,6 +6332,8 @@ function updateServicesForCombo(isComboActive, comboSku = null) {
             newPrice = prices.video360;
             descKey = descKeys?.video360;
         }
+        
+        console.log(`🔧 Aggiornamento ${serviceId}:`, { newPrice, descKey });
         
         // Aggiorna prezzo nel DOM e dataset
         if (descDiv && i18n) {
