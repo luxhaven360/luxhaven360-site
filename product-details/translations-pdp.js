@@ -409,6 +409,12 @@ booking_spec_included_services: "Servizi Inclusi",
 booking_spec_requirements: "Requisiti",
 booking_spec_accommodation: "Alloggio",
 
+// === AGGIUNGI UNA SECONDA SUPERCAR ===
+booking_add_car_prefix: "Aggiungi",
+booking_combo_price_extra: "aggiuntivi",
+booking_combo_price_extra_with_services: "aggiuntivi – Include servizi fotografici e video",
+booking_add_passengers: "Aggiungi Passeggeri",
+
 // === SERVIZI AGGIUNTIVI ===
 booking_services_title: "Servizi Aggiuntivi Disponibili",
 booking_services_subtitle: "Personalizza la tua esperienza con servizi esclusivi",
@@ -1055,6 +1061,11 @@ booking_spec_included_services: "Included Services",
 booking_spec_requirements: "Requirements",
 booking_spec_accommodation: "Accommodation",
 
+booking_add_car_prefix: "Add",
+booking_combo_price_extra: "extra",
+booking_combo_price_extra_with_services: "extra – Includes photo and video services",
+booking_add_passengers: "Add Passengers",
+
 // === ADDITIONAL SERVICES ===
 booking_services_title: "Additional Services Available",
 booking_services_subtitle: "Customize your experience with exclusive services",
@@ -1682,6 +1693,11 @@ booking_spec_included_services: "Services inclus",
 booking_spec_requirements: "Exigences",
 booking_spec_accommodation: "Hébergement",
 
+booking_add_car_prefix: "Ajouter",
+booking_combo_price_extra: "supplémentaires",
+booking_combo_price_extra_with_services: "supplémentaires – Inclut services photo et vidéo",
+booking_add_passengers: "Ajouter des passagers",
+
 // === SERVICES SUPPLÉMENTAIRES ===
 booking_services_title: "Services Supplémentaires Disponibles",
 booking_services_subtitle: "Personnalisez votre expérience avec des services exclusifs",
@@ -2302,6 +2318,11 @@ booking_spec_accessibility: "Zugänglichkeit",
 booking_spec_included_services: "Enthaltene Services",
 booking_spec_requirements: "Anforderungen",
 booking_spec_accommodation: "Unterkunft",
+
+booking_add_car_prefix: "hinzufügen",  // Nota: va DOPO il nome in tedesco
+booking_combo_price_extra: "zusätzlich",
+booking_combo_price_extra_with_services: "zusätzlich – Inklusive Foto- und Videoservice",
+booking_add_passengers: "Passagiere hinzufügen",
 
 // === ZUSÄTZLICHE SERVICES ===
 booking_services_title: "Verfügbare Zusatzleistungen",
@@ -2930,6 +2951,11 @@ booking_spec_accessibility: "Accesibilidad",
 booking_spec_included_services: "Servicios incluidos",
 booking_spec_requirements: "Requisitos",
 booking_spec_accommodation: "Alojamiento",
+
+booking_add_car_prefix: "Añadir",
+booking_combo_price_extra: "adicionales",
+booking_combo_price_extra_with_services: "adicionales – Incluye servicios fotográficos y de vídeo",
+booking_add_passengers: "Añadir pasajeros",
 
 // === SERVICIOS ADICIONALES ===
 booking_services_title: "Servicios Adicionales Disponibles",
