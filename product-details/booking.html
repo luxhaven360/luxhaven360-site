@@ -2847,10 +2847,53 @@ if (skuPrefix === 'SC' && product.supercarComboSku && !isExistingCombo) {
                     video360: 'Su una vettura (marchi diversi)'
                 };
                 
-                let labelHTML = `
-                    <div class="font-semibold mb-1">Aggiungi ${secondCar.title}</div>
-                    <div class="text-sm" style="color: #a59173;">${formatPrice(additionalPrice)} aggiuntivi - Include servizi fotografici e video</div>
-                `;
+                // ✅ COSTRUISCI TITOLO CON TRADUZIONE DINAMICA
+const i18n = window.i18nPDP && window.i18nPDP();
+let carTitle = '';
+if (i18n) {
+    const addPrefix = i18n.t('booking_add_car_prefix');
+    const currentLang = i18n.currentLang;
+    
+    // Tedesco: nome + "hinzufügen" (va dopo)
+    if (currentLang === 'de') {
+        carTitle = `${secondCar.title} ${addPrefix}`;
+    } else {
+        // Altre lingue: "Aggiungi/Add/..." + nome
+        carTitle = `${addPrefix} ${secondCar.title}`;
+    }
+} else {
+    // Fallback se i18n non disponibile
+    carTitle = `Aggiungi ${secondCar.title}`;
+}
+
+// ✅ COSTRUISCI DESCRIZIONE CON TRADUZIONE E PREZZO FORMATTATO
+let priceDescription = '';
+if (i18n) {
+    const formattedPrice = i18n.formatPrice(additionalPrice);
+    
+    // Determina se è combo Lamborghini + Ferrari
+    const isLamborghiniFerrariCombo = 
+        (product.title.toLowerCase().includes('lamborghini') && secondCar.title.toLowerCase().includes('ferrari')) ||
+        (product.title.toLowerCase().includes('ferrari') && secondCar.title.toLowerCase().includes('lamborghini'));
+    
+    if (isLamborghiniFerrariCombo) {
+        // Caso B: Include servizi fotografici e video
+        const extraTextKey = 'booking_combo_price_extra_with_services';
+        priceDescription = `${formattedPrice} ${i18n.t(extraTextKey)}`;
+    } else {
+        // Caso A: Solo "aggiuntivi/extra/..."
+        const extraTextKey = 'booking_combo_price_extra';
+        priceDescription = `${formattedPrice} ${i18n.t(extraTextKey)}`;
+    }
+} else {
+    // Fallback
+    priceDescription = `${formatPrice(additionalPrice)} aggiuntivi`;
+}
+
+let labelHTML = `
+    <div class="font-semibold mb-1" id="secondCarTitle">${carTitle}</div>
+    <div class="text-sm" style="color: #a59173;" id="secondCarDescription">${priceDescription}</div>
+`;
                 
                 // ✅ HURACÁN: Servizi PREMIUM dentro la card
                 if (isHuracanSpyder) {
@@ -2926,7 +2969,7 @@ if (skuPrefix === 'SC' && product.supercarComboSku && !isExistingCombo) {
                             ${comboHas4Seats ? `
                             <!-- Passeggeri Extra -->
                             <div style="border-top: 1px solid rgba(212, 175, 55, 0.2); padding-top: 16px; margin-top: 16px;">
-                                <div style="font-size: 0.9rem; font-weight: 600; color: #fff; margin-bottom: 12px;">Aggiungi Passeggeri</div>
+                                <div style="font-size: 0.9rem; font-weight: 600; color: #fff; margin-bottom: 12px;" id="huracanPassengersTitle" data-i18n="booking_add_passengers">Aggiungi Passeggeri</div>
                                 <div style="display: flex; gap: 12px;">
                                     <label class="huracan-passenger-option" style="display: flex; align-items: center; gap: 10px; padding: 14px 18px; background: rgba(20, 15, 12, 0.8); border: 2px solid rgba(80, 60, 45, 0.4); border-radius: 10px; cursor: pointer; flex: 1; transition: all 0.3s ease;">
                                         <input type="radio" name="huracanPassengers" value="1" class="huracan-passenger-radio" style="width: 18px; height: 18px; accent-color: #D4AF37;">
@@ -2992,6 +3035,9 @@ if (skuPrefix === 'SC' && product.supercarComboSku && !isExistingCombo) {
                 }
                 
                 secondCarSection.style.display = 'block';
+                
+                // ✅ AGGIORNA TRADUZIONI INIZIALI
+                updateSecondCarTranslations();
             }
         })
         .catch(err => {
@@ -5979,6 +6025,7 @@ document.addEventListener('languageChanged', function(e) {
 
     // ✅ Aggiorna servizi aggiuntivi
     updateExtraServicesLanguage();
+    updateSecondCarTranslations();
 });
 
         /**
@@ -6246,6 +6293,78 @@ function updateExtraServicesLanguage() {
     
     console.log('✅ Servizi extra aggiornati con traduzioni e prezzi dinamici');
 }      
+
+/**
+ * 🌍 Aggiorna traduzioni dinamiche della card "Aggiungi seconda supercar"
+ */
+function updateSecondCarTranslations() {
+    const i18n = window.i18nPDP();
+    if (!i18n) return;
+    
+    const checkbox = document.getElementById('secondCarCheckbox');
+    if (!checkbox) return;
+    
+    const comboName = checkbox.dataset.comboName;
+    const comboPrice = parseInt(checkbox.dataset.comboPrice) || 0;
+    
+    if (!comboName) return;
+    
+    const titleDiv = document.getElementById('secondCarTitle');
+    const descDiv = document.getElementById('secondCarDescription');
+    
+    if (!titleDiv || !descDiv) return;
+    
+    // Calcola prezzo aggiuntivo
+    const basePrice = bookingData.basePrice || 0;
+    const additionalPrice = Math.max(0, comboPrice - basePrice);
+    
+    // ✅ COSTRUISCI TITOLO CON LINGUA CORRENTE
+    const addPrefix = i18n.t('booking_add_car_prefix');
+    const currentLang = i18n.currentLang;
+    
+    let carTitle = '';
+    if (currentLang === 'de') {
+        // Tedesco: nome + "hinzufügen" (va dopo)
+        carTitle = `${comboName} ${addPrefix}`;
+    } else {
+        // Altre lingue: "Aggiungi/Add/..." + nome
+        carTitle = `${addPrefix} ${comboName}`;
+    }
+    
+    // ✅ COSTRUISCI DESCRIZIONE CON PREZZO FORMATTATO
+    const formattedPrice = i18n.formatPrice(additionalPrice);
+    
+    // Determina se è combo Lamborghini + Ferrari
+    const mainTitle = bookingData.productData.title.toLowerCase();
+    const comboTitle = comboName.toLowerCase();
+    
+    const isLamborghiniFerrariCombo = 
+        (mainTitle.includes('lamborghini') && comboTitle.includes('ferrari')) ||
+        (mainTitle.includes('ferrari') && (comboTitle.includes('lamborghini') || comboTitle.includes('huracán')));
+    
+    let priceDescription = '';
+    if (isLamborghiniFerrariCombo) {
+        // Caso B: Include servizi fotografici e video
+        const extraTextKey = 'booking_combo_price_extra_with_services';
+        priceDescription = `${formattedPrice} ${i18n.t(extraTextKey)}`;
+    } else {
+        // Caso A: Solo "aggiuntivi/extra/..."
+        const extraTextKey = 'booking_combo_price_extra';
+        priceDescription = `${formattedPrice} ${i18n.t(extraTextKey)}`;
+    }
+    
+    // ✅ AGGIORNA DOM
+    titleDiv.textContent = carTitle;
+    descDiv.textContent = priceDescription;
+    
+    // ✅ AGGIORNA ANCHE "AGGIUNGI PASSEGGERI" SE PRESENTE
+    const passengersTitle = document.getElementById('huracanPassengersTitle');
+    if (passengersTitle) {
+        passengersTitle.textContent = i18n.t('booking_add_passengers');
+    }
+    
+    console.log('✅ Traduzioni card seconda supercar aggiornate:', { carTitle, priceDescription });
+}
 
 /**
  * 🔄 Aggiorna dinamicamente servizi quando si aggiunge/rimuove seconda supercar
