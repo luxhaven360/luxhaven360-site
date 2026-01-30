@@ -6280,7 +6280,7 @@ function updateServicesForCombo(isComboActive, comboSku = null, comboTitle = nul
         });
     }
     
-    // Calcola prezzi e descrizioni in base alla combo
+    // Calcola prezzi in base alla combo
     const prices = isFerrariLamborghini ? {
         photo: 35,
         videoHd: 45,
@@ -6301,41 +6301,61 @@ function updateServicesForCombo(isComboActive, comboSku = null, comboTitle = nul
         passenger2: 100
     });
     
+    // ✅ FIX: Calcola chiavi descrizioni in base alla combo
     const descKeys = isFerrariLamborghini ? {
         photo: 'booking_service_photo_desc_combo',
         videoHd: 'booking_service_video_hd_desc_combo',
         video360: 'booking_service_video_360_desc_combo'
-    } : null;
+    } : (bookingData.productData.title.toLowerCase().includes('ferrari') ? {
+        photo: null, // Ferrari singola: nessuna descrizione speciale per photo
+        videoHd: null, // Ferrari singola: nessuna descrizione speciale per video HD
+        video360: 'booking_service_video_360_desc_single_ferrari' // Ferrari singola: descrizione speciale per 360°
+    } : {
+        photo: 'booking_service_photo_desc_standard',
+        videoHd: 'booking_service_video_hd_desc_standard',
+        video360: 'booking_service_video_360_desc_standard'
+    });
     
     console.log('💰 Prezzi calcolati:', prices);
     console.log('📝 Chiavi descrizioni:', descKeys);
     
     const i18n = window.i18nPDP();
     
-    // Aggiorna checkbox servizi
+    // ✅ FIX: Aggiorna checkbox servizi (TITOLI + DESCRIZIONI + PREZZI)
     extraServicesContainer.querySelectorAll('.extra-service').forEach(checkbox => {
         const serviceId = checkbox.dataset.service;
         const parentLabel = checkbox.closest('.checkbox-container');
         if (!parentLabel) return;
         
+        const titleDiv = parentLabel.querySelector('.font-semibold');
         const descDiv = parentLabel.querySelector('.text-sm');
+        
         let newPrice = 0;
         let descKey = null;
+        let titleKey = '';
         
         if (serviceId === 'photo') {
             newPrice = prices.photo;
             descKey = descKeys?.photo;
+            titleKey = 'booking_service_photo_title';
         } else if (serviceId === 'video-hd') {
             newPrice = prices.videoHd;
             descKey = descKeys?.videoHd;
+            titleKey = 'booking_service_video_hd_title';
         } else if (serviceId === 'video-360') {
             newPrice = prices.video360;
             descKey = descKeys?.video360;
+            titleKey = 'booking_service_video_360_title';
         }
         
-        console.log(`🔧 Aggiornamento ${serviceId}:`, { newPrice, descKey });
+        console.log(`🔧 Aggiornamento ${serviceId}:`, { newPrice, descKey, titleKey });
         
-        // Aggiorna prezzo nel DOM e dataset
+        // ✅ FIX: Aggiorna TITOLO del servizio
+        if (titleDiv && i18n && titleKey) {
+            titleDiv.textContent = i18n.t(titleKey);
+        }
+        
+        // ✅ FIX: Aggiorna DESCRIZIONE con prezzo formattato
         if (descDiv && i18n) {
             let descriptionHTML = '';
             if (descKey) {
@@ -6372,7 +6392,7 @@ function updateServicesForCombo(isComboActive, comboSku = null, comboTitle = nul
     // Ricalcola il totale
     updatePriceSummary();
     
-    console.log('✅ Servizi aggiornati dinamicamente');
+    console.log('✅ Servizi aggiornati dinamicamente (titoli + descrizioni + prezzi)');
 }
 
 // ========================================
