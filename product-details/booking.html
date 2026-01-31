@@ -4229,8 +4229,19 @@ if (firstOption) {
         const extraServicesDiv = document.getElementById('extraServicesPrice');
         extraServicesDiv.innerHTML = '';
         
+        // ✅ NUOVO: Controlla se è Lamborghini + seconda supercar attiva
+        const mainTitle = bookingData.productData?.title?.toLowerCase() || '';
+        const isLamborghiniMain = mainTitle.includes('lamborghini') || mainTitle.includes('huracán');
+
+        // ✅ REGOLA: Mostra servizi SOLO se seconda supercar è attiva (per Lamborghini)
+        const shouldShowServices = isLamborghiniMain ? bookingData.secondCar : true;
+
         bookingData.extraServices.forEach(service => {
-    total += service.price;
+    // ✅ NUOVO: Conta nel totale SOLO se dovrebbero essere mostrati
+    if (shouldShowServices) {
+        total += service.price;
+    }
+    
     const i18n = window.i18nPDP();
     
     // ✅ Usa chiavi di traduzione
@@ -4248,13 +4259,16 @@ if (firstOption) {
         serviceName += ` (${service.quantity})`;
     }
     
-    const div = document.createElement('div');
-    div.className = 'flex justify-between';
-    div.innerHTML = `
-        <span class="text-sm" style="color: #c9a891;">${serviceName}</span>
-        <span class="font-semibold text-sm">${formatPrice(service.price)}</span>
-    `;
-    extraServicesDiv.appendChild(div);
+    // ✅ NUOVO: Mostra nel riepilogo SOLO se dovrebbero essere visibili
+    if (shouldShowServices) {
+        const div = document.createElement('div');
+        div.className = 'flex justify-between';
+        div.innerHTML = `
+            <span class="text-sm" style="color: #c9a891;">${serviceName}</span>
+            <span class="font-semibold text-sm">${formatPrice(service.price)}</span>
+        `;
+        extraServicesDiv.appendChild(div);
+    }
 });
         
         bookingData.total = total;
@@ -6564,7 +6578,7 @@ function updateServicesForCombo(isComboActive, comboSku = null, comboTitle = nul
     
     // ✅ FIX: Se combo non attiva, deseleziona visivamente i checkbox ma mantieni i dati
     if (!isComboActive) {
-        console.log('❌ Combo deselezionata - deseleziono visivamente i checkbox ma mantengo i dati');
+        console.log('❌ Combo deselezionata - deseleziono visivamente i checkbox ma mantengo i dati in bookingData.extraServices');
         
         extraServicesContainer.querySelectorAll('.extra-service').forEach(checkbox => {
             checkbox.checked = false;
@@ -6579,6 +6593,10 @@ function updateServicesForCombo(isComboActive, comboSku = null, comboTitle = nul
             lbl.style.borderColor = 'rgba(212, 175, 55, 0.3)';
             lbl.style.background = 'rgba(212, 175, 55, 0.08)';
         });
+        
+        // ✅ IMPORTANTE: NON cancellare bookingData.extraServices
+        // I servizi vengono mantenuti per essere ripristinati quando si riattiva la combo
+        console.log('📦 Servizi memorizzati (saranno ripristinati alla riattivazione):', bookingData.extraServices);
         
         updatePriceSummary();
         return;
