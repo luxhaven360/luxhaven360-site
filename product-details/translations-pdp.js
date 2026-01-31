@@ -549,6 +549,11 @@ booking_summary_total: "Totale",
 booking_summary_btn: "Conferma Prenotazione",
 booking_summary_secure: "Prenotazione sicura e protetta",
 
+// Second Car Card
+booking_add_second_car: "Aggiungi {car}",
+booking_additional: "aggiuntivi",
+booking_second_car_description: "Include servizi fotografici e video",
+
 // Policies
 booking_policies_title: "Politiche",
 booking_policy_refund_label: "Rimborso:",
@@ -1188,6 +1193,11 @@ booking_summary_total: "Total",
 booking_summary_btn: "Confirm Booking",
 booking_summary_secure: "Secure and protected booking",
 
+// Second Car Card
+booking_add_second_car: "Add {car}",
+booking_additional: "additional",
+booking_second_car_description: "Includes photography and video services",
+
 booking_policies_title: "Policies",
 booking_policy_refund_label: "Refund:",
 booking_policy_refund_text: "Full refund up to 48 hours before booking.",
@@ -1820,6 +1830,11 @@ booking_summary_total: "Total",
 booking_summary_btn: "Confirmer Réservation",
 booking_summary_secure: "Réservation sécurisée et protégée",
 
+// Second Car Card
+booking_add_second_car: "Ajouter {car}",
+booking_additional: "supplémentaires",
+booking_second_car_description: "Inclut services photo et vidéo",
+
 booking_policies_title: "Politiques",
 booking_policy_refund_label: "Remboursement :",
 booking_policy_refund_text: "Remboursement complet jusqu'à 48 heures avant la réservation.",
@@ -2445,6 +2460,11 @@ booking_summary_second_car: "Zweiter Supercar",
 booking_summary_total: "Gesamt",
 booking_summary_btn: "Buchung Bestätigen",
 booking_summary_secure: "Sichere und geschützte Buchung",
+
+// Second Car Card
+booking_add_second_car: "{car} Hinzufügen",
+booking_additional: "zusätzlich",
+booking_second_car_description: "Inklusive Foto- und Videoservices",
 
 booking_policies_title: "Richtlinien",
 booking_policy_refund_label: "Rückerstattung:",
@@ -3078,6 +3098,11 @@ booking_summary_second_car: "Segundo Supercar",
 booking_summary_total: "Total",
 booking_summary_btn: "Confirmar Reserva",
 booking_summary_secure: "Reserva segura y protegida",
+
+// Second Car Card
+booking_add_second_car: "Añadir {car}",
+booking_additional: "adicionales",
+booking_second_car_description: "Incluye servicios fotográficos y vídeo",
 
 booking_policies_title: "Políticas",
 booking_policy_refund_label: "Reembolso:",
