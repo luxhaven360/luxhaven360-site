@@ -6024,6 +6024,47 @@ document.addEventListener('languageChanged', function(e) {
     updateHuracanServicesLanguage();
 });
 
+// ✅ FIX: Aggiorna titolo "Aggiungi Passeggeri" in extraServicesContainer al cambio lingua
+function updatePassengersSectionTitle() {
+    const i18n = window.i18nPDP();
+    if (!i18n) return;
+    
+    const extraServicesContainer = document.getElementById('extraServicesContainer');
+    if (!extraServicesContainer) return;
+    
+    // Aggiorna titolo sezione passeggeri nella card servizi standard
+    const passengerContainers = extraServicesContainer.querySelectorAll('.checkbox-container');
+    passengerContainers.forEach(container => {
+        const titleDiv = container.querySelector('.font-semibold');
+        if (titleDiv) {
+            const titleText = titleDiv.textContent.trim();
+            // Verifica se contiene testi relativi ai passeggeri in qualsiasi lingua
+            if (titleText.includes('Passeggeri') || 
+                titleText.includes('Passengers') || 
+                titleText.includes('Passagers') ||
+                titleText.includes('Passagiere') ||
+                titleText.includes('Pasajeros')) {
+                titleDiv.textContent = i18n.t('booking_passengers_section_title');
+                console.log('✅ Titolo sezione passeggeri aggiornato');
+            }
+        }
+    });
+}
+
+// Chiama la funzione quando cambia la lingua
+document.addEventListener('languageChanged', function(e) {
+    updatePassengersSectionTitle();
+    
+    // Aggiorna anche i servizi se c'è una combo attiva
+    if (bookingData.isComboActive) {
+        updateServicesForCombo(
+            bookingData.isComboActive, 
+            bookingData.comboSku, 
+            bookingData.comboTitle
+        );
+    }
+});
+
         /**
  * 🕐 Aggiorna formattazione orari nel dropdown
  */
@@ -6448,16 +6489,14 @@ function updateHuracanServicesLanguage() {
         passengerTwoLabel.textContent = i18n.t('booking_huracan_passenger_two');
     }
     
-    // Aggiorna prezzi passeggeri
+    // ✅ FIX: Aggiorna prezzi passeggeri con valori FISSI corretti (non leggere dal DOM)
     const passengerRadios = huracanServices.querySelectorAll('.huracan-passenger-radio');
     passengerRadios.forEach((radio, index) => {
         const priceDiv = radio.parentElement?.querySelector('div[style*="font-size: 0.75rem"]');
         if (priceDiv) {
-            const priceText = priceDiv.textContent.replace(/[^\d.]/g, '');
-            const price = parseFloat(priceText) || 0;
-            if (price > 0) {
-                priceDiv.textContent = `+${i18n.formatPrice(price)}`;
-            }
+            // ✅ Usa sempre i prezzi corretti: 25€ per 1 passeggero, 45€ per 2 passeggeri
+            const correctPrice = (index === 0) ? 25 : 45;
+            priceDiv.textContent = `+${i18n.formatPrice(correctPrice)}`;
         }
     });
     
@@ -6593,16 +6632,41 @@ function updateServicesForCombo(isComboActive, comboSku = null, comboTitle = nul
         }
     });
     
-    // Aggiorna passeggeri
+    // ✅ FIX: Aggiorna TITOLI servizi al cambio lingua
+    const photoTitle = extraServicesContainer.querySelector('input[data-service="photo"]')?.closest('.checkbox-container')?.querySelector('.font-semibold');
+    if (photoTitle && i18n) {
+        photoTitle.textContent = i18n.t('booking_service_photo_title');
+    }
+
+    const videoHdTitle = extraServicesContainer.querySelector('input[data-service="video-hd"]')?.closest('.checkbox-container')?.querySelector('.font-semibold');
+    if (videoHdTitle && i18n) {
+        videoHdTitle.textContent = i18n.t('booking_service_video_hd_title');
+    }
+
+    const video360Title = extraServicesContainer.querySelector('input[data-service="video-360"]')?.closest('.checkbox-container')?.querySelector('.font-semibold');
+    if (video360Title && i18n) {
+        video360Title.textContent = i18n.t('booking_service_video_360_title');
+    }
+    
+    // ✅ FIX: Aggiorna passeggeri con TITOLI + PREZZI corretti
     const passengerOptions = extraServicesContainer.querySelectorAll('label:has(.passenger-radio)');
     passengerOptions.forEach((label, index) => {
+        // Aggiorna TESTO dell'etichetta
+        const labelDiv = label.querySelector('div[style*="font-size: 14px"]');
+        if (labelDiv && i18n) {
+            if (index === 0) {
+                labelDiv.textContent = i18n.t('booking_passengers_one_label');
+            } else {
+                labelDiv.textContent = i18n.t('booking_passengers_two_label');
+            }
+        }
+        
+        // Aggiorna PREZZO con valore fisso (non da prices.passenger1/2 che potrebbe essere errato)
         const priceDiv = label.querySelector('div[style*="font-size: 12px"]');
         if (priceDiv && i18n) {
-            if (index === 0) {
-                priceDiv.textContent = `+${i18n.formatPrice(prices.passenger1)}`;
-            } else {
-                priceDiv.textContent = `+${i18n.formatPrice(prices.passenger2)}`;
-            }
+            // ✅ Usa sempre i prezzi corretti: 25€ per 1 passeggero, 45€ per 2 passeggeri
+            const correctPrice = (index === 0) ? 25 : 45;
+            priceDiv.textContent = `+${i18n.formatPrice(correctPrice)}`;
         }
     });
     
