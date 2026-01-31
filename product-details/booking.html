@@ -3595,6 +3595,11 @@ if (skuPrefix === 'SC') {
         const comboPrice = parseInt(this.dataset.comboPrice) || 1490;
         const comboName = this.dataset.comboName || 'Seconda Supercar';
         
+        // ✅ FIX: Salva stato combo in bookingData per il listener languageChanged
+        bookingData.isComboActive = this.checked;
+        bookingData.comboSku = this.dataset.comboSku || null;
+        bookingData.comboTitle = this.dataset.comboName || null;
+        
         // ⭐ APPLICA/RIPRISTINA PREZZI COMBO IN TEMPO REALE
         if (this.checked) {
             if (hasCustomComboPricing()) {
@@ -3619,6 +3624,33 @@ if (skuPrefix === 'SC') {
             huracanServices.style.display = this.checked ? 'block' : 'none';
 
             if (this.checked) {
+                // ✅ FIX: Aggiorna lingua della card quando viene riselezionata
+                setTimeout(() => {
+                    updateHuracanServicesLanguage();
+                    
+                    // ✅ FIX: Ripristina stato dei checkbox dei servizi
+                    document.querySelectorAll('.huracan-service-checkbox').forEach(cb => {
+                        const service = cb.dataset.service;
+                        const isSelected = bookingData.extraServices.find(s => s.service === service);
+                        cb.checked = !!isSelected;
+                    });
+                    
+                    // ✅ FIX: Ripristina stato dei radio dei passeggeri
+                    const selectedPassengers = bookingData.extraServices.find(s => s.service === 'extra-passengers');
+                    if (selectedPassengers) {
+                        const passengerRadio = document.querySelector(`.huracan-passenger-radio[value="${selectedPassengers.quantity}"]`);
+                        if (passengerRadio) {
+                            passengerRadio.checked = true;
+                            passengerRadio.dataset.wasChecked = 'true';
+                            const selectedLabel = passengerRadio.closest('.huracan-passenger-option');
+                            if (selectedLabel) {
+                                selectedLabel.style.borderColor = '#D4AF37';
+                                selectedLabel.style.background = 'rgba(212, 175, 55, 0.12)';
+                            }
+                        }
+                    }
+                }, 50);
+                
                 setTimeout(() => {
                     document.querySelectorAll('.huracan-service-checkbox').forEach(cb => {
                         const newCb = cb.cloneNode(true);
@@ -3711,10 +3743,21 @@ document.querySelectorAll('.huracan-passenger-radio').forEach(radio => {
             }
             
             if (!this.checked) {
+                // ✅ FIX: Deseleziona visivamente i checkbox ma NON cancellare i servizi da bookingData
+                // I servizi vengono mantenuti per essere ripristinati quando si riseleziona la combo
                 huracanServices.querySelectorAll('.huracan-service-checkbox').forEach(cb => {
                     cb.checked = false;
                 });
-                bookingData.extraServices = [];
+                
+                // ✅ FIX: Deseleziona visivamente i radio passeggeri
+                huracanServices.querySelectorAll('.huracan-passenger-radio').forEach(radio => {
+                    radio.checked = false;
+                    radio.dataset.wasChecked = 'false';
+                });
+                huracanServices.querySelectorAll('.huracan-passenger-option').forEach(lbl => {
+                    lbl.style.borderColor = 'rgba(80, 60, 45, 0.4)';
+                    lbl.style.background = 'rgba(20, 15, 12, 0.8)';
+                });
             }
         }
         
@@ -3739,6 +3782,11 @@ if (secondCarCheckbox) {
         const comboName = this.dataset.comboName || 'Seconda Supercar';
         const comboSku = this.dataset.comboSku || null;
         const comboTitle = this.dataset.comboTitle || null; // ✅ RECUPERA IL TITOLO
+        
+        // ✅ FIX: Salva stato combo in bookingData per il listener languageChanged
+        bookingData.isComboActive = this.checked;
+        bookingData.comboSku = comboSku;
+        bookingData.comboTitle = comboTitle;
         
         console.log('🎯 Checkbox seconda supercar:', { 
             checked: this.checked, 
@@ -6514,6 +6562,28 @@ function updateServicesForCombo(isComboActive, comboSku = null, comboTitle = nul
     
     console.log('🔄 Aggiornamento servizi per combo:', { isComboActive, comboSku, comboTitle });
     
+    // ✅ FIX: Se combo non attiva, deseleziona visivamente i checkbox ma mantieni i dati
+    if (!isComboActive) {
+        console.log('❌ Combo deselezionata - deseleziono visivamente i checkbox ma mantengo i dati');
+        
+        extraServicesContainer.querySelectorAll('.extra-service').forEach(checkbox => {
+            checkbox.checked = false;
+        });
+        
+        extraServicesContainer.querySelectorAll('.passenger-radio').forEach(radio => {
+            radio.checked = false;
+            radio.dataset.wasChecked = 'false';
+        });
+        
+        extraServicesContainer.querySelectorAll('label:has(.passenger-radio)').forEach(lbl => {
+            lbl.style.borderColor = 'rgba(212, 175, 55, 0.3)';
+            lbl.style.background = 'rgba(212, 175, 55, 0.08)';
+        });
+        
+        updatePriceSummary();
+        return;
+    }
+    
     // Determina se è combo Ferrari + Lamborghini
     let isFerrariLamborghini = false;
     
@@ -6675,7 +6745,31 @@ function updateServicesForCombo(isComboActive, comboSku = null, comboTitle = nul
     // Ricalcola il totale
     updatePriceSummary();
     
-    console.log('✅ Servizi aggiornati dinamicamente (titoli + descrizioni + prezzi)');
+    // ✅ FIX: Ripristina stato dei checkbox in base a bookingData.extraServices
+    if (isComboActive) {
+        extraServicesContainer.querySelectorAll('.extra-service').forEach(checkbox => {
+            const serviceId = checkbox.dataset.service;
+            const isSelected = bookingData.extraServices.find(s => s.service === serviceId);
+            checkbox.checked = !!isSelected;
+        });
+        
+        // ✅ FIX: Ripristina stato dei radio passeggeri
+        const selectedPassengers = bookingData.extraServices.find(s => s.service === 'extra-passengers');
+        if (selectedPassengers) {
+            const passengerRadio = extraServicesContainer.querySelector(`.passenger-radio[value="${selectedPassengers.quantity}"]`);
+            if (passengerRadio) {
+                passengerRadio.checked = true;
+                passengerRadio.dataset.wasChecked = 'true';
+                const selectedLabel = passengerRadio.closest('label');
+                if (selectedLabel) {
+                    selectedLabel.style.borderColor = '#D4AF37';
+                    selectedLabel.style.background = 'rgba(212, 175, 55, 0.18)';
+                }
+            }
+        }
+    }
+    
+    console.log('✅ Servizi aggiornati dinamicamente (titoli + descrizioni + prezzi + stato checkbox ripristinato)');
 }
 
 // ========================================
