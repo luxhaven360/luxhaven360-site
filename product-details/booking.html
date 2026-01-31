@@ -4229,15 +4229,17 @@ if (firstOption) {
         const extraServicesDiv = document.getElementById('extraServicesPrice');
         extraServicesDiv.innerHTML = '';
         
-        // ✅ NUOVO: Controlla se è Lamborghini + seconda supercar attiva
+        // ✅ LOGICA AGGIORNATA: Determina quando mostrare i servizi
         const mainTitle = bookingData.productData?.title?.toLowerCase() || '';
         const isLamborghiniMain = mainTitle.includes('lamborghini') || mainTitle.includes('huracán');
 
-        // ✅ REGOLA: Mostra servizi SOLO se seconda supercar è attiva (per Lamborghini)
+        // ✅ REGOLA:
+        // - Lamborghini principale: mostra servizi SOLO se seconda supercar è attiva
+        // - Altre supercar: mostra servizi SEMPRE (sono identici tra singola e combo)
         const shouldShowServices = isLamborghiniMain ? bookingData.secondCar : true;
 
         bookingData.extraServices.forEach(service => {
-    // ✅ NUOVO: Conta nel totale SOLO se dovrebbero essere mostrati
+    // ✅ Conta nel totale SOLO se dovrebbero essere mostrati
     if (shouldShowServices) {
         total += service.price;
     }
@@ -4259,7 +4261,7 @@ if (firstOption) {
         serviceName += ` (${service.quantity})`;
     }
     
-    // ✅ NUOVO: Mostra nel riepilogo SOLO se dovrebbero essere visibili
+    // ✅ Mostra nel riepilogo SOLO se dovrebbero essere visibili
     if (shouldShowServices) {
         const div = document.createElement('div');
         div.className = 'flex justify-between';
@@ -6576,12 +6578,14 @@ function updateServicesForCombo(isComboActive, comboSku = null, comboTitle = nul
     
     console.log('🔄 Aggiornamento servizi per combo:', { isComboActive, comboSku, comboTitle });
     
-    // ✅ FIX: Se combo non attiva, ripristina prezzi/descrizioni originali e deseleziona visivamente i checkbox
+    // ✅ FIX: Se combo non attiva, comportamento diverso per Lamborghini vs altre supercar
     if (!isComboActive) {
-        console.log('❌ Combo deselezionata - ripristino prezzi originali e deseleziono visivamente i checkbox');
+        const mainTitle = bookingData.productData.title.toLowerCase();
+        const isLamborghiniMain = mainTitle.includes('lamborghini') || mainTitle.includes('huracán');
+        
+        console.log('❌ Combo deselezionata - ripristino configurazione supercar principale', { isLamborghiniMain });
         
         // ✅ STEP 1: Calcola prezzi originali della supercar principale (senza combo)
-        const mainTitle = bookingData.productData.title.toLowerCase();
         const isFerrariMain = mainTitle.includes('ferrari');
         
         // Prezzi standard per supercar principale singola
@@ -6641,7 +6645,7 @@ function updateServicesForCombo(isComboActive, comboSku = null, comboTitle = nul
                 titleKey = 'booking_service_video_360_title';
             }
             
-            console.log(`🔧 Ripristino ${serviceId}:`, { newPrice, descKey });
+            console.log(`🔧 Ripristino ${serviceId}:`, { newPrice, descKey, wasChecked: checkbox.checked });
             
             // Aggiorna TITOLO
             if (titleDiv && i18n && titleKey) {
@@ -6660,8 +6664,22 @@ function updateServicesForCombo(isComboActive, comboSku = null, comboTitle = nul
             // Aggiorna data-price
             checkbox.dataset.price = newPrice;
             
-            // Deseleziona checkbox visivamente
-            checkbox.checked = false;
+            // ✅ NUOVO: Aggiorna prezzo in bookingData.extraServices se servizio era selezionato
+            if (checkbox.checked) {
+                const existingService = bookingData.extraServices.find(s => s.service === serviceId);
+                if (existingService) {
+                    existingService.price = newPrice;
+                    console.log(`💰 Prezzo aggiornato per ${serviceId}: ${newPrice}`);
+                }
+            }
+            
+            // ✅ COMPORTAMENTO DIFFERENZIATO:
+            // - Lamborghini principale: deseleziona i checkbox (servizi disponibili solo con combo)
+            // - Altre supercar: mantieni i checkbox selezionati (servizi identici tra singola e combo)
+            if (isLamborghiniMain) {
+                checkbox.checked = false;
+            }
+            // Se NON è Lamborghini, lascia il checkbox come sta (può rimanere selezionato)
         });
         
         // ✅ STEP 3: Aggiorna prezzi passeggeri
@@ -6678,25 +6696,49 @@ function updateServicesForCombo(isComboActive, comboSku = null, comboTitle = nul
             
             const priceDiv = label.querySelector('div[style*="font-size: 12px"]');
             if (priceDiv && i18n) {
+                // Usa sempre i prezzi corretti: 25€ per 1 passeggero, 45€ per 2 passeggeri
                 const correctPrice = (index === 0) ? 25 : 45;
                 priceDiv.textContent = `+${i18n.formatPrice(correctPrice)}`;
             }
         });
         
-        // ✅ STEP 4: Deseleziona radio passeggeri
-        extraServicesContainer.querySelectorAll('.passenger-radio').forEach(radio => {
-            radio.checked = false;
-            radio.dataset.wasChecked = 'false';
-        });
+        // ✅ STEP 4: Gestisci radio passeggeri
+        const selectedPassengers = bookingData.extraServices.find(s => s.service === 'extra-passengers');
         
-        extraServicesContainer.querySelectorAll('label:has(.passenger-radio)').forEach(lbl => {
-            lbl.style.borderColor = 'rgba(212, 175, 55, 0.3)';
-            lbl.style.background = 'rgba(212, 175, 55, 0.08)';
-        });
+        if (isLamborghiniMain) {
+            // Lamborghini: deseleziona i radio
+            extraServicesContainer.querySelectorAll('.passenger-radio').forEach(radio => {
+                radio.checked = false;
+                radio.dataset.wasChecked = 'false';
+            });
+            
+            extraServicesContainer.querySelectorAll('label:has(.passenger-radio)').forEach(lbl => {
+                lbl.style.borderColor = 'rgba(212, 175, 55, 0.3)';
+                lbl.style.background = 'rgba(212, 175, 55, 0.08)';
+            });
+        } else {
+            // Altre supercar: mantieni la selezione e aggiorna il prezzo
+            if (selectedPassengers) {
+                const correctPrice = selectedPassengers.quantity === 1 ? 25 : 45;
+                selectedPassengers.price = correctPrice;
+                console.log(`💰 Prezzo passeggeri aggiornato: ${correctPrice}`);
+                
+                // Mantieni il radio selezionato visivamente
+                const passengerRadio = extraServicesContainer.querySelector(`.passenger-radio[value="${selectedPassengers.quantity}"]`);
+                if (passengerRadio) {
+                    passengerRadio.checked = true;
+                    passengerRadio.dataset.wasChecked = 'true';
+                    const selectedLabel = passengerRadio.closest('label');
+                    if (selectedLabel) {
+                        selectedLabel.style.borderColor = '#D4AF37';
+                        selectedLabel.style.background = 'rgba(212, 175, 55, 0.18)';
+                    }
+                }
+            }
+        }
         
-        // ✅ IMPORTANTE: NON cancellare bookingData.extraServices
-        // I servizi vengono mantenuti per essere ripristinati quando si riattiva la combo
-        console.log('📦 Servizi memorizzati (saranno ripristinati alla riattivazione):', bookingData.extraServices);
+        // ✅ IMPORTANTE: I servizi in bookingData.extraServices vengono mantenuti
+        console.log('📦 Servizi memorizzati:', bookingData.extraServices);
         
         updatePriceSummary();
         return;
