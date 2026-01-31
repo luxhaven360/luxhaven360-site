@@ -3120,17 +3120,17 @@ if (skuPrefix === 'SC') {
             passengerContainer.style.display = 'block';
             passengerContainer.innerHTML = `
                 <div>
-                    <div class="font-semibold mb-3">${i18n.t('booking_passengers_section_title')}</div>
+                    <div class="passengers-section-title font-semibold mb-3">${i18n.t('booking_passengers_section_title')}</div>
                     <div style="display: flex; gap: 15px; margin-top: 15px;">
                         <label style="display: flex; align-items: center; gap: 10px; cursor: pointer; padding: 12px 20px; background: rgba(212, 175, 55, 0.08); border: 2px solid rgba(212, 175, 55, 0.3); border-radius: 10px; transition: all 0.3s ease; flex: 1;">
-                            <input type="radio" name="extraPassengers" value="1" class="passenger-radio" style="width: 18px; height: 18px; accent-color: #D4AF37; cursor: pointer;">
+                            <input type="radio" name="extraPassengers" value="1" class="passenger-radio" data-price="${prices.passenger1}" style="width: 18px; height: 18px; accent-color: #D4AF37; cursor: pointer;">
                             <div>
                                 <div style="font-size: 14px; font-weight: 600; color: #fff;">${i18n.t('booking_passengers_one_label')}</div>
                                 <div style="font-size: 12px; color: #a59173;">+${i18n.formatPrice(prices.passenger1)}</div>
                             </div>
                         </label>
                         <label style="display: flex; align-items: center; gap: 10px; cursor: pointer; padding: 12px 20px; background: rgba(212, 175, 55, 0.08); border: 2px solid rgba(212, 175, 55, 0.3); border-radius: 10px; transition: all 0.3s ease; flex: 1;">
-                            <input type="radio" name="extraPassengers" value="2" class="passenger-radio" style="width: 18px; height: 18px; accent-color: #D4AF37; cursor: pointer;">
+                            <input type="radio" name="extraPassengers" value="2" class="passenger-radio" data-price="${prices.passenger2}" style="width: 18px; height: 18px; accent-color: #D4AF37; cursor: pointer;">
                             <div>
                                 <div style="font-size: 14px; font-weight: 600; color: #fff;">${i18n.t('booking_passengers_two_label')}</div>
                                 <div style="font-size: 12px; color: #a59173;">+${i18n.formatPrice(prices.passenger2)}</div>
@@ -6272,18 +6272,32 @@ function updateExtraServicesLanguage() {
         checkbox.dataset.price = newPrice;
     });
     
-    // Aggiorna passeggeri
+    // Aggiorna titolo sezione passeggeri
+    const passengersSectionTitle = container.querySelector('.passengers-section-title');
+    if (passengersSectionTitle) {
+        passengersSectionTitle.textContent = i18n.t('booking_passengers_section_title');
+    }
+    
+    // Aggiorna passeggeri (legge prezzi dai data-price, NON ricalcola!)
     const passengerOptions = container.querySelectorAll('label:has(.passenger-radio)');
     passengerOptions.forEach((label, index) => {
+        const radio = label.querySelector('.passenger-radio');
         const titleDiv = label.querySelector('div[style*="font-size: 14px"]');
         const priceDiv = label.querySelector('div[style*="font-size: 12px"]');
         
+        // ✅ LEGGI il prezzo dal data-price invece di ricalcolarlo
+        const savedPrice = radio ? parseFloat(radio.dataset.price) || 0 : 0;
+        
         if (index === 0) {
             if (titleDiv) titleDiv.textContent = i18n.t('booking_passengers_one_label');
-            if (priceDiv) priceDiv.textContent = `+${i18n.formatPrice(prices.passenger1)}`;
+            if (priceDiv && savedPrice > 0) {
+                priceDiv.textContent = `+${i18n.formatPrice(savedPrice)}`;
+            }
         } else {
             if (titleDiv) titleDiv.textContent = i18n.t('booking_passengers_two_label');
-            if (priceDiv) priceDiv.textContent = `+${i18n.formatPrice(prices.passenger2)}`;
+            if (priceDiv && savedPrice > 0) {
+                priceDiv.textContent = `+${i18n.formatPrice(savedPrice)}`;
+            }
         }
     });
     
@@ -6593,15 +6607,33 @@ function updateServicesForCombo(isComboActive, comboSku = null, comboTitle = nul
         }
     });
     
-    // Aggiorna passeggeri
+    // Aggiorna titolo sezione passeggeri
+    const passengersSectionTitle = extraServicesContainer.querySelector('.passengers-section-title');
+    if (passengersSectionTitle && i18n) {
+        passengersSectionTitle.textContent = i18n.t('booking_passengers_section_title');
+    }
+    
+    // Aggiorna passeggeri (legge prezzi dai data-price, NON ricalcola!)
     const passengerOptions = extraServicesContainer.querySelectorAll('label:has(.passenger-radio)');
     passengerOptions.forEach((label, index) => {
+        const radio = label.querySelector('.passenger-radio');
+        const titleDiv = label.querySelector('div[style*="font-size: 14px"]');
         const priceDiv = label.querySelector('div[style*="font-size: 12px"]');
-        if (priceDiv && i18n) {
+        
+        // ✅ LEGGI il prezzo dal data-price invece di ricalcolarlo
+        const savedPrice = radio ? parseFloat(radio.dataset.price) || 0 : 0;
+        
+        if (i18n) {
             if (index === 0) {
-                priceDiv.textContent = `+${i18n.formatPrice(prices.passenger1)}`;
+                if (titleDiv) titleDiv.textContent = i18n.t('booking_passengers_one_label');
+                if (priceDiv && savedPrice > 0) {
+                    priceDiv.textContent = `+${i18n.formatPrice(savedPrice)}`;
+                }
             } else {
-                priceDiv.textContent = `+${i18n.formatPrice(prices.passenger2)}`;
+                if (titleDiv) titleDiv.textContent = i18n.t('booking_passengers_two_label');
+                if (priceDiv && savedPrice > 0) {
+                    priceDiv.textContent = `+${i18n.formatPrice(savedPrice)}`;
+                }
             }
         }
     });
