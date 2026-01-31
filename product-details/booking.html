@@ -6576,14 +6576,114 @@ function updateServicesForCombo(isComboActive, comboSku = null, comboTitle = nul
     
     console.log('🔄 Aggiornamento servizi per combo:', { isComboActive, comboSku, comboTitle });
     
-    // ✅ FIX: Se combo non attiva, deseleziona visivamente i checkbox ma mantieni i dati
+    // ✅ FIX: Se combo non attiva, ripristina prezzi/descrizioni originali e deseleziona visivamente i checkbox
     if (!isComboActive) {
-        console.log('❌ Combo deselezionata - deseleziono visivamente i checkbox ma mantengo i dati in bookingData.extraServices');
+        console.log('❌ Combo deselezionata - ripristino prezzi originali e deseleziono visivamente i checkbox');
         
+        // ✅ STEP 1: Calcola prezzi originali della supercar principale (senza combo)
+        const mainTitle = bookingData.productData.title.toLowerCase();
+        const isFerrariMain = mainTitle.includes('ferrari');
+        
+        // Prezzi standard per supercar principale singola
+        const originalPrices = isFerrariMain ? {
+            photo: 35,
+            videoHd: 25,
+            video360: 30,
+            passenger1: 25,
+            passenger2: 45
+        } : {
+            photo: 290,
+            videoHd: 490,
+            video360: 690,
+            passenger1: 50,
+            passenger2: 100
+        };
+        
+        // Chiavi descrizioni per supercar principale singola
+        const originalDescKeys = isFerrariMain ? {
+            photo: null,
+            videoHd: null,
+            video360: 'booking_service_video_360_desc_single_ferrari'
+        } : {
+            photo: 'booking_service_photo_desc_standard',
+            videoHd: 'booking_service_video_hd_desc_standard',
+            video360: 'booking_service_video_360_desc_standard'
+        };
+        
+        console.log('🔄 Ripristino prezzi originali:', originalPrices);
+        
+        const i18n = window.i18nPDP();
+        
+        // ✅ STEP 2: Aggiorna prezzi e descrizioni dei servizi nella UI
         extraServicesContainer.querySelectorAll('.extra-service').forEach(checkbox => {
+            const serviceId = checkbox.dataset.service;
+            const parentLabel = checkbox.closest('.checkbox-container');
+            if (!parentLabel) return;
+            
+            const titleDiv = parentLabel.querySelector('.font-semibold');
+            const descDiv = parentLabel.querySelector('.text-sm');
+            
+            let newPrice = 0;
+            let descKey = null;
+            let titleKey = '';
+            
+            if (serviceId === 'photo') {
+                newPrice = originalPrices.photo;
+                descKey = originalDescKeys?.photo;
+                titleKey = 'booking_service_photo_title';
+            } else if (serviceId === 'video-hd') {
+                newPrice = originalPrices.videoHd;
+                descKey = originalDescKeys?.videoHd;
+                titleKey = 'booking_service_video_hd_title';
+            } else if (serviceId === 'video-360') {
+                newPrice = originalPrices.video360;
+                descKey = originalDescKeys?.video360;
+                titleKey = 'booking_service_video_360_title';
+            }
+            
+            console.log(`🔧 Ripristino ${serviceId}:`, { newPrice, descKey });
+            
+            // Aggiorna TITOLO
+            if (titleDiv && i18n && titleKey) {
+                titleDiv.textContent = i18n.t(titleKey);
+            }
+            
+            // Aggiorna DESCRIZIONE con prezzo formattato
+            if (descDiv && i18n) {
+                let descriptionHTML = '';
+                if (descKey) {
+                    descriptionHTML = ` - ${i18n.t(descKey)}`;
+                }
+                descDiv.innerHTML = `+${i18n.formatPrice(newPrice)}${descriptionHTML}`;
+            }
+            
+            // Aggiorna data-price
+            checkbox.dataset.price = newPrice;
+            
+            // Deseleziona checkbox visivamente
             checkbox.checked = false;
         });
         
+        // ✅ STEP 3: Aggiorna prezzi passeggeri
+        const passengerOptions = extraServicesContainer.querySelectorAll('label:has(.passenger-radio)');
+        passengerOptions.forEach((label, index) => {
+            const labelDiv = label.querySelector('div[style*="font-size: 14px"]');
+            if (labelDiv && i18n) {
+                if (index === 0) {
+                    labelDiv.textContent = i18n.t('booking_passengers_one_label');
+                } else {
+                    labelDiv.textContent = i18n.t('booking_passengers_two_label');
+                }
+            }
+            
+            const priceDiv = label.querySelector('div[style*="font-size: 12px"]');
+            if (priceDiv && i18n) {
+                const correctPrice = (index === 0) ? 25 : 45;
+                priceDiv.textContent = `+${i18n.formatPrice(correctPrice)}`;
+            }
+        });
+        
+        // ✅ STEP 4: Deseleziona radio passeggeri
         extraServicesContainer.querySelectorAll('.passenger-radio').forEach(radio => {
             radio.checked = false;
             radio.dataset.wasChecked = 'false';
