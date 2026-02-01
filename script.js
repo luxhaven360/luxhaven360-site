@@ -366,23 +366,41 @@ if (isExperience) {
     // image/icon
 const imageContainer = el('div', { class: 'card-image' });
 
+// ✅ DEBUG: Log dati per verificare struttura
+console.log('📊 Card data:', {
+    sku: prod.sku,
+    category: prod.category,
+    hasIcon: !!prod.icon,
+    hasImages: !!prod.images,
+    imagesCount: prod.images?.length || 0,
+    supercarCombo: prod.supercarCombo,
+    windowWidth: window.innerWidth
+});
+
 if (prod.icon && typeof prod.icon === 'string' && prod.icon.includes('drive.google.com')) {
     // ✅ GESTIONE IMMAGINI RESPONSIVE PER SINGOLE SUPERCAR
-    let imageUrl = prod.icon; // Default: prima immagine
+    let imageUrl = prod.icon; // Default: prima immagine (fallback)
     
-    // Se è una singola supercar (SKU tipo SC-XXX) e non una combo
+    // Verifica se è una singola supercar (SKU SC-XXX senza combo)
     const isSingleSupercar = prod.category === 'supercars' && 
                             prod.sku && 
                             prod.sku.startsWith('SC-') && 
-                            !prod.supercarCombo; // Verifica che non sia una combo
+                            (!prod.supercarCombo || String(prod.supercarCombo).trim() === '');
     
-    if (isSingleSupercar && prod.images && prod.images.length >= 2) {
-        // Desktop: usa prima immagine (indice 0)
-        // Mobile: usa seconda immagine (indice 1)
+    // Se è singola supercar E abbiamo almeno 2 immagini disponibili
+    if (isSingleSupercar && prod.images && Array.isArray(prod.images) && prod.images.length >= 2) {
+        // Determina device: mobile se width <= 768px
         const isMobile = window.innerWidth <= 768;
+        
+        // LOGICA CORRETTA:
+        // Desktop → images[0] (primo link colonna Q)
+        // Mobile → images[1] (secondo link colonna Q)
         imageUrl = isMobile ? prod.images[1] : prod.images[0];
         
-        console.log(`📸 Card ${prod.sku}: ${isMobile ? 'MOBILE' : 'DESKTOP'} → immagine ${isMobile ? 2 : 1}`);
+        console.log(`✅ Singola SC "${prod.sku}" su ${isMobile ? 'MOBILE' : 'DESKTOP'} → usando immagine ${isMobile ? '#2' : '#1'}:`, imageUrl);
+    } else {
+        // Non è singola SC o dati insufficienti → usa immagine standard
+        console.log(`ℹ️ Card "${prod.sku}": usando immagine standard (non singola SC o < 2 immagini)`);
     }
     
     const img = el('img', { 
@@ -393,7 +411,9 @@ if (prod.icon && typeof prod.icon === 'string' && prod.icon.includes('drive.goog
         referrerpolicy: 'no-referrer'
     });
     
+    // Error handling
     img.onerror = function() {
+        console.error('❌ Errore caricamento immagine:', imageUrl);
         this.style.display = 'none';
         imageContainer.textContent = '📦';
         imageContainer.style.display = 'flex';
@@ -404,6 +424,7 @@ if (prod.icon && typeof prod.icon === 'string' && prod.icon.includes('drive.goog
     
     imageContainer.appendChild(img);
 } else {
+    // Fallback: icona emoji se nessuna immagine Drive
     imageContainer.textContent = prod.icon || '📦';
     imageContainer.style.display = 'flex';
     imageContainer.style.alignItems = 'center';
@@ -1707,6 +1728,7 @@ function showValidationError(message, type) {
     if (overlay.parentNode) overlay.remove();
   }, 5000);
 }
+
 
 
 
