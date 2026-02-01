@@ -1163,36 +1163,27 @@ if (bookableData.success && bookableData.products) {
     if (targetSection && grids[targetSection.id]) {
         prod.sectionName = targetSection.id;
         
-        // ✅ LOGICA INTELLIGENTE PER prod.icon
-        // Per singole supercar su mobile → usa seconda immagine
-        // Altrimenti → usa mainImage (prima immagine)
-        
+        // ✅ LOGICA CORRETTA: Singola SC = SKU senza "+"
         const isSingleSupercar = prod.category === 'supercars' && 
                                 prod.sku && 
-                                prod.sku.startsWith('SC-') && 
-                                (!prod.supercarCombo || String(prod.supercarCombo).trim() === '');
+                                !prod.sku.includes('+'); // ← QUESTO È IL CONTROLLO GIUSTO
         
         const isMobile = window.innerWidth <= 768;
         
+        // ✅ Mobile + Singola SC → usa seconda immagine (images[1])
         if (isSingleSupercar && isMobile && prod.images && prod.images.length >= 2) {
-            // Mobile + Singola SC → usa seconda immagine
             prod.icon = prod.images[1];
-            console.log(`📱 Card mobile SC "${prod.sku}": usando immagine #2:`, prod.images[1]);
+            console.log(`📱 Mobile SC "${prod.sku}": immagine #2`, prod.images[1]);
         } else {
-            // Desktop o altri prodotti → usa prima immagine
+            // Desktop o combo o altri → usa prima immagine
             prod.icon = prod.mainImage || '📦';
-            console.log(`🖥️ Card "${prod.sku}": usando mainImage (immagine #1)`);
         }
         
         const card = createProductCard(prod, targetSection.defaultCta);
-        
-        // ✅ AGGIUNGI SKU COME DATA ATTRIBUTE
         card.dataset.sku = prod.sku;
-        
         grids[targetSection.id].appendChild(card);
         countBySection[targetSection.id] = (countBySection[targetSection.id] || 0) + 1;
         
-        // ✅ RACCOGLI PRODOTTI PER FILTRI
         if (prod.category === 'properties') propertyProducts.push(prod);
         if (prod.category === 'supercars') supercarProducts.push(prod);
     }
@@ -1710,6 +1701,7 @@ function showValidationError(message, type) {
     if (overlay.parentNode) overlay.remove();
   }, 5000);
 }
+
 
 
 
