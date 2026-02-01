@@ -366,54 +366,17 @@ if (isExperience) {
     // image/icon
 const imageContainer = el('div', { class: 'card-image' });
 
-// ✅ DEBUG: Log dati per verificare struttura
-console.log('📊 Card data:', {
-    sku: prod.sku,
-    category: prod.category,
-    hasIcon: !!prod.icon,
-    hasImages: !!prod.images,
-    imagesCount: prod.images?.length || 0,
-    supercarCombo: prod.supercarCombo,
-    windowWidth: window.innerWidth
-});
-
 if (prod.icon && typeof prod.icon === 'string' && prod.icon.includes('drive.google.com')) {
-    // ✅ GESTIONE IMMAGINI RESPONSIVE PER SINGOLE SUPERCAR
-    let imageUrl = prod.icon; // Default: prima immagine (fallback)
-    
-    // Verifica se è una singola supercar (SKU SC-XXX senza combo)
-    const isSingleSupercar = prod.category === 'supercars' && 
-                            prod.sku && 
-                            prod.sku.startsWith('SC-') && 
-                            (!prod.supercarCombo || String(prod.supercarCombo).trim() === '');
-    
-    // Se è singola supercar E abbiamo almeno 2 immagini disponibili
-    if (isSingleSupercar && prod.images && Array.isArray(prod.images) && prod.images.length >= 2) {
-        // Determina device: mobile se width <= 768px
-        const isMobile = window.innerWidth <= 768;
-        
-        // LOGICA CORRETTA:
-        // Desktop → images[0] (primo link colonna Q)
-        // Mobile → images[1] (secondo link colonna Q)
-        imageUrl = isMobile ? prod.images[1] : prod.images[0];
-        
-        console.log(`✅ Singola SC "${prod.sku}" su ${isMobile ? 'MOBILE' : 'DESKTOP'} → usando immagine ${isMobile ? '#2' : '#1'}:`, imageUrl);
-    } else {
-        // Non è singola SC o dati insufficienti → usa immagine standard
-        console.log(`ℹ️ Card "${prod.sku}": usando immagine standard (non singola SC o < 2 immagini)`);
-    }
-    
     const img = el('img', { 
-        src: imageUrl, 
+        src: prod.icon,  // ✅ Ora prod.icon è già corretto (impostato prima)
         alt: prod.title, 
         style: 'width:100%; height:100%; object-fit:cover; transition: transform 0.5s ease;',
         loading: 'lazy',
         referrerpolicy: 'no-referrer'
     });
     
-    // Error handling
     img.onerror = function() {
-        console.error('❌ Errore caricamento immagine:', imageUrl);
+        console.error('❌ Errore caricamento immagine:', prod.icon);
         this.style.display = 'none';
         imageContainer.textContent = '📦';
         imageContainer.style.display = 'flex';
@@ -424,7 +387,6 @@ if (prod.icon && typeof prod.icon === 'string' && prod.icon.includes('drive.goog
     
     imageContainer.appendChild(img);
 } else {
-    // Fallback: icona emoji se nessuna immagine Drive
     imageContainer.textContent = prod.icon || '📦';
     imageContainer.style.display = 'flex';
     imageContainer.style.alignItems = 'center';
@@ -1196,25 +1158,45 @@ if (bookableData.success && bookableData.products) {
     const supercarProducts = [];
     
     bookableData.products.forEach(prod => {
-        const targetSection = SECTIONS.find(s => s.id === prod.category);
+    const targetSection = SECTIONS.find(s => s.id === prod.category);
+    
+    if (targetSection && grids[targetSection.id]) {
+        prod.sectionName = targetSection.id;
         
-        if (targetSection && grids[targetSection.id]) {
-            prod.sectionName = targetSection.id;
+        // ✅ LOGICA INTELLIGENTE PER prod.icon
+        // Per singole supercar su mobile → usa seconda immagine
+        // Altrimenti → usa mainImage (prima immagine)
+        
+        const isSingleSupercar = prod.category === 'supercars' && 
+                                prod.sku && 
+                                prod.sku.startsWith('SC-') && 
+                                (!prod.supercarCombo || String(prod.supercarCombo).trim() === '');
+        
+        const isMobile = window.innerWidth <= 768;
+        
+        if (isSingleSupercar && isMobile && prod.images && prod.images.length >= 2) {
+            // Mobile + Singola SC → usa seconda immagine
+            prod.icon = prod.images[1];
+            console.log(`📱 Card mobile SC "${prod.sku}": usando immagine #2:`, prod.images[1]);
+        } else {
+            // Desktop o altri prodotti → usa prima immagine
             prod.icon = prod.mainImage || '📦';
-            
-            const card = createProductCard(prod, targetSection.defaultCta);
-            
-            // ✅ AGGIUNGI SKU COME DATA ATTRIBUTE
-            card.dataset.sku = prod.sku;
-            
-            grids[targetSection.id].appendChild(card);
-            countBySection[targetSection.id] = (countBySection[targetSection.id] || 0) + 1;
-            
-            // ✅ RACCOGLI PRODOTTI PER FILTRI
-            if (prod.category === 'properties') propertyProducts.push(prod);
-            if (prod.category === 'supercars') supercarProducts.push(prod);
+            console.log(`🖥️ Card "${prod.sku}": usando mainImage (immagine #1)`);
         }
-    });
+        
+        const card = createProductCard(prod, targetSection.defaultCta);
+        
+        // ✅ AGGIUNGI SKU COME DATA ATTRIBUTE
+        card.dataset.sku = prod.sku;
+        
+        grids[targetSection.id].appendChild(card);
+        countBySection[targetSection.id] = (countBySection[targetSection.id] || 0) + 1;
+        
+        // ✅ RACCOGLI PRODOTTI PER FILTRI
+        if (prod.category === 'properties') propertyProducts.push(prod);
+        if (prod.category === 'supercars') supercarProducts.push(prod);
+    }
+});
     
     // ✅ INIZIALIZZA FILTRI
     if (propertyProducts.length > 0) {
@@ -1728,6 +1710,7 @@ function showValidationError(message, type) {
     if (overlay.parentNode) overlay.remove();
   }, 5000);
 }
+
 
 
 
