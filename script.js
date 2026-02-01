@@ -364,34 +364,52 @@ if (isExperience) {
     }
 
     // image/icon
-    const imageContainer = el('div', { class: 'card-image' });
+const imageContainer = el('div', { class: 'card-image' });
+
+if (prod.icon && typeof prod.icon === 'string' && prod.icon.includes('drive.google.com')) {
+    // ✅ GESTIONE IMMAGINI RESPONSIVE PER SINGOLE SUPERCAR
+    let imageUrl = prod.icon; // Default: prima immagine
     
-    if (prod.icon && typeof prod.icon === 'string' && prod.icon.includes('drive.google.com')) {
-        const img = el('img', { 
-            src: prod.icon, 
-            alt: prod.title, 
-            style: 'width:100%; height:100%; object-fit:cover; transition: transform 0.5s ease;',
-            loading: 'lazy',
-            referrerpolicy: 'no-referrer'
-        });
+    // Se è una singola supercar (SKU tipo SC-XXX) e non una combo
+    const isSingleSupercar = prod.category === 'supercars' && 
+                            prod.sku && 
+                            prod.sku.startsWith('SC-') && 
+                            !prod.supercarCombo; // Verifica che non sia una combo
+    
+    if (isSingleSupercar && prod.images && prod.images.length >= 2) {
+        // Desktop: usa prima immagine (indice 0)
+        // Mobile: usa seconda immagine (indice 1)
+        const isMobile = window.innerWidth <= 768;
+        imageUrl = isMobile ? prod.images[1] : prod.images[0];
         
-        img.onerror = function() {
-            this.style.display = 'none';
-            imageContainer.textContent = '📦';
-            imageContainer.style.display = 'flex';
-            imageContainer.style.alignItems = 'center';
-            imageContainer.style.justifyContent = 'center';
-            imageContainer.style.fontSize = '3rem';
-        };
-        
-        imageContainer.appendChild(img);
-    } else {
-        imageContainer.textContent = prod.icon || '📦';
+        console.log(`📸 Card ${prod.sku}: ${isMobile ? 'MOBILE' : 'DESKTOP'} → immagine ${isMobile ? 2 : 1}`);
+    }
+    
+    const img = el('img', { 
+        src: imageUrl, 
+        alt: prod.title, 
+        style: 'width:100%; height:100%; object-fit:cover; transition: transform 0.5s ease;',
+        loading: 'lazy',
+        referrerpolicy: 'no-referrer'
+    });
+    
+    img.onerror = function() {
+        this.style.display = 'none';
+        imageContainer.textContent = '📦';
         imageContainer.style.display = 'flex';
         imageContainer.style.alignItems = 'center';
         imageContainer.style.justifyContent = 'center';
         imageContainer.style.fontSize = '3rem';
-    }
+    };
+    
+    imageContainer.appendChild(img);
+} else {
+    imageContainer.textContent = prod.icon || '📦';
+    imageContainer.style.display = 'flex';
+    imageContainer.style.alignItems = 'center';
+    imageContainer.style.justifyContent = 'center';
+    imageContainer.style.fontSize = '3rem';
+}
 
     // ✅ Aggiungi badge se esperienza
      if (badgeHtml) {
@@ -1689,6 +1707,7 @@ function showValidationError(message, type) {
     if (overlay.parentNode) overlay.remove();
   }, 5000);
 }
+
 
 
 
