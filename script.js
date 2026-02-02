@@ -364,35 +364,34 @@ if (isExperience) {
     }
 
     // image/icon
-const imageContainer = el('div', { class: 'card-image' });
-
-if (prod.icon && typeof prod.icon === 'string' && prod.icon.includes('drive.google.com')) {
-    const img = el('img', { 
-        src: prod.icon,  // ✅ Ora prod.icon è già corretto (impostato prima)
-        alt: prod.title, 
-        style: 'width:100%; height:100%; object-fit:cover; transition: transform 0.5s ease;',
-        loading: 'lazy',
-        referrerpolicy: 'no-referrer'
-    });
+    const imageContainer = el('div', { class: 'card-image' });
     
-    img.onerror = function() {
-        console.error('❌ Errore caricamento immagine:', prod.icon);
-        this.style.display = 'none';
-        imageContainer.textContent = '📦';
+    if (prod.icon && typeof prod.icon === 'string' && prod.icon.includes('drive.google.com')) {
+        const img = el('img', { 
+            src: prod.icon, 
+            alt: prod.title, 
+            style: 'width:100%; height:100%; object-fit:cover; transition: transform 0.5s ease;',
+            loading: 'lazy',
+            referrerpolicy: 'no-referrer'
+        });
+        
+        img.onerror = function() {
+            this.style.display = 'none';
+            imageContainer.textContent = '📦';
+            imageContainer.style.display = 'flex';
+            imageContainer.style.alignItems = 'center';
+            imageContainer.style.justifyContent = 'center';
+            imageContainer.style.fontSize = '3rem';
+        };
+        
+        imageContainer.appendChild(img);
+    } else {
+        imageContainer.textContent = prod.icon || '📦';
         imageContainer.style.display = 'flex';
         imageContainer.style.alignItems = 'center';
         imageContainer.style.justifyContent = 'center';
         imageContainer.style.fontSize = '3rem';
-    };
-    
-    imageContainer.appendChild(img);
-} else {
-    imageContainer.textContent = prod.icon || '📦';
-    imageContainer.style.display = 'flex';
-    imageContainer.style.alignItems = 'center';
-    imageContainer.style.justifyContent = 'center';
-    imageContainer.style.fontSize = '3rem';
-}
+    }
 
     // ✅ Aggiungi badge se esperienza
      if (badgeHtml) {
@@ -1158,36 +1157,25 @@ if (bookableData.success && bookableData.products) {
     const supercarProducts = [];
     
     bookableData.products.forEach(prod => {
-    const targetSection = SECTIONS.find(s => s.id === prod.category);
-    
-    if (targetSection && grids[targetSection.id]) {
-        prod.sectionName = targetSection.id;
+        const targetSection = SECTIONS.find(s => s.id === prod.category);
         
-        // ✅ LOGICA CORRETTA: Singola SC = SKU senza "+"
-        const isSingleSupercar = prod.category === 'supercars' && 
-                                prod.sku && 
-                                !prod.sku.includes('+'); // ← QUESTO È IL CONTROLLO GIUSTO
-        
-        const isMobile = window.innerWidth <= 768;
-        
-        // ✅ Mobile + Singola SC → usa seconda immagine (images[1])
-        if (isSingleSupercar && isMobile && prod.images && prod.images.length >= 2) {
-            prod.icon = prod.images[1];
-            console.log(`📱 Mobile SC "${prod.sku}": immagine #2`, prod.images[1]);
-        } else {
-            // Desktop o combo o altri → usa prima immagine
+        if (targetSection && grids[targetSection.id]) {
+            prod.sectionName = targetSection.id;
             prod.icon = prod.mainImage || '📦';
+            
+            const card = createProductCard(prod, targetSection.defaultCta);
+            
+            // ✅ AGGIUNGI SKU COME DATA ATTRIBUTE
+            card.dataset.sku = prod.sku;
+            
+            grids[targetSection.id].appendChild(card);
+            countBySection[targetSection.id] = (countBySection[targetSection.id] || 0) + 1;
+            
+            // ✅ RACCOGLI PRODOTTI PER FILTRI
+            if (prod.category === 'properties') propertyProducts.push(prod);
+            if (prod.category === 'supercars') supercarProducts.push(prod);
         }
-        
-        const card = createProductCard(prod, targetSection.defaultCta);
-        card.dataset.sku = prod.sku;
-        grids[targetSection.id].appendChild(card);
-        countBySection[targetSection.id] = (countBySection[targetSection.id] || 0) + 1;
-        
-        if (prod.category === 'properties') propertyProducts.push(prod);
-        if (prod.category === 'supercars') supercarProducts.push(prod);
-    }
-});
+    });
     
     // ✅ INIZIALIZZA FILTRI
     if (propertyProducts.length > 0) {
@@ -1701,21 +1689,3 @@ function showValidationError(message, type) {
     if (overlay.parentNode) overlay.remove();
   }, 5000);
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
