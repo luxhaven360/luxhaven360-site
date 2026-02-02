@@ -364,34 +364,44 @@ if (isExperience) {
     }
 
     // image/icon
-    const imageContainer = el('div', { class: 'card-image' });
+const imageContainer = el('div', { class: 'card-image' });
+
+if (prod.icon && typeof prod.icon === 'string' && prod.icon.includes('drive.google.com')) {
+    // ✅ NUOVA LOGICA: Gestione immagini desktop/mobile
+    let imageUrl = prod.icon;
     
-    if (prod.icon && typeof prod.icon === 'string' && prod.icon.includes('drive.google.com')) {
-        const img = el('img', { 
-            src: prod.icon, 
-            alt: prod.title, 
-            style: 'width:100%; height:100%; object-fit:cover; transition: transform 0.5s ease;',
-            loading: 'lazy',
-            referrerpolicy: 'no-referrer'
-        });
-        
-        img.onerror = function() {
-            this.style.display = 'none';
-            imageContainer.textContent = '📦';
-            imageContainer.style.display = 'flex';
-            imageContainer.style.alignItems = 'center';
-            imageContainer.style.justifyContent = 'center';
-            imageContainer.style.fontSize = '3rem';
-        };
-        
-        imageContainer.appendChild(img);
-    } else {
-        imageContainer.textContent = prod.icon || '📦';
+    // Se l'immagine contiene " - ", significa che ci sono due versioni (Desktop e Mobile)
+    if (prod.icon.includes(' - ')) {
+        const isMobile = window.innerWidth <= 768;
+        const imageParts = prod.icon.split(' - ');
+        imageUrl = isMobile ? imageParts[1] : imageParts[0]; // Mobile: seconda immagine, Desktop: prima immagine
+    }
+    
+    const img = el('img', { 
+        src: imageUrl, 
+        alt: prod.title, 
+        style: 'width:100%; height:100%; object-fit:cover; transition: transform 0.5s ease;',
+        loading: 'lazy',
+        referrerpolicy: 'no-referrer'
+    });
+    
+    img.onerror = function() {
+        this.style.display = 'none';
+        imageContainer.textContent = '📦';
         imageContainer.style.display = 'flex';
         imageContainer.style.alignItems = 'center';
         imageContainer.style.justifyContent = 'center';
         imageContainer.style.fontSize = '3rem';
-    }
+    };
+    
+    imageContainer.appendChild(img);
+} else {
+    imageContainer.textContent = prod.icon || '📦';
+    imageContainer.style.display = 'flex';
+    imageContainer.style.alignItems = 'center';
+    imageContainer.style.justifyContent = 'center';
+    imageContainer.style.fontSize = '3rem';
+}
 
     // ✅ Aggiungi badge se esperienza
      if (badgeHtml) {
@@ -1689,3 +1699,4 @@ function showValidationError(message, type) {
     if (overlay.parentNode) overlay.remove();
   }, 5000);
 }
+
