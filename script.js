@@ -366,9 +366,21 @@ if (isExperience) {
     // image/icon
     const imageContainer = el('div', { class: 'card-image' });
     
-    if (prod.icon && typeof prod.icon === 'string' && prod.icon.includes('drive.google.com')) {
+    // ✅ NUOVA LOGICA: Rileva dispositivo e seleziona immagine appropriata
+    let imageToShow = prod.icon; // Fallback
+
+    if (prod.mainImageDesktop && prod.mainImageMobile) {
+        // Rileva se è mobile (larghezza schermo < 768px)
+        const isMobile = window.matchMedia('(max-width: 767px)').matches;
+        imageToShow = isMobile ? prod.mainImageMobile : prod.mainImageDesktop;
+    } else if (prod.mainImageDesktop) {
+        // Se manca mainImageMobile, usa Desktop
+        imageToShow = prod.mainImageDesktop;
+    }
+    
+    if (imageToShow && typeof imageToShow === 'string' && imageToShow.includes('drive.google.com')) {
         const img = el('img', { 
-            src: prod.icon, 
+            src: imageToShow, 
             alt: prod.title, 
             style: 'width:100%; height:100%; object-fit:cover; transition: transform 0.5s ease;',
             loading: 'lazy',
@@ -386,7 +398,7 @@ if (isExperience) {
         
         imageContainer.appendChild(img);
     } else {
-        imageContainer.textContent = prod.icon || '📦';
+        imageContainer.textContent = imageToShow || '📦';
         imageContainer.style.display = 'flex';
         imageContainer.style.alignItems = 'center';
         imageContainer.style.justifyContent = 'center';
