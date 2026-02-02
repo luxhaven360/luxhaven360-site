@@ -363,19 +363,25 @@ if (isExperience) {
         card.style.display = 'none';
     }
 
-    // image/icon
+    // ✅ NUOVO: Gestione Desktop/Mobile
     const imageContainer = el('div', { class: 'card-image' });
     
-    if (prod.icon && typeof prod.icon === 'string' && prod.icon.includes('drive.google.com')) {
-        const img = el('img', { 
-            src: prod.icon, 
+    // Usa mainImageDesktop e mainImageMobile se disponibili, altrimenti fallback a icon
+    const desktopSrc = prod.mainImageDesktop || prod.icon;
+    const mobileSrc = prod.mainImageMobile || prod.mainImageDesktop || prod.icon;
+    
+    if (desktopSrc && typeof desktopSrc === 'string' && desktopSrc.includes('drive.google.com')) {
+        // ✅ Immagine DESKTOP
+        const imgDesktop = el('img', { 
+            src: desktopSrc, 
             alt: prod.title, 
+            class: 'card-image-desktop', // ✅ CLASSE PER CSS
             style: 'width:100%; height:100%; object-fit:cover; transition: transform 0.5s ease;',
             loading: 'lazy',
             referrerpolicy: 'no-referrer'
         });
         
-        img.onerror = function() {
+        imgDesktop.onerror = function() {
             this.style.display = 'none';
             imageContainer.textContent = '📦';
             imageContainer.style.display = 'flex';
@@ -384,9 +390,27 @@ if (isExperience) {
             imageContainer.style.fontSize = '3rem';
         };
         
-        imageContainer.appendChild(img);
+        imageContainer.appendChild(imgDesktop);
+        
+        // ✅ Immagine MOBILE (se diversa da desktop)
+        if (mobileSrc !== desktopSrc) {
+            const imgMobile = el('img', { 
+                src: mobileSrc, 
+                alt: prod.title, 
+                class: 'card-image-mobile', // ✅ CLASSE PER CSS
+                style: 'width:100%; height:100%; object-fit:cover; transition: transform 0.5s ease; display: none;',
+                loading: 'lazy',
+                referrerpolicy: 'no-referrer'
+            });
+            
+            imgMobile.onerror = function() {
+                this.style.display = 'none';
+            };
+            
+            imageContainer.appendChild(imgMobile);
+        }
     } else {
-        imageContainer.textContent = prod.icon || '📦';
+        imageContainer.textContent = desktopSrc || '📦';
         imageContainer.style.display = 'flex';
         imageContainer.style.alignItems = 'center';
         imageContainer.style.justifyContent = 'center';
