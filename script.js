@@ -363,25 +363,19 @@ if (isExperience) {
         card.style.display = 'none';
     }
 
-    // ✅ NUOVO: Gestione Desktop/Mobile
+    // image/icon
     const imageContainer = el('div', { class: 'card-image' });
     
-    // Usa mainImageDesktop e mainImageMobile se disponibili, altrimenti fallback a icon
-    const desktopSrc = prod.mainImageDesktop || prod.icon;
-    const mobileSrc = prod.mainImageMobile || prod.mainImageDesktop || prod.icon;
-    
-    if (desktopSrc && typeof desktopSrc === 'string' && desktopSrc.includes('drive.google.com')) {
-        // ✅ Immagine DESKTOP
-        const imgDesktop = el('img', { 
-            src: desktopSrc, 
+    if (prod.icon && typeof prod.icon === 'string' && prod.icon.includes('drive.google.com')) {
+        const img = el('img', { 
+            src: prod.icon, 
             alt: prod.title, 
-            class: 'card-image-desktop', // ✅ CLASSE PER CSS
             style: 'width:100%; height:100%; object-fit:cover; transition: transform 0.5s ease;',
             loading: 'lazy',
             referrerpolicy: 'no-referrer'
         });
         
-        imgDesktop.onerror = function() {
+        img.onerror = function() {
             this.style.display = 'none';
             imageContainer.textContent = '📦';
             imageContainer.style.display = 'flex';
@@ -390,27 +384,9 @@ if (isExperience) {
             imageContainer.style.fontSize = '3rem';
         };
         
-        imageContainer.appendChild(imgDesktop);
-        
-        // ✅ Immagine MOBILE (se diversa da desktop)
-        if (mobileSrc !== desktopSrc) {
-            const imgMobile = el('img', { 
-                src: mobileSrc, 
-                alt: prod.title, 
-                class: 'card-image-mobile', // ✅ CLASSE PER CSS
-                style: 'width:100%; height:100%; object-fit:cover; transition: transform 0.5s ease; display: none;',
-                loading: 'lazy',
-                referrerpolicy: 'no-referrer'
-            });
-            
-            imgMobile.onerror = function() {
-                this.style.display = 'none';
-            };
-            
-            imageContainer.appendChild(imgMobile);
-        }
+        imageContainer.appendChild(img);
     } else {
-        imageContainer.textContent = desktopSrc || '📦';
+        imageContainer.textContent = prod.icon || '📦';
         imageContainer.style.display = 'flex';
         imageContainer.style.alignItems = 'center';
         imageContainer.style.justifyContent = 'center';
