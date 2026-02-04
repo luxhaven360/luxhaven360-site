@@ -2394,52 +2394,55 @@ window.addEventListener('resize', () => {
  * @returns {Array<string>} - Immagini filtrate
  */
 function filterImagesForDevice(product) {
-    if (!product || !product.images || product.images.length === 0) {
+    if (!product) {
         return [];
     }
     
     const skuPrefix = product.sku.split('-')[0].toUpperCase();
     const isMobile = window.innerWidth <= 768;
     
-    // 📊 LOG DEBUG (rimuovibile dopo test)
+    // ✅ USA I NUOVI CAMPI SEPARATI
+    const desktopImages = product.imagesDesktop || [];
+    const mobileImages = product.imagesMobile || [];
+    
     console.log('🎯 Filtro immagini:', {
         sku: product.sku,
         prefix: skuPrefix,
         device: isMobile ? 'MOBILE' : 'DESKTOP',
-        totalImages: product.images.length
+        desktopCount: desktopImages.length,
+        mobileCount: mobileImages.length
     });
-    
-    // 🎨 Le immagini arrivano già ordinate dal backend:
-    // [0-4]   → Colonna Q (Immagine 1-5)
-    // [5-9]   → Colonna R (Immagine 6-10)
-    // [10-14] → Colonna S (Immagine 11-15)
-    // [15-19] → Colonna T (Immagine 16-20)
     
     let filteredImages = [];
     
-    // 🚗 SEZIONE SUPERCAR
+    // 🚗 SUPERCAR
     if (skuPrefix === 'SC') {
         if (isMobile) {
-            // Mobile → Solo colonna R (indici 5-9)
-            filteredImages = product.images.slice(5, 10).filter(Boolean);
+            // Mobile → Solo colonna R
+            filteredImages = [...mobileImages];
         } else {
-            // Desktop → Solo colonna Q (indici 0-4)
-            filteredImages = product.images.slice(0, 5).filter(Boolean);
+            // Desktop → Solo colonna Q, SENZA prima immagine
+            filteredImages = [...desktopImages];
+            
+            if (filteredImages.length > 1) {
+                filteredImages = filteredImages.slice(1); // Rimuovi prima
+                console.log('🖼️ Desktop SUPERCAR: prima immagine rimossa');
+            }
         }
     }
-    // 🏠 SEZIONE IMMOBILI / ✨ ESPERIENZE
+    // 🏠 IMMOBILI / ✨ ESPERIENZE
     else if (skuPrefix === 'PR' || skuPrefix === 'EX') {
         if (isMobile) {
-            // Mobile → Colonne S + T (indici 10-19)
-            filteredImages = product.images.slice(10, 20).filter(Boolean);
+            // Mobile → Solo colonna R
+            filteredImages = [...mobileImages];
         } else {
-            // Desktop → Colonne Q + R (indici 0-9)
-            filteredImages = product.images.slice(0, 10).filter(Boolean);
+            // Desktop → Solo colonna Q
+            filteredImages = [...desktopImages];
         }
     }
-    // 🔹 FALLBACK (altri prodotti)
+    // 🔹 FALLBACK
     else {
-        filteredImages = product.images.filter(Boolean);
+        filteredImages = isMobile ? [...mobileImages] : [...desktopImages];
     }
     
     console.log(`✅ ${filteredImages.length} immagini filtrate per ${isMobile ? 'mobile' : 'desktop'}`);
