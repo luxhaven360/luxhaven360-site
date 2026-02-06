@@ -364,7 +364,7 @@ const translationsBookingData = {
     motor_type: {
       "V8 aspirato": {
         it: "V8 aspirato",
-        en: "Naturally aspirated V8",
+        en: "NA V8",
         fr: "V8 atmosphérique",
         de: "V8 Saugmotor",
         es: "V8 aspirado"
@@ -406,7 +406,7 @@ const translationsBookingData = {
       },
       "V10 aspirato": {
         it: "V10 aspirato",
-        en: "Naturally aspirated V10",
+        en: "NA V10",
         fr: "V10 atmosphérique",
         de: "V10 Saugmotor",
         es: "V10 aspirado"
