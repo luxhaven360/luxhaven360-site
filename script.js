@@ -428,8 +428,22 @@ if (prod.shopCategory === 'Limited Editions') {
     card.appendChild(title);
 
     // desc
-    const descText = prod.briefDesc || prod.desc || '';
+    let descText = prod.briefDesc || prod.desc || '';
+    
+    // ✅ Traduci descrizione breve se disponibile
+    if (descText && window.i18n && typeof window.i18n === 'function') {
+        const i18nInstance = window.i18n();
+        if (i18nInstance && typeof i18nInstance.translateBriefDescription === 'function') {
+            descText = i18nInstance.translateBriefDescription(descText);
+        }
+    }
+    
     const desc = el('p', { class: 'card-desc' }, [document.createTextNode(descText)]);
+    
+    // ✅ Salva descrizione originale per future traduzioni
+    if (prod.briefDesc) {
+        card.dataset.originalBriefDesc = prod.briefDesc;
+    }
     card.appendChild(desc);
 
 // ========================================
@@ -1688,4 +1702,60 @@ function showValidationError(message, type) {
   setTimeout(() => {
     if (overlay.parentNode) overlay.remove();
   }, 5000);
+}
+
+/**
+ * 🌍 Aggiorna descrizioni brevi quando cambia lingua
+ */
+function updateAllBriefDescriptionsForLanguage() {
+    console.log('🔄 Aggiornamento descrizioni brevi per cambio lingua...');
+    
+    if (!window.i18n || typeof window.i18n !== 'function') {
+        console.warn('⚠️ Sistema i18n non disponibile');
+        return;
+    }
+    
+    const i18nInstance = window.i18n();
+    if (!i18nInstance || typeof i18nInstance.translateBriefDescription !== 'function') {
+        console.warn('⚠️ Funzione translateBriefDescription non disponibile');
+        return;
+    }
+    
+    // Seleziona tutte le card-desc
+    const descElements = document.querySelectorAll('.card-desc');
+    let updatedCount = 0;
+    
+    descElements.forEach(descEl => {
+        // Ottieni la card parent
+        const card = descEl.closest('.card');
+        if (!card) return;
+        
+        // Ottieni lo SKU della card per recuperare il prodotto originale
+        const sku = card.dataset.sku;
+        if (!sku) return;
+        
+        // Cerca il prodotto nei dati caricati
+        // Nota: assumiamo che i prodotti siano già stati caricati
+        // e che il testo originale in italiano sia recuperabile
+        
+        // Per ora, usiamo un approccio più semplice:
+        // memorizziamo la descrizione originale come data-attribute alla prima creazione
+        let originalDesc = card.dataset.originalBriefDesc;
+        
+        if (!originalDesc) {
+            // Se non è stata memorizzata, usa il testo corrente come base
+            // (questo funziona solo se la pagina è stata caricata in italiano)
+            originalDesc = descEl.textContent;
+            card.dataset.originalBriefDesc = originalDesc;
+        }
+        
+        // Traduci la descrizione
+        const translatedDesc = i18nInstance.translateBriefDescription(originalDesc);
+        
+        // Aggiorna il DOM
+        descEl.textContent = translatedDesc;
+        updatedCount++;
+    });
+    
+    console.log(`✅ ${updatedCount} descrizioni brevi aggiornate`);
 }
