@@ -236,6 +236,11 @@ document.querySelectorAll('[data-i18n-placeholder]').forEach(el => {
         updateExtraServicesLanguage();
     }
 
+    // ✅ NUOVO: Aggiorna contenuti dinamici dal foglio Google
+    if (typeof updateDynamicContent === 'function') {
+        updateDynamicContent();
+    }
+
     document.dispatchEvent(new CustomEvent('languageChanged', { detail: { lang: langCode } }));
 
     console.log(`✅ Lingua PDP cambiata: ${langCode.toUpperCase()}`);
@@ -439,6 +444,175 @@ updateInternalLinks(langCode) {
     const decimal = decimalConfig[this.currentLang] || ',';
     
     return amount.toFixed(decimals).replace('.', decimal);
+  }
+
+  /**
+   * 🌍 TRADUZIONE CONTENUTI FOGLIO GOOGLE
+   * Traduce i contenuti dinamici dal foglio "Prodotti Prenotabili"
+   */
+
+  /**
+   * Traduce il Benefit in base alla variante
+   * @param {string} benefitIT - Testo benefit in italiano
+   * @returns {string} - Benefit tradotto nella lingua corrente
+   */
+  translateBenefit(benefitIT) {
+    if (!benefitIT || !window.translationsBookingData) return benefitIT;
+    
+    const benefits = window.translationsBookingData.benefits;
+    const lang = this.currentLang;
+    
+    // Identifica quale variante è il benefit in base al contenuto
+    if (benefitIT.includes('2 supercar') && benefitIT.includes('posti posteriori disponibili')) {
+      return benefits.combo_with_seats[lang] || benefitIT;
+    } else if (benefitIT.includes('2 supercar') && !benefitIT.includes('posti posteriori')) {
+      return benefits.combo_without_seats[lang] || benefitIT;
+    } else if (benefitIT.includes('posti posteriori disponibili')) {
+      return benefits.single_with_seats[lang] || benefitIT;
+    } else {
+      return benefits.single_without_seats[lang] || benefitIT;
+    }
+  }
+
+  /**
+   * Traduce la Descrizione prodotto
+   * @param {string} descIT - Descrizione in italiano
+   * @returns {string} - Descrizione tradotta
+   */
+  translateDescription(descIT) {
+    if (!descIT || !window.translationsBookingData) return descIT;
+    
+    const descriptions = window.translationsBookingData.descriptions;
+    const lang = this.currentLang;
+    
+    // Mappa le descrizioni in base a parole chiave univoche
+    const descMap = {
+      "California, elegante Gran Turismo a 4 posti, unisce comfort e potenza": "california_458",
+      "Un'esperienza che unisce due anime della stessa leggenda": "california_californiat",
+      "Il fascino della Gran Turismo incontra l'anima più estrema": "california_488spider",
+      "Due interpretazioni diverse dello stile Gran Turismo Ferrari": "california_portofino",
+      "Eleganza italiana contro aggressività pura": "california_huracan",
+      "La modernità del turbo incontra la purezza del motore aspirato": "californiat_458spider",
+      "Due spider, due caratteri forti": "californiat_488spider",
+      "Il meglio delle Gran Turismo Ferrari in versione moderna": "californiat_portofino",
+      "Una sfida tra due mondi": "californiat_huracan",
+      "La Gran Turismo moderna incontra una delle Ferrari più iconiche": "portofino_458italia",
+      "Due generazioni di potenza Ferrari a confronto": "portofino_488spider",
+      "Classe ed eleganza contro istinto e aggressività": "portofino_huracan",
+      "Due leggende Ferrari, due filosofie di potenza": "458italia_488spider",
+      "Il duello tra Maranello e Sant'Agata": "458italia_huracan",
+      "Il massimo delle supersportive scoperte": "488spider_huracan",
+      "Vivi l'emozione di guidare la Ferrari California, elegante Gran Turismo": "california",
+      "Scopri la Ferrari Portofino, icona Gran Turismo": "portofino",
+      "Vivi la Ferrari 488 Spider, capolavoro sportivo": "488spider",
+      "Guidare la Ferrari 458 Italia significa entrare in contatto": "458italia",
+      "La Ferrari California T unisce potenza e versatilità": "californiat",
+      "Senti l'adrenalina della Lamborghini Huracán Spyder": "huracan",
+      "La Ferrari 458 Spider incarna tecnologia": "458spider",
+      "La Ferrari F8 Spider celebra l'eccellenza": "f8spider",
+      "Scopri la Ferrari 296, berlinetta 2 posti PHEV": "296",
+      "La Ferrari Roma unisce eleganza senza tempo": "roma",
+      "Vivi l'esperienza Maserati MC20 Cielo": "mc20cielo",
+      "Scopri la McLaren 720S Performance": "720s"
+    };
+    
+    // Trova la chiave corrispondente
+    for (const [keyword, key] of Object.entries(descMap)) {
+      if (descIT.includes(keyword)) {
+        return descriptions[key]?.[lang] || descIT;
+      }
+    }
+    
+    return descIT;
+  }
+
+  /**
+   * Traduce le Prestazioni
+   * @param {string} prestazioniIT - Prestazioni in italiano
+   * @returns {string} - Prestazioni tradotte
+   */
+  translatePrestazioni(prestazioniIT) {
+    if (!prestazioniIT || !window.translationsBookingData) return prestazioniIT;
+    
+    const prestazioni = window.translationsBookingData.prestazioni;
+    const lang = this.currentLang;
+    
+    let translated = prestazioniIT;
+    
+    // Traduce "Posteriore", "Integrale", etc.
+    if (prestazioni.traction) {
+      for (const [itText, translations] of Object.entries(prestazioni.traction)) {
+        if (translated.includes(itText)) {
+          translated = translated.replace(new RegExp(itText, 'g'), translations[lang] || itText);
+        }
+      }
+    }
+    
+    return translated;
+  }
+
+  /**
+   * Traduce le Caratteristiche
+   * @param {string} caratteristicheIT - Caratteristiche in italiano
+   * @returns {string} - Caratteristiche tradotte
+   */
+  translateCaratteristiche(caratteristicheIT) {
+    if (!caratteristicheIT || !window.translationsBookingData) return caratteristicheIT;
+    
+    const caratteristiche = window.translationsBookingData.caratteristiche;
+    const lang = this.currentLang;
+    
+    let translated = caratteristicheIT;
+    
+    // Traduce tipi di motore
+    if (caratteristiche.motor_type) {
+      for (const [itText, translations] of Object.entries(caratteristiche.motor_type)) {
+        if (translated.includes(itText)) {
+          translated = translated.replace(new RegExp(itText, 'g'), translations[lang] || itText);
+        }
+      }
+    }
+    
+    // Traduce trasmissione
+    if (caratteristiche.transmission) {
+      for (const [itText, translations] of Object.entries(caratteristiche.transmission)) {
+        if (translated.includes(itText)) {
+          translated = translated.replace(new RegExp(itText, 'g'), translations[lang] || itText);
+        }
+      }
+    }
+    
+    // Traduce posti
+    if (caratteristiche.seats) {
+      for (const [itText, translations] of Object.entries(caratteristiche.seats)) {
+        // Cerca pattern esatto per i posti (es: ", 4" o ", 2 / 4")
+        const patterns = [`, ${itText}$`, `, ${itText},`, `, ${itText} `];
+        patterns.forEach(pattern => {
+          const regex = new RegExp(pattern, 'g');
+          if (regex.test(translated)) {
+            translated = translated.replace(regex, (match) => {
+              return match.replace(itText, translations[lang] || itText);
+            });
+          }
+        });
+      }
+    }
+    
+    return translated;
+  }
+
+  /**
+   * Traduce le Politiche
+   * @param {string} politicheIT - Politiche in italiano (opzionale)
+   * @returns {string} - Politiche tradotte
+   */
+  translatePolitiche(politicheIT = null) {
+    if (!window.translationsBookingData) return politicheIT || '';
+    
+    const politiche = window.translationsBookingData.politiche;
+    const lang = this.currentLang;
+    
+    return politiche[lang] || politiche.it || politicheIT || '';
   }
 
   /**
