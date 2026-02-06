@@ -88,6 +88,11 @@ class I18n {
         }
         if (typeof updateAllBadgesForLanguage === 'function') {
           setTimeout(() => updateAllBadgesForLanguage(), 100);
+        
+        // ✅ Aggiorna descrizioni brevi
+        if (typeof updateAllBriefDescriptionsForLanguage === 'function') {
+          setTimeout(() => updateAllBriefDescriptionsForLanguage(), 100);
+        }
         }
         
         console.log(`âœ… Lingua aggiornata automaticamente a: ${savedLang.toUpperCase()}`);
@@ -276,6 +281,11 @@ class I18n {
         updateAllBadgesForLanguage();
     }
 
+    // ✅ Aggiorna descrizioni brevi
+    if (typeof updateAllBriefDescriptionsForLanguage === 'function') {
+        updateAllBriefDescriptionsForLanguage();
+    }
+
     // Dispatch event
     document.dispatchEvent(new CustomEvent('languageChanged', { detail: { lang: langCode } }));
 
@@ -456,6 +466,67 @@ getFlagCode(langCode) {
       es: 'Español'
     };
     return names[langCode] || langCode;
+  }
+
+  /**
+   * Traduce descrizioni brevi delle supercar (index.html)
+   * @param {string} briefDescIT - Descrizione breve in italiano
+   * @returns {string} - Descrizione tradotta nella lingua corrente
+   */
+  translateBriefDescription(briefDescIT) {
+    if (!briefDescIT || !window.translationsBriefDescriptions) return briefDescIT;
+    
+    const descriptions = window.translationsBriefDescriptions;
+    const lang = this.currentLang;
+    
+    // Mappa le descrizioni in base a parole chiave univoche
+    const descMap = {
+      // Combo
+      "Ferrari California e Ferrari 458 Italia": "california_458italia",
+      "Ferrari California e Ferrari California T": "california_californiat",
+      "Ferrari California e Ferrari 488 Spider": "california_488spider",
+      "Ferrari California e Ferrari Portofino": "california_portofino",
+      "Ferrari California e Lamborghini Huracán Spyder": "california_huracan",
+      "Ferrari California T e Ferrari 458 Spider": "californiat_458spider",
+      "Ferrari California T e Ferrari 488 Spider": "californiat_488spider",
+      "Ferrari California T e Ferrari Portofino": "californiat_portofino",
+      "Ferrari California T e Lamborghini Huracán Spyder": "californiat_huracan",
+      "Ferrari Portofino e Ferrari 458 Italia": "portofino_458italia",
+      "Ferrari Portofino e Ferrari 488 Spider": "portofino_488spider",
+      "Ferrari Portofino e Lamborghini Huracán Spyder": "portofino_huracan",
+      "Ferrari 458 Italia e Ferrari 488 Spider": "458italia_488spider",
+      "Ferrari 458 Italia e Lamborghini Huracán Spyder": "458italia_huracan",
+      "Ferrari 488 Spider e Lamborghini Huracán Spyder": "488spider_huracan",
+      
+      // Singole
+      "con la Ferrari California.": "california",
+      "la Ferrari Portofino per": "portofino",
+      "della Ferrari 488 Spider a": "488spider",
+      "della Ferrari 458 Italia a": "458italia",
+      "la Ferrari California T sulle": "californiat",
+      "della Lamborghini Huracán Spyder a": "huracan",
+      "della Ferrari 458 Spider a": "458spider",
+      "la Ferrari F8 sulle": "f8spider",
+      "della Ferrari 296 a": "296",
+      "la Ferrari Roma a": "roma",
+      "della Maserati MC20 Cielo a": "mc20cielo",
+      "la McLaren 720S Performance a": "720s"
+    };
+    
+    // Trova la chiave corrispondente
+    for (const [keyword, key] of Object.entries(descMap)) {
+      if (briefDescIT.includes(keyword)) {
+        const translation = descriptions[key]?.[lang];
+        if (translation) {
+          console.log(`✅ Tradotta descrizione breve: ${key} → ${lang}`);
+          return translation;
+        }
+      }
+    }
+    
+    // Se non trova una traduzione, restituisce l'originale
+    console.warn(`⚠️ Descrizione breve non trovata per traduzione:`, briefDescIT.substring(0, 50));
+    return briefDescIT;
   }
 }
 
