@@ -12,6 +12,7 @@
 
     <!-- I18N System Scripts -->
 <script src="translations-pdp.js"></script>
+<script src="translations-booking-data.js"></script>
 <script src="i18n-pdp.js"></script>
     
     <script>
@@ -2231,6 +2232,17 @@ function calculateIndividualComboPrices(comboBasePrice) {
             console.error('❌ Errore initializeComponents:', initError);
             console.error('   Stack:', initError.stack);
             throw new Error('Errore durante l\'inizializzazione: ' + initError.message);
+        }
+        
+        // 6. Aggiorna contenuti dinamici per la lingua corrente
+        console.log('🌍 Inizio updateDynamicContent...');
+        try {
+            if (typeof updateDynamicContent === 'function') {
+                updateDynamicContent();
+                console.log('✅ updateDynamicContent completato');
+            }
+        } catch (updateError) {
+            console.warn('⚠️ Errore updateDynamicContent (non bloccante):', updateError);
         }
         
         console.log('✅ Caricamento pagina completato con successo');
@@ -6933,6 +6945,212 @@ function updateServicesForCombo(isComboActive, comboSku = null, comboTitle = nul
     }
     
     console.log('✅ Servizi aggiornati dinamicamente (titoli + descrizioni + prezzi + stato checkbox ripristinato)');
+}
+
+// ========================================
+// 🌍 AGGIORNAMENTO CONTENUTI DINAMICI
+// ========================================
+
+/**
+ * Aggiorna i contenuti dinamici provenienti dal foglio Google
+ * quando cambia la lingua
+ */
+function updateDynamicContent() {
+    const i18n = window.i18nPDP && window.i18nPDP();
+    if (!i18n || !bookingData || !bookingData.productData) {
+        console.warn('⚠️ impossibile aggiornare contenuti dinamici: mancano i dati');
+        return;
+    }
+
+    const product = bookingData.productData;
+    
+    console.log('🌍 Aggiornamento contenuti dinamici per lingua:', i18n.currentLang);
+
+    // ========================================
+    // 1. AGGIORNA BENEFIT
+    // ========================================
+    
+    // Traduci benefit se presente (assume che sia in italiano nel foglio)
+    const benefitIT = product.benefit_original || product.benefit;
+    
+    // Salva l'originale se non è già salvato
+    if (!product.benefit_original && product.benefit) {
+        product.benefit_original = product.benefit;
+    }
+    
+    if (typeof benefitIT === 'string') {
+        const benefitTranslated = i18n.translateBenefit(benefitIT);
+        const benefits = benefitTranslated.split(',').map(b => b.trim());
+        
+        // Aggiorna benefit badges (primi 3)
+        const benefitBadges = document.querySelector('.benefit-badges');
+        if (benefitBadges && benefits.length > 0) {
+            benefitBadges.innerHTML = '';
+            benefits.slice(0, 3).forEach(benefit => {
+                benefitBadges.innerHTML += `
+                    <div class="feature-badge">
+                        <svg style="width: 16px; height: 16px; flex-shrink: 0;" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"></path>
+                        </svg>
+                        <span>${benefit}</span>
+                    </div>
+                `;
+            });
+        }
+        
+        // Aggiorna summary benefits (dal 4° in poi)
+        const summaryBenefits = document.querySelector('.summary-benefits');
+        if (summaryBenefits && benefits.length > 3) {
+            summaryBenefits.innerHTML = '';
+            benefits.slice(3).forEach(benefit => {
+                summaryBenefits.innerHTML += `
+                    <div style="display: flex; gap: 0.75rem;">
+                        <svg style="width: 20px; height: 20px; color: #22c55e; flex-shrink: 0;" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"></path>
+                        </svg>
+                        <span style="color: #c9a891;">${benefit}</span>
+                    </div>
+                `;
+            });
+        }
+    }
+
+    // ========================================
+    // 2. AGGIORNA DESCRIZIONE
+    // ========================================
+    
+    const descIT = product.desc_original || product.desc;
+    
+    // Salva l'originale se non è già salvato
+    if (!product.desc_original && product.desc) {
+        product.desc_original = product.desc;
+    }
+    
+    if (descIT) {
+        const descTranslated = i18n.translateDescription(descIT);
+        const productDescription = document.querySelector('.product-description');
+        if (productDescription) {
+            productDescription.textContent = descTranslated;
+        }
+    }
+
+    // ========================================
+    // 3. AGGIORNA PRESTAZIONI
+    // ========================================
+    
+    const prestazioniIT = product.prestazioni_original || product.prestazioni;
+    
+    // Salva l'originale se non è già salvato
+    if (!product.prestazioni_original && product.prestazioni) {
+        product.prestazioni_original = product.prestazioni;
+    }
+    
+    if (Array.isArray(prestazioniIT) || typeof prestazioniIT === 'string') {
+        const prestazioniArray = Array.isArray(prestazioniIT) 
+            ? prestazioniIT 
+            : prestazioniIT.split(',').map(p => p.trim());
+        
+        const prestazioniTranslated = prestazioniArray.map(p => i18n.translatePrestazioni(p));
+        
+        // Aggiorna tabella prestazioni
+        const table1Body = document.getElementById('table1Body');
+        if (table1Body && prestazioniTranslated.length > 0) {
+            table1Body.innerHTML = '';
+            prestazioniTranslated.forEach((value, index) => {
+                const specKeys = i18n.t('booking_config_sc_specs') || [];
+                const label = specKeys[index] || '';
+                if (label && value) {
+                    table1Body.innerHTML += `
+                        <div class="spec-item">
+                            <span style="color: #8a7865; font-weight: 500;">${label}</span>
+                            <span style="color: #f5f5f0; font-weight: 600;">${value}</span>
+                        </div>
+                    `;
+                }
+            });
+        }
+    }
+
+    // ========================================
+    // 4. AGGIORNA CARATTERISTICHE
+    // ========================================
+    
+    const caratteristicheIT = product.caratteristiche_original || product.caratteristiche;
+    
+    // Salva l'originale se non è già salvato
+    if (!product.caratteristiche_original && product.caratteristiche) {
+        product.caratteristiche_original = product.caratteristiche;
+    }
+    
+    if (Array.isArray(caratteristicheIT) || typeof caratteristicheIT === 'string') {
+        const caratteristicheArray = Array.isArray(caratteristicheIT) 
+            ? caratteristicheIT 
+            : caratteristicheIT.split(',').map(c => c.trim());
+        
+        const caratteristicheTranslated = caratteristicheArray.map(c => i18n.translateCaratteristiche(c));
+        
+        // Aggiorna tabella caratteristiche
+        const table2Body = document.getElementById('table2Body');
+        if (table2Body && caratteristicheTranslated.length > 0) {
+            table2Body.innerHTML = '';
+            caratteristicheTranslated.forEach((value, index) => {
+                const specKeys = i18n.t('booking_config_sc_specs') || [];
+                const label = specKeys[index + 4] || ''; // Le caratteristiche iniziano dalla 5a spec (indice 4)
+                if (label && value) {
+                    table2Body.innerHTML += `
+                        <div class="spec-item">
+                            <span style="color: #8a7865; font-weight: 500;">${label}</span>
+                            <span style="color: #f5f5f0; font-weight: 600;">${value}</span>
+                        </div>
+                    `;
+                }
+            });
+        }
+    }
+
+    // ========================================
+    // 5. AGGIORNA POLITICHE
+    // ========================================
+    
+    const politicheIT = product.politiche_original || product.politiche;
+    
+    // Salva l'originale se non è già salvato
+    if (!product.politiche_original && product.politiche) {
+        product.politiche_original = product.politiche;
+    }
+    
+    // Le politiche sono uguali per tutti i prodotti
+    const politicheTranslated = i18n.translatePolitiche(politicheIT);
+    
+    // Aggiorna sezione politiche
+    const policiesCard = document.querySelector('.policies-card');
+    if (policiesCard && politicheTranslated) {
+        // Le politiche sono un testo formattato con \n, dividiamolo in paragrafi
+        const paragraphs = politicheTranslated.split('\n').filter(p => p.trim());
+        
+        let policiesHTML = '';
+        paragraphs.forEach(policy => {
+            const parts = policy.split(':');
+            if (parts.length >= 2) {
+                const label = parts[0].trim();
+                const text = parts.slice(1).join(':').trim();
+                policiesHTML += `
+                    <div style="margin-bottom: 1.25rem;">
+                        <div style="font-weight: 600; color: #D4AF37; margin-bottom: 0.5rem;">${label}:</div>
+                        <div style="color: #c9a891; line-height: 1.6;">${text}</div>
+                    </div>
+                `;
+            }
+        });
+        
+        // Trova il container delle politiche all'interno della card
+        const policiesContainer = policiesCard.querySelector('[style*="padding"]');
+        if (policiesContainer) {
+            policiesContainer.innerHTML = policiesHTML;
+        }
+    }
+
+    console.log('✅ Contenuti dinamici aggiornati per lingua:', i18n.currentLang);
 }
 
 // ========================================
