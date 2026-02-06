@@ -2453,68 +2453,6 @@ function filterImagesForDevice(product) {
     // ========================================
     // RENDERING DINAMICO PAGINA
     // ========================================
-
-/**
- * 🌍 Traduce automaticamente i campi dinamici del prodotto
- */
-async function translateProductFields(product, targetLang) {
-    if (!product || targetLang === 'it') return product; // Se italiano, nessuna traduzione necessaria
-    
-    const fieldsToTranslate = ['benefit', 'desc', 'prestazioni', 'caratteristiche', 'politiche'];
-    
-    for (const field of fieldsToTranslate) {
-        if (product[field] && typeof product[field] === 'object') {
-            // Se il campo ha già la traduzione, usala
-            if (product[field][targetLang]) {
-                continue;
-            }
-            
-            // Altrimenti, traduci il testo italiano
-            const textToTranslate = product[field].it || product[field];
-            
-            if (textToTranslate && textToTranslate.trim()) {
-                try {
-                    const translated = await translateText(textToTranslate, targetLang);
-                    product[field][targetLang] = translated;
-                } catch (error) {
-                    console.warn(`⚠️ Errore traduzione campo ${field}:`, error);
-                    product[field][targetLang] = textToTranslate; // Fallback: usa il testo originale
-                }
-            }
-        }
-    }
-    
-    return product;
-}
-
-/**
- * 🔄 Traduce un testo verso la lingua target usando Google Translate API
- */
-async function translateText(text, targetLang) {
-    // Mappa le lingue ai codici Google Translate
-    const langMap = {
-        'en': 'en',
-        'fr': 'fr',
-        'de': 'de',
-        'es': 'es'
-    };
-    
-    const targetCode = langMap[targetLang];
-    if (!targetCode) return text;
-    
-    try {
-        const response = await fetch(
-            `https://translate.googleapis.com/translate_a/single?client=gtx&sl=it&tl=${targetCode}&dt=t&q=${encodeURIComponent(text)}`
-        );
-        
-        const result = await response.json();
-        return result[0][0][0] || text;
-    } catch (error) {
-        console.error('❌ Errore traduzione:', error);
-        return text;
-    }
-}
-
     function renderPage(product) {
     const config = product.typeConfig;
     
@@ -2587,12 +2525,7 @@ if (config.showDynamicPrice) {
     const benefitContainer = document.querySelector('.benefit-badges');
     benefitContainer.innerHTML = '';
     
-    // ✅ MODIFICATO: Usa la lingua corrente
-    const currentLang = i18n.currentLang;
-    const benefitText = product.benefit[currentLang] || product.benefit.it || product.benefit;
-    const benefits = typeof benefitText === 'string' ? benefitText.split('\n').filter(b => b.trim()) : (Array.isArray(benefitText) ? benefitText : []);
-    
-    benefits.slice(0, 3).forEach(benefit => {
+    product.benefit.slice(0, 3).forEach(benefit => {
         benefitContainer.innerHTML += `
             <span class="feature-badge">
                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -2604,8 +2537,7 @@ if (config.showDynamicPrice) {
     });
     
     // ✅ 6. DESCRIZIONE
-    const descText = product.desc[currentLang] || product.desc.it || product.desc;
-    document.querySelector('.product-description').textContent = descText;
+    document.querySelector('.product-description').textContent = product.desc;
     
     // ✅ 7. TABELLA PRESTAZIONI (con traduzioni dinamiche)
 const table1Title = document.querySelector('.table-1-title');
@@ -2625,10 +2557,7 @@ const table1LabelsKeys = config.type === 'supercar'
     ? ['booking_spec_surface', 'booking_spec_location', 'booking_spec_bedrooms', 'booking_spec_bathrooms']
     : ['booking_spec_duration', 'booking_spec_max_participants', 'booking_spec_time_slot', 'booking_spec_meeting_point'];
 
-const prestazioniText = product.prestazioni[currentLang] || product.prestazioni.it || product.prestazioni;
-const prestazioniArray = typeof prestazioniText === 'string' ? prestazioniText.split('\n').filter(p => p.trim()) : (Array.isArray(prestazioniText) ? prestazioniText : []);
-
-prestazioniArray.forEach((value, index) => {
+product.prestazioni.forEach((value, index) => {
     const labelKey = table1LabelsKeys[index];
     const label = labelKey ? i18n.t(labelKey) : `Campo ${index + 1}`;
     
@@ -2658,10 +2587,7 @@ const table2LabelsKeys = config.type === 'supercar'
     ? ['booking_spec_type', 'booking_spec_heating', 'booking_spec_parking', 'booking_spec_outdoors']
     : ['booking_spec_accessibility', 'booking_spec_included_services', 'booking_spec_requirements', 'booking_spec_accommodation'];
 
-const caratteristicheText = product.caratteristiche[currentLang] || product.caratteristiche.it || product.caratteristiche;
-const caratteristicheArray = typeof caratteristicheText === 'string' ? caratteristicheText.split('\n').filter(c => c.trim()) : (Array.isArray(caratteristicheText) ? caratteristicheText : []);
-
-caratteristicheArray.forEach((value, index) => {
+product.caratteristiche.forEach((value, index) => {
     const labelKey = table2LabelsKeys[index];
     const label = labelKey ? i18n.t(labelKey) : `Campo ${index + 5}`;
     
@@ -2860,10 +2786,7 @@ if (skuPrefix === 'SC') {
     const summaryBenefits = document.querySelector('.summary-benefits');
     summaryBenefits.innerHTML = '';
 
-    const benefitText2 = product.benefit[currentLang] || product.benefit.it || product.benefit;
-    const benefits2 = typeof benefitText2 === 'string' ? benefitText2.split('\n').filter(b => b.trim()) : (Array.isArray(benefitText2) ? benefitText2 : []);
-    
-    benefits2.slice(3).forEach(benefit => {
+    product.benefit.slice(3).forEach(benefit => {
         summaryBenefits.innerHTML += `
             <div class="flex items-center gap-2 text-sm" style="color: #c9a891;">
                 <svg class="w-5 h-5 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -3243,25 +3166,18 @@ if (skuPrefix === 'SC') {
 
     // ✅ 13. POLITICHE DINAMICHE
     const policiesCard = document.querySelector('.policies-card');
-    if (policiesCard) {
-        const currentLang = i18n.currentLang;
-        const politicheText = product.politiche[currentLang] || product.politiche.it || product.politiche;
-        
-        if (politicheText && politicheText.trim()) {
-            const politicheArray = typeof politicheText === 'string' ? politicheText.split('\n').filter(p => p.trim()) : (Array.isArray(politicheText) ? politicheText : []);
-            const policiesBody = policiesCard.querySelector('.space-y-3');
+    if (policiesCard && product.politiche && Array.isArray(product.politiche)) {
+        const policiesBody = policiesCard.querySelector('.space-y-3');
+        if (policiesBody) {
+            policiesBody.innerHTML = '';
             
-            if (policiesBody && politicheArray.length > 0) {
-                policiesBody.innerHTML = '';
-                
-                politicheArray.forEach(policy => {
-                    const policyDiv = document.createElement('div');
-                    policyDiv.innerHTML = `<span style="color: #c9a891;">${policy}</span>`;
-                    policiesBody.appendChild(policyDiv);
-                });
-            }
-        }
-    }
+            product.politiche.forEach(policy => {
+                const policyDiv = document.createElement('div');
+                policyDiv.innerHTML = `
+                    <strong style="color: #f5f5f0;">${policy.label}:</strong> 
+                    ${policy.description}
+                `;
+                policiesBody.appendChild(policyDiv);
             });
         }
     }
@@ -4399,10 +4315,7 @@ function updateTableLabels() {
     const table1Body = document.querySelector('.table-1-body');
     if (table1Body && product.prestazioni) {
         table1Body.innerHTML = '';
-const prestazioniText = product.prestazioni[currentLang] || product.prestazioni.it || product.prestazioni;
-const prestazioniArray = typeof prestazioniText === 'string' ? prestazioniText.split('\n').filter(p => p.trim()) : (Array.isArray(prestazioniText) ? prestazioniText : []);
-
-prestazioniArray.forEach((value, index) => {
+        product.prestazioni.forEach((value, index) => {
             const labelKey = table1LabelsKeys[index];
             const label = labelKey ? i18n.t(labelKey) : `Campo ${index + 1}`;
             
@@ -4425,10 +4338,7 @@ prestazioniArray.forEach((value, index) => {
     const table2Body = document.querySelector('.table-2-body');
     if (table2Body && product.caratteristiche) {
         table2Body.innerHTML = '';
-const caratteristicheText = product.caratteristiche[currentLang] || product.caratteristiche.it || product.caratteristiche;
-const caratteristicheArray = typeof caratteristicheText === 'string' ? caratteristicheText.split('\n').filter(c => c.trim()) : (Array.isArray(caratteristicheText) ? caratteristicheText : []);
-
-caratteristicheArray.forEach((value, index) => {
+        product.caratteristiche.forEach((value, index) => {
             const labelKey = table2LabelsKeys[index];
             const label = labelKey ? i18n.t(labelKey) : `Campo ${index + 5}`;
             
