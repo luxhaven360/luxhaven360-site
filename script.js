@@ -20,6 +20,8 @@ function showSection(sectionId) {
             hero.style.display = 'flex';
             hero.classList.add('active');
         }
+        // ✅ RESET SCROLL IMMEDIATO quando si torna alla home
+        window.scrollTo(0, 0);
     } else {
         const hero = document.querySelector('.hero');
         if (hero) {
@@ -56,7 +58,10 @@ function showSection(sectionId) {
     const navLinks = document.getElementById('navLinks');
     if (navLinks) navLinks.classList.remove('active');
     
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    // ✅ Scroll smooth per tutte le altre sezioni (non home)
+    if (sectionId !== 'home') {
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
     
     // ✅✅✅ AGGIUNGI QUESTO BLOCCO ALLA FINE ✅✅✅
     // Ri-traduci pulsanti dopo cambio sezione
