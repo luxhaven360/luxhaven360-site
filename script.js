@@ -1294,35 +1294,9 @@ function hideLoaderImmediately() {
     }
 }
 
-// Aggiungi listener per nascondere loader su pageshow (quando si torna indietro) e load
-window.addEventListener('pageshow', (event) => {
-    // Se la pagina viene ripristinata dalla cache (tasto indietro)
-    if (event.persisted) {
-        // Nascondi eventuali loader dinamici
-        hideLoaderImmediately();
-        
-        // Mostra il loader intro originale
-        const introLoader = document.getElementById('intro-loader');
-        if (introLoader) {
-            introLoader.style.display = 'flex';
-            introLoader.style.opacity = '1';
-            document.body.style.overflow = 'hidden';
-            
-            // Ricarica i prodotti e poi nascondi il loader
-            initDynamicProducts().then(() => {
-                setTimeout(() => {
-                    introLoader.style.opacity = '0';
-                    document.body.style.overflow = '';
-                    setTimeout(() => {
-                        introLoader.style.display = 'none';
-                    }, 400);
-                }, 800);
-            });
-        }
-    } else {
-        hideLoaderImmediately();
-    }
-});
+
+// ✅ Listener pageshow rimosso - ora gestito centralmente in index.html
+// per evitare duplicazioni e conflitti
 
 window.addEventListener('load', hideLoaderImmediately);
 
