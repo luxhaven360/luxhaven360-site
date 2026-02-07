@@ -88,11 +88,11 @@ class I18n {
         }
         if (typeof updateAllBadgesForLanguage === 'function') {
           setTimeout(() => updateAllBadgesForLanguage(), 100);
+        }
         
         // ✅ Aggiorna descrizioni brevi
         if (typeof updateAllBriefDescriptionsForLanguage === 'function') {
           setTimeout(() => updateAllBriefDescriptionsForLanguage(), 100);
-        }
         }
         
         console.log(`âœ… Lingua aggiornata automaticamente a: ${savedLang.toUpperCase()}`);
