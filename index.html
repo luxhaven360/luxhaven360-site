@@ -310,8 +310,22 @@
     <script>
         const WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbwr79RkXIEocpuOKaM6uMJqE6VFs9wjlUPvrr__FvDbDDrD2ELB1NbfrWP3BCYpHj2u/exec';
 
+        // ========================================
+        // 🔧 FLAG ANTI-DUPLICAZIONE
+        // ========================================
+        let isInitializing = false;
+        let isPageShowHandled = false;
+
         // INIZIALIZZAZIONE PAGINA
         function initializePage() {
+            // ✅ Previeni inizializzazioni multiple
+            if (isInitializing) {
+                console.log('⚠️ Inizializzazione già in corso, skip');
+                return;
+            }
+            
+            isInitializing = true;
+            console.log('🚀 Inizializzazione pagina');
     const introLoader = document.getElementById('intro-loader');
     const progressBar = document.querySelector('.intro-progress-fill');
     
@@ -356,6 +370,9 @@
                 setTimeout(() => { 
                     introLoader.style.display = 'none'; 
                 }, 400); 
+                    
+                    isInitializing = false;
+                    console.log('✅ Inizializzazione completata');
             }
         }, 200);
     });
@@ -406,41 +423,84 @@
 
         window.addEventListener('load', initializePage);
 
+        // ========================================
+        // 🔧 GESTIONE UNIFICATA PAGESHOW
+        // ========================================
         window.addEventListener('pageshow', function(event) {
+            console.log('📱 Event pageshow triggered, persisted:', event.persisted);
+            
+            // ✅ Previeni gestione multipla dello stesso evento
+            if (isPageShowHandled) {
+                console.log('⚠️ Pageshow già gestito, skip');
+                return;
+            }
+            
             if (event.persisted) {
+                isPageShowHandled = true;
                 console.log('📱 Pagina ripristinata da cache (bfcache)');
                 
-                const waitForProducts = setInterval(() => {
-                    const hasProducts = document.querySelectorAll('.card[data-sku]').length > 0;
-                    
-                    if (hasProducts) {
-                        clearInterval(waitForProducts);
-                        
-                        console.log('✅ Prodotti trovati, ripristino filtri');
-                        restoreShopFilterIfNeeded();
-                        restoreBookableFilters();
-                    }
-                }, 100);
-                
+                // Reset del flag dopo un breve delay
                 setTimeout(() => {
-                    clearInterval(waitForProducts);
+                    isPageShowHandled = false;
+                }, 1000);
+                
+                // Reset scroll
+                setTimeout(() => window.scrollTo(0, 0), 0);
+                
+                // Controlla se i prodotti sono già presenti
+                const hasProducts = document.querySelectorAll('.card[data-sku]').length > 0;
+                
+                if (hasProducts) {
+                    console.log('✅ Prodotti già presenti, ripristino solo filtri');
+                    restoreShopFilterIfNeeded();
+                    restoreBookableFilters();
+                    updateCartIcon();
+                    updateTrackingIcon();
+                } else {
+                    console.log('⚠️ Prodotti non trovati, ricarico');
                     
-                    const hasProducts = document.querySelectorAll('.card[data-sku]').length > 0;
+                    // Mostra loader intro
+                    const introLoader = document.getElementById('intro-loader');
+                    if (introLoader) {
+                        introLoader.style.display = 'flex';
+                        introLoader.style.opacity = '1';
+                        document.body.style.overflow = 'hidden';
+                    }
                     
-                    if (!hasProducts) {
-                        console.log('⚠️ Prodotti non trovati dopo timeout, ricarico dinamicamente');
+                    // Ricarica prodotti
+                    if (typeof initDynamicProducts === 'function') {
                         initDynamicProducts().then(() => {
                             console.log('✅ Prodotti ricaricati, applico filtri');
                             restoreShopFilterIfNeeded();
                             restoreBookableFilters();
+                            updateCartIcon();
+                            updateTrackingIcon();
+                            
+                            // Nascondi loader
+                            setTimeout(() => {
+                                if (introLoader) {
+                                    introLoader.style.opacity = '0';
+                                    document.body.style.overflow = '';
+                                    setTimeout(() => {
+                                        introLoader.style.display = 'none';
+                                    }, 400);
+                    
+                    isInitializing = false;
+                    console.log('✅ Inizializzazione completata');
+                                }
+                            }, 800);
+                        }).catch(error => {
+                            console.error('❌ Errore ricaricamento prodotti:', error);
+                            if (introLoader) {
+                                introLoader.style.display = 'none';
+                                document.body.style.overflow = '';
+                            }
                         });
                     }
-                }, 3000);
+                }
             }
         });
 
-        function updateCartIcon() {
-            const cart = JSON.parse(localStorage.getItem('lh360_cart')) || [];
             const totalQty = cart.reduce((sum, item) => sum + (item.qty || 1), 0);
             const cartIcon = document.getElementById('cartIcon');
             if (cartIcon) {
@@ -673,10 +733,7 @@
         // ========================================
         // RESET SCROLL - APPROCCIO SEMPLICE
         // ========================================
-        // Reset scroll quando pagina viene mostrata (back/forward)
-        window.addEventListener('pageshow', function() {
-            setTimeout(() => window.scrollTo(0, 0), 0);
-        });
+
     </script>
 </body>
 </html>
