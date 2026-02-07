@@ -72,6 +72,7 @@ const translations = {
     
     // FOOTER
     footer_rights: "© 2025 LuxHaven360. Tutti i diritti riservati.",
+    footer_company: "LuxHaven360. Tutti i diritti riservati.",
     footer_privacy: "Privacy Policy",
     footer_terms: "Terms of Service",
     
@@ -180,6 +181,7 @@ const translations = {
     
     // FOOTER
     footer_rights: "© 2025 LuxHaven360. All rights reserved.",
+    footer_company: "LuxHaven360. All rights reserved.",
     footer_privacy: "Privacy Policy",
     footer_terms: "Terms of Service",
     
@@ -288,6 +290,7 @@ const translations = {
     
     // FOOTER
     footer_rights: "© 2025 LuxHaven360. Tous droits réservés.",
+    footer_company: "LuxHaven360. Tous droits réservés.",
     footer_privacy: "Politique de Confidentialité",
     footer_terms: "Conditions de Service",
     
@@ -396,6 +399,7 @@ const translations = {
     
     // FOOTER
     footer_rights: "© 2025 LuxHaven360. Alle Rechte vorbehalten.",
+    footer_company: "LuxHaven360. Alle Rechte vorbehalten.",
     footer_privacy: "Datenschutzrichtlinie",
     footer_terms: "Nutzungsbedingungen",
     
@@ -504,6 +508,7 @@ const translations = {
     
     // FOOTER
     footer_rights: "© 2025 LuxHaven360. Todos los derechos reservados.",
+    footer_company: "LuxHaven360. Todos los derechos reservados.",
     footer_privacy: "Política de Privacidad",
     footer_terms: "Términos de Servicio",
     
