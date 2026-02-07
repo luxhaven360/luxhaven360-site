@@ -20,8 +20,6 @@ function showSection(sectionId) {
             hero.style.display = 'flex';
             hero.classList.add('active');
         }
-        // ✅ RESET SCROLL IMMEDIATO quando si torna alla home
-        window.scrollTo(0, 0);
     } else {
         const hero = document.querySelector('.hero');
         if (hero) {
@@ -58,9 +56,11 @@ function showSection(sectionId) {
     const navLinks = document.getElementById('navLinks');
     if (navLinks) navLinks.classList.remove('active');
     
-    // ✅ Scroll smooth per tutte le altre sezioni (non home)
-    if (sectionId !== 'home') {
-        window.scrollTo({ top: 0, behavior: 'smooth' });
+    // Reset scroll: immediato per home, smooth per altre sezioni
+    if (sectionId === 'home') {
+        window.scrollTo(0, 0); // Immediato
+    } else {
+        window.scrollTo({ top: 0, behavior: 'smooth' }); // Smooth
     }
     
     // ✅✅✅ AGGIUNGI QUESTO BLOCCO ALLA FINE ✅✅✅
