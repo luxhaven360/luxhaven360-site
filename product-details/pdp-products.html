@@ -321,6 +321,23 @@
             margin-bottom: 1.5em;
         }
 
+        /* Nota sulle taglie — corsivo, colore distinto */
+        .desc-size-note {
+            font-style: italic;
+            color: #7dd3fc;          /* azzurro tenue, distinguibile ma non aggressivo */
+            font-size: 0.975rem;
+            line-height: 1.7;
+            margin-top: 1.75em;
+            margin-bottom: 0;
+            padding-top: 1em;
+            border-top: 1px solid rgba(125, 211, 252, 0.2);
+        }
+
+        .desc-size-note strong {
+            font-weight: 600;
+            font-style: italic;
+        }
+
         .availability {
            display: flex;
            align-items: center;
@@ -3170,11 +3187,28 @@ document.addEventListener('languageChanged', () => {
          * Divide il rawText in sezioni usando il separatore <br><br>
          * (prodotto da Code.gs che unisce le colonne K, L, M).
          * Ogni sezione viene poi analizzata singolarmente.
+         *
+         * Se nel testo è presente "Nota sulle taglie:" (in qualunque posizione),
+         * tutto ciò che viene da lì in poi viene estratto come blocco 'size-note'
+         * separato e accodato in fondo, indipendentemente dalla struttura delle sezioni.
          */
         function _parseDescriptionToHtml(rawText) {
+            // ── Estrai eventuale "Nota sulle taglie:" prima di tutto il resto ──
+            const SIZE_NOTE_RE = /Nota sulle taglie\s*:/i;
+            let mainText  = rawText;
+            let sizeNoteContent = null;
+
+            const snIdx = rawText.search(SIZE_NOTE_RE);
+            if (snIdx !== -1) {
+                // Testo che precede la nota (può contenere anche <br><br>)
+                mainText = rawText.slice(0, snIdx).trim();
+                // Tutto dal "Nota sulle taglie:" in poi (compreso il label)
+                sizeNoteContent = rawText.slice(snIdx).replace(/<br\s*\/?>/gi, ' ').trim();
+            }
+
             // Normalizza: <br><br> → separatore di sezione, <br> → \n
             const SECTION_SEP = /(<br\s*\/?>)\s*(<br\s*\/?>)/gi;
-            const sections = rawText
+            const sections = mainText
                 .split(SECTION_SEP)
                 .map(s => s.replace(/<br\s*\/?>/gi, '\n').trim())
                 .filter(s => s && !s.match(/^<br/i));   // scarta artefatti del split
@@ -3183,6 +3217,11 @@ document.addEventListener('languageChanged', () => {
             let blocks = [];
             for (const section of sections) {
                 blocks = blocks.concat(_sectionToBlocks(section));
+            }
+
+            // Accoda il blocco size-note in fondo (se presente)
+            if (sizeNoteContent) {
+                blocks.push({ type: 'size-note', content: sizeNoteContent });
             }
 
             // Renderizza i blocchi in HTML applicando le regole di spaziatura
@@ -3358,6 +3397,14 @@ document.addEventListener('languageChanged', () => {
 
                 } else if (block.type === 'italic') {
                     html += `<p class="desc-italic">${block.content}</p>`;
+
+                } else if (block.type === 'size-note') {
+                    // Separa il label "Nota sulle taglie:" dal testo che segue
+                    const noteHtml = block.content.replace(
+                        /^(Nota sulle taglie\s*:)\s*/i,
+                        '<strong>$1</strong> '
+                    );
+                    html += `<p class="desc-size-note">${noteHtml}</p>`;
                 }
             }
 
