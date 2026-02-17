@@ -251,6 +251,76 @@
             margin-bottom: 1.5rem;
         }
 
+        /* ============================================
+           DESCRIZIONE LUNGA — FORMATTAZIONE AVANZATA
+           ============================================ */
+
+        /* Frase singola (grassetto, spazio sopra e sotto) */
+        .desc-single {
+            font-weight: 700;
+            color: #fafafa;
+            font-size: 1.125rem;
+            line-height: 1.7;
+            margin-top: 1.5em;
+            margin-bottom: 1.5em;
+        }
+
+        /*  Ultima frase di una coppia consecutiva seguita da paragrafo
+            → nessuno spazio sotto (il paragrafo inizia immediatamente) */
+        .desc-single.tight-bottom {
+            margin-bottom: 0;
+        }
+
+        /* Paragrafo normale */
+        .desc-para {
+            color: #d4d4d8;
+            font-size: 1.125rem;
+            line-height: 1.7;
+            margin-top: 1.5em;
+            margin-bottom: 1.5em;
+        }
+
+        /* Paragrafo immediatamente dopo una coppia di frasi singole
+           → nessuno spazio sopra aggiuntivo */
+        .desc-para.tight-top {
+            margin-top: 0;
+        }
+
+        /* Intestazione sezione lista (es. "Dettagli costruttivi:") — grassetto */
+        .desc-list-header {
+            font-weight: 700;
+            color: #fafafa;
+            font-size: 1.125rem;
+            line-height: 1.7;
+            margin-top: 1.5em;
+            margin-bottom: 0.6em;
+        }
+
+        /* Lista bullet sotto l'intestazione */
+        .desc-list {
+            list-style: disc;
+            padding-left: 1.6rem;
+            color: #d4d4d8;
+            font-size: 1.0625rem;
+            line-height: 1.7;
+            margin-top: 0;
+            margin-bottom: 1.5em;
+        }
+
+        .desc-list li {
+            margin-bottom: 0.3em;
+        }
+
+        /* Riga in corsivo (es. grammatura, stile, edizione) */
+        .desc-italic {
+            font-style: italic;
+            color: #a1a1aa;
+            font-size: 1rem;
+            line-height: 1.7;
+            margin-top: 1.5em;
+            margin-bottom: 1.5em;
+        }
+
         .availability {
            display: flex;
            align-items: center;
@@ -1406,7 +1476,7 @@
 </div>
 
             <div id="description" class="tab-content active">
-                <p id="longDescription" style="font-size:1.25rem;color:#fafafa;margin-bottom:1.5rem;"></p>
+                <div id="longDescription"></div>
             </div>
 
             <div id="specs" class="tab-content">
@@ -2553,10 +2623,11 @@ if (prod.discountPrice && prod.discountPrice < prod.price) {
             document.title = `${prod.title || 'Prodotto'} — Dettaglio`;
 
             if (prod.longDescription) {
+                const formattedHtml = formatLongDescription(prod.sku || '', prod.longDescription);
                 if (window.DOMPurify) {
-                    document.getElementById('longDescription').innerHTML = DOMPurify.sanitize(prod.longDescription || '');
+                    document.getElementById('longDescription').innerHTML = DOMPurify.sanitize(formattedHtml);
                 } else {
-                    document.getElementById('longDescription').innerHTML = (prod.longDescription || '');
+                    document.getElementById('longDescription').innerHTML = formattedHtml;
                 }
             }
 
@@ -3057,7 +3128,240 @@ document.addEventListener('languageChanged', () => {
     }
 });
         
+        // ============================================================
+        //  FORMATTAZIONE DESCRIZIONE LUNGA
+        //  Applica grassetti, paragrafi e liste bullet alla descrizione
+        //  proveniente dalla colonna "Descrizione Lunga" del foglio Google.
+        // ============================================================
+
+        /**
+         * Punto di ingresso principale.
+         * Per ME-01-LE restituisce HTML hardcoded; per gli altri prodotti
+         * usa il parser generico.
+         */
+        function formatLongDescription(sku, rawText) {
+            if (!rawText) return '';
+            if (sku === 'ME-01-LE') return _buildME01LEHtml();
+            return _parseDescriptionToHtml(rawText);
+        }
+
+        /* ── Descrizione hardcoded ME-01-LE ── */
+        function _buildME01LEHtml() {
+            return [
+                '<p class="desc-single">Alcune felpe si indossano. Questa si abita.</p>',
+                '<p class="desc-para">La <strong>Vault Keys Hoodie</strong> non è un capo qualunque: è il primo oggetto da collezione firmato LuxHaven360, nato per chi non si accontenta dell\'ordinario e vuole portare con sé ogni giorno l\'estetica di un mondo fatto di proprietà straordinarie, chiavi simboliche e architetture senza tempo.</p>',
+                '<p class="desc-para">La grafica all over, esclusiva e progettata nei minimi dettagli, avvolge ogni centimetro del tessuto con un pattern di chiavi dorate e facciate nobiliari su fondo blu notte. Un\'opera d\'arte che si indossa.</p>',
+                '<p class="desc-single">Il tessuto fa la differenza.</p>',
+                '<p class="desc-para">Realizzata in misto poliestere riciclato e spandex (95/5), offre una vestibilità rilassata e una morbidezza inaspettata, grazie all\'esterno effetto cotone e all\'interno in pile spazzolato. Calda quando serve. Leggera quando vuoi.</p>',
+                '<p class="desc-single">I dettagli rivelano l\'ossessione per la qualità.</p>',
+                '<p class="desc-para">Cappuccio a doppio strato con grafica su entrambi i lati, cordini con occhielli ed estremità in metallo, cuciture overlock. Ogni pezzo è stampato, tagliato e cucito a mano da un team specializzato.</p>',
+                '<p class="desc-single">Rispetto per il pianeta, senza compromessi.</p>',
+                '<p class="desc-para">Il contenuto riciclato è certificato GRS (Global Recycled Standard). Il tessuto è certificato OEKO-TEX Standard 100.</p>',
+                '<p class="desc-italic">Grammatura: 308 g/m² · Stile unisex · Edizione limitata LuxHaven360</p>',
+                '<p class="desc-single">Questa non è una felpa. È il tuo biglietto d\'ingresso.</p>',
+            ].join('');
+        }
+
+        /* ── Parser generico per tutti gli altri prodotti ── */
+
+        /**
+         * Divide il rawText in sezioni usando il separatore <br><br>
+         * (prodotto da Code.gs che unisce le colonne K, L, M).
+         * Ogni sezione viene poi analizzata singolarmente.
+         */
+        function _parseDescriptionToHtml(rawText) {
+            // Normalizza: <br><br> → separatore di sezione, <br> → \n
+            const SECTION_SEP = /(<br\s*\/?>)\s*(<br\s*\/?>)/gi;
+            const sections = rawText
+                .split(SECTION_SEP)
+                .map(s => s.replace(/<br\s*\/?>/gi, '\n').trim())
+                .filter(s => s && !s.match(/^<br/i));   // scarta artefatti del split
+
+            // Costruisce un array di "blocchi semantici"
+            let blocks = [];
+            for (const section of sections) {
+                blocks = blocks.concat(_sectionToBlocks(section));
+            }
+
+            // Renderizza i blocchi in HTML applicando le regole di spaziatura
+            return _renderBlocks(blocks);
+        }
+
+        /**
+         * Analizza una singola sezione di testo e la converte in blocchi:
+         *   { type: 'single-group', sentences: [] }
+         *   { type: 'para',         content: ''   }
+         *   { type: 'list-header',  content: ''   }
+         *   { type: 'list-items',   items:   []   }
+         */
+        function _sectionToBlocks(text) {
+            if (!text) return [];
+
+            // ── Rilevamento sezione lista (es. "Dettagli costruttivi:\nitem1\nitem2…") ──
+            // Il titolo prima dei ":" deve essere breve (≤ 4 parole) e il contenuto
+            // deve contenere almeno un \n (righe separate nel foglio Google).
+            const listMatch = text.match(/^([^\n:]{1,60}):\n([\s\S]+)$/);
+            if (listMatch) {
+                const header = listMatch[1].trim();
+                const wordsInHeader = header.split(/\s+/).filter(Boolean).length;
+                if (wordsInHeader <= 4) {
+                    const items = listMatch[2].split('\n').map(x => x.trim()).filter(Boolean);
+                    return [
+                        { type: 'list-header', content: header },
+                        { type: 'list-items',  items }
+                    ];
+                }
+            }
+
+            // ── Sezione lista su riga singola (nessun \n dopo i ":") ──
+            // Es. "Dettagli costruttivi: item1 item2 item3"
+            const singleLineListMatch = text.match(/^([A-Za-zÀ-ÿ ]{2,40}):\s*(.+)$/);
+            if (singleLineListMatch) {
+                const header = singleLineListMatch[1].trim();
+                const wordsInHeader = header.split(/\s+/).filter(Boolean).length;
+                if (wordsInHeader <= 4 && !text.includes('.')) {
+                    // Nessun punto → è tutta parte della lista, non prosa normale
+                    const itemsRaw = singleLineListMatch[2];
+                    // Non riusciamo a separare gli item senza delimitatori:
+                    // mostriamo come paragrafo sotto l'intestazione
+                    return [
+                        { type: 'list-header', content: header },
+                        { type: 'para',         content: itemsRaw }
+                    ];
+                }
+            }
+
+            // ── Sezione prosa ── analizza frasi e individua hook e paragrafi
+            return _proseToBlocks(text);
+        }
+
+        /**
+         * Data una sezione di prosa (testo continuo), rileva:
+         *  - frasi "singole" (brevi, ≤ MAX_SINGLE_WORDS parole) all'inizio e alla fine
+         *  - paragrafi di corpo nel mezzo (raggruppati ogni 3 frasi)
+         */
+        function _proseToBlocks(text) {
+            const MAX_SINGLE_WORDS = 12;
+
+            // Divide il testo in frasi: spezza dopo ". " seguito da lettera maiuscola o cifra
+            const sentences = _splitSentences(text);
+            if (sentences.length === 0) return [{ type: 'para', content: text }];
+
+            const isSingle = s => s.split(/\s+/).filter(Boolean).length <= MAX_SINGLE_WORDS;
+
+            // Trova il primo indice di una frase "lunga" (non-singola)
+            const firstLongIdx = sentences.findIndex(s => !isSingle(s));
+
+            // Se tutte le frasi sono brevi → sono tutte hook singoli
+            if (firstLongIdx === -1) {
+                return [{ type: 'single-group', sentences }];
+            }
+
+            // Hook iniziali: frasi brevi che precedono la prima frase lunga
+            const openHooks = sentences.slice(0, firstLongIdx);
+
+            // Trova l'ultimo indice di una frase lunga
+            let lastLongIdx = sentences.length - 1;
+            while (lastLongIdx >= firstLongIdx && isSingle(sentences[lastLongIdx])) {
+                lastLongIdx--;
+            }
+
+            // Hook finali: frasi brevi che seguono l'ultima frase lunga
+            const closeHooks = sentences.slice(lastLongIdx + 1);
+
+            // Corpo: frasi tra hook iniziali e finali
+            const bodySentences = sentences.slice(firstLongIdx, lastLongIdx + 1);
+
+            const blocks = [];
+
+            if (openHooks.length > 0)  blocks.push({ type: 'single-group', sentences: openHooks });
+
+            // Raggruppa il corpo in paragrafi di massimo 3 frasi
+            for (let i = 0; i < bodySentences.length; i += 3) {
+                const chunk = bodySentences.slice(i, i + 3).join(' ');
+                blocks.push({ type: 'para', content: chunk });
+            }
+
+            if (closeHooks.length > 0) blocks.push({ type: 'single-group', sentences: closeHooks });
+
+            return blocks;
+        }
+
+        /**
+         * Divide una stringa in frasi italiane.
+         * Criterio: ". " seguito da lettera maiuscola (inizio nuova frase).
+         */
+        function _splitSentences(text) {
+            const clean = text.replace(/\n/g, ' ').replace(/\s{2,}/g, ' ').trim();
+            // Usa lookbehind per mantenere il punto nella frase precedente
+            const parts = clean.split(/(?<=\.)\s+(?=[A-ZÀÈÉÌÒÙA-Z0-9])/);
+            return parts
+                .map((s, i) => {
+                    s = s.trim();
+                    if (!s) return null;
+                    // Aggiungi punto se mancante (eccetto all'ultimo se già presente)
+                    if (i < parts.length - 1) return s.endsWith('.') ? s : s + '.';
+                    return s.endsWith('.') ? s : s + '.';
+                })
+                .filter(Boolean);
+        }
+
+        /**
+         * Converte l'array di blocchi semantici in HTML finale,
+         * applicando le regole di spaziatura:
+         *
+         *  - Frase singola ISOLATA           → .desc-single (spazio sopra e sotto)
+         *  - Ultima di una coppia + paragrafo → .desc-single.tight-bottom
+         *  - Paragrafo dopo coppia            → .desc-para.tight-top
+         */
+        function _renderBlocks(blocks) {
+            let html = '';
+
+            for (let i = 0; i < blocks.length; i++) {
+                const block    = blocks[i];
+                const nextBlock = blocks[i + 1];
+                const prevBlock = blocks[i - 1];
+
+                if (block.type === 'single-group') {
+                    const sents = block.sentences;
+                    const isPairedGroup = sents.length >= 2;
+                    const nextIsPara = nextBlock &&
+                        (nextBlock.type === 'para' || nextBlock.type === 'list-items');
+
+                    for (let j = 0; j < sents.length; j++) {
+                        const isLastInGroup = (j === sents.length - 1);
+                        // Tight-bottom: ultima frase di una coppia (≥2) seguita da un paragrafo
+                        const tightBottom = isPairedGroup && isLastInGroup && nextIsPara;
+                        const cls = 'desc-single' + (tightBottom ? ' tight-bottom' : '');
+                        html += `<p class="${cls}">${sents[j]}</p>`;
+                    }
+
+                } else if (block.type === 'para') {
+                    // Tight-top: paragrafo immediatamente dopo una coppia di frasi singole (≥2)
+                    const prevIsPairedSingle = prevBlock &&
+                        prevBlock.type === 'single-group' &&
+                        prevBlock.sentences.length >= 2;
+                    const cls = 'desc-para' + (prevIsPairedSingle ? ' tight-top' : '');
+                    html += `<p class="${cls}">${block.content}</p>`;
+
+                } else if (block.type === 'list-header') {
+                    html += `<p class="desc-list-header">${block.content}:</p>`;
+
+                } else if (block.type === 'list-items') {
+                    html += '<ul class="desc-list">';
+                    for (const item of block.items) {
+                        html += `<li>${item}</li>`;
+                    }
+                    html += '</ul>';
+
+                } else if (block.type === 'italic') {
+                    html += `<p class="desc-italic">${block.content}</p>`;
+                }
+            }
+
+            return html;
+        }
+
     </script>
 </body>
 </html>
-
