@@ -2294,17 +2294,31 @@ function loadPurchasedItems() {
         if(displayColor && item.size) variantText += ' · ';
         if(item.size) {
             const currentLang = (i18n && i18n.currentLang) ? i18n.currentLang : (localStorage.getItem('lh360_lang') || 'it');
-            // ✅ Forma breve per il sito (es. "Unica" → "Unique" in FR, "Única" in ES)
-            const displaySize = (typeof translateSizeName === 'function')
-                ? translateSizeName(item.size, currentLang, 'short')
-                : item.size;
-            variantText += `${i18n ? i18n.t('cart_item_size_label') : 'Taglia'} ${displaySize}`;
+
+            // Set di tutti i valori noti per "taglia unica" in qualsiasi lingua
+            // Serve per riconoscere anche taglie già tradotte salvate in carrelli precedenti
+            const ONE_SIZE_VALUES = new Set([
+                'Unica', 'Taglia Unica',                          // IT
+                'One Size',                                        // EN
+                'Unique', 'Taille Unique',                        // FR
+                'Einheitsgröße',                                  // DE
+                'Única', 'Talla Única'                            // ES
+            ]);
+
+            if (ONE_SIZE_VALUES.has(item.size)) {
+                // ✅ Taglia unica: mostra direttamente la forma completa tradotta (senza prefisso "Taglia")
+                const oneSizeFullMap = { it:'Taglia Unica', en:'One Size', fr:'Taille Unique', de:'Einheitsgröße', es:'Talla Única' };
+                variantText += oneSizeFullMap[currentLang] || 'Taglia Unica';
+            } else {
+                // ✅ Taglia normale (XS, S, M, L, XL...): prefisso + taglia
+                variantText += `${i18n ? i18n.t('cart_item_size_label') : 'Taglia'} ${item.size}`;
+            }
         }
-        // ✅ Fallback forma breve quando non c'è né colore né taglia
+        // Fallback quando non c'è né colore né taglia
         if(!variantText) {
             const currentLang = (i18n && i18n.currentLang) ? i18n.currentLang : (localStorage.getItem('lh360_lang') || 'it');
-            const oneSizeMap = { it:'Unica', en:'One Size', fr:'Unique', de:'Einheitsgröße', es:'Única' };
-            variantText = oneSizeMap[currentLang] || 'Unica';
+            const oneSizeFullMap = { it:'Taglia Unica', en:'One Size', fr:'Taille Unique', de:'Einheitsgröße', es:'Talla Única' };
+            variantText = oneSizeFullMap[currentLang] || 'Taglia Unica';
         }
 
         const div = document.createElement('div');
