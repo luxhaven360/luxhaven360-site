@@ -58,8 +58,8 @@ const translationsPDP = {
     
     // Trust Badges
     cart_trust_secure: "Pagamenti sicuri e protetti",
-    cart_trust_return: "Reso gratuito entro 30 giorni",
-    cart_trust_guarantee: "Garanzia soddisfatti o rimborsati",
+    cart_trust_return: "Rimborso in caso di difetto accertato",
+    cart_trust_guarantee: "Garanzia su difetti di produzione",
     
     // Recommended Products
     cart_recommended_title: "Potrebbero interessarti anche",
@@ -105,7 +105,7 @@ const translationsPDP = {
     
     // Trust Badges
     pdp_trust_shipping: "Spedizione Gratuita sopra €150",
-    pdp_trust_return: "Reso Gratuito entro 30 giorni",
+    pdp_trust_return: "Rimborso in caso di difetto accertato",
     pdp_trust_secure: "Pagamenti Sicuri al 100%",
     
     // Tabs
@@ -789,8 +789,8 @@ tracking_error_timeout_text: "La richiesta sta impiegando più tempo del previst
     cart_checkout_error: "Unable to initiate payment",
     
     cart_trust_secure: "Secure and protected payments",
-    cart_trust_return: "Free return within 30 days",
-    cart_trust_guarantee: "Satisfaction guaranteed or money back",
+    cart_trust_return: "Refund for verified defects only",
+    cart_trust_guarantee: "Guaranteed against manufacturing defects",
     
     cart_recommended_title: "You might also like",
     cart_recommended_loading: "Selecting the best products for you",
@@ -830,7 +830,7 @@ tracking_error_timeout_text: "La richiesta sta impiegando più tempo del previst
     pdp_checkout_error: "An error occurred while initiating payment. Please try again.",
     
     pdp_trust_shipping: "Free Shipping over $150",
-    pdp_trust_return: "Free Return within 30 days",
+    pdp_trust_return: "Refund for verified defects only",
     pdp_trust_secure: "100% Secure Payments",
     
     pdp_tab_description: "Description",
@@ -1452,8 +1452,8 @@ tracking_error_timeout_text: "The request is taking longer than expected. Check 
     cart_checkout_error: "Impossible d'initier le paiement",
     
     cart_trust_secure: "Paiements sécurisés et protégés",
-    cart_trust_return: "Retour gratuit sous 30 jours",
-    cart_trust_guarantee: "Satisfait ou remboursé",
+    cart_trust_return: "Remboursement en cas de défaut avéré",
+    cart_trust_guarantee: "Garantie contre les défauts de fabrication",
     
     cart_recommended_title: "Vous pourriez aussi aimer",
     cart_recommended_loading: "Sélection des meilleurs produits pour vous",
@@ -1493,7 +1493,7 @@ tracking_error_timeout_text: "The request is taking longer than expected. Check 
     pdp_checkout_error: "Une erreur s'est produite lors de l'initiation du paiement. Veuillez réessayer.",
     
     pdp_trust_shipping: "Livraison Gratuite au-dessus de 150€",
-    pdp_trust_return: "Retour Gratuit sous 30 jours",
+    pdp_trust_return: "Remboursement en cas de défaut avéré",
     pdp_trust_secure: "Paiements Sécurisés à 100%",
     
     pdp_tab_description: "Description",
@@ -2115,8 +2115,8 @@ tracking_error_timeout_text: "La requête prend plus de temps que prévu. Vérif
     cart_checkout_error: "Zahlung kann nicht initiiert werden",
     
     cart_trust_secure: "Sichere und geschützte Zahlungen",
-    cart_trust_return: "Kostenlose Rücksendung innerhalb von 30 Tagen",
-    cart_trust_guarantee: "Zufriedenheit garantiert oder Geld zurück",
+    cart_trust_return: "Erstattung bei nachgewiesenem Mangel",
+    cart_trust_guarantee: "Garantie bei Produktionsmängeln",
     
     cart_recommended_title: "Das könnte Ihnen auch gefallen",
     cart_recommended_loading: "Auswahl der besten Produkte für Sie",
@@ -2150,7 +2150,7 @@ tracking_error_timeout_text: "La requête prend plus de temps que prévu. Vérif
     pdp_checkout_error: "Beim Initiieren der Zahlung ist ein Fehler aufgetreten. Bitte versuchen Sie es erneut.",
     
     pdp_trust_shipping: "Kostenloser Versand ab 150€",
-    pdp_trust_return: "Kostenlose Rücksendung innerhalb von 30 Tagen",
+    pdp_trust_return: "Erstattung bei nachgewiesenem Mangel",
     pdp_trust_secure: "100% Sichere Zahlungen",
     
     pdp_tab_description: "Beschreibung",
@@ -2780,8 +2780,8 @@ tracking_error_timeout_text: "Die Anfrage dauert länger als erwartet. Überprü
     cart_checkout_error: "No se puede iniciar el pago",
     
     cart_trust_secure: "Pagos seguros y protegidos",
-    cart_trust_return: "Devolución gratuita dentro de 30 días",
-    cart_trust_guarantee: "Satisfacción garantizada o devolución del dinero",
+    cart_trust_return: "Reembolso en caso de defecto comprobado",
+    cart_trust_guarantee: "Garantía por defectos de fabricación",
     
     cart_recommended_title: "También te podría gustar",
     cart_recommended_loading: "Seleccionando los mejores productos para ti",
@@ -2815,7 +2815,7 @@ tracking_error_timeout_text: "Die Anfrage dauert länger als erwartet. Überprü
     pdp_checkout_error: "Se produjo un error al iniciar el pago. Por favor, inténtalo de nuevo.",
     
     pdp_trust_shipping: "Envío Gratuito por encima de €150",
-    pdp_trust_return: "Devolución Gratuita dentro de 30 días",
+    pdp_trust_return: "Reembolso en caso de defecto comprobado",
     pdp_trust_secure: "Pagos 100% Seguros",
     
     pdp_tab_description: "Descripción",
