@@ -9,6 +9,7 @@
 
     <!-- Sistema i18n -->
 <script src="../translations.js"></script>
+<script src="../translations-brief-descriptions.js"></script>
 <script src="translations-pdp.js"></script>
 <script src="translations-descriptions.js"></script>
 <script src="i18n-pdp.js"></script>
@@ -2020,18 +2021,22 @@ const loader = document.getElementById('recommendedLoader');
     const featuredClass = isFeatured ? ' featured' : '';
     const badgeHtml = isFeatured ? `<div class="recommended-badge" data-i18n="cart_recommended_badge">✦ Consigliato</div>` : '';
     
-    // ✅ Tronca descrizione a max 60 caratteri
-    const shortDesc = (product.desc || '').length > 60 
-        ? product.desc.substring(0, 60) + '...' 
-        : product.desc || '';
+    // ✅ Descrizione breve: lookup SKU su translationsBriefDescriptions, fallback su product.desc
+    const i18n = window.i18nPDP();
+    const currentLang = i18n ? i18n.currentLang : 'it';
+    let rawDesc = product.desc || '';
+    if (window.translationsBriefDescriptions && product.sku && window.translationsBriefDescriptions[product.sku]) {
+        rawDesc = window.translationsBriefDescriptions[product.sku][currentLang]
+               || window.translationsBriefDescriptions[product.sku]['it']
+               || rawDesc;
+    }
+    const shortDesc = rawDesc.length > 60 ? rawDesc.substring(0, 60) + '...' : rawDesc;
     
     // ✅ NUOVO: Logica Sconto
     const hasDiscount = product.discountPrice && product.discountPrice < product.price;
     const originalPrice = parseFloat(product.price) || 0;
     const finalPrice = hasDiscount ? parseFloat(product.discountPrice) : originalPrice;
     const discountPercent = hasDiscount ? Math.round(((originalPrice - finalPrice) / originalPrice) * 100) : 0;
-
-    const i18n = window.i18nPDP();
     
     // ✅ HTML Prezzo con Sconto (con data attributes per aggiornamento dinamico)
 const priceHtml = hasDiscount 
@@ -2055,6 +2060,7 @@ const priceHtml = hasDiscount
     return `
 <a href="pdp-products.html?sku=${product.sku}" 
    class="recommended-item${featuredClass}"
+   data-sku="${product.sku}"
    data-original-price="${originalPrice}"
    data-discount-price="${hasDiscount ? finalPrice : ''}"
    data-original-currency="${product.currency || 'EUR'}"
@@ -2550,6 +2556,23 @@ if (itemCountEl) {
             });
         }
     });
+
+    // 8. ✅ AGGIORNA DESCRIZIONI BREVI PRODOTTI CONSIGLIATI
+    if (window.translationsBriefDescriptions) {
+        document.querySelectorAll('.recommended-item[data-sku]').forEach(card => {
+            const sku = card.dataset.sku;
+            const descEl = card.querySelector('.recommended-desc');
+            if (!descEl || !sku) return;
+
+            const entry = window.translationsBriefDescriptions[sku];
+            if (!entry) return;
+
+            const rawDesc = entry[i18n.currentLang] || entry['it'] || '';
+            descEl.textContent = rawDesc.length > 60
+                ? rawDesc.substring(0, 60) + '...'
+                : rawDesc;
+        });
+    }
 }
     
     // Ascolta cambio lingua da altre pagine
