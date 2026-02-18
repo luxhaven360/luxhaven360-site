@@ -10,6 +10,7 @@
     <!-- Sistema i18n -->
 <script src="../translations.js"></script>
 <script src="translations-pdp.js"></script>
+<script src="translations-descriptions.js"></script>
 <script src="i18n-pdp.js"></script>
     
     <style>
@@ -2856,7 +2857,16 @@ if (!emailDomain || !validDomains.includes(emailDomain)) {
 
         function populateProduct(prod) {
             document.getElementById('productTitle').textContent = prod.title || 'Prodotto';
-            document.getElementById('productDesc').textContent = prod.desc || '';
+
+            // ── Breve descrizione: usa traduzione se disponibile, altrimenti fallback backend ──
+            const _i18nNow  = window.i18nPDP();
+            const _langNow  = _i18nNow ? _i18nNow.currentLang : 'it';
+            const _descMap  = window.translationsDescriptions || {};
+            const _descEntry = _descMap[prod.sku];
+            const _shortDesc = (_descEntry && _descEntry.shortDesc)
+                ? (_descEntry.shortDesc[_langNow] || _descEntry.shortDesc['it'] || prod.desc || '')
+                : (prod.desc || '');
+            document.getElementById('productDesc').textContent = _shortDesc;
             
             // === GESTIONE PREZZO CON/SENZA SCONTO ===
 const priceContainer = document.getElementById('productPrice');
@@ -3312,6 +3322,43 @@ function closeModal(modalId) {
         /**
  * Aggiorna tutti i prezzi con la nuova lingua/valuta
  */
+/**
+ * Aggiorna breve descrizione e descrizione lunga nella lingua corrente.
+ * Viene chiamata da updateAllPricesForLanguage() ad ogni cambio lingua.
+ * Funziona solo se currentProduct è definito (pagina pdp-products.html).
+ */
+function updateDescriptionsForLanguage() {
+    if (typeof currentProduct === 'undefined' || !currentProduct || !currentProduct.sku) return;
+
+    const i18n = window.i18nPDP();
+    const lang = i18n ? i18n.currentLang : 'it';
+    const descMap = window.translationsDescriptions || {};
+    const entry = descMap[currentProduct.sku];
+
+    if (!entry) return; // SKU non presente nel file traduzioni → nessuna azione
+
+    // ── Breve descrizione ──
+    const shortDescEl = document.getElementById('productDesc');
+    if (shortDescEl && entry.shortDesc) {
+        const translated = entry.shortDesc[lang] || entry.shortDesc['it'] || '';
+        if (translated) shortDescEl.textContent = translated;
+    }
+
+    // ── Descrizione lunga ──
+    const longDescEl = document.getElementById('longDescription');
+    if (longDescEl && entry.longDesc) {
+        const blocks = entry.longDesc[lang] || entry.longDesc['it'] || null;
+        if (blocks && blocks.length) {
+            const html = _renderDescriptionBlocks(blocks);
+            if (window.DOMPurify) {
+                longDescEl.innerHTML = DOMPurify.sanitize(html);
+            } else {
+                longDescEl.innerHTML = html;
+            }
+        }
+    }
+}
+
 function updateAllPricesForLanguage() {
     const i18n = window.i18nPDP();
     if (!i18n) return;
@@ -3342,6 +3389,9 @@ function updateAllPricesForLanguage() {
             }
         }
     }
+
+    // ── Aggiorna descrizioni tradotte al cambio lingua ──
+    updateDescriptionsForLanguage();
     
     // Aggiorna prezzi nelle card (se presenti)
     document.querySelectorAll('.card').forEach(card => {
@@ -3389,19 +3439,66 @@ document.addEventListener('languageChanged', () => {
         
         // ============================================================
         //  FORMATTAZIONE DESCRIZIONE LUNGA
-        //  SKU noti → HTML hardcoded preciso
-        //  Prodotti futuri → parser automatico luxury
+        //  1. Cerca traduzioni in translationsDescriptions (per SKU noti)
+        //  2. Fallback: SKU hardcoded (italiano)
+        //  3. Fallback finale: parser automatico sul testo grezzo
         // ============================================================
 
         function formatLongDescription(sku, rawText) {
-            if (!rawText) return '';
-            switch (sku) {
-                case 'ME-01-LE':    return _buildME01LE();
-                case 'ME-01-L&A':   return _buildME01LA();
-                case 'ME-01-A':     return _buildME01A();
-                case 'ME-02-LE':    return _buildME02LE();
-                default:            return _parseDescriptionToHtml(rawText);
+            if (!rawText && !sku) return '';
+
+            // ── 1. Cerca nella mappa traduzioni per la lingua corrente ──
+            const i18n = window.i18nPDP();
+            const lang = i18n ? i18n.currentLang : 'it';
+            const descMap = window.translationsDescriptions || {};
+
+            if (descMap[sku] && descMap[sku].longDesc && descMap[sku].longDesc[lang]) {
+                return _renderDescriptionBlocks(descMap[sku].longDesc[lang]);
             }
+
+            // ── 2. Fallback: blocchi IT (se non è disponibile la lingua richiesta) ──
+            if (descMap[sku] && descMap[sku].longDesc && descMap[sku].longDesc['it']) {
+                return _renderDescriptionBlocks(descMap[sku].longDesc['it']);
+            }
+
+            // ── 3. Fallback finale: parser generico sul testo grezzo ──
+            if (!rawText) return '';
+            return _parseDescriptionToHtml(rawText);
+        }
+
+        /**
+         * Converte un array di blocchi tipizzati in HTML.
+         * Supporta **bold** inline → <strong>
+         */
+        function _renderDescriptionBlocks(blocks) {
+            if (!blocks || !blocks.length) return '';
+
+            const _b = (text) => String(text || '').replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+
+            return blocks.map(block => {
+                switch (block.type) {
+                    case 'single':
+                        return `<p class="desc-single">${_b(block.text)}</p>`;
+                    case 'single-tight-bottom':
+                        return `<p class="desc-single tight-bottom">${_b(block.text)}</p>`;
+                    case 'para':
+                        return `<p class="desc-para">${_b(block.text)}</p>`;
+                    case 'para-tight-top':
+                        return `<p class="desc-para tight-top">${_b(block.text)}</p>`;
+                    case 'italic':
+                        return `<p class="desc-italic">${_b(block.text)}</p>`;
+                    case 'list-header':
+                        return `<p class="desc-list-header">${_b(block.text)}</p>`;
+                    case 'list':
+                        return `<ul class="desc-list">${(block.items || []).map(i => `<li>${_b(i)}</li>`).join('')}</ul>`;
+                    case 'size-note':
+                        return `<p class="desc-size-note">${_b(block.text)}</p>`;
+                    case 'divider':
+                        return `<div class="desc-divider"><span class="desc-divider-dot"></span></div>`;
+                    default:
+                        return block.text ? `<p class="desc-para">${_b(block.text)}</p>` : '';
+                }
+            }).join('\n');
         }
 
         /* ─────────────────────────────────────────
