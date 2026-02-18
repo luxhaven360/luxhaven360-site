@@ -2174,7 +2174,15 @@ function renderColors(colors) {
             sizes.forEach((size, i) => {
                 const btn = document.createElement('button');
                 btn.className = 'size-btn' + (i === 0 ? ' active' : '');
-                btn.textContent = size;
+                // Salva il valore canonico (IT) nel dataset per uso interno
+                btn.dataset.sizeIt = size;
+                // Mostra la taglia tradotta nella lingua attiva
+                const currentLang = (typeof i18n !== 'undefined' && i18n && i18n.currentLang)
+                    ? i18n.currentLang
+                    : (localStorage.getItem('lh360_lang') || 'it');
+                btn.textContent = (typeof translateSizeName === 'function')
+                    ? translateSizeName(size, currentLang)
+                    : size;
                 btn.onclick = () => selectSize(btn);
                 container.appendChild(btn);
             });
@@ -2209,7 +2217,8 @@ function renderColors(colors) {
         function selectSize(btn) {
             document.querySelectorAll('.size-btn').forEach(b => b.classList.remove('active'));
             btn.classList.add('active');
-            selectedSize = btn.textContent;
+            // Usa sempre il valore canonico italiano, così il backend/carrello riceve sempre "Unica"
+            selectedSize = btn.dataset.sizeIt || btn.textContent;
         }
 
         /* ====== Tabs & FAQ ====== */
@@ -3266,6 +3275,18 @@ async function generateDeviceFingerprint() {
 document.addEventListener('languageChanged', () => {
     if (currentProduct) {
         renderSpecsGrid(currentProduct.specs || {});
+        // ✅ Re-renderizza le taglie tradotte nella nuova lingua
+        if (currentProduct.sizes && currentProduct.sizes.length > 0) {
+            renderSizes(currentProduct.sizes);
+            // Ripristina la selezione attiva
+            if (selectedSize) {
+                document.querySelectorAll('.size-btn').forEach(btn => {
+                    if ((btn.dataset.sizeIt || btn.textContent) === selectedSize) {
+                        btn.classList.add('active');
+                    }
+                });
+            }
+        }
     }
 });
             
