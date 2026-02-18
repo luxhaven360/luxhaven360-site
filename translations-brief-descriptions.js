@@ -255,6 +255,55 @@ const translationsBriefDescriptions = {
     fr: "Vitesse extrême, design iconique.\nConduisez la McLaren 720S Performance à Maranello.",
     de: "Extreme Geschwindigkeit, ikonisches Design.\nFahren Sie den McLaren 720S Performance in Maranello.",
     es: "Velocidad extrema, diseño icónico.\nConduce el McLaren 720S Performance en Maranello."
+  },
+
+  // ============================================
+  // PRODOTTI SHOP (Abbigliamento LuxHaven360)
+  // ============================================
+
+  // Vault Keys Hoodie
+  "ME-01-LE": {
+    it: "Il primo capo della collezione LuxHaven360. Grafica architettonica all-over, tessuto riciclato certificato, fatto a mano. Tiratura limitata. Disponibile ora.",
+    en: "The first piece of the LuxHaven360 collection. All-over architectural graphics, certified recycled fabric, handmade. Limited edition. Available now.",
+    fr: "La première pièce de la collection LuxHaven360. Graphisme architectural all-over, tissu recyclé certifié, fait main. Tirage limité. Disponible maintenant.",
+    de: "Das erste Stück der LuxHaven360-Kollektion. All-over-Architektur-Grafik, zertifizierter Recycling-Stoff, handgefertigt. Limitierte Auflage. Jetzt erhältlich.",
+    es: "La primera prenda de la colección LuxHaven360. Gráfico arquitectónico all-over, tejido reciclado certificado, hecho a mano. Tirada limitada. Disponible ahora."
+  },
+
+  // Signature Cap
+  "ME-01-L&A": {
+    it: "Ricamo artigianale. Twill di cotone 100%. Pensato per chi non si accontenta del primo cappello che trova.",
+    en: "Artisan embroidery. 100% cotton chino twill. Designed for those who refuse to settle for the first cap they find.",
+    fr: "Broderie artisanale. Twill de chino 100 % coton. Conçu pour ceux qui refusent de se contenter du premier chapeau venu.",
+    de: "Handwerkliche Stickerei. 100 % Baumwoll-Chino-Twill. Entworfen für alle, die sich nicht mit der erstbesten Cap zufriedengeben.",
+    es: "Bordado artesanal. Sarga de chino 100 % algodón. Diseñada para quienes no se conforman con el primer gorro que encuentran."
+  },
+
+  // Signature Long Sleeve
+  "ME-01-A": {
+    it: "Tessuto solido, vestibilità impeccabile, logo che parla da solo. Non è una maglietta. È una scelta.",
+    en: "Solid fabric, impeccable fit, a logo that speaks for itself. It's not a T-shirt. It's a choice.",
+    fr: "Tissu solide, coupe impeccable, logo qui parle de lui-même. Ce n'est pas un t-shirt. C'est un choix.",
+    de: "Solider Stoff, tadellose Passform, ein Logo das für sich spricht. Es ist kein T-Shirt. Es ist eine Entscheidung.",
+    es: "Tejido sólido, ajuste impecable, un logo que habla por sí solo. No es una camiseta. Es una elección."
+  },
+
+  // LH-EST 001
+  "ME-02-LE": {
+    it: "Edizione numerata LH-EST 001. Cotone biologico certificato, design esclusivo con coordinate e rosa dei venti in oro antico. Tiratura limitata — quando finisce, non viene ristampata.",
+    en: "Numbered edition LH-EST 001. Certified organic cotton, exclusive design with coordinates and antique gold compass rose. Limited run — when it's gone, it won't be reprinted.",
+    fr: "Édition numérotée LH-EST 001. Coton biologique certifié, design exclusif avec coordonnées et rose des vents en or antique. Tirage limité — quand c'est terminé, ça ne sera pas réimprimé.",
+    de: "Nummerierte Edition LH-EST 001. Zertifizierte Bio-Baumwolle, exklusives Design mit Koordinaten und Windrose in Antikgold. Limitierte Auflage — wenn vergriffen, wird sie nicht nachgedruckt.",
+    es: "Edición numerada LH-EST 001. Algodón orgánico certificado, diseño exclusivo con coordenadas y rosa de los vientos en oro antiguo. Tirada limitada — cuando se acaba, no se reimprime."
+  },
+
+  // Heritage Estates Tee
+  "ME-02-A": {
+    it: "Cotone pettinato al 100%, filato spesso e prelavato. La grafica Heritage Estates racconta un mondo fatto di scelte precise e dettagli che contano. Indossala una volta e capirai la differenza.",
+    en: "100% combed cotton, thick-spun and pre-washed. The Heritage Estates graphic tells a world of precise choices and details that matter. Wear it once and you'll understand the difference.",
+    fr: "Coton peigné 100 %, filé épais et prélavé. Le graphisme Heritage Estates raconte un monde de choix précis et de détails qui comptent. Portez-le une fois et vous comprendrez la différence.",
+    de: "100 % gekämmte Baumwolle, dick gesponnen und vorgewaschen. Die Heritage Estates Grafik erzählt von einer Welt präziser Entscheidungen und Details, die zählen. Trag sie einmal und du wirst den Unterschied verstehen.",
+    es: "Algodón peinado al 100 %, hilado grueso y prelavado. La gráfica Heritage Estates cuenta un mundo de elecciones precisas y detalles que importan. Úsala una vez y entenderás la diferencia."
   }
 };
 
