@@ -3371,27 +3371,17 @@ document.addEventListener('languageChanged', () => {
                 }
             }
 
-            // ── CASO B: lista su riga singola "Header: item1 Item2 Item3…" ──
-            // Segnali che indicano una lista (e non prosa normale):
-            //   1. Inizia con "Parola(e):" (intestazione breve ≤ 5 parole)
-            //   2. Il contenuto dopo ":" non contiene punti (o solo punti abbreviativi)
-            //      → gli item non sono frasi complete, quindi non terminano con "."
-            //   3. Dal contenuto si riesce a estrarre ≥ 2 item distinti
-            const singleLineHeader = text.match(/^([^:\n]{2,60}):\s+(.+)$/);
-            if (singleLineHeader) {
-                const header    = singleLineHeader[1].trim();
-                const headerWds = header.split(/\s+/).length;
-                const rest      = singleLineHeader[2].trim();
-
-                if (headerWds <= 5) {
-                    const items = _detectFlatListItems(rest);
-                    if (items && items.length >= 2) {
-                        return [
-                            { type: 'list-header', content: header },
-                            { type: 'list-items',  items }
-                        ];
-                    }
-                }
+            // ── CASO B: lista inline (header ovunque nel testo, non solo in cima) ──
+            // Cerca "Header breve (≤5 parole):" preceduto da inizio o fine frase,
+            // seguito da contenuto che inizia con maiuscola/cifra/simbolo.
+            const inline = _findInlineList(text);
+            if (inline) {
+                const blocks = [];
+                if (inline.before) blocks.push(..._proseToBlocks(inline.before));
+                blocks.push({ type: 'list-header', content: inline.header });
+                blocks.push({ type: 'list-items',  items: inline.items });
+                if (inline.after)  blocks.push(..._proseToBlocks(inline.after));
+                return blocks;
             }
 
             // ── Fallback: prosa ── individua hook e paragrafi
@@ -3399,53 +3389,52 @@ document.addEventListener('languageChanged', () => {
         }
 
         /**
-         * Tenta di estrarre le voci di un elenco da un testo su riga singola.
+         * Individua una lista inline nel testo.
+         * Formato tipico: "...prosa. Header: voce1 Voce2 Voce3 ...prosa."
          *
-         * Strategia:
-         *  1. Se il testo contiene \n → split diretto (non dovrebbe succedere qui, ma per sicurezza)
-         *  2. Se il testo NON contiene punti → è puro elenco; spezza dove inizia
-         *     una nuova voce (lettera maiuscola o cifra dopo un carattere non maiuscolo)
-         *  3. Se contiene punti ma le "frasi" risultanti sono molto brevi (≤ 9 parole
-         *     in media) → le frasi stesse sono le voci dell'elenco
-         *  4. Altrimenti → non è una lista riconoscibile, restituisce null
+         * Il header può stare ovunque: in apertura, in mezzo o alla fine del testo.
+         * Restituisce { before, header, items, after } oppure null se non trovata.
          */
-        function _detectFlatListItems(text) {
-            // Caso 1: ha già \n (rare ma gestito)
-            if (text.includes('\n')) {
-                return text.split('\n').map(s => s.trim()).filter(Boolean);
-            }
+        function _findInlineList(text) {
+            // Pattern: (inizio | fine-frase ". ") + "Header (≤5 parole):" + spazio + contenuto-uppercase
+            const m = text.match(/((?:^|\.\s+))([A-ZÀÈÉÌÒÙÇ][^.:\n]{2,60}):\s+([A-ZÀÈÉÌÒÙÇ0-9%'""«].+)/s);
+            if (!m) return null;
 
-            // Caso 2: nessun punto → spezza sulle frontiere "nuova voce"
-            // Una nuova voce inizia dove, dopo almeno 2 parole, compare uno spazio
-            // seguito da lettera maiuscola o cifra NON preceduta da punto.
-            if (!text.match(/\.\s+[A-ZÀÈÉÌÒÙÇ]/)) {
-                // Split su: spazio preceduto da lettera minuscola/cifra/simbolo,
-                // seguito da lettera maiuscola o cifra — minimo 2 parole accolte prima
-                const parts = text
-                    .split(/(?<=[a-zà-ÿ0-9"%»·"''])\s+(?=[A-Z0-9])/)
-                    .map(s => s.trim())
-                    .filter(Boolean);
+            const header = m[2].trim();
+            if (header.split(/\s+/).length > 5) return null;
 
-                // Valido solo se le parti sono mediamente brevi (≤ 12 parole) e ≥ 2
-                if (parts.length >= 2) {
-                    const avgWords = parts.reduce((n, p) => n + p.split(/\s+/).length, 0) / parts.length;
-                    if (avgWords <= 12) return parts;
-                }
-                return null;
-            }
+            // Testo prima dell'intestazione (include il "." della frase precedente)
+            const before = text.slice(0, m.index + m[1].trimEnd().length).trim();
 
-            // Caso 3: ci sono punti → controlla se le frasi sono brevi (voci con punto finale)
-            const sentences = text
-                .split(/(?<=\.)\s+(?=[A-ZÀÈÉÌÒÙÇ0-9])/)
+            // Tutto quello che viene dopo "Header: "
+            const afterColon = m[3];
+
+            // ── Split sulle frontiere lowercase→uppercase: segnale di nuova voce ──
+            const parts = afterColon
+                .split(/(?<=[a-zà-ÿ0-9"''%°²³⁴⅛⅜⅝⅞»·—])\s+(?=[A-ZÀÈÉÌÒÙÇ])/)
                 .map(s => s.trim())
                 .filter(Boolean);
 
-            if (sentences.length >= 2) {
-                const avgWords = sentences.reduce((n, s) => n + s.split(/\s+/).length, 0) / sentences.length;
-                if (avgWords <= 9) return sentences;
+            if (parts.length < 2) return null;
+
+            // ── Separa prosa finale dalle voci lista ──
+            // Dalla fine, se una parte termina con "." e ha ≥ 4 parole
+            // è una frase di prosa, non una voce: la sposta in "after".
+            let splitAt = parts.length;
+            for (let i = parts.length - 1; i >= 0; i--) {
+                if (parts[i].endsWith('.') && parts[i].split(/\s+/).length >= 4) {
+                    splitAt = i;
+                } else {
+                    break;
+                }
             }
 
-            return null; // non riconoscibile come lista
+            const items = parts.slice(0, splitAt).filter(Boolean);
+            const after = parts.slice(splitAt).join(' ').trim();
+
+            if (items.length < 2) return null;
+
+            return { before, header, items, after };
         }
 
         /**
