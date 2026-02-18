@@ -665,8 +665,33 @@ function translateColorName(colorIT, targetLang) {
   return entry[targetLang] || entry['it'] || colorIT;
 }
 
+// ============================================================
+//  Traduzioni taglie speciali
+//  Chiave = valore italiano canonico (come salvato nel carrello/DB)
+// ============================================================
+const translationsSizes = {
+  'Unica': { it: 'Unica', en: 'One Size', fr: 'Taille Unique', de: 'Einheitsgröße', es: 'Talla Única' }
+};
+
+/**
+ * Traduce il nome di una taglia dalla lingua italiana alla lingua corrente.
+ * Usata in pdp-products.html, cart.html, success.html per tradurre item.size.
+ *
+ * @param {string} sizeIT     - Nome della taglia in italiano (come salvato nel carrello)
+ * @param {string} targetLang - Codice lingua destinazione ('it','en','fr','de','es')
+ * @returns {string}          - Nome tradotto, o il valore originale se non trovato
+ */
+function translateSizeName(sizeIT, targetLang) {
+  if (!sizeIT) return '';
+  const entry = translationsSizes[sizeIT];
+  if (!entry) return sizeIT; // taglia non in dizionario: restituisce invariata
+  return entry[targetLang] || entry['it'] || sizeIT;
+}
+
 // Esporta per uso globale
 if (typeof window !== 'undefined') {
   window.translationsColors    = translationsColors;
   window.translateColorName    = translateColorName;
+  window.translationsSizes     = translationsSizes;
+  window.translateSizeName     = translateSizeName;
 }
