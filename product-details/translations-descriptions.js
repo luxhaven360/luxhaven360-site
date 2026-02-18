@@ -568,3 +568,105 @@ const translationsDescriptions = {
 if (typeof window !== 'undefined') {
   window.translationsDescriptions = translationsDescriptions;
 }
+
+/* ============================================================
+   TRADUZIONI COLORI — usate in cart.html e success.html
+   Chiave = nome italiano del colore (così come salvato nel carrello)
+   Lingue: IT · EN · FR · DE · ES
+   ============================================================ */
+
+const translationsColors = {
+
+  // ── Neutri ──────────────────────────────────────────────
+  'Nero':           { it: 'Nero',           en: 'Black',          fr: 'Noir',           de: 'Schwarz',        es: 'Negro'           },
+  'Bianco':         { it: 'Bianco',         en: 'White',          fr: 'Blanc',          de: 'Weiß',           es: 'Blanco'          },
+  'Bianco Sporco':  { it: 'Bianco Sporco',  en: 'Off-White',      fr: 'Blanc Cassé',    de: 'Gebrochenes Weiß', es: 'Blanco Roto'   },
+  'Écru':           { it: 'Écru',           en: 'Écru',           fr: 'Écru',           de: 'Ecru',           es: 'Crudo'           },
+  'Panna':          { it: 'Panna',          en: 'Cream',          fr: 'Crème',          de: 'Cremefarben',    es: 'Crema'           },
+  'Grigio':         { it: 'Grigio',         en: 'Grey',           fr: 'Gris',           de: 'Grau',           es: 'Gris'            },
+  'Grigio Chiaro':  { it: 'Grigio Chiaro',  en: 'Light Grey',     fr: 'Gris Clair',     de: 'Hellgrau',       es: 'Gris Claro'      },
+  'Grigio Scuro':   { it: 'Grigio Scuro',   en: 'Dark Grey',      fr: 'Gris Foncé',     de: 'Dunkelgrau',     es: 'Gris Oscuro'     },
+  'Antracite':      { it: 'Antracite',      en: 'Anthracite',     fr: 'Anthracite',     de: 'Anthrazit',      es: 'Antracita'       },
+  'Grafite':        { it: 'Grafite',        en: 'Graphite',       fr: 'Graphite',       de: 'Graphit',        es: 'Grafito'         },
+
+  // ── Blu ─────────────────────────────────────────────────
+  'Blu':            { it: 'Blu',            en: 'Blue',           fr: 'Bleu',           de: 'Blau',           es: 'Azul'            },
+  'Blu Scuro':      { it: 'Blu Scuro',      en: 'Dark Blue',      fr: 'Bleu Foncé',     de: 'Dunkelblau',     es: 'Azul Oscuro'     },
+  'Blu Reale':      { it: 'Blu Reale',      en: 'Royal Blue',     fr: 'Bleu Royal',     de: 'Königsblau',     es: 'Azul Real'       },
+  'Blu Navy':       { it: 'Blu Navy',       en: 'Navy Blue',      fr: 'Bleu Marine',    de: 'Marineblau',     es: 'Azul Marino'     },
+  'Blu Navy Scuro': { it: 'Blu Navy Scuro', en: 'Dark Navy',      fr: 'Marine Foncé',   de: 'Dunkles Marine', es: 'Navy Oscuro'     },
+  'Celeste':        { it: 'Celeste',        en: 'Sky Blue',       fr: 'Bleu Ciel',      de: 'Himmelblau',     es: 'Azul Cielo'      },
+  'Turchese':       { it: 'Turchese',       en: 'Turquoise',      fr: 'Turquoise',      de: 'Türkis',         es: 'Turquesa'        },
+  'Petrolio':       { it: 'Petrolio',       en: 'Teal',           fr: 'Pétrole',        de: 'Petrol',         es: 'Verde Azulado'   },
+
+  // ── Rosso / Rosa ────────────────────────────────────────
+  'Rosso':          { it: 'Rosso',          en: 'Red',            fr: 'Rouge',          de: 'Rot',            es: 'Rojo'            },
+  'Rosso Scuro':    { it: 'Rosso Scuro',    en: 'Dark Red',       fr: 'Rouge Foncé',    de: 'Dunkelrot',      es: 'Rojo Oscuro'     },
+  'Bordeaux':       { it: 'Bordeaux',       en: 'Bordeaux',       fr: 'Bordeaux',       de: 'Bordeaux',       es: 'Burdeos'         },
+  'Rosa':           { it: 'Rosa',           en: 'Pink',           fr: 'Rose',           de: 'Rosa',           es: 'Rosa'            },
+  'Rosa Antico':    { it: 'Rosa Antico',    en: 'Dusty Rose',     fr: 'Vieux Rose',     de: 'Altrosa',        es: 'Rosa Antiguo'    },
+  'Corallo':        { it: 'Corallo',        en: 'Coral',          fr: 'Corail',         de: 'Koralle',        es: 'Coral'           },
+  'Fucsia':         { it: 'Fucsia',         en: 'Fuchsia',        fr: 'Fuchsia',        de: 'Fuchsia',        es: 'Fucsia'          },
+
+  // ── Verde ────────────────────────────────────────────────
+  'Verde':          { it: 'Verde',          en: 'Green',          fr: 'Vert',           de: 'Grün',           es: 'Verde'           },
+  'Verde Chiaro':   { it: 'Verde Chiaro',   en: 'Light Green',    fr: 'Vert Clair',     de: 'Hellgrün',       es: 'Verde Claro'     },
+  'Verde Scuro':    { it: 'Verde Scuro',    en: 'Dark Green',     fr: 'Vert Foncé',     de: 'Dunkelgrün',     es: 'Verde Oscuro'    },
+  'Verde Oliva':    { it: 'Verde Oliva',    en: 'Olive Green',    fr: 'Vert Olive',     de: 'Olivgrün',       es: 'Verde Oliva'     },
+  'Verde Bosco':    { it: 'Verde Bosco',    en: 'Forest Green',   fr: 'Vert Forêt',     de: 'Waldgrün',       es: 'Verde Bosque'    },
+  'Verde Militare': { it: 'Verde Militare', en: 'Military Green', fr: 'Vert Militaire', de: 'Militärgrün',    es: 'Verde Militar'   },
+  'Menta':          { it: 'Menta',          en: 'Mint',           fr: 'Menthe',         de: 'Minzgrün',       es: 'Menta'           },
+  'Salvia':         { it: 'Salvia',         en: 'Sage',           fr: 'Sauge',          de: 'Salbeigrün',     es: 'Salvia'          },
+
+  // ── Giallo / Arancione ───────────────────────────────────
+  'Giallo':         { it: 'Giallo',         en: 'Yellow',         fr: 'Jaune',          de: 'Gelb',           es: 'Amarillo'        },
+  'Giallo Ocra':    { it: 'Giallo Ocra',    en: 'Ochre Yellow',   fr: 'Jaune Ocre',     de: 'Ockergelb',      es: 'Amarillo Ocre'   },
+  'Giallo Senape':  { it: 'Giallo Senape',  en: 'Mustard',        fr: 'Moutarde',       de: 'Senfgelb',       es: 'Mostaza'         },
+  'Arancione':      { it: 'Arancione',      en: 'Orange',         fr: 'Orange',         de: 'Orange',         es: 'Naranja'         },
+  'Arancione Bruciato': { it: 'Arancione Bruciato', en: 'Burnt Orange', fr: 'Orange Brûlé', de: 'Verbranntes Orange', es: 'Naranja Quemado' },
+
+  // ── Viola / Lilla ────────────────────────────────────────
+  'Viola':          { it: 'Viola',          en: 'Purple',         fr: 'Violet',         de: 'Lila',           es: 'Morado'          },
+  'Viola Scuro':    { it: 'Viola Scuro',    en: 'Dark Purple',    fr: 'Violet Foncé',   de: 'Dunkellila',     es: 'Morado Oscuro'   },
+  'Lilla':          { it: 'Lilla',          en: 'Lilac',          fr: 'Lilas',          de: 'Flieder',        es: 'Lila'            },
+  'Lavanda':        { it: 'Lavanda',        en: 'Lavender',       fr: 'Lavande',        de: 'Lavendel',       es: 'Lavanda'         },
+
+  // ── Marrone / Neutri caldi ───────────────────────────────
+  'Marrone':        { it: 'Marrone',        en: 'Brown',          fr: 'Marron',         de: 'Braun',          es: 'Marrón'          },
+  'Marrone Scuro':  { it: 'Marrone Scuro',  en: 'Dark Brown',     fr: 'Marron Foncé',   de: 'Dunkelbraun',    es: 'Marrón Oscuro'   },
+  'Camel':          { it: 'Camel',          en: 'Camel',          fr: 'Camel',          de: 'Kamel',          es: 'Camello'         },
+  'Cammello':       { it: 'Cammello',       en: 'Camel',          fr: 'Camel',          de: 'Kamel',          es: 'Camello'         },
+  'Beige':          { it: 'Beige',          en: 'Beige',          fr: 'Beige',          de: 'Beige',          es: 'Beige'           },
+  'Sabbia':         { it: 'Sabbia',         en: 'Sand',           fr: 'Sable',          de: 'Sand',           es: 'Arena'           },
+  'Terracotta':     { it: 'Terracotta',     en: 'Terracotta',     fr: 'Terre Cuite',    de: 'Terrakotta',     es: 'Terracota'       },
+  'Ruggine':        { it: 'Ruggine',        en: 'Rust',           fr: 'Rouille',        de: 'Rost',           es: 'Óxido'           },
+
+  // ── Metallici ────────────────────────────────────────────
+  'Oro':            { it: 'Oro',            en: 'Gold',           fr: 'Or',             de: 'Gold',           es: 'Oro'             },
+  'Oro Antico':     { it: 'Oro Antico',     en: 'Antique Gold',   fr: 'Or Antique',     de: 'Antikgold',      es: 'Oro Antiguo'     },
+  'Argento':        { it: 'Argento',        en: 'Silver',         fr: 'Argent',         de: 'Silber',         es: 'Plata'           },
+  'Bronzo':         { it: 'Bronzo',         en: 'Bronze',         fr: 'Bronze',         de: 'Bronze',         es: 'Bronce'          },
+  'Rame':           { it: 'Rame',           en: 'Copper',         fr: 'Cuivre',         de: 'Kupfer',         es: 'Cobre'           },
+
+};
+
+/**
+ * Traduce il nome di un colore dalla lingua italiana alla lingua corrente.
+ * Usata in cart.html e success.html per tradurre item.color.
+ *
+ * @param {string} colorIT    - Nome del colore in italiano (come salvato nel carrello)
+ * @param {string} targetLang - Codice lingua destinazione ('it','en','fr','de','es')
+ * @returns {string}          - Nome tradotto, o il valore originale se non trovato
+ */
+function translateColorName(colorIT, targetLang) {
+  if (!colorIT) return '';
+  const entry = translationsColors[colorIT];
+  if (!entry) return colorIT; // colore non in dizionario: restituisce invariato
+  return entry[targetLang] || entry['it'] || colorIT;
+}
+
+// Esporta per uso globale
+if (typeof window !== 'undefined') {
+  window.translationsColors    = translationsColors;
+  window.translateColorName    = translateColorName;
+}
