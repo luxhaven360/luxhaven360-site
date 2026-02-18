@@ -670,7 +670,12 @@ function translateColorName(colorIT, targetLang) {
 //  Chiave = valore italiano canonico (come salvato nel carrello/DB)
 // ============================================================
 const translationsSizes = {
-  'Unica': { it: 'Unica', en: 'One Size', fr: 'Taille Unique', de: 'Einheitsgröße', es: 'Talla Única' }
+  //         short = usato sul sito (solo il nome della taglia)
+  //         full  = usato in email e checkout Stripe (etichetta completa)
+  'Unica': {
+    short: { it: 'Unica',        en: 'One Size', fr: 'Unique',        de: 'Einheitsgröße', es: 'Única'       },
+    full:  { it: 'Taglia Unica', en: 'One Size', fr: 'Taille Unique', de: 'Einheitsgröße', es: 'Talla Única' }
+  }
 };
 
 /**
@@ -679,13 +684,16 @@ const translationsSizes = {
  *
  * @param {string} sizeIT     - Nome della taglia in italiano (come salvato nel carrello)
  * @param {string} targetLang - Codice lingua destinazione ('it','en','fr','de','es')
+ * @param {string} [form]     - 'short' (default, per il sito) | 'full' (per email/Stripe)
  * @returns {string}          - Nome tradotto, o il valore originale se non trovato
  */
-function translateSizeName(sizeIT, targetLang) {
+function translateSizeName(sizeIT, targetLang, form) {
   if (!sizeIT) return '';
   const entry = translationsSizes[sizeIT];
   if (!entry) return sizeIT; // taglia non in dizionario: restituisce invariata
-  return entry[targetLang] || entry['it'] || sizeIT;
+  const variant = entry[form === 'full' ? 'full' : 'short'];
+  if (!variant) return sizeIT;
+  return variant[targetLang] || variant['it'] || sizeIT;
 }
 
 // Esporta per uso globale
