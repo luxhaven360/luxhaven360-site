@@ -528,6 +528,26 @@ getFlagCode(langCode) {
     console.warn(`⚠️ Descrizione breve non trovata per traduzione:`, briefDescIT.substring(0, 50));
     return briefDescIT;
   }
+
+  /**
+   * Traduce la breve descrizione di un prodotto shop tramite SKU (index.html)
+   * Usa lookup diretto su window.translationsBriefDescriptions
+   *
+   * @param {string} sku - SKU del prodotto (es. 'ME-01-LE')
+   * @returns {string|null} - Descrizione tradotta, o null se lo SKU non è presente
+   */
+  translateBriefDescBySku(sku) {
+    if (!sku || !window.translationsBriefDescriptions) return null;
+
+    const entry = window.translationsBriefDescriptions[sku];
+    if (!entry) return null;
+
+    const translation = entry[this.currentLang] || entry['it'] || null;
+    if (translation) {
+      console.log(`✅ Breve descrizione tradotta via SKU: ${sku} → ${this.currentLang}`);
+    }
+    return translation;
+  }
 }
 
 // Inizializza sistema i18n
