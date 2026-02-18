@@ -498,6 +498,13 @@ getFlagCode(langCode) {
       "Ferrari 458 Italia e Lamborghini Huracán Spyder": "458italia_huracan",
       "Ferrari 488 Spider e Lamborghini Huracán Spyder": "488spider_huracan",
       
+      // Shop - Abbigliamento LuxHaven360
+      "primo capo della collezione LuxHaven360": "ME-01-LE",
+      "Ricamo artigianale. Twill di cotone": "ME-01-L&A",
+      "vestibilità impeccabile, logo che parla": "ME-01-A",
+      "Edizione numerata LH-EST 001": "ME-02-LE",
+      "Cotone pettinato al 100%, filato spesso": "ME-02-A",
+      
       // Singole
       "con la Ferrari California.": "california",
       "la Ferrari Portofino per": "portofino",
