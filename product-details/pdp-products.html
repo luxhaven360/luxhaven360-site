@@ -2171,17 +2171,29 @@ function renderColors(colors) {
                 return;
             }
             document.getElementById('sizeSection').style.display = 'block';
+
+            // Set di valori "one size" in tutte le lingue per riconoscimento robusto
+            const ONE_SIZE_VALUES = new Set([
+                'Unica', 'Taglia Unica', 'One Size',
+                'Unique', 'Taille Unique',
+                'Einheitsgröße',
+                'Única', 'Talla Única'
+            ]);
+            // Mappa forma breve per il pulsante sul sito
+            const SHORT_FORM = { it:'Unica', en:'One Size', fr:'Unique', de:'Einheitsgröße', es:'Única' };
+
+            const currentLang = (typeof i18n !== 'undefined' && i18n && i18n.currentLang)
+                ? i18n.currentLang
+                : (localStorage.getItem('lh360_lang') || 'it');
+
             sizes.forEach((size, i) => {
                 const btn = document.createElement('button');
                 btn.className = 'size-btn' + (i === 0 ? ' active' : '');
-                // Salva il valore canonico (IT) nel dataset per uso interno
+                // Salva sempre il valore canonico italiano nel dataset
                 btn.dataset.sizeIt = size;
-                // Mostra la taglia tradotta nella lingua attiva
-                const currentLang = (typeof i18n !== 'undefined' && i18n && i18n.currentLang)
-                    ? i18n.currentLang
-                    : (localStorage.getItem('lh360_lang') || 'it');
-                btn.textContent = (typeof translateSizeName === 'function')
-                    ? translateSizeName(size, currentLang)
+                // Mostra la forma breve se è taglia unica, altrimenti il valore invariato
+                btn.textContent = ONE_SIZE_VALUES.has(size)
+                    ? (SHORT_FORM[currentLang] || 'Unica')
                     : size;
                 btn.onclick = () => selectSize(btn);
                 container.appendChild(btn);
@@ -3275,13 +3287,13 @@ async function generateDeviceFingerprint() {
 document.addEventListener('languageChanged', () => {
     if (currentProduct) {
         renderSpecsGrid(currentProduct.specs || {});
-        // ✅ Re-renderizza le taglie tradotte nella nuova lingua
+        // ✅ Re-renderizza le taglie con la nuova lingua, ripristinando la selezione
         if (currentProduct.sizes && currentProduct.sizes.length > 0) {
             renderSizes(currentProduct.sizes);
-            // Ripristina la selezione attiva
+            // Ripristina il bottone attivo in base alla selezione corrente
             if (selectedSize) {
                 document.querySelectorAll('.size-btn').forEach(btn => {
-                    if ((btn.dataset.sizeIt || btn.textContent) === selectedSize) {
+                    if ((btn.dataset.sizeIt || '') === selectedSize) {
                         btn.classList.add('active');
                     }
                 });
