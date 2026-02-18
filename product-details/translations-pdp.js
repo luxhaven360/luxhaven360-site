@@ -725,6 +725,17 @@ tracking_error_timeout_text: "La richiesta sta impiegando più tempo del previst
 tracking_error_generic: "Verifica la connessione internet. Se il problema persiste, contatta il supporto.",
 tracking_error_timeout_title: "⏱️ Caricamento rallentato",
 tracking_error_timeout_text: "La richiesta sta impiegando più tempo del previsto. Controlla la connessione internet e riprova.",
+
+    // ── Refund Policy ─────────────────────────────────
+    refund_title: "Politica di Rimborso",
+    refund_when_title: "Quando hai diritto al rimborso",
+    refund_when_text: "Accettiamo richieste di rimborso esclusivamente per prodotti difettosi, danneggiati alla consegna o con errori documentati di produzione.",
+    refund_not_title: "Cosa non dà diritto al rimborso",
+    refund_not_text: "Cambi di taglia, variazioni di colore, preferenze estetiche o ripensamenti personali non costituiscono motivo di rimborso.",
+    refund_how_title: "Come richiedere un rimborso",
+    refund_step1: "Fotografa il difetto entro 48 ore dalla ricezione del pacco.",
+    refund_step2: "Contattaci via email con numero d'ordine e foto allegate.",
+    refund_step3: "Il nostro team valuterà la richiesta entro 2 giorni lavorativi e ti guiderà nella procedura.",
   },
 
   en: {
@@ -1377,6 +1388,17 @@ tracking_error_timeout_text: "The request is taking longer than expected. Check 
 tracking_error_generic: "Check your internet connection. If the problem persists, contact support.",
 tracking_error_timeout_title: "⏱️ Loading Delayed",
 tracking_error_timeout_text: "The request is taking longer than expected. Check your internet connection and try again.",    
+
+    // ── Refund Policy ─────────────────────────────────
+    refund_title: "Refund Policy",
+    refund_when_title: "When you are entitled to a refund",
+    refund_when_text: "We accept refund requests exclusively for products that are defective, damaged upon delivery, or affected by documented manufacturing errors.",
+    refund_not_title: "What does not qualify for a refund",
+    refund_not_text: "Size exchanges, colour variations, aesthetic preferences, or change of mind do not constitute grounds for a refund.",
+    refund_how_title: "How to request a refund",
+    refund_step1: "Photograph the defect within 48 hours of receiving your parcel.",
+    refund_step2: "Contact us by email with your order number and photos attached.",
+    refund_step3: "Our team will review your request within 2 business days and guide you through the process.",
   },
   
   fr: {
@@ -2029,6 +2051,17 @@ tracking_error_timeout_text: "La requête prend plus de temps que prévu. Vérif
 tracking_error_generic: "Vérifiez votre connexion internet. Si le problème persiste, contactez le support.",
 tracking_error_timeout_title: "⏱️ Chargement Ralenti",
 tracking_error_timeout_text: "La requête prend plus de temps que prévu. Vérifiez votre connexion internet et réessayez.",
+
+    // ── Refund Policy ─────────────────────────────────
+    refund_title: "Politique de Remboursement",
+    refund_when_title: "Quand vous avez droit à un remboursement",
+    refund_when_text: "Nous acceptons les demandes de remboursement exclusivement pour les produits défectueux, endommagés à la livraison ou présentant des erreurs de fabrication documentées.",
+    refund_not_title: "Ce qui ne donne pas droit à un remboursement",
+    refund_not_text: "Les échanges de taille, les variations de couleur, les préférences esthétiques ou les changements d'avis ne constituent pas des motifs de remboursement.",
+    refund_how_title: "Comment demander un remboursement",
+    refund_step1: "Photographiez le défaut dans les 48 heures suivant la réception du colis.",
+    refund_step2: "Contactez-nous par e-mail avec votre numéro de commande et les photos en pièce jointe.",
+    refund_step3: "Notre équipe examinera votre demande dans un délai de 2 jours ouvrables et vous guidera dans la procédure.",
   },
   
   de: {
@@ -2682,6 +2715,17 @@ tracking_error_timeout_text: "Die Anfrage dauert länger als erwartet. Überprü
 tracking_error_generic: "Überprüfen Sie Ihre Internetverbindung. Wenn das Problem weiterhin besteht, wenden Sie sich an den Support.",
 tracking_error_timeout_title: "⏱️ Ladevorgang Verzögert",
 tracking_error_timeout_text: "Die Anfrage dauert länger als erwartet. Überprüfen Sie Ihre Internetverbindung und versuchen Sie es erneut.",
+
+    // ── Refund Policy ─────────────────────────────────
+    refund_title: "Rückgaberichtlinie",
+    refund_when_title: "Wann haben Sie Anspruch auf eine Rückerstattung",
+    refund_when_text: "Wir akzeptieren Rückerstattungsanfragen ausschließlich für Produkte, die defekt oder bei der Lieferung beschädigt sind oder dokumentierte Produktionsfehler aufweisen.",
+    refund_not_title: "Was keinen Anspruch auf Rückerstattung begründet",
+    refund_not_text: "Größentausch, Farbwünsche, ästhetische Präferenzen oder Meinungsänderungen stellen keine Grundlage für eine Rückerstattung dar.",
+    refund_how_title: "So beantragen Sie eine Rückerstattung",
+    refund_step1: "Fotografieren Sie den Mangel innerhalb von 48 Stunden nach Erhalt des Pakets.",
+    refund_step2: "Kontaktieren Sie uns per E-Mail mit Ihrer Bestellnummer und den angehängten Fotos.",
+    refund_step3: "Unser Team prüft Ihre Anfrage innerhalb von 2 Werktagen und begleitet Sie durch den Prozess.",
   },
   
   es: {
@@ -3335,6 +3379,17 @@ tracking_error_timeout_text: "La solicitud está tardando más de lo esperado. V
 tracking_error_generic: "Verifica tu conexión a internet. Si el problema persiste, contacta con soporte.",
 tracking_error_timeout_title: "⏱️ Carga Retrasada",
 tracking_error_timeout_text: "La solicitud está tardando más de lo esperado. Verifica tu conexión a internet e intenta nuevamente.",
+
+    // ── Refund Policy ─────────────────────────────────
+    refund_title: "Política de Reembolso",
+    refund_when_title: "Cuándo tienes derecho a un reembolso",
+    refund_when_text: "Aceptamos solicitudes de reembolso exclusivamente para productos defectuosos, dañados durante la entrega o con errores de fabricación documentados.",
+    refund_not_title: "Qué no da derecho a reembolso",
+    refund_not_text: "Los cambios de talla, variaciones de color, preferencias estéticas o cambios de opinión no constituyen motivo de reembolso.",
+    refund_how_title: "Cómo solicitar un reembolso",
+    refund_step1: "Fotografía el defecto en las 48 horas siguientes a la recepción del paquete.",
+    refund_step2: "Contáctanos por correo electrónico con tu número de pedido y las fotos adjuntas.",
+    refund_step3: "Nuestro equipo evaluará la solicitud en un plazo de 2 días hábiles y te guiará en el proceso.",
   }
 };
 
