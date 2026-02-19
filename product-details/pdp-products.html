@@ -1924,6 +1924,7 @@
         let deviceFingerprint = null;
         let deviceType = 'O'; // Default: Other
         let selectedReviewRating = 0;
+        let userCountryCode = ''; // Codice ISO paese utente (es: "IT", "US")
         let currentReviewsData = [];
         let productLoaded = false;
         let reviewsLoaded = false;
@@ -2709,7 +2710,10 @@ function renderReviewsPage() {
     container.innerHTML = '';
 
     if (allReviewsCache.length === 0) {
-        container.innerHTML = `<div class="no-reviews"><div class="no-reviews-icon">★</div><p>Nessuna recensione ancora. Sii il primo!</p></div>`;
+        const i18nInst = window.i18nPDP();
+        const emptyIcon = i18nInst ? i18nInst.t('pdp_reviews_empty_icon') : '★';
+        const emptyText = i18nInst ? i18nInst.t('pdp_reviews_empty_text') : 'Nessuna recensione ancora. Sii il primo!';
+        container.innerHTML = `<div class="no-reviews"><div class="no-reviews-icon">${emptyIcon}</div><p id="noReviewsText">${emptyText}</p></div>`;
         if(navContainer) navContainer.style.display = 'none';
         return;
     }
@@ -2721,16 +2725,28 @@ function renderReviewsPage() {
     pageReviews.forEach(review => {
     const dateTimeStr = review.dateTime || ''; // "07 December 2025 - 17:46"
     const timeDisplay = getDynamicTime(dateTimeStr);
+
+    // Paese: tradotto nella lingua corrente
+    let countryDisplay = '';
+    if (review.country) {
+        const i18nInst = window.i18nPDP();
+        const currentLangCode = i18nInst ? i18nInst.currentLang : 'it';
+        const countryTranslated = (typeof translateCountryName === 'function')
+            ? translateCountryName(review.country, currentLangCode)
+            : review.country;
+        if (countryTranslated) countryDisplay = ` • ${countryTranslated}`;
+    }
     
     const reviewEl = document.createElement('div');
     reviewEl.className = 'review-item';
     reviewEl.dataset.datetime = dateTimeStr; // Salviamo la data+ora completa
+    if (review.country) reviewEl.dataset.country = review.country;
 
     reviewEl.innerHTML = `
         <div class="review-header">
             <div>
                 <div class="review-author">${safeText(review.name)}</div>
-                <div class="review-date dynamic-time">${timeDisplay}</div> 
+                <div class="review-date dynamic-time">${timeDisplay}${countryDisplay}</div> 
             </div>
             <div>${generateCompactStars(review.rating)}</div>
         </div>
@@ -2892,6 +2908,7 @@ if (!emailDomain || !validDomains.includes(emailDomain)) {
         formData.append('title', document.getElementById('reviewTitle').value);
         formData.append('comment', document.getElementById('reviewComment').value);
         formData.append('device_id', deviceFingerprint || 'UNKNOWN');
+        formData.append('country', userCountryCode || '');
 
         try {
             const response = await fetch(REVIEWS_API_URL, {
@@ -2909,7 +2926,8 @@ if (!emailDomain || !validDomains.includes(emailDomain)) {
         dateTime: result.dateTime, // Es: "07 December 2025 - 17:46"
         rating: selectedReviewRating,
         title: document.getElementById('reviewTitle').value,
-        comment: document.getElementById('reviewComment').value
+        comment: document.getElementById('reviewComment').value,
+        country: userCountryCode || ''
     };
 
     // Inserimento in cima
@@ -3435,11 +3453,28 @@ async function generateDeviceFingerprint() {
     }
 }
 
+        /* ====== Rilevamento Paese Utente (IP Geolocation) ====== */
+        async function detectUserCountry() {
+            try {
+                const res = await fetch('https://ipapi.co/json/', { signal: AbortSignal.timeout(5000) });
+                if (!res.ok) return;
+                const data = await res.json();
+                if (data && data.country_code) {
+                    userCountryCode = data.country_code.toUpperCase();
+                    console.log('🌍 Paese rilevato:', userCountryCode);
+                }
+            } catch (e) {
+                console.warn('⚠️ Impossibile rilevare il paese:', e);
+            }
+        }
+
         /* ====== Init ====== */
         document.addEventListener('DOMContentLoaded', () => {
             startDynamicLoader();
             // Genera Device Fingerprint
             generateDeviceFingerprint();
+            // Rileva paese utente in background
+            detectUserCountry();
             renderGallery();
             loadProduct();
             setupReviewForm();
