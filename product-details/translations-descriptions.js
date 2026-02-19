@@ -570,6 +570,181 @@ if (typeof window !== 'undefined') {
 }
 
 /* ============================================================
+   TRADUZIONI ETICHETTE SPECIFICHE
+   Traducono i nomi dei campi (Composizione, Peso, Origine,
+   Vestibilità) e il titolo "Guida alle Taglie".
+   Lingue: IT · EN · FR · DE · ES
+   ============================================================ */
+const translationsSpecLabels = {
+  it: {
+    spec_composition:  'Composizione',
+    spec_weight:       'Peso',
+    spec_origin:       'Origine',
+    spec_fit:          'Vestibilità',
+    size_guide_title:  'Guida alle Taglie'
+  },
+  en: {
+    spec_composition:  'Composition',
+    spec_weight:       'Weight',
+    spec_origin:       'Origin',
+    spec_fit:          'Fit',
+    size_guide_title:  'Size Guide'
+  },
+  fr: {
+    spec_composition:  'Composition',
+    spec_weight:       'Poids',
+    spec_origin:       'Origine',
+    spec_fit:          'Coupe',
+    size_guide_title:  'Guide des Tailles'
+  },
+  de: {
+    spec_composition:  'Zusammensetzung',
+    spec_weight:       'Gewicht',
+    spec_origin:       'Herkunft',
+    spec_fit:          'Passform',
+    size_guide_title:  'Größentabelle'
+  },
+  es: {
+    spec_composition:  'Composición',
+    spec_weight:       'Peso',
+    spec_origin:       'Origen',
+    spec_fit:          'Ajuste',
+    size_guide_title:  'Guía de Tallas'
+  }
+};
+
+if (typeof window !== 'undefined') {
+  window.translationsSpecLabels = translationsSpecLabels;
+}
+
+/* ============================================================
+   TRADUZIONI COLONNE TABELLA TAGLIE — per SKU
+   Il backend invia sempre: taglia · petto · vita · lunghezza.
+   Qui definiamo come intestare quei campi per ogni prodotto.
+   _default è usato per qualsiasi SKU non elencato.
+   ============================================================ */
+const translationsSpecColumns = {
+
+  /* ── ME-01-LE  (Vault Keys Hoodie)
+     H = ½ Petto · I = Lunghezza · J = Lunghezza Maniche        */
+  'ME-01-LE': {
+    it: { taglia: 'Taglia',  petto: '½ Petto (cm)',        vita: 'Lunghezza (cm)',        lunghezza: 'Lunghezza Maniche (cm)' },
+    en: { taglia: 'Size',    petto: '½ Chest (cm)',         vita: 'Length (cm)',           lunghezza: 'Sleeve Length (cm)'    },
+    fr: { taglia: 'Taille',  petto: '½ Poitrine (cm)',      vita: 'Longueur (cm)',         lunghezza: 'Longueur Manches (cm)' },
+    de: { taglia: 'Größe',   petto: '½ Brust (cm)',         vita: 'Länge (cm)',            lunghezza: 'Ärmellänge (cm)'       },
+    es: { taglia: 'Talla',   petto: '½ Pecho (cm)',         vita: 'Largo (cm)',            lunghezza: 'Largo Mangas (cm)'     }
+  },
+
+  /* ── ME-01-L&A  (Signature Cap)
+     H = Circonferenza · I = Altezza Calotta · J = Larghezza Visiera */
+  'ME-01-L&A': {
+    it: { taglia: 'Taglia',  petto: 'Circonferenza (cm)',  vita: 'Altezza Calotta (cm)',  lunghezza: 'Larghezza Visiera (cm)'  },
+    en: { taglia: 'Size',    petto: 'Circumference (cm)',  vita: 'Crown Height (cm)',      lunghezza: 'Visor Width (cm)'        },
+    fr: { taglia: 'Taille',  petto: 'Circonférence (cm)',  vita: 'Hauteur Calotte (cm)',   lunghezza: 'Largeur Visière (cm)'    },
+    de: { taglia: 'Größe',   petto: 'Kopfumfang (cm)',     vita: 'Kronenhöhe (cm)',        lunghezza: 'Schirmbreite (cm)'       },
+    es: { taglia: 'Talla',   petto: 'Circunferencia (cm)', vita: 'Altura Copa (cm)',       lunghezza: 'Ancho Visera (cm)'       }
+  },
+
+  /* ── ME-01-A  (Signature Long Sleeve — Comfort Colors)
+     H = Lunghezza · I = Larghezza · J = Lunghezza Maniche       */
+  'ME-01-A': {
+    it: { taglia: 'Taglia',  petto: 'Lunghezza (cm)',      vita: 'Larghezza (cm)',         lunghezza: 'Lunghezza Maniche (cm)' },
+    en: { taglia: 'Size',    petto: 'Length (cm)',          vita: 'Width (cm)',             lunghezza: 'Sleeve Length (cm)'     },
+    fr: { taglia: 'Taille',  petto: 'Longueur (cm)',        vita: 'Largeur (cm)',           lunghezza: 'Longueur Manches (cm)'  },
+    de: { taglia: 'Größe',   petto: 'Länge (cm)',           vita: 'Breite (cm)',            lunghezza: 'Ärmellänge (cm)'        },
+    es: { taglia: 'Talla',   petto: 'Largo (cm)',           vita: 'Ancho (cm)',             lunghezza: 'Largo Mangas (cm)'      }
+  },
+
+  /* ── ME-02-LE  (LH-EST 001 — Stanley/Stella Organic Tee)
+     H = Lunghezza · I = Larghezza · J = Lunghezza Maniche       */
+  'ME-02-LE': {
+    it: { taglia: 'Taglia',  petto: 'Lunghezza (cm)',      vita: 'Larghezza (cm)',         lunghezza: 'Lunghezza Maniche (cm)' },
+    en: { taglia: 'Size',    petto: 'Length (cm)',          vita: 'Width (cm)',             lunghezza: 'Sleeve Length (cm)'     },
+    fr: { taglia: 'Taille',  petto: 'Longueur (cm)',        vita: 'Largeur (cm)',           lunghezza: 'Longueur Manches (cm)'  },
+    de: { taglia: 'Größe',   petto: 'Länge (cm)',           vita: 'Breite (cm)',            lunghezza: 'Ärmellänge (cm)'        },
+    es: { taglia: 'Talla',   petto: 'Largo (cm)',           vita: 'Ancho (cm)',             lunghezza: 'Largo Mangas (cm)'      }
+  },
+
+  /* ── ME-02-A  (Heritage Estates Tee — AS Colour)
+     H = Lunghezza · I = Larghezza  (J vuoto)                   */
+  'ME-02-A': {
+    it: { taglia: 'Taglia',  petto: 'Lunghezza (cm)',      vita: 'Larghezza (cm)',         lunghezza: '' },
+    en: { taglia: 'Size',    petto: 'Length (cm)',          vita: 'Width (cm)',             lunghezza: '' },
+    fr: { taglia: 'Taille',  petto: 'Longueur (cm)',        vita: 'Largeur (cm)',           lunghezza: '' },
+    de: { taglia: 'Größe',   petto: 'Länge (cm)',           vita: 'Breite (cm)',            lunghezza: '' },
+    es: { taglia: 'Talla',   petto: 'Largo (cm)',           vita: 'Ancho (cm)',             lunghezza: '' }
+  },
+
+  /* ── Default (qualsiasi SKU non listato sopra) ── */
+  '_default': {
+    it: { taglia: 'Taglia',  petto: 'Petto (cm)',          vita: 'Vita (cm)',              lunghezza: 'Lunghezza (cm)' },
+    en: { taglia: 'Size',    petto: 'Chest (cm)',           vita: 'Waist (cm)',             lunghezza: 'Length (cm)'    },
+    fr: { taglia: 'Taille',  petto: 'Poitrine (cm)',        vita: 'Tour de taille (cm)',    lunghezza: 'Longueur (cm)'  },
+    de: { taglia: 'Größe',   petto: 'Brust (cm)',           vita: 'Taille (cm)',            lunghezza: 'Länge (cm)'     },
+    es: { taglia: 'Talla',   petto: 'Pecho (cm)',           vita: 'Cintura (cm)',           lunghezza: 'Largo (cm)'     }
+  }
+
+};
+
+if (typeof window !== 'undefined') {
+  window.translationsSpecColumns = translationsSpecColumns;
+}
+
+/* ============================================================
+   TRADUZIONI VALORI SPECIFICHE
+   I valori di Origine e Vestibilità sono salvati in italiano
+   nel foglio Google. Qui definiamo le loro traduzioni.
+   CHIAVE = valore italiano esatto come scritto nel foglio.
+   ============================================================ */
+const translationsSpecValues = {
+
+  /* ── Vestibilità ── */
+  'Rilassata, unisex': {
+    en: 'Relaxed, unisex',
+    fr: 'Décontracté, unisexe',
+    de: 'Entspannt, unisex',
+    es: 'Holgado, unisex'
+  },
+  'Comoda, unisex': {
+    en: 'Comfortable, unisex',
+    fr: 'Confortable, unisexe',
+    de: 'Bequem, unisex',
+    es: 'Cómodo, unisex'
+  },
+  'Regular fit': {
+    en: 'Regular fit',
+    fr: 'Coupe classique',
+    de: 'Regular Fit',
+    es: 'Ajuste regular'
+  },
+  'Strutturata, taglia unica regolabile': {
+    en: 'Structured, one-size adjustable',
+    fr: 'Structurée, taille unique réglable',
+    de: 'Strukturiert, verstellbare Einheitsgröße',
+    es: 'Estructurada, talla única ajustable'
+  },
+
+  /* ── Origine ── */
+  'Produzione Internazionale':  { en: 'International Production',  fr: 'Production Internationale',  de: 'Internationale Produktion',  es: 'Producción Internacional'  },
+  'Manifattura Internazionale': { en: 'International Manufacture', fr: 'Manufacture Internationale', de: 'Internationale Herstellung', es: 'Manufactura Internacional' },
+  'Cina':                  { en: 'China',               fr: 'Chine',                de: 'China',                  es: 'China'                 },
+  'Messico':               { en: 'Mexico',              fr: 'Mexique',              de: 'Mexiko',                 es: 'México'                },
+  'Cina o Messico':        { en: 'China or Mexico',     fr: 'Chine ou Mexique',     de: 'China oder Mexiko',      es: 'China o México'        },
+  'Honduras':              { en: 'Honduras',            fr: 'Honduras',             de: 'Honduras',               es: 'Honduras'              },
+  'Bangladesh':            { en: 'Bangladesh',          fr: 'Bangladesh',           de: 'Bangladesch',            es: 'Bangladesh'            },
+  'Vietnam o Bangladesh':  { en: 'Vietnam or Bangladesh', fr: 'Vietnam ou Bangladesh', de: 'Vietnam oder Bangladesch', es: 'Vietnam o Bangladesh' },
+
+  /* ── Taglia Unica (valore colonna G del foglio) ── */
+  'Unica':       { en: 'One Size',  fr: 'Taille Unique',  de: 'Einheitsgröße',  es: 'Talla Única' },
+  'Taglia Unica':{ en: 'One Size',  fr: 'Taille Unique',  de: 'Einheitsgröße',  es: 'Talla Única' }
+
+};
+
+if (typeof window !== 'undefined') {
+  window.translationsSpecValues = translationsSpecValues;
+}
+
+/* ============================================================
    TRADUZIONI COLORI — usate in cart.html e success.html
    Chiave = nome italiano del colore (così come salvato nel carrello)
    Lingue: IT · EN · FR · DE · ES
