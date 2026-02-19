@@ -1204,35 +1204,35 @@ const translationsDelivery = {
     label:      'Consegna Stimata',
     days_range: '{min}–{max} giorni lavorativi',
     tbd:        'stima in fase di definizione',
-    legal_note: 'Stima indicativa basata sui dati Printful. I tempi effettivi possono variare per cause indipendenti dalla nostra volontà (dogana, corriere, eventi eccezionali). Non costituisce garanzia contrattuale.'
+    legal_note: 'La stima indicata è calcolata sulla base dei dati storici di produzione e spedizione. I tempi effettivi possono variare in ragione di procedure doganali, operatività dei corrieri o eventi straordinari. Ha carattere puramente indicativo e non costituisce impegno contrattuale.'
   },
 
   en: {
     label:      'Estimated Delivery',
     days_range: '{min}–{max} business days',
     tbd:        'estimate being defined',
-    legal_note: 'Indicative estimate based on Printful data. Actual times may vary due to factors beyond our control (customs, carrier, exceptional events). This does not constitute a contractual guarantee.'
+    legal_note: 'The indicated estimate is calculated on the basis of historical production and shipping data. Actual times may vary due to customs procedures, carrier operations or extraordinary events. It is purely indicative and does not constitute a contractual commitment.'
   },
 
   fr: {
     label:      'Livraison Estimée',
     days_range: '{min}–{max} jours ouvrés',
     tbd:        'estimation en cours de définition',
-    legal_note: 'Estimation indicative basée sur les données Printful. Les délais réels peuvent varier en raison de facteurs indépendants de notre volonté (douane, transporteur, événements exceptionnels). Ceci ne constitue pas une garantie contractuelle.'
+    legal_note: "L'estimation indiquée est calculée sur la base des données historiques de production et d'expédition. Les délais réels peuvent varier en raison des procédures douanières, des opérations des transporteurs ou d'événements extraordinaires. Elle a un caractère purement indicatif et ne constitue pas un engagement contractuel."
   },
 
   de: {
     label:      'Geschätzte Lieferzeit',
     days_range: '{min}–{max} Werktage',
     tbd:        'Schätzung wird noch festgelegt',
-    legal_note: 'Richtwert basierend auf Printful-Daten. Die tatsächlichen Zeiten können aufgrund von Faktoren variieren, die außerhalb unserer Kontrolle liegen (Zoll, Spediteur, außergewöhnliche Ereignisse). Dies stellt keine vertragliche Garantie dar.'
+    legal_note: 'Die angegebene Schätzung wird auf der Grundlage historischer Produktions- und Versanddaten berechnet. Die tatsächlichen Zeiten können aufgrund von Zollverfahren, Kurierbetrieb oder außergewöhnlichen Ereignissen variieren. Sie ist rein indikativ und stellt keine vertragliche Verpflichtung dar.'
   },
 
   es: {
     label:      'Entrega Estimada',
     days_range: '{min}–{max} días hábiles',
     tbd:        'estimación en proceso de definición',
-    legal_note: 'Estimación indicativa basada en datos de Printful. Los tiempos reales pueden variar por causas ajenas a nuestra voluntad (aduana, transportista, eventos excepcionales). No constituye una garantía contractual.'
+    legal_note: 'La estimación indicada se calcula sobre la base de datos históricos de producción y envío. Los tiempos reales pueden variar debido a procedimientos aduaneros, operaciones de los transportistas o eventos extraordinarios. Tiene carácter meramente indicativo y no constituye un compromiso contractual.'
   }
 
 };
