@@ -1246,7 +1246,7 @@
             <div class="support-contacts">
                 <div class="support-item">
                     <span>📧</span>
-                    <span><a href="mailto:support@luxhaven360.com">support&#64;luxhaven360.com</a></span>
+                    <span><a href="/cdn-cgi/l/email-protection#74070104041b06003418010c1c1502111a4742445a171b19">support&#64;luxhaven360.com</a></span>
                 </div>
                 <div class="support-item">
                     <span>📞</span>
@@ -1272,7 +1272,7 @@
     </div>
 
     <!-- Connection Monitor Script -->
-    <script data-cfasync="false" src="/cdn-cgi/scripts/5c5dd728/cloudflare-static/email-decode.min.js"></script><script data-cfasync="false" src="/cdn-cgi/scripts/5c5dd728/cloudflare-static/email-decode.min.js"></script><script src="../connection-monitor.js"></script>
+    <script data-cfasync="false" src="/cdn-cgi/scripts/5c5dd728/cloudflare-static/email-decode.min.js"></script><script data-cfasync="false" src="/cdn-cgi/scripts/5c5dd728/cloudflare-static/email-decode.min.js"></script><script data-cfasync="false" src="/cdn-cgi/scripts/5c5dd728/cloudflare-static/email-decode.min.js"></script><script src="../connection-monitor.js"></script>
     
     <script>
     // CONFIGURAZIONE
@@ -2007,20 +2007,15 @@ function updateTimelineFromOrderData(order, confirmedTime, deliveryElem) {
 
     // Se Printful ha già risposto usa i suoi dati; altrimenti usa il valore dal foglio
     function _getEstimatedDelivered() {
-        if (window._successDelivery && window._successDelivery.initialized) {
-            // Preferisci il testo già costruito da renderSuccessDeliveryUI (include splitShipment)
-            if (window._successDelivery._timelineText) {
-                return window._successDelivery._timelineText;
-            }
-            if (window._successDelivery.minDays !== null) {
-                const _i18n = window.i18nPDP && window.i18nPDP();
-                const _lang = (_i18n && _i18n.currentLang) ? _i18n.currentLang : 'it';
-                return buildSuccessDeliveryText(
-                    window._successDelivery.minDays,
-                    window._successDelivery.maxDays,
-                    _lang
-                );
-            }
+        if (window._successDelivery && window._successDelivery.initialized &&
+            window._successDelivery.minDays !== null) {
+            const _i18n = window.i18nPDP && window.i18nPDP();
+            const _lang = (_i18n && _i18n.currentLang) ? _i18n.currentLang : 'it';
+            return buildSuccessDeliveryText(
+                window._successDelivery.minDays,
+                window._successDelivery.maxDays,
+                _lang
+            );
         }
         return consegnaPrevista;
     }
@@ -2061,17 +2056,15 @@ function updateTimelineWithDefaults(confirmedTime, deliveryElem) {
             shipped: null,
             // ✅ FIX: usa Printful se già disponibile; aggiornato da renderSuccessDeliveryUI se risponde dopo
             delivered: (function() {
-                if (window._successDelivery && window._successDelivery.initialized) {
-                    if (window._successDelivery._timelineText) return window._successDelivery._timelineText;
-                    if (window._successDelivery.minDays !== null) {
-                        var _i18n = window.i18nPDP && window.i18nPDP();
-                        var _lang = (_i18n && _i18n.currentLang) ? _i18n.currentLang : 'it';
-                        return buildSuccessDeliveryText(
-                            window._successDelivery.minDays,
-                            window._successDelivery.maxDays,
-                            _lang
-                        );
-                    }
+                if (window._successDelivery && window._successDelivery.initialized &&
+                    window._successDelivery.minDays !== null) {
+                    var _i18n = window.i18nPDP && window.i18nPDP();
+                    var _lang = (_i18n && _i18n.currentLang) ? _i18n.currentLang : 'it';
+                    return buildSuccessDeliveryText(
+                        window._successDelivery.minDays,
+                        window._successDelivery.maxDays,
+                        _lang
+                    );
                 }
                 return null;
             })()
@@ -2690,20 +2683,30 @@ function renderSuccessDeliveryUI() {
     }
 
     // 3. Nodo timeline "Consegnato"
-    //    Testo raw (senza prefisso) → formatShortDelivery() aggiunge prefisso localizzato
-    //    Se splitShipment, appende indicatore compatto
+    //    Aggiorna sia timelineState (per updateTimeline) sia direttamente il DOM (difesa doppia).
     {
-        let timelineDeliveredText = buildSuccessDeliveryText(state.minDays, state.maxDays, lang);
+        // Testo range tradotto (senza prefisso)
+        const rangeText = buildSuccessDeliveryText(state.minDays, state.maxDays, lang);
+
+        // Testo con eventuale nota spedizione separata
+        let timelineDeliveredText = rangeText;
         if (state.splitShipment) {
             const splitNote = SPLIT_SHIPMENT_TIMELINE[lang] || SPLIT_SHIPMENT_TIMELINE.it;
             timelineDeliveredText += ` · ${splitNote}`;
         }
-        // ✅ FIX: salva sempre il testo; se timelineState è già pronto aggiorna subito,
-        //         altrimenti i valori vengono letti da _getEstimatedDelivered() in updateTimelineFromOrderData
-        window._successDelivery._timelineText = timelineDeliveredText;
-        if (window.timelineState && window.timelineState.estimated_dates) {
-            window.timelineState.estimated_dates.delivered = timelineDeliveredText;
-            if (typeof updateTimeline === 'function') updateTimeline(window.timelineState);
+
+        // ✅ Aggiorna timelineState (usato da updateTimeline al prossimo ciclo)
+        if (timelineState && timelineState.estimated_dates) {
+            timelineState.estimated_dates.delivered = timelineDeliveredText;
+        }
+
+        // ✅ Aggiornamento DOM diretto: garantisce il risultato corretto
+        //    anche se updateTimeline venisse chiamato prima di questa funzione.
+        const deliveredDateElem = document.getElementById('date-delivered');
+        if (deliveredDateElem) {
+            // Usa formatShortDelivery per aggiungere il prefisso localizzato
+            deliveredDateElem.textContent = formatShortDelivery(timelineDeliveredText, lang);
+            deliveredDateElem.removeAttribute('data-i18n');
         }
     }
 }
@@ -2848,15 +2851,16 @@ function updateAllTranslations() {
         loadPurchasedItems();
     }
     
-    // 3. AGGIORNA TIMELINE (mantieni date reali, traduci solo placeholder)
-    updateTimelineDates(i18n);
-    
-    // 4. ✅ AGGIORNATO: AGGIORNA CARD CONSEGNA PREVISTA (con Printful o fallback localizzato)
+    // 3. ✅ FIX ORDINE: aggiorna prima la delivery card (aggiorna timelineState.estimated_dates.delivered
+    //    nella nuova lingua), poi la timeline (che leggerà già il valore tradotto corretto).
     if (window._successDelivery && window._successDelivery.initialized) {
         renderSuccessDeliveryUI();
     } else {
         updateDeliveryCard();
     }
+
+    // 4. AGGIORNA TIMELINE (a questo punto timelineState.estimated_dates.delivered è già tradotto)
+    updateTimelineDates(i18n);
     
     console.log(`✅ Traduzioni aggiornate: ${i18n.currentLang.toUpperCase()}`);
 }
@@ -2870,7 +2874,7 @@ document.addEventListener('languageChanged', (event) => {
 // ✅ Ascolta cambio lingua da altre pagine (localStorage sync)
 window.addEventListener('storage', (event) => {
     if (event.key === 'lh360_lang' && event.newValue) {
-        const i18n = window.i18nPDP();
+        const i18n = window.i18nP;
         if (i18n && i18n.currentLang !== event.newValue) {
             
 i18n.setLang(event.newValue);
