@@ -1187,3 +1187,56 @@ if (typeof window !== 'undefined') {
   window.translationsCountries  = translationsCountries;
   window.translateCountryName   = translateCountryName;
 }
+
+/* ============================================================
+   TRADUZIONI DELIVERY ESTIMATOR — LuxHaven360 × Printful
+   Lingue: IT · EN · FR · DE · ES
+
+   Chiavi:
+     label        → intestazione sezione (es. "Consegna Stimata")
+     days_range   → template intervallo giorni (usa {min} e {max})
+     tbd          → testo quando la stima non è ancora disponibile
+     legal_note   → nota legale/disclaimer (disclaimer trasparente)
+   ============================================================ */
+const translationsDelivery = {
+
+  it: {
+    label:      'Consegna Stimata',
+    days_range: '{min}–{max} giorni lavorativi',
+    tbd:        'stima in fase di definizione',
+    legal_note: 'Stima indicativa basata sui dati Printful. I tempi effettivi possono variare per cause indipendenti dalla nostra volontà (dogana, corriere, eventi eccezionali). Non costituisce garanzia contrattuale.'
+  },
+
+  en: {
+    label:      'Estimated Delivery',
+    days_range: '{min}–{max} business days',
+    tbd:        'estimate being defined',
+    legal_note: 'Indicative estimate based on Printful data. Actual times may vary due to factors beyond our control (customs, carrier, exceptional events). This does not constitute a contractual guarantee.'
+  },
+
+  fr: {
+    label:      'Livraison Estimée',
+    days_range: '{min}–{max} jours ouvrés',
+    tbd:        'estimation en cours de définition',
+    legal_note: 'Estimation indicative basée sur les données Printful. Les délais réels peuvent varier en raison de facteurs indépendants de notre volonté (douane, transporteur, événements exceptionnels). Ceci ne constitue pas une garantie contractuelle.'
+  },
+
+  de: {
+    label:      'Geschätzte Lieferzeit',
+    days_range: '{min}–{max} Werktage',
+    tbd:        'Schätzung wird noch festgelegt',
+    legal_note: 'Richtwert basierend auf Printful-Daten. Die tatsächlichen Zeiten können aufgrund von Faktoren variieren, die außerhalb unserer Kontrolle liegen (Zoll, Spediteur, außergewöhnliche Ereignisse). Dies stellt keine vertragliche Garantie dar.'
+  },
+
+  es: {
+    label:      'Entrega Estimada',
+    days_range: '{min}–{max} días hábiles',
+    tbd:        'estimación en proceso de definición',
+    legal_note: 'Estimación indicativa basada en datos de Printful. Los tiempos reales pueden variar por causas ajenas a nuestra voluntad (aduana, transportista, eventos excepcionales). No constituye una garantía contractual.'
+  }
+
+};
+
+if (typeof window !== 'undefined') {
+  window.translationsDelivery = translationsDelivery;
+}
