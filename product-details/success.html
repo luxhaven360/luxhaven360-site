@@ -1246,7 +1246,7 @@
             <div class="support-contacts">
                 <div class="support-item">
                     <span>📧</span>
-                    <span><a href="/cdn-cgi/l/email-protection#6d1e181d1d021f192d011815050c1b08035e5b5d430e0200"><span class="__cf_email__" data-cfemail="0774727777687573476b727f6f667162693431372964686a">[email&#160;protected]</span></a></span>
+                    <span><a href="mailto:support@luxhaven360.com">support&#64;luxhaven360.com</a></span>
                 </div>
                 <div class="support-item">
                     <span>📞</span>
@@ -2005,6 +2005,26 @@ function updateTimelineFromOrderData(order, confirmedTime, deliveryElem) {
         deliveryElem.textContent = consegnaPrevista;
     }
 
+    // Se Printful ha già risposto usa i suoi dati; altrimenti usa il valore dal foglio
+    function _getEstimatedDelivered() {
+        if (window._successDelivery && window._successDelivery.initialized) {
+            // Preferisci il testo già costruito da renderSuccessDeliveryUI (include splitShipment)
+            if (window._successDelivery._timelineText) {
+                return window._successDelivery._timelineText;
+            }
+            if (window._successDelivery.minDays !== null) {
+                const _i18n = window.i18nPDP && window.i18nPDP();
+                const _lang = (_i18n && _i18n.currentLang) ? _i18n.currentLang : 'it';
+                return buildSuccessDeliveryText(
+                    window._successDelivery.minDays,
+                    window._successDelivery.maxDays,
+                    _lang
+                );
+            }
+        }
+        return consegnaPrevista;
+    }
+
     const timelineData = {
     current_status: mapStatusToStep(stato),
     status_dates: {
@@ -2016,11 +2036,9 @@ function updateTimelineFromOrderData(order, confirmedTime, deliveryElem) {
     estimated_dates: {
         preparing: null,
         shipped: null,
-        // ✅ FIX: usa consegnaPrevista (non deliveryDate che era undefined);
-        // verrà sovritto da renderSuccessDeliveryUI() quando Printful risponde
-        delivered: (!window._successDelivery || !window._successDelivery.initialized)
-            ? consegnaPrevista
-            : null
+        // ✅ FIX: usa Printful se già disponibile, altrimenti valore dal foglio;
+        // verrà aggiornato da renderSuccessDeliveryUI() se Printful risponde dopo
+        delivered: _getEstimatedDelivered()
     }
 };
 
@@ -2041,7 +2059,22 @@ function updateTimelineWithDefaults(confirmedTime, deliveryElem) {
         estimated_dates: {
             preparing: null,
             shipped: null,
-            delivered: null   // verrà aggiornato da renderSuccessDeliveryUI
+            // ✅ FIX: usa Printful se già disponibile; aggiornato da renderSuccessDeliveryUI se risponde dopo
+            delivered: (function() {
+                if (window._successDelivery && window._successDelivery.initialized) {
+                    if (window._successDelivery._timelineText) return window._successDelivery._timelineText;
+                    if (window._successDelivery.minDays !== null) {
+                        var _i18n = window.i18nPDP && window.i18nPDP();
+                        var _lang = (_i18n && _i18n.currentLang) ? _i18n.currentLang : 'it';
+                        return buildSuccessDeliveryText(
+                            window._successDelivery.minDays,
+                            window._successDelivery.maxDays,
+                            _lang
+                        );
+                    }
+                }
+                return null;
+            })()
         }
     };
 
@@ -2659,14 +2692,19 @@ function renderSuccessDeliveryUI() {
     // 3. Nodo timeline "Consegnato"
     //    Testo raw (senza prefisso) → formatShortDelivery() aggiunge prefisso localizzato
     //    Se splitShipment, appende indicatore compatto
-    if (window.timelineState && window.timelineState.estimated_dates) {
+    {
         let timelineDeliveredText = buildSuccessDeliveryText(state.minDays, state.maxDays, lang);
         if (state.splitShipment) {
             const splitNote = SPLIT_SHIPMENT_TIMELINE[lang] || SPLIT_SHIPMENT_TIMELINE.it;
             timelineDeliveredText += ` · ${splitNote}`;
         }
-        window.timelineState.estimated_dates.delivered = timelineDeliveredText;
-        if (typeof updateTimeline === 'function') updateTimeline(window.timelineState);
+        // ✅ FIX: salva sempre il testo; se timelineState è già pronto aggiorna subito,
+        //         altrimenti i valori vengono letti da _getEstimatedDelivered() in updateTimelineFromOrderData
+        window._successDelivery._timelineText = timelineDeliveredText;
+        if (window.timelineState && window.timelineState.estimated_dates) {
+            window.timelineState.estimated_dates.delivered = timelineDeliveredText;
+            if (typeof updateTimeline === 'function') updateTimeline(window.timelineState);
+        }
     }
 }
 
