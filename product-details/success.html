@@ -1214,7 +1214,7 @@
             <div class="support-contacts">
                 <div class="support-item">
                     <span>📧</span>
-                    <span><a href="mailto:support@luxhaven360.com">support@luxhaven360.com</a></span>
+                    <span><a href="/cdn-cgi/l/email-protection#6d1e181d1d021f192d011815050c1b08035e5b5d430e0200"><span class="__cf_email__" data-cfemail="0774727777687573476b727f6f667162693431372964686a">[email&#160;protected]</span></a></span>
                 </div>
                 <div class="support-item">
                     <span>📞</span>
@@ -1240,7 +1240,7 @@
     </div>
 
     <!-- Connection Monitor Script -->
-    <script data-cfasync="false" src="/cdn-cgi/scripts/5c5dd728/cloudflare-static/email-decode.min.js"></script><script src="../connection-monitor.js"></script>
+    <script data-cfasync="false" src="/cdn-cgi/scripts/5c5dd728/cloudflare-static/email-decode.min.js"></script><script data-cfasync="false" src="/cdn-cgi/scripts/5c5dd728/cloudflare-static/email-decode.min.js"></script><script src="../connection-monitor.js"></script>
     
     <script>
     // CONFIGURAZIONE
@@ -1295,7 +1295,16 @@ try {
 let loadTimeout;
 let startTime;
 let emailSent = false;
-let timelineState = null; // ✅ NUOVO: Memorizza stato timeline        
+let timelineState = null; // ✅ NUOVO: Memorizza stato timeline
+
+// ─── Stato delivery Printful (mirrors pdp-products.html) ───
+window._successDelivery = {
+    minDays: null,
+    maxDays: null,
+    countryCode: 'IT',
+    source: 'fallback',
+    initialized: false
+};
 const sessionId = new URLSearchParams(window.location.search).get('session_id');
 const isRefresh = sessionId ? localStorage.getItem(`lh360_success_loaded_${sessionId}`) === 'true' : false;
 
@@ -1790,10 +1799,8 @@ window.handleDetailsResponse = function(response) {
             currentOrderId = response.order_id;
         }
         
-        if (response.consegna_prevista && deliveryElem) {
-            deliveryElem.textContent = response.consegna_prevista;
-            deliveryElem.removeAttribute('data-i18n'); // ✅ Rimuovi attributo
-        }
+        // ⚠️ Il valore di consegna viene ora gestito da initSuccessDelivery (Printful real-time)
+        // Non impostiamo più deliveryElem.textContent qui.
     }
 
     let confirmedTime;
@@ -1889,7 +1896,7 @@ window.handleDetailsResponse = function(response) {
             data: formattedDate,
             stato: 'In Preparazione',
             totale: finalTotal.toFixed(2),
-            consegna_prevista: response.consegna_prevista || 'Da definire',
+            consegna_prevista: response.consegna_prevista || 'Da definire', // aggiornato da renderSuccessDeliveryUI se Printful risponde
             category: orderCategory,
             products: adjustedProducts,
             email: response?.email || '',
@@ -1901,6 +1908,9 @@ window.handleDetailsResponse = function(response) {
     }
 
     fetchOrderTrackingData(currentOrderId, confirmedTime, deliveryElem);
+
+    // ─── Avvia stima consegna Printful (asincrona, sostituisce valore dal foglio) ───
+    initSuccessDelivery(_persistentCart, response ? (response.consegna_prevista || '') : '');
 
     const triggerCallback = 'handlePollResponse_' + Date.now();
     const triggerScript = document.createElement('script');
@@ -1957,8 +1967,9 @@ function updateTimelineFromOrderData(order, confirmedTime, deliveryElem) {
     const stato = order.stato || 'In Preparazione';
     const consegnaPrevista = order.consegna_prevista || 'Da definire';
 
-    // ✅ Aggiorna UI solo se il valore non è già presente
-    if (deliveryElem && (!deliveryElem.textContent || deliveryElem.textContent === 'Caricamento...')) {
+    // ✅ Aggiorna UI solo se il valore non è già presente e Printful non ha ancora risposto
+    if (deliveryElem && (!deliveryElem.textContent || deliveryElem.textContent === 'Caricamento...')
+        && !window._successDelivery.initialized) {
         deliveryElem.textContent = consegnaPrevista;
     }
 
@@ -2462,9 +2473,16 @@ function updateTimelineDates(i18n) {
 }
 
 /**
- * ✅ NUOVO: Aggiorna la card CONSEGNA PREVISTA con data localizzata
+ * ✅ AGGIORNATO: Aggiorna la card CONSEGNA PREVISTA con dati Printful o fallback localizzato
  */
 function updateDeliveryCard() {
+    // Se la stima Printful è già inizializzata, ri-renderizza in modo i18n-aware
+    if (window._successDelivery && window._successDelivery.initialized) {
+        renderSuccessDeliveryUI();
+        return;
+    }
+
+    // Fallback legacy: prova a formattare il valore grezzo già presente nel DOM
     if (!timelineState || !timelineState.estimated_dates) return;
     
     const i18n = window.i18nPDP();
@@ -2475,13 +2493,10 @@ function updateDeliveryCard() {
     
     const deliveryDate = timelineState.estimated_dates.delivered;
     
-    // Se c'è una data di consegna prevista valida
     if (deliveryDate && deliveryDate !== 'da definire' && deliveryDate !== 'Da definire') {
-        // Prova a parsare la data italiana
         const parsedDate = parseItalianDate(deliveryDate);
         
         if (parsedDate) {
-            // Formatta con mese completo localizzato
             const day = parsedDate.getDate();
             const monthIndex = parsedDate.getMonth();
             
@@ -2499,15 +2514,174 @@ function updateDeliveryCard() {
             deliveryElem.textContent = formattedDate;
             deliveryElem.removeAttribute('data-i18n');
         } else {
-            // Se non parsabile, usa il valore originale
             deliveryElem.textContent = deliveryDate;
             deliveryElem.removeAttribute('data-i18n');
         }
     } else {
-        // Fallback tradotto
         deliveryElem.textContent = i18n.t('success_timeline_to_define');
     }
 }
+
+/* =====================================================================
+ *  DELIVERY ESTIMATOR — LuxHaven360 × Printful  (success.html)
+ *  Stessa logica di pdp-products.html: API reale → fallback statico
+ * ===================================================================== */
+
+const SUCCESS_PRINTFUL_FALLBACK_ZONES = {
+    EU_CORE: { countries: ['DE','FR','ES','AT','BE','NL','PT','LU','FI','SE','DK','IE','GR','CY','MT'], offset: { min: 1,  max: 4  } },
+    EU_EXT:  { countries: ['PL','CZ','SK','HU','RO','BG','HR','SI','EE','LV','LT'],                   offset: { min: 2,  max: 6  } },
+    UK:      { countries: ['GB'],                                                                       offset: { min: 3,  max: 7  } },
+    CH_NO:   { countries: ['CH','NO','IS','LI'],                                                        offset: { min: 5,  max: 10 } },
+    NA:      { countries: ['US','CA','MX'],                                                             offset: { min: 10, max: 18 } },
+    AU_NZ:   { countries: ['AU','NZ'],                                                                  offset: { min: 12, max: 20 } }
+};
+
+/** Parsa testo IT tipo "10-18 giorni lavorativi" → {min, max} */
+function successParseItalyRange(deliveryText) {
+    if (!deliveryText) return null;
+    const t = deliveryText.trim().toLowerCase();
+    if (!t || ['da definire', '-', 'n/a', 'tbd'].includes(t)) return null;
+    const rangeM = t.match(/(\d{1,2})\s*[-–]\s*(\d{1,2})/);
+    if (rangeM) return { min: parseInt(rangeM[1]), max: parseInt(rangeM[2]) };
+    const singleM = t.match(/^(\d{1,2})/);
+    if (singleM) { const d = parseInt(singleM[1]); return { min: d, max: d + Math.max(3, Math.ceil(d * 0.4)) }; }
+    return null;
+}
+
+/** Calcola giorni per paese aggiungendo offset alla base IT */
+function successGetFallbackDays(itRange, countryCode) {
+    if (!itRange) return null;
+    if (!countryCode || countryCode === 'IT') return { min: itRange.min, max: itRange.max };
+    const code = countryCode.toUpperCase();
+    let offset = { min: 7, max: 20 };
+    for (const zone of Object.values(SUCCESS_PRINTFUL_FALLBACK_ZONES)) {
+        if (zone.countries.includes(code)) { offset = zone.offset; break; }
+    }
+    return { min: itRange.min + offset.min, max: itRange.max + offset.max };
+}
+
+/** Testo range giorni tradotto (per la card "Consegna Prevista") */
+function buildSuccessDeliveryText(minDays, maxDays, lang) {
+    const T = (window.translationsDelivery && window.translationsDelivery[lang])
+        ? window.translationsDelivery[lang]
+        : (window.translationsDelivery ? window.translationsDelivery['it'] : null);
+    if (minDays === null || maxDays === null)
+        return T ? (T.tbd || 'Da definire') : 'Da definire';
+    return T ? T.days_range.replace('{min}', minDays).replace('{max}', maxDays)
+             : `${minDays}–${maxDays} giorni lavorativi`;
+}
+
+/** Testo timeline con prefisso localizzato (per il nodo "Consegnato") */
+function buildSuccessTimelineText(minDays, maxDays, lang) {
+    if (minDays === null || maxDays === null) return 'Da definire';
+    const prefixes = { it: 'previsto', en: 'estimated', fr: 'prévu', de: 'geplant', es: 'previsto' };
+    const prefix = prefixes[lang] || 'previsto';
+    return `${prefix}: ${buildSuccessDeliveryText(minDays, maxDays, lang)}`;
+}
+
+/**
+ * Aggiorna la card "Consegna Prevista" e il nodo timeline "Consegnato"
+ * usando lo stato memorizzato in window._successDelivery.
+ */
+function renderSuccessDeliveryUI() {
+    const state = window._successDelivery;
+    if (!state || !state.initialized) return;
+
+    const i18n = window.i18nPDP();
+    const lang = (i18n && i18n.currentLang) ? i18n.currentLang : 'it';
+
+    // 1. Card "Consegna Prevista"
+    const deliveryElem = document.getElementById('deliveryValue');
+    if (deliveryElem) {
+        deliveryElem.textContent = buildSuccessDeliveryText(state.minDays, state.maxDays, lang);
+        deliveryElem.removeAttribute('data-i18n');
+    }
+
+    // 2. Nodo timeline "Consegnato" → aggiorna estimated_dates e ri-renderizza
+    if (window.timelineState && window.timelineState.estimated_dates) {
+        window.timelineState.estimated_dates.delivered =
+            buildSuccessTimelineText(state.minDays, state.maxDays, lang);
+        if (typeof updateTimeline === 'function') updateTimeline(window.timelineState);
+    }
+}
+
+/**
+ * Funzione principale: recupera i tempi reali da Printful per ogni SKU del carrello,
+ * combina i range (worst-case), cade nel fallback statico se necessario.
+ */
+async function initSuccessDelivery(cartItems, fallbackDeliveryText) {
+    if (!Array.isArray(cartItems)) cartItems = [];
+
+    // 1. Geolocalizzazione
+    let countryCode = 'IT';
+    try {
+        const geoRes = await fetch('https://ipapi.co/json/');
+        if (geoRes.ok) {
+            const geo = await geoRes.json();
+            if (geo && geo.country_code) countryCode = geo.country_code.toUpperCase();
+        }
+    } catch (_) {}
+
+    // 2. SKU unici dal carrello
+    const skus = [...new Set(cartItems.map(item => item.sku).filter(Boolean))];
+    const itRange = successParseItalyRange(fallbackDeliveryText);
+
+    let combinedMin = null, combinedMax = null;
+    let anyPrintfulSuccess = false;
+
+    if (skus.length > 0) {
+        // Chiama GAS → Printful per ogni SKU in parallelo
+        const results = await Promise.allSettled(skus.map(async (sku) => {
+            try {
+                const apiUrl = `${webAppUrl}?action=get_shipping_estimate&sku=${encodeURIComponent(sku)}&country=${countryCode}&t=${Date.now()}`;
+                const apiRes = await fetch(apiUrl);
+                if (!apiRes.ok) return null;
+                const apiData = await apiRes.json();
+                if (apiData.success && apiData.min_days != null) {
+                    return { min: apiData.min_days, max: apiData.max_days };
+                }
+                return null;
+            } catch (_) { return null; }
+        }));
+
+        for (const r of results) {
+            const val = (r.status === 'fulfilled') ? r.value : null;
+            if (val) {
+                // Più prodotti → worst-case: max dei min, max dei max
+                anyPrintfulSuccess = true;
+                combinedMin = combinedMin === null ? val.min : Math.max(combinedMin, val.min);
+                combinedMax = combinedMax === null ? val.max : Math.max(combinedMax, val.max);
+            } else {
+                // Fallback per questo SKU
+                const fb = successGetFallbackDays(itRange, countryCode);
+                if (fb) {
+                    combinedMin = combinedMin === null ? fb.min : Math.max(combinedMin, fb.min);
+                    combinedMax = combinedMax === null ? fb.max : Math.max(combinedMax, fb.max);
+                }
+            }
+        }
+    }
+
+    // Se nessun SKU o tutto fallito: usa fallback globale
+    if (combinedMin === null) {
+        const fb = successGetFallbackDays(itRange, countryCode);
+        if (fb) { combinedMin = fb.min; combinedMax = fb.max; }
+    }
+
+    // 3. Salva stato e renderizza
+    window._successDelivery = {
+        minDays: combinedMin,
+        maxDays: combinedMax,
+        countryCode,
+        source: anyPrintfulSuccess ? 'printful' : 'fallback',
+        initialized: true
+    };
+
+    console.log(`[SuccessDelivery] ${window._successDelivery.source}: ${combinedMin}–${combinedMax} gg → ${countryCode}`);
+    renderSuccessDeliveryUI();
+}
+
+/* ─────────────────────────────────────────────────────────────────────── */
 
 /**
  * ✅ Aggiorna tutte le traduzioni quando cambia lingua
@@ -2540,8 +2714,12 @@ function updateAllTranslations() {
     // 3. AGGIORNA TIMELINE (mantieni date reali, traduci solo placeholder)
     updateTimelineDates(i18n);
     
-    // 4. ✅ NUOVO: AGGIORNA CARD CONSEGNA PREVISTA
-    updateDeliveryCard();
+    // 4. ✅ AGGIORNATO: AGGIORNA CARD CONSEGNA PREVISTA (con Printful o fallback localizzato)
+    if (window._successDelivery && window._successDelivery.initialized) {
+        renderSuccessDeliveryUI();
+    } else {
+        updateDeliveryCard();
+    }
     
     console.log(`✅ Traduzioni aggiornate: ${i18n.currentLang.toUpperCase()}`);
 }
