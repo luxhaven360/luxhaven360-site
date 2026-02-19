@@ -391,23 +391,81 @@
             font-style: italic;
         }
 
-        .availability {
-           display: flex;
-           align-items: center;
-           gap: 0.5rem;
-           color: #34d399;
-           margin-bottom: 2rem;
-           font-size: 0.875rem;
-           font-weight: 500;
+        /* ── Premium Delivery Estimator ─────────────────────── */
+        .delivery-estimator {
+            display: flex;
+            align-items: flex-start;
+            gap: 1rem;
+            padding: 1rem 1.25rem;
+            background: rgba(212, 175, 55, 0.04);
+            border: 1px solid rgba(212, 175, 55, 0.15);
+            border-radius: 0.875rem;
+            margin-bottom: 2rem;
+            position: relative;
+            overflow: hidden;
+            transition: border-color 0.3s;
         }
 
-        .availability span:first-child {
-           font-size: 1.25rem; /* Icona più grande e visibile */
-           line-height: 1;
-           display: inline-flex;
-           align-items: center;
-           justify-content: center;
-           min-width: 1.25rem;
+        .delivery-estimator::before {
+            content: '';
+            position: absolute;
+            top: 0; left: 0; right: 0;
+            height: 1px;
+            background: linear-gradient(90deg, transparent, rgba(212,175,55,0.5), transparent);
+        }
+
+        .delivery-estimator__icon {
+            font-size: 1.375rem;
+            line-height: 1;
+            flex-shrink: 0;
+            margin-top: 0.125rem;
+            filter: drop-shadow(0 0 8px rgba(212,175,55,0.3));
+        }
+
+        .delivery-estimator__body {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .delivery-estimator__label {
+            font-size: 0.6875rem;
+            font-weight: 600;
+            letter-spacing: 0.12em;
+            text-transform: uppercase;
+            color: rgba(212, 175, 55, 0.7);
+            margin-bottom: 0.3rem;
+        }
+
+        .delivery-estimator__time {
+            font-size: 1rem;
+            font-weight: 300;
+            color: #fafafa;
+            letter-spacing: 0.01em;
+            line-height: 1.45;
+        }
+
+        .delivery-estimator__time strong {
+            font-weight: 500;
+            color: #fff;
+        }
+
+        .delivery-estimator__note {
+            font-size: 0.7rem;
+            color: #52525b;
+            margin-top: 0.4rem;
+            line-height: 1.5;
+            font-style: italic;
+        }
+
+        .delivery-estimator--loading .delivery-estimator__icon {
+            animation: pulse-icon 1.4s ease-in-out infinite;
+        }
+
+        .delivery-estimator--tbd .delivery-estimator__icon { opacity: 0.5; }
+
+        @keyframes pulse-icon {
+            0%, 100% { opacity: 0.4; }
+            50%       { opacity: 1; }
         }
   
         .section {
@@ -1635,9 +1693,14 @@
     </div>
     <div class="price" id="productPrice">€ 485,00</div>
     <p class="description" id="productDesc">Un capo senza tempo che ridefinisce l'eleganza contemporanea.</p>
-    <div class="availability" id="availabilityText">
-        <span>✔</span>
-        <span id="availabilityInnerText" data-i18n="pdp_availability_limited">Quantità limitata - Consegna</span>
+    <!-- ── Premium Delivery Estimator ───────────────────────── -->
+    <div class="delivery-estimator delivery-estimator--loading" id="deliveryEstimator">
+        <div class="delivery-estimator__icon" id="deliveryIcon">📦</div>
+        <div class="delivery-estimator__body">
+            <div class="delivery-estimator__label" id="deliveryLabel">Consegna Stimata</div>
+            <div class="delivery-estimator__time" id="deliveryTime">—</div>
+            <div class="delivery-estimator__note" id="deliveryNote"></div>
+        </div>
     </div>
 
     <div class="section" id="colorSection">
@@ -3114,91 +3177,216 @@ if (prod.discountPrice && prod.discountPrice < prod.price) {
             }
 
             renderSpecsGrid(prod.specs || {});
-            // ⭐ Disponibilità dinamica con icona e preposizione adattive
-            if (prod.delivery) {
-    const availabilityContainer = document.getElementById('availabilityText');
-    const availabilityInner = document.getElementById('availabilityInnerText');
-    
-    if (availabilityContainer && availabilityInner) {
-        const deliveryInfo = parseDeliveryText(prod.delivery);
-        const deliveryTextFormatted = lowercaseMonths(prod.delivery);
-        
-        // Aggiorna icona (primo span)
-        const iconSpan = availabilityContainer.querySelector('span:first-child');
-        if (iconSpan) iconSpan.textContent = deliveryInfo.icon;
-        
-        // Aggiorna testo completo con mesi minuscoli
-        availabilityInner.textContent = `Quantità limitata - Consegna ${deliveryInfo.preposition} ${deliveryTextFormatted}`;
+            // ── DELIVERY ESTIMATOR ────────────────────────────────────
+            initDeliveryEstimator(prod.delivery);
+            // ──────────────────────────────────────────────────────────
+
+/**
+ * ============================================================
+ *  DELIVERY ESTIMATOR — LuxHaven360 × Printful
+ *  Geolocalizzazione IP → calcolo stima consegna per paese
+ *  Basato sui dati ufficiali Printful (facility EU — Lettonia/Spagna)
+ *
+ *  Logica:
+ *   1. prod.delivery = stima Italia (produzione + spedizione IT)
+ *   2. IP geolocation → paese utente
+ *   3. offset per zona Printful → stima locale
+ *   4. i18n → testo tradotto nella lingua attiva
+ * ============================================================ */
+
+/**
+ * Zone di spedizione Printful (da facility EU).
+ * Offset in giorni lavorativi rispetto alla stima base Italia.
+ * La stima Italia (prod.delivery) include già produzione + spedizione IT.
+ *
+ * Fonti: Printful Shipping page, Help Center, dati storici 2024-2025.
+ *   IT → 0 offset (base)
+ *   EU Core → +1–3 gg (spedizione simile all'Italia)
+ *   EU Extended → +2–5 gg
+ *   UK → +2–5 gg (+ doganale post-Brexit)
+ *   CH/NO/IS/LI → +4–8 gg (+ doganale extra-EU)
+ *   Nord America → +8–15 gg
+ *   Australia/NZ → +10–18 gg
+ *   Mondo → +7–20 gg
+ */
+const PRINTFUL_ZONES = {
+    'EU_CORE': {
+        countries: ['DE','FR','ES','AT','BE','NL','PT','LU','FI','SE','DK','IE','GR','CY','MT'],
+        offset: { min: 1, max: 3 }
+    },
+    'EU_EXT': {
+        countries: ['PL','CZ','SK','HU','RO','BG','HR','SI','EE','LV','LT'],
+        offset: { min: 2, max: 5 }
+    },
+    'UK': {
+        countries: ['GB'],
+        offset: { min: 2, max: 5 }
+    },
+    'CH_NO': {
+        countries: ['CH','NO','IS','LI'],
+        offset: { min: 4, max: 8 }
+    },
+    'NA': {
+        countries: ['US','CA','MX'],
+        offset: { min: 8, max: 15 }
+    },
+    'AU_NZ': {
+        countries: ['AU','NZ'],
+        offset: { min: 10, max: 18 }
     }
+    // tutto il resto → WORLD: { min: 7, max: 20 }
+};
+
+/** Stima Italy fallback quando prod.delivery è "da definire" o mancante */
+const ITALY_FALLBACK = { min: 7, max: 14 };
+
+/**
+ * Estrae {min, max} giorni lavorativi dal testo della colonna "Consegna Prevista".
+ * Restituisce null se il valore è "da definire" o non parsabile.
+ */
+function parseItalyRange(deliveryText) {
+    if (!deliveryText) return null;
+    const t = deliveryText.trim().toLowerCase();
+    if (!t || t === 'da definire' || t === '-' || t === 'n/a' || t === 'tbd') return null;
+
+    // Pattern: "6-13" o "6–13"
+    const rangeM = t.match(/(\d{1,2})\s*[-–]\s*(\d{1,2})/);
+    if (rangeM) return { min: parseInt(rangeM[1]), max: parseInt(rangeM[2]) };
+
+    // Pattern: singolo numero
+    const singleM = t.match(/^(\d{1,2})/);
+    if (singleM) {
+        const d = parseInt(singleM[1]);
+        return { min: d, max: d + Math.max(3, Math.ceil(d * 0.4)) };
+    }
+    return null;
 }
 
 /**
- * Parser intelligente per determinare icona e preposizione corretta
- * @param {string} deliveryText - Valore dalla colonna "Consegna Prevista"
- * @returns {object} { icon: string, preposition: string }
+ * Ottiene la zona Printful per un codice paese ISO-2.
+ * Restituisce { offset: {min, max} } oppure null per Italia.
  */
-function parseDeliveryText(deliveryText) {
-    const text = deliveryText.toLowerCase().trim();
-    
-    // 1. Pattern: "24-48h" o "48h" (consegna express)
-    if (/^\d{1,2}(-\d{1,2})?h$/.test(text)) {
-        return { icon: '⚡', preposition: 'in' };
+function getZoneOffset(countryCode) {
+    if (!countryCode || countryCode === 'IT') return null;
+    const code = countryCode.toUpperCase();
+    for (const zone of Object.values(PRINTFUL_ZONES)) {
+        if (zone.countries.includes(code)) return zone.offset;
     }
-    
-    // 2. Pattern: "X-Y giorni lavorativi" o "X giorni lavorativi"
-    if (text.includes('giorni lavorativi') || text.includes('giorno lavorativo')) {
-        return { icon: '📦', preposition: 'in' };
-    }
-    
-    // 3. Pattern: "X-Y giorni" (senza "lavorativi")
-    if (/\d{1,2}(-\d{1,2})?\s*giorni?/.test(text) && !text.includes('lavorativi')) {
-        return { icon: '📦', preposition: 'in' };
-    }
-    
-    // 4. Pattern: Date specifiche con mese (es: "20 dicembre", "20-25 dicembre", "5 gennaio")
-    const monthsPattern = /(gennaio|febbraio|marzo|aprile|maggio|giugno|luglio|agosto|settembre|ottobre|novembre|dicembre)/i;
-    if (monthsPattern.test(text)) {
-        // Se contiene range di giorni (20-25)
-        if (/\d{1,2}\s*-\s*\d{1,2}/.test(text)) {
-            return { icon: '📅', preposition: 'entro il' };
-        }
-        // Singola data
-        return { icon: '📅', preposition: 'entro il' };
-    }
-    
-    // 5. Pattern: "X settimane" o "X-Y settimane"
-    if (text.includes('settimana') || text.includes('settimane')) {
-        return { icon: '📆', preposition: 'in' };
-    }
-    
-    // 6. Pattern: Solo numero (es: "3", "5") - assume giorni
-    if (/^\d{1,2}$/.test(text)) {
-        return { icon: '📦', preposition: 'in' };
-    }
-    
-    // 7. Pattern: Range numerico generico (es: "2-3", "3-5")
-    if (/^\d{1,2}\s*-\s*\d{1,2}$/.test(text)) {
-        return { icon: '📦', preposition: 'in' };
-    }
-    
-    // Default: Icona check e preposizione neutra
-    return { icon: '✓', preposition: 'prevista' };
+    // WORLD
+    return { min: 7, max: 20 };
 }
 
-            /**
- * Converte i nomi dei mesi da maiuscolo a minuscolo
+/**
+ * Costruisce la stringa localizzata della stima di consegna.
+ * @param {object|null} itRange  - {min,max} giorni IT (null = TBD)
+ * @param {object|null} offset   - {min,max} offset zona (null = Italia)
+ * @param {string} countryCode   - ISO-2 del paese utente
+ * @param {string} lang          - lingua attiva (it/en/fr/de/es)
  */
-function lowercaseMonths(text) {
-    if (!text) return text;
-    const months = ['Gennaio', 'Febbraio', 'Marzo', 'Aprile', 'Maggio', 'Giugno', 
-                    'Luglio', 'Agosto', 'Settembre', 'Ottobre', 'Novembre', 'Dicembre'];
-    let result = text;
-    months.forEach(month => {
-        const regex = new RegExp(month, 'gi');
-        result = result.replace(regex, month.toLowerCase());
-    });
-    return result;
+function buildDeliveryText(itRange, offset, countryCode, lang) {
+    const T = window.translationsDelivery && window.translationsDelivery[lang]
+        ? window.translationsDelivery[lang]
+        : window.translationsDelivery['it'];
+
+    const countryName = (typeof translateCountryName === 'function')
+        ? translateCountryName(countryCode || 'IT', lang)
+        : (countryCode || 'Italia');
+
+    // Caso TBD
+    if (!itRange) {
+        return {
+            label: T.label,
+            time: `<strong>${countryName}</strong> — ${T.tbd}`,
+            note: T.legal_note,
+            icon: '🕐',
+            isTbd: true
+        };
+    }
+
+    // Calcola range finale
+    let finalMin = itRange.min;
+    let finalMax = itRange.max;
+    if (offset) {
+        finalMin += offset.min;
+        finalMax += offset.max;
+    }
+
+    const daysText = T.days_range
+        .replace('{min}', finalMin)
+        .replace('{max}', finalMax);
+
+    return {
+        label: T.label,
+        time: `<strong>${countryName}</strong> — <strong>${daysText}</strong>`,
+        note: T.legal_note,
+        icon: '📦',
+        isTbd: false
+    };
 }
+
+/**
+ * Aggiorna il DOM del delivery estimator.
+ */
+function renderDeliveryEstimator(data) {
+    const estimator = document.getElementById('deliveryEstimator');
+    const iconEl    = document.getElementById('deliveryIcon');
+    const labelEl   = document.getElementById('deliveryLabel');
+    const timeEl    = document.getElementById('deliveryTime');
+    const noteEl    = document.getElementById('deliveryNote');
+
+    if (!estimator) return;
+
+    estimator.classList.remove('delivery-estimator--loading', 'delivery-estimator--tbd');
+    if (data.isTbd) estimator.classList.add('delivery-estimator--tbd');
+
+    if (iconEl)  iconEl.textContent  = data.icon;
+    if (labelEl) labelEl.textContent = data.label;
+    if (timeEl)  timeEl.innerHTML    = data.time;
+    if (noteEl)  noteEl.textContent  = data.note;
+}
+
+/**
+ * Punto di ingresso: geolocalizza e mostra la stima corretta.
+ */
+async function initDeliveryEstimator(deliveryText) {
+    // Salva per aggiornamenti lingua
+    window._lh360_deliveryText = deliveryText;
+
+    const itRange = parseItalyRange(deliveryText);
+    let countryCode = 'IT';
+
+    try {
+        const res  = await fetch('https://ipapi.co/json/');
+        if (res.ok) {
+            const geo = await res.json();
+            if (geo && geo.country_code) countryCode = geo.country_code.toUpperCase();
+        }
+    } catch (_) {
+        // fallback silenzioso → Italia
+    }
+
+    window._lh360_userCountry = countryCode;
+
+    const lang   = (window.i18n && window.i18n.currentLang) ? window.i18n.currentLang : 'it';
+    const offset = getZoneOffset(countryCode);
+    const data   = buildDeliveryText(itRange, offset, countryCode, lang);
+    renderDeliveryEstimator(data);
+}
+
+/**
+ * Aggiorna la lingua del delivery estimator (chiamato dal cambio lingua i18n).
+ */
+function updateDeliveryEstimatorLanguage(lang) {
+    const deliveryText  = window._lh360_deliveryText;
+    const countryCode   = window._lh360_userCountry || 'IT';
+    const itRange       = parseItalyRange(deliveryText);
+    const offset        = getZoneOffset(countryCode);
+    const data          = buildDeliveryText(itRange, offset, countryCode, lang);
+    renderDeliveryEstimator(data);
+}
+
+// Esponi per l'i18n system
+window.updateDeliveryEstimatorLanguage = updateDeliveryEstimatorLanguage;
             currentProduct = prod;
 
             // Trova queste righe (circa riga 1120-1140):
@@ -3493,7 +3681,7 @@ async function generateDeviceFingerprint() {
             setupReviewForm();
             
             // Ricalcola specifiche al cambio lingua
-document.addEventListener('languageChanged', () => {
+document.addEventListener('languageChanged', (e) => {
     if (currentProduct) {
         // ✅ Re-renderizza specifiche (etichette + valori tradotti)
         renderSpecsGrid(currentProduct.specs || {});
@@ -3516,6 +3704,11 @@ document.addEventListener('languageChanged', () => {
                 });
             }
         }
+    }
+    // ✅ Aggiorna delivery estimator nella nuova lingua
+    const lang = (e.detail && e.detail.lang) || (window.i18n && window.i18n.currentLang) || 'it';
+    if (typeof updateDeliveryEstimatorLanguage === 'function') {
+        updateDeliveryEstimatorLanguage(lang);
     }
 });
             
