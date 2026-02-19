@@ -1204,7 +1204,7 @@ const translationsDelivery = {
     label:      'Consegna Stimata',
     days_range: '{min}–{max} giorni lavorativi',
     tbd:        'stima in fase di definizione',
-    legal_note: 'La stima indicata è calcolata sulla base dei dati storici di produzione e spedizione. I tempi effettivi possono variare in ragione di procedure doganali, operatività dei corrieri o eventi straordinari. Ha carattere puramente indicativo e non costituisce impegno contrattuale. '
+    legal_note: 'La stima indicata è calcolata sulla base dei dati storici di produzione e spedizione. I tempi effettivi possono variare in ragione di procedure doganali, operatività dei corrieri o eventi straordinari. Ha carattere puramente indicativo e non costituisce impegno contrattuale.'
   },
 
   en: {
