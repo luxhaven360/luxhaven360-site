@@ -1201,37 +1201,55 @@ if (typeof window !== 'undefined') {
 const translationsDelivery = {
 
   it: {
-    label:      'Consegna Stimata',
-    days_range: '{min}–{max} giorni lavorativi',
-    tbd:        'stima in fase di definizione',
+    label:           'Consegna Stimata',
+    days_range:      '{min}–{max} giorni lavorativi',
+    tbd:             'stima in fase di definizione',
+    // success.html — range combinato multi-prodotto
+    combined_prefix: 'Stima combinata: ',
+    // success.html — label paese per stima
+    country_label:   'Stima per {country}',
+    // success.html — suffisso data stimata
+    by_date:         'entro il {date}',
     legal_note: 'La stima indicata è calcolata sulla base dei dati storici di produzione e spedizione. I tempi effettivi possono variare in ragione di procedure doganali, operatività dei corrieri o eventi straordinari. Ha carattere puramente indicativo e non costituisce impegno contrattuale.'
   },
 
   en: {
-    label:      'Estimated Delivery',
-    days_range: '{min}–{max} business days',
-    tbd:        'estimate being defined',
+    label:           'Estimated Delivery',
+    days_range:      '{min}–{max} business days',
+    tbd:             'estimate being defined',
+    combined_prefix: 'Combined estimate: ',
+    country_label:   'Estimate for {country}',
+    by_date:         'by {date}',
     legal_note: 'The indicated estimate is calculated on the basis of historical production and shipping data. Actual times may vary due to customs procedures, carrier operations or extraordinary events. It is purely indicative and does not constitute a contractual commitment.'
   },
 
   fr: {
-    label:      'Livraison Estimée',
-    days_range: '{min}–{max} jours ouvrés',
-    tbd:        'estimation en cours de définition',
+    label:           'Livraison Estimée',
+    days_range:      '{min}–{max} jours ouvrés',
+    tbd:             'estimation en cours de définition',
+    combined_prefix: 'Estimation combinée : ',
+    country_label:   'Estimation pour {country}',
+    by_date:         'avant le {date}',
     legal_note: "L'estimation indiquée est calculée sur la base des données historiques de production et d'expédition. Les délais réels peuvent varier en raison des procédures douanières, des opérations des transporteurs ou d'événements extraordinaires. Elle a un caractère purement indicatif et ne constitue pas un engagement contractuel."
   },
 
   de: {
-    label:      'Geschätzte Lieferzeit',
-    days_range: '{min}–{max} Werktage',
-    tbd:        'Schätzung wird noch festgelegt',
+    label:           'Geschätzte Lieferzeit',
+    days_range:      '{min}–{max} Werktage',
+    tbd:             'Schätzung wird noch festgelegt',
+    combined_prefix: 'Kombinierte Schätzung: ',
+    country_label:   'Schätzung für {country}',
+    by_date:         'bis {date}',
     legal_note: 'Die angegebene Schätzung wird auf der Grundlage historischer Produktions- und Versanddaten berechnet. Die tatsächlichen Zeiten können aufgrund von Zollverfahren, Kurierbetrieb oder außergewöhnlichen Ereignissen variieren. Sie ist rein indikativ und stellt keine vertragliche Verpflichtung dar.'
   },
 
   es: {
-    label:      'Entrega Estimada',
-    days_range: '{min}–{max} días hábiles',
-    tbd:        'estimación en proceso de definición',
+    label:           'Entrega Estimada',
+    days_range:      '{min}–{max} días hábiles',
+    tbd:             'estimación en proceso de definición',
+    combined_prefix: 'Estimación combinada: ',
+    country_label:   'Estimación para {country}',
+    by_date:         'antes del {date}',
     legal_note: 'La estimación indicada se calcula sobre la base de datos históricos de producción y envío. Los tiempos reales pueden variar debido a procedimientos aduaneros, operaciones de los transportistas o eventos extraordinarios. Tiene carácter meramente indicativo y no constituye un compromiso contractual.'
   }
 
