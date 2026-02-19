@@ -1982,19 +1982,22 @@ function updateTimelineFromOrderData(order, confirmedTime, deliveryElem) {
         delivered: stato === 'Consegnato' ? new Date().toISOString() : null
     },
     estimated_dates: {
-    preparing: 'In corso',
-    shipped: 'Da programmare',
-    delivered: deliveryDate  // ✅ USA IL VALORE GIÀ IMPOSTATO
-}
+        preparing: null,
+        shipped: null,
+        // ✅ FIX: usa consegnaPrevista (non deliveryDate che era undefined);
+        // verrà sovritto da renderSuccessDeliveryUI() quando Printful risponde
+        delivered: (!window._successDelivery || !window._successDelivery.initialized)
+            ? consegnaPrevista
+            : null
+    }
 };
 
     updateTimeline(timelineData);
 }
 
 function updateTimelineWithDefaults(confirmedTime, deliveryElem) {
-    // ✅ Non calcolare più la data, usa valore esistente o "Da definire"
-    const deliveryDate = deliveryElem ? deliveryElem.textContent : 'Da definire';
-    
+    // ✅ FIX: non leggere deliveryElem.textContent — conterrebbe la stringa i18n ("chargement...", ecc.)
+    // Il valore reale verrà impostato da renderSuccessDeliveryUI() quando Printful risponde.
     const timelineData = {
         current_status: 'preparing',
         status_dates: {
@@ -2004,9 +2007,9 @@ function updateTimelineWithDefaults(confirmedTime, deliveryElem) {
             delivered: null
         },
         estimated_dates: {
-            preparing: 'In corso',
-            shipped: 'Da programmare',
-            delivered: deliveryDate  // ✅ USA IL VALORE GIÀ IMPOSTATO
+            preparing: null,
+            shipped: null,
+            delivered: null   // verrà aggiornato da renderSuccessDeliveryUI
         }
     };
 
@@ -2067,60 +2070,72 @@ function formatShortDate(date, withPrefix = false) {
 }
 
 /**
- * Formatta la data di consegna in versione sintetica con prefisso "previsto:"
- * Esempi: "previsto: 27–31 dic", "previsto: 24–48h", "previsto: 2–3 giorni"
+ * Formatta la data di consegna con prefisso localizzato.
+ * Accetta un parametro opzionale `lang`; se assente legge da i18nPDP().
  */
-function formatShortDelivery(dateStr) {
-    if (!dateStr || dateStr === 'Da definire') return 'da definire';
-    
-    const str = dateStr.toLowerCase().trim();
-    
+function formatShortDelivery(dateStr, lang) {
+    const i18nInst = window.i18nPDP && window.i18nPDP();
+    const activeLang = lang || (i18nInst && i18nInst.currentLang) || 'it';
+
+    const PREFIXES = { it: 'previsto', en: 'estimated', fr: 'prévu', de: 'geplant', es: 'previsto' };
+    const TBD      = { it: 'da definire', en: 'to be defined', fr: 'à définir', de: 'wird festgelegt', es: 'por definir' };
+    const prefix   = PREFIXES[activeLang] || 'previsto';
+
+    if (!dateStr || ['Da definire', 'da definire', 'null', ''].includes(String(dateStr).trim())) {
+        return TBD[activeLang] || 'da definire';
+    }
+
+    const str   = String(dateStr).trim();
+    const lower = str.toLowerCase();
+
     // CASO 1: Ore (24h, 24-48h)
-    if (/^\d{1,2}(-\d{1,2})?h$/.test(str)) {
-        return `previsto: ${str}`;
+    if (/^\d{1,2}(-\d{1,2})?h$/i.test(lower)) {
+        return `${prefix}: ${lower}`;
     }
-    
-    // CASO 2: Giorni (2-3 giorni, 5 giorni lavorativi)
-    if (str.includes('giorn')) {
-        return `previsto: ${str}`;
+
+    // CASO 2: Range o singolo numero di giorni in qualsiasi lingua
+    // Cattura "11–14 giorni lavorativi", "11–14 business days", "11–14 jours ouvrés", ecc.
+    // Verifica che sia un numero (eventuale range) seguito da testo NON un nome di mese italiano
+    const italianMonths = /gennaio|febbraio|marzo|aprile|maggio|giugno|luglio|agosto|settembre|ottobre|novembre|dicembre/i;
+    if (/^\d/.test(str) && !italianMonths.test(lower)) {
+        return `${prefix}: ${str}`;
     }
-    
-    // CASO 3: Range di date (27–31 Dicembre, 5 Gennaio, 27 Dicembre – 2 Gennaio)
-const monthsShort = {
-    'gennaio': 'gen', 'febbraio': 'feb', 'marzo': 'mar', 'aprile': 'apr',
-    'maggio': 'mag', 'giugno': 'giu', 'luglio': 'lug', 'agosto': 'ago',
-    'settembre': 'set', 'ottobre': 'ott', 'novembre': 'nov', 'dicembre': 'dic'
-};
 
-// ✅ NUOVO: Range con due mesi diversi (27 Dicembre – 2 Gennaio)
-const twoMonthRangeMatch = str.match(/(\d+)\s+(gennaio|febbraio|marzo|aprile|maggio|giugno|luglio|agosto|settembre|ottobre|novembre|dicembre)\s*[––\-–]\s*(\d+)\s+(gennaio|febbraio|marzo|aprile|maggio|giugno|luglio|agosto|settembre|ottobre|novembre|dicembre)/i);
-if (twoMonthRangeMatch) {
-    const day1 = twoMonthRangeMatch[1];
-    const month1 = monthsShort[twoMonthRangeMatch[2].toLowerCase()];
-    const day2 = twoMonthRangeMatch[3];
-    const month2 = monthsShort[twoMonthRangeMatch[4].toLowerCase()];
-    return `previsto: ${day1} ${month1} – ${day2} ${month2}`;
-}
+    // CASO 3: Range di date italiane con due mesi diversi (27 Dicembre – 2 Gennaio)
+    const monthsShort = {
+        'gennaio': 'gen', 'febbraio': 'feb', 'marzo': 'mar', 'aprile': 'apr',
+        'maggio': 'mag', 'giugno': 'giu', 'luglio': 'lug', 'agosto': 'ago',
+        'settembre': 'set', 'ottobre': 'ott', 'novembre': 'nov', 'dicembre': 'dic'
+    };
 
-// Range con trattino lungo stesso mese (27–31 Dicembre)
-const rangeMatch = str.match(/(\d+)[––\-–](\d+)\s+(gennaio|febbraio|marzo|aprile|maggio|giugno|luglio|agosto|settembre|ottobre|novembre|dicembre)/i);
-if (rangeMatch) {
-    const day1 = rangeMatch[1];
-    const day2 = rangeMatch[2];
-    const month = monthsShort[rangeMatch[3].toLowerCase()];
-    return `previsto: ${day1}–${day2} ${month}`;
-}
-    
+    const twoMonthRangeMatch = str.match(/(\d+)\s+(gennaio|febbraio|marzo|aprile|maggio|giugno|luglio|agosto|settembre|ottobre|novembre|dicembre)\s*[––\-–]\s*(\d+)\s+(gennaio|febbraio|marzo|aprile|maggio|giugno|luglio|agosto|settembre|ottobre|novembre|dicembre)/i);
+    if (twoMonthRangeMatch) {
+        const day1   = twoMonthRangeMatch[1];
+        const month1 = monthsShort[twoMonthRangeMatch[2].toLowerCase()];
+        const day2   = twoMonthRangeMatch[3];
+        const month2 = monthsShort[twoMonthRangeMatch[4].toLowerCase()];
+        return `${prefix}: ${day1} ${month1} – ${day2} ${month2}`;
+    }
+
+    // Range stesso mese (27–31 Dicembre)
+    const rangeMatch = str.match(/(\d+)[––\-–](\d+)\s+(gennaio|febbraio|marzo|aprile|maggio|giugno|luglio|agosto|settembre|ottobre|novembre|dicembre)/i);
+    if (rangeMatch) {
+        const day1  = rangeMatch[1];
+        const day2  = rangeMatch[2];
+        const month = monthsShort[rangeMatch[3].toLowerCase()];
+        return `${prefix}: ${day1}–${day2} ${month}`;
+    }
+
     // Singola data (5 Gennaio)
-    const singleMatch = str.match(/(\d+)\s+(gennaio|febbraio|marzo|aprile|maggio|giugno|luglio|agosto|settembre|ottobre|novembre|dicembre)/);
+    const singleMatch = str.match(/(\d+)\s+(gennaio|febbraio|marzo|aprile|maggio|giugno|luglio|agosto|settembre|ottobre|novembre|dicembre)/i);
     if (singleMatch) {
-        const day = singleMatch[1];
-        const month = monthsShort[singleMatch[2]];
-        return `previsto: ${day} ${month}`;
+        const day   = singleMatch[1];
+        const month = monthsShort[singleMatch[2].toLowerCase()];
+        return `${prefix}: ${day} ${month}`;
     }
-    
-    // Fallback: mantieni il valore originale con prefisso
-    return `previsto: ${str}`;
+
+    // Fallback generico
+    return `${prefix}: ${str}`;
 }
 
 function updateTimeline(data) {
@@ -2217,7 +2232,7 @@ function updateTimeline(data) {
                 } else {
                     const estimatedDate = data.estimated_dates[step];
                     if (estimatedDate && estimatedDate !== 'da definire' && estimatedDate !== 'Da definire') {
-                        dateElem.textContent = formatShortDelivery(estimatedDate);
+                        dateElem.textContent = formatShortDelivery(estimatedDate, i18n ? i18n.currentLang : 'it');
                     } else {
                         dateElem.textContent = i18n ? i18n.t('success_timeline_to_define') : 'da definire';
                     }
@@ -2597,10 +2612,12 @@ function renderSuccessDeliveryUI() {
         deliveryElem.removeAttribute('data-i18n');
     }
 
-    // 2. Nodo timeline "Consegnato" → aggiorna estimated_dates e ri-renderizza
+    // 2. Nodo timeline "Consegnato" → aggiorna estimated_dates con testo raw (senza prefisso)
+    //    formatShortDelivery() aggiungerà il prefisso localizzato durante updateTimeline
     if (window.timelineState && window.timelineState.estimated_dates) {
+        // Testo raw: es. "11–14 jours ouvrés" / "11–14 business days" / "11–14 giorni lavorativi"
         window.timelineState.estimated_dates.delivered =
-            buildSuccessTimelineText(state.minDays, state.maxDays, lang);
+            buildSuccessDeliveryText(state.minDays, state.maxDays, lang);
         if (typeof updateTimeline === 'function') updateTimeline(window.timelineState);
     }
 }
