@@ -698,6 +698,38 @@ if (typeof window !== 'undefined') {
    ============================================================ */
 const translationsSpecValues = {
 
+  /* ── Composizione ── */
+  '95% poliestere riciclato, 5% spandex': {
+    en: '95% recycled polyester, 5% spandex',
+    fr: '95 % polyester recyclé, 5 % spandex',
+    de: '95 % recyceltes Polyester, 5 % Spandex',
+    es: '95 % poliéster reciclado, 5 % spandex'
+  },
+  '100% twill di chino di cotone': {
+    en: '100% cotton chino twill',
+    fr: '100 % twill de chino en coton',
+    de: '100 % Baumwoll-Chino-Twill',
+    es: '100 % sarga de chino de algodón'
+  },
+  '100% cotone morbido filato ad anello': {
+    en: '100% soft ring-spun cotton',
+    fr: '100 % coton doux filé en anneau',
+    de: '100 % weiches ringgesponnenes Baumwolle',
+    es: '100 % algodón suave hilado en anillo'
+  },
+  '100% cotone ring-spun biologico': {
+    en: '100% organic ring-spun cotton',
+    fr: '100 % coton biologique filé en anneau',
+    de: '100 % biologisch ringgesponnene Baumwolle',
+    es: '100 % algodón orgánico hilado en anillo'
+  },
+  '100% cotone pettinato': {
+    en: '100% combed cotton',
+    fr: '100 % coton peigné',
+    de: '100 % gekämmte Baumwolle',
+    es: '100 % algodón peinado'
+  },
+
   /* ── Vestibilità ── */
   'Rilassata, unisex': {
     en: 'Relaxed, unisex',
