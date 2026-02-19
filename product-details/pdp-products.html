@@ -451,7 +451,7 @@
 
         .delivery-estimator__note {
             font-size: 0.7rem;
-            color: #52525b;
+            color: #a1a1aa;
             margin-top: 0.4rem;
             line-height: 1.5;
             font-style: italic;
@@ -3183,209 +3183,149 @@ if (prod.discountPrice && prod.discountPrice < prod.price) {
 
 /**
  * ============================================================
- *  DELIVERY ESTIMATOR — LuxHaven360 × Printful
- *  Geolocalizzazione IP → calcolo stima consegna per paese
- *  Basato sui dati ufficiali Printful (facility EU — Lettonia/Spagna)
+ *  DELIVERY ESTIMATOR — LuxHaven360 × Printful (API reale)
  *
- *  Logica:
- *   1. prod.delivery = stima Italia (produzione + spedizione IT)
- *   2. IP geolocation → paese utente
- *   3. offset per zona Printful → stima locale
- *   4. i18n → testo tradotto nella lingua attiva
+ *  Flusso:
+ *   1. Geolocalizzazione IP → countryCode
+ *   2. Chiamata GAS → action=get_shipping_estimate&sku=...&country=...
+ *      (GAS → Printful API → min/max giorni lavorativi reali)
+ *   3. Fallback statico se GAS o Printful non rispondono
  * ============================================================ */
 
-/**
- * Zone di spedizione Printful (da facility EU).
- * Offset in giorni lavorativi rispetto alla stima base Italia.
- * La stima Italia (prod.delivery) include già produzione + spedizione IT.
- *
- * Fonti: Printful Shipping page, Help Center, dati storici 2024-2025.
- *   IT → 0 offset (base)
- *   EU Core → +1–3 gg (spedizione simile all'Italia)
- *   EU Extended → +2–5 gg
- *   UK → +2–5 gg (+ doganale post-Brexit)
- *   CH/NO/IS/LI → +4–8 gg (+ doganale extra-EU)
- *   Nord America → +8–15 gg
- *   Australia/NZ → +10–18 gg
- *   Mondo → +7–20 gg
- */
-const PRINTFUL_ZONES = {
-    'EU_CORE': {
-        countries: ['DE','FR','ES','AT','BE','NL','PT','LU','FI','SE','DK','IE','GR','CY','MT'],
-        offset: { min: 1, max: 3 }
-    },
-    'EU_EXT': {
-        countries: ['PL','CZ','SK','HU','RO','BG','HR','SI','EE','LV','LT'],
-        offset: { min: 2, max: 5 }
-    },
-    'UK': {
-        countries: ['GB'],
-        offset: { min: 2, max: 5 }
-    },
-    'CH_NO': {
-        countries: ['CH','NO','IS','LI'],
-        offset: { min: 4, max: 8 }
-    },
-    'NA': {
-        countries: ['US','CA','MX'],
-        offset: { min: 8, max: 15 }
-    },
-    'AU_NZ': {
-        countries: ['AU','NZ'],
-        offset: { min: 10, max: 18 }
-    }
-    // tutto il resto → WORLD: { min: 7, max: 20 }
+const PRINTFUL_FALLBACK_ZONES = {
+    'EU_CORE': { countries: ['DE','FR','ES','AT','BE','NL','PT','LU','FI','SE','DK','IE','GR','CY','MT'], offset: { min: 1, max: 4 } },
+    'EU_EXT':  { countries: ['PL','CZ','SK','HU','RO','BG','HR','SI','EE','LV','LT'], offset: { min: 2, max: 6 } },
+    'UK':      { countries: ['GB'],                         offset: { min: 3, max: 7 } },
+    'CH_NO':   { countries: ['CH','NO','IS','LI'],          offset: { min: 5, max: 10 } },
+    'NA':      { countries: ['US','CA','MX'],               offset: { min: 10, max: 18 } },
+    'AU_NZ':   { countries: ['AU','NZ'],                    offset: { min: 12, max: 20 } }
 };
 
-/** Stima Italy fallback quando prod.delivery è "da definire" o mancante */
-const ITALY_FALLBACK = { min: 7, max: 14 };
-
-/**
- * Estrae {min, max} giorni lavorativi dal testo della colonna "Consegna Prevista".
- * Restituisce null se il valore è "da definire" o non parsabile.
- */
 function parseItalyRange(deliveryText) {
     if (!deliveryText) return null;
     const t = deliveryText.trim().toLowerCase();
     if (!t || t === 'da definire' || t === '-' || t === 'n/a' || t === 'tbd') return null;
-
-    // Pattern: "6-13" o "6–13"
     const rangeM = t.match(/(\d{1,2})\s*[-–]\s*(\d{1,2})/);
     if (rangeM) return { min: parseInt(rangeM[1]), max: parseInt(rangeM[2]) };
-
-    // Pattern: singolo numero
     const singleM = t.match(/^(\d{1,2})/);
-    if (singleM) {
-        const d = parseInt(singleM[1]);
-        return { min: d, max: d + Math.max(3, Math.ceil(d * 0.4)) };
-    }
+    if (singleM) { const d = parseInt(singleM[1]); return { min: d, max: d + Math.max(3, Math.ceil(d * 0.4)) }; }
     return null;
 }
 
-/**
- * Ottiene la zona Printful per un codice paese ISO-2.
- * Restituisce { offset: {min, max} } oppure null per Italia.
- */
-function getZoneOffset(countryCode) {
-    if (!countryCode || countryCode === 'IT') return null;
+function getFallbackDays(itRange, countryCode) {
+    if (!itRange) return null;
+    if (!countryCode || countryCode === 'IT') return { min: itRange.min, max: itRange.max };
     const code = countryCode.toUpperCase();
-    for (const zone of Object.values(PRINTFUL_ZONES)) {
-        if (zone.countries.includes(code)) return zone.offset;
+    let offset = { min: 7, max: 20 }; // WORLD default
+    for (const zone of Object.values(PRINTFUL_FALLBACK_ZONES)) {
+        if (zone.countries.includes(code)) { offset = zone.offset; break; }
     }
-    // WORLD
-    return { min: 7, max: 20 };
+    return { min: itRange.min + offset.min, max: itRange.max + offset.max };
 }
 
-/**
- * Costruisce la stringa localizzata della stima di consegna.
- * @param {object|null} itRange  - {min,max} giorni IT (null = TBD)
- * @param {object|null} offset   - {min,max} offset zona (null = Italia)
- * @param {string} countryCode   - ISO-2 del paese utente
- * @param {string} lang          - lingua attiva (it/en/fr/de/es)
- */
-function buildDeliveryText(itRange, offset, countryCode, lang) {
-    const T = window.translationsDelivery && window.translationsDelivery[lang]
+function buildDeliveryText(minDays, maxDays, countryCode, lang, source) {
+    const T = (window.translationsDelivery && window.translationsDelivery[lang])
         ? window.translationsDelivery[lang]
         : window.translationsDelivery['it'];
-
     const countryName = (typeof translateCountryName === 'function')
         ? translateCountryName(countryCode || 'IT', lang)
         : (countryCode || 'Italia');
 
-    // Caso TBD
-    if (!itRange) {
-        return {
-            label: T.label,
-            time: `<strong>${countryName}</strong> — ${T.tbd}`,
-            note: T.legal_note,
-            icon: '🕐',
-            isTbd: true
-        };
+    if (minDays === null || maxDays === null) {
+        return { label: T.label, time: `<strong>${countryName}</strong> — ${T.tbd}`, note: T.legal_note, icon: '🕐', isTbd: true };
     }
-
-    // Calcola range finale
-    let finalMin = itRange.min;
-    let finalMax = itRange.max;
-    if (offset) {
-        finalMin += offset.min;
-        finalMax += offset.max;
-    }
-
-    const daysText = T.days_range
-        .replace('{min}', finalMin)
-        .replace('{max}', finalMax);
-
+    const daysText = T.days_range.replace('{min}', minDays).replace('{max}', maxDays);
+    const sourceNote = (source === 'printful' || source === 'cache') ? '' : (' · ' + (T.estimate_note || ''));
     return {
         label: T.label,
-        time: `<strong>${countryName}</strong> — <strong>${daysText}</strong>`,
-        note: T.legal_note,
-        icon: '📦',
+        time:  `<strong>${countryName}</strong> — <strong>${daysText}</strong>`,
+        note:  T.legal_note + sourceNote,
+        icon:  '📦',
         isTbd: false
     };
 }
 
-/**
- * Aggiorna il DOM del delivery estimator.
- */
 function renderDeliveryEstimator(data) {
     const estimator = document.getElementById('deliveryEstimator');
     const iconEl    = document.getElementById('deliveryIcon');
     const labelEl   = document.getElementById('deliveryLabel');
     const timeEl    = document.getElementById('deliveryTime');
     const noteEl    = document.getElementById('deliveryNote');
-
     if (!estimator) return;
-
     estimator.classList.remove('delivery-estimator--loading', 'delivery-estimator--tbd');
     if (data.isTbd) estimator.classList.add('delivery-estimator--tbd');
-
     if (iconEl)  iconEl.textContent  = data.icon;
     if (labelEl) labelEl.textContent = data.label;
     if (timeEl)  timeEl.innerHTML    = data.time;
     if (noteEl)  noteEl.textContent  = data.note;
 }
 
-/**
- * Punto di ingresso: geolocalizza e mostra la stima corretta.
- */
 async function initDeliveryEstimator(deliveryText) {
-    // Salva per aggiornamenti lingua
     window._lh360_deliveryText = deliveryText;
-
     const itRange = parseItalyRange(deliveryText);
-    let countryCode = 'IT';
 
+    // 1. Geolocalizzazione
+    let countryCode = 'IT';
     try {
-        const res  = await fetch('https://ipapi.co/json/');
-        if (res.ok) {
-            const geo = await res.json();
+        const geoRes = await fetch('https://ipapi.co/json/');
+        if (geoRes.ok) {
+            const geo = await geoRes.json();
             if (geo && geo.country_code) countryCode = geo.country_code.toUpperCase();
         }
-    } catch (_) {
-        // fallback silenzioso → Italia
-    }
-
+    } catch (_) {}
     window._lh360_userCountry = countryCode;
 
-    const lang   = (window.i18n && window.i18n.currentLang) ? window.i18n.currentLang : 'it';
-    const offset = getZoneOffset(countryCode);
-    const data   = buildDeliveryText(itRange, offset, countryCode, lang);
+    const lang = (window.i18n && window.i18n.currentLang) ? window.i18n.currentLang : 'it';
+
+    // 2. Chiama GAS → Printful API
+    const sku = new URLSearchParams(window.location.search).get('sku') || '';
+    const WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbwr79RkXIEocpuOKaM6uMJqE6VFs9wjlUPvrr__FvDbDDrD2ELB1NbfrWP3BCYpHj2u/exec';
+
+    let minDays = null, maxDays = null, source = 'fallback';
+
+    if (sku) {
+        try {
+            const apiUrl = `${WEB_APP_URL}?action=get_shipping_estimate&sku=${encodeURIComponent(sku)}&country=${countryCode}&t=${Date.now()}`;
+            const apiRes = await fetch(apiUrl);
+            if (apiRes.ok) {
+                const apiData = await apiRes.json();
+                if (apiData.success && apiData.min_days !== null && apiData.min_days !== undefined) {
+                    minDays = apiData.min_days;
+                    maxDays = apiData.max_days;
+                    source  = apiData.source || 'printful';
+                    console.log(`✅ [DeliveryEstimator] Printful (${source}): ${minDays}–${maxDays} gg → ${countryCode}`);
+                } else {
+                    console.warn('[DeliveryEstimator] GAS error:', apiData.error);
+                }
+            }
+        } catch (err) {
+            console.warn('[DeliveryEstimator] Chiamata GAS fallita, uso fallback:', err);
+        }
+    }
+
+    // 3. Fallback statico se Printful non risponde
+    if (minDays === null) {
+        const fallback = getFallbackDays(itRange, countryCode);
+        if (fallback) { minDays = fallback.min; maxDays = fallback.max; }
+        source = 'fallback';
+        console.log(`⚠️ [DeliveryEstimator] Fallback statico: ${minDays}–${maxDays} gg → ${countryCode}`);
+    }
+
+    window._lh360_deliveryDays   = { min: minDays, max: maxDays };
+    window._lh360_deliverySource = source;
+
+    const data = buildDeliveryText(minDays, maxDays, countryCode, lang, source);
     renderDeliveryEstimator(data);
 }
 
-/**
- * Aggiorna la lingua del delivery estimator (chiamato dal cambio lingua i18n).
- */
 function updateDeliveryEstimatorLanguage(lang) {
-    const deliveryText  = window._lh360_deliveryText;
-    const countryCode   = window._lh360_userCountry || 'IT';
-    const itRange       = parseItalyRange(deliveryText);
-    const offset        = getZoneOffset(countryCode);
-    const data          = buildDeliveryText(itRange, offset, countryCode, lang);
+    const days    = window._lh360_deliveryDays   || { min: null, max: null };
+    const country = window._lh360_userCountry    || 'IT';
+    const source  = window._lh360_deliverySource || 'fallback';
+    const data    = buildDeliveryText(days.min, days.max, country, lang, source);
     renderDeliveryEstimator(data);
 }
 
-// Esponi per l'i18n system
 window.updateDeliveryEstimatorLanguage = updateDeliveryEstimatorLanguage;
             currentProduct = prod;
 
