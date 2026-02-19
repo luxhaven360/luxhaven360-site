@@ -458,6 +458,37 @@
             font-weight: 500;
         }
 
+        /* ── Split Shipment Badge ── */
+        .delivery-split-badge {
+            display: none;
+            align-items: center;
+            justify-content: center;
+            gap: 0.35rem;
+            margin-top: 0.75rem;
+            padding: 0.35rem 0.85rem;
+            border-radius: 100px;
+            border: 1px solid rgba(212, 175, 55, 0.30);
+            background: rgba(212, 175, 55, 0.06);
+            backdrop-filter: blur(8px);
+            font-size: 0.7rem;
+            font-weight: 500;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            color: rgba(212, 175, 55, 0.80);
+            white-space: nowrap;
+            transition: opacity 0.3s;
+        }
+
+        .delivery-split-badge.visible {
+            display: inline-flex;
+        }
+
+        .delivery-split-badge::before {
+            content: '◈';
+            font-size: 0.6rem;
+            opacity: 0.7;
+        }
+
         /* Order Summary */
         .order-summary {
             width: 100%;
@@ -1130,6 +1161,7 @@
                 <span class="info-icon">📅</span>
                 <div class="info-label" data-i18n="success_info_delivery">Consegna Prevista</div>
                 <div class="info-value" id="deliveryValue" data-i18n="success_loading">Caricamento...</div>
+                <div class="delivery-split-badge" id="splitShipmentBadge"></div>
             </div>
             <div class="info-card">
                 <span class="info-icon">💳</span>
@@ -2492,6 +2524,7 @@ function updateTimelineDates(i18n) {
  */
 function updateDeliveryCard() {
     // Se la stima Printful è già inizializzata, ri-renderizza in modo i18n-aware
+    // (aggiorna anche il testo del badge split-shipment)
     if (window._successDelivery && window._successDelivery.initialized) {
         renderSuccessDeliveryUI();
         return;
@@ -2605,26 +2638,63 @@ function renderSuccessDeliveryUI() {
     const i18n = window.i18nPDP();
     const lang = (i18n && i18n.currentLang) ? i18n.currentLang : 'it';
 
-    // 1. Card "Consegna Prevista"
+    // 1. Card "Consegna Prevista" — testo range
     const deliveryElem = document.getElementById('deliveryValue');
     if (deliveryElem) {
         deliveryElem.textContent = buildSuccessDeliveryText(state.minDays, state.maxDays, lang);
         deliveryElem.removeAttribute('data-i18n');
     }
 
-    // 2. Nodo timeline "Consegnato" → aggiorna estimated_dates con testo raw (senza prefisso)
-    //    formatShortDelivery() aggiungerà il prefisso localizzato durante updateTimeline
+    // 2. Badge "spedizione separata" — visibile solo se i range differiscono
+    const badge = document.getElementById('splitShipmentBadge');
+    if (badge) {
+        if (state.splitShipment) {
+            badge.textContent = SPLIT_SHIPMENT_LABELS[lang] || SPLIT_SHIPMENT_LABELS.it;
+            badge.classList.add('visible');
+        } else {
+            badge.classList.remove('visible');
+        }
+    }
+
+    // 3. Nodo timeline "Consegnato"
+    //    Testo raw (senza prefisso) → formatShortDelivery() aggiunge prefisso localizzato
+    //    Se splitShipment, appende indicatore compatto
     if (window.timelineState && window.timelineState.estimated_dates) {
-        // Testo raw: es. "11–14 jours ouvrés" / "11–14 business days" / "11–14 giorni lavorativi"
-        window.timelineState.estimated_dates.delivered =
-            buildSuccessDeliveryText(state.minDays, state.maxDays, lang);
+        let timelineDeliveredText = buildSuccessDeliveryText(state.minDays, state.maxDays, lang);
+        if (state.splitShipment) {
+            const splitNote = SPLIT_SHIPMENT_TIMELINE[lang] || SPLIT_SHIPMENT_TIMELINE.it;
+            timelineDeliveredText += ` · ${splitNote}`;
+        }
+        window.timelineState.estimated_dates.delivered = timelineDeliveredText;
         if (typeof updateTimeline === 'function') updateTimeline(window.timelineState);
     }
 }
 
+/** Testi localizzati per il badge "spedizione separata" */
+const SPLIT_SHIPMENT_LABELS = {
+    it: 'Possibile spedizione separata',
+    en: 'Shipments may arrive separately',
+    fr: 'Livraisons potentiellement séparées',
+    de: 'Mögliche separate Lieferungen',
+    es: 'Posible envío por separado'
+};
+
+/** Testi compatti per la timeline (nodo Consegnato) */
+const SPLIT_SHIPMENT_TIMELINE = {
+    it: 'spedizioni separate',
+    en: 'separate shipments',
+    fr: 'livraisons séparées',
+    de: 'separate Lieferungen',
+    es: 'envíos separados'
+};
+
 /**
- * Funzione principale: recupera i tempi reali da Printful per ogni SKU del carrello,
- * combina i range (worst-case), cade nel fallback statico se necessario.
+ * Funzione principale: recupera i tempi reali da Printful per ogni SKU del carrello.
+ * 
+ * Calcolo range combinato:
+ *   - Singolo prodotto / tutti uguali → mostra il range diretto
+ *   - Range diversi (spedizioni separate) → min(tutti i min) – max(tutti i max)
+ *     + badge "Possibile spedizione separata"
  */
 async function initSuccessDelivery(cartItems, fallbackDeliveryText) {
     if (!Array.isArray(cartItems)) cartItems = [];
@@ -2643,11 +2713,11 @@ async function initSuccessDelivery(cartItems, fallbackDeliveryText) {
     const skus = [...new Set(cartItems.map(item => item.sku).filter(Boolean))];
     const itRange = successParseItalyRange(fallbackDeliveryText);
 
-    let combinedMin = null, combinedMax = null;
+    // Raccolta range individuali per ogni SKU
+    const perSkuRanges = [];
     let anyPrintfulSuccess = false;
 
     if (skus.length > 0) {
-        // Chiama GAS → Printful per ogni SKU in parallelo
         const results = await Promise.allSettled(skus.map(async (sku) => {
             try {
                 const apiUrl = `${webAppUrl}?action=get_shipping_estimate&sku=${encodeURIComponent(sku)}&country=${countryCode}&t=${Date.now()}`;
@@ -2664,37 +2734,49 @@ async function initSuccessDelivery(cartItems, fallbackDeliveryText) {
         for (const r of results) {
             const val = (r.status === 'fulfilled') ? r.value : null;
             if (val) {
-                // Più prodotti → worst-case: max dei min, max dei max
                 anyPrintfulSuccess = true;
-                combinedMin = combinedMin === null ? val.min : Math.max(combinedMin, val.min);
-                combinedMax = combinedMax === null ? val.max : Math.max(combinedMax, val.max);
+                perSkuRanges.push(val);
             } else {
-                // Fallback per questo SKU
+                // Fallback statico per questo SKU
                 const fb = successGetFallbackDays(itRange, countryCode);
-                if (fb) {
-                    combinedMin = combinedMin === null ? fb.min : Math.max(combinedMin, fb.min);
-                    combinedMax = combinedMax === null ? fb.max : Math.max(combinedMax, fb.max);
-                }
+                if (fb) perSkuRanges.push(fb);
             }
         }
     }
 
-    // Se nessun SKU o tutto fallito: usa fallback globale
-    if (combinedMin === null) {
+    // Se nessun SKU o tutti falliti: usa fallback globale
+    if (perSkuRanges.length === 0) {
         const fb = successGetFallbackDays(itRange, countryCode);
-        if (fb) { combinedMin = fb.min; combinedMax = fb.max; }
+        if (fb) perSkuRanges.push(fb);
     }
 
-    // 3. Salva stato e renderizza
+    // 3. Calcolo range combinato + rilevamento spedizioni separate
+    let combinedMin = null, combinedMax = null, splitShipment = false;
+
+    if (perSkuRanges.length > 0) {
+        // min reale = il più veloce; max reale = il più lento
+        combinedMin = Math.min(...perSkuRanges.map(r => r.min));
+        combinedMax = Math.max(...perSkuRanges.map(r => r.max));
+
+        // splitShipment se i range non sono tutti identici
+        if (perSkuRanges.length > 1) {
+            const firstMin = perSkuRanges[0].min;
+            const firstMax = perSkuRanges[0].max;
+            splitShipment = perSkuRanges.some(r => r.min !== firstMin || r.max !== firstMax);
+        }
+    }
+
+    // 4. Salva stato e renderizza
     window._successDelivery = {
         minDays: combinedMin,
         maxDays: combinedMax,
         countryCode,
+        splitShipment,
         source: anyPrintfulSuccess ? 'printful' : 'fallback',
         initialized: true
     };
 
-    console.log(`[SuccessDelivery] ${window._successDelivery.source}: ${combinedMin}–${combinedMax} gg → ${countryCode}`);
+    console.log(`[SuccessDelivery] ${window._successDelivery.source}: ${combinedMin}–${combinedMax} gg → ${countryCode} | splitShipment: ${splitShipment}`);
     renderSuccessDeliveryUI();
 }
 
