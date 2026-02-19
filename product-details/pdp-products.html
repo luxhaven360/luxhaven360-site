@@ -1741,12 +1741,12 @@
                 <div class="specs-grid" id="specsGrid"></div>
                 <h4 id="sizeGuideTitle" style="display:none">Guida alle Taglie</h4>
                 <table class="size-table" id="sizeTable" style="display: none;">
-                    <thead>
+                    <thead id="sizeTableHead">
                         <tr>
-                            <th>Taglia</th>
-                            <th>Petto (cm)</th>
-                            <th>Vita (cm)</th>
-                            <th>Lunghezza (cm)</th>
+                            <th data-col-key="taglia">Taglia</th>
+                            <th data-col-key="petto">Petto (cm)</th>
+                            <th data-col-key="vita">Vita (cm)</th>
+                            <th data-col-key="lunghezza">Lunghezza (cm)</th>
                         </tr>
                     </thead>
                     <tbody id="sizeTableBody"></tbody>
@@ -2350,40 +2350,201 @@ function renderStars(containerId, ratingValue) {
     specsGrid.style.display = 'grid';
 
     const order = ['composition', 'weight', 'origin', 'fit'];
-    const labels = { composition: 'Composizione', weight: 'Peso', origin: 'Origine', fit: 'Vestibilità' };
+
+    // Mappa chiave → chiave di translationsSpecLabels
+    const labelKeyMap = {
+      composition: 'spec_composition',
+      weight:      'spec_weight',
+      origin:      'spec_origin',
+      fit:         'spec_fit'
+    };
+
+    // Lingua corrente
+    const _specLang = (typeof i18nPDPInstance !== 'undefined' && i18nPDPInstance && i18nPDPInstance.currentLang)
+        ? i18nPDPInstance.currentLang
+        : (localStorage.getItem('lh360_lang') || 'it');
+
+    // Dizionario etichette tradotte
+    const _specLabels = (window.translationsSpecLabels && window.translationsSpecLabels[_specLang])
+        ? window.translationsSpecLabels[_specLang]
+        : {};
+
+    // Dizionario valori tradotti
+    const _specValues = window.translationsSpecValues || {};
+
+    // Etichette fallback italiano
+    const _labelsFallback = { composition: 'Composizione', weight: 'Peso', origin: 'Origine', fit: 'Vestibilità' };
 
     order.forEach(key => {
         if (specs[key]) {
             const div = document.createElement('div');
             div.className = 'spec-row';
-            div.innerHTML = `<span class="spec-label">${labels[key] || key}</span><span>${safeText(specs[key])}</span>`;
+            div.dataset.specKey = key;
+
+            // Etichetta tradotta
+            const labelKey = labelKeyMap[key];
+            const labelText = _specLabels[labelKey] || _labelsFallback[key] || key;
+
+            // Valore: se è italiano e ha traduzione, la usa; altrimenti mostra invariato
+            const rawValue = specs[key];
+            let displayValue = rawValue;
+            if (_specLang !== 'it' && _specValues[rawValue] && _specValues[rawValue][_specLang]) {
+                displayValue = _specValues[rawValue][_specLang];
+            }
+
+            div.innerHTML = `<span class="spec-label" data-spec-label-key="${labelKey}">${labelText}</span>`
+                          + `<span data-spec-value-key="${rawValue}">${safeText(displayValue)}</span>`;
             specsGrid.appendChild(div);
         }
     });
 }
 
         function renderSizeGuide(sizeGuide) {
-            const title = document.getElementById('sizeGuideTitle');
-            const table = document.getElementById('sizeTable');
-            const tbody = document.getElementById('sizeTableBody');
+            const titleEl = document.getElementById('sizeGuideTitle');
+            const table   = document.getElementById('sizeTable');
+            const thead   = document.getElementById('sizeTableHead');
+            const tbody   = document.getElementById('sizeTableBody');
             if (!tbody) return;
             tbody.innerHTML = '';
 
             if (!sizeGuide || !Array.isArray(sizeGuide) || sizeGuide.length === 0) {
-                if (title) title.style.display = 'none';
-                if (table) table.style.display = 'none';
+                if (titleEl) titleEl.style.display = 'none';
+                if (table)   table.style.display   = 'none';
                 return;
             }
 
-            if (title) title.style.display = 'block';
-            if (table) table.style.display = 'table';
+            // ── Lingua corrente ──
+            const lang = (typeof i18nPDPInstance !== 'undefined' && i18nPDPInstance && i18nPDPInstance.currentLang)
+                ? i18nPDPInstance.currentLang
+                : (localStorage.getItem('lh360_lang') || 'it');
 
+            // ── Colonne per-SKU (con fallback _default) ──
+            const sku = currentProduct ? currentProduct.sku : null;
+            const colDict = _getSizeColumns(sku, lang);
+
+            // ── Traduzione valori (es. "Unica" → "One Size") ──
+            const specValues = window.translationsSpecValues || {};
+
+            // ── Titolo ──
+            const specLabels = (window.translationsSpecLabels && window.translationsSpecLabels[lang])
+                ? window.translationsSpecLabels[lang] : {};
+            if (titleEl) {
+                titleEl.textContent = specLabels['size_guide_title'] || 'Guida alle Taglie';
+                titleEl.style.display = 'block';
+            }
+
+            // ── Intestazioni colonne ──
+            if (thead) {
+                const tr = document.createElement('tr');
+                ['taglia', 'petto', 'vita', 'lunghezza'].forEach(field => {
+                    const label = colDict[field];
+                    if (label === '') return; // salta colonne vuote (es. ME-02-A)
+                    const th = document.createElement('th');
+                    th.dataset.colKey = field;
+                    th.textContent = label;
+                    tr.appendChild(th);
+                });
+                thead.innerHTML = '';
+                thead.appendChild(tr);
+            }
+
+            // ── Righe dati ──
+            if (table) table.style.display = 'table';
             sizeGuide.forEach(row => {
                 const tr = document.createElement('tr');
-                tr.innerHTML = `<td>${safeText(row.taglia)}</td><td>${safeText(row.petto)}</td><td>${safeText(row.vita)}</td><td>${safeText(row.lunghezza)}</td>`;
+
+                // Valore taglia (tradotto se "Unica")
+                const rawTaglia = safeText(row.taglia);
+                let displayTaglia = rawTaglia;
+                if (lang !== 'it' && specValues[rawTaglia] && specValues[rawTaglia][lang]) {
+                    displayTaglia = specValues[rawTaglia][lang];
+                }
+                const tdTaglia = document.createElement('td');
+                tdTaglia.dataset.specValueKey = rawTaglia;
+                tdTaglia.textContent = displayTaglia;
+                tr.appendChild(tdTaglia);
+
+                // Petto, Vita, Lunghezza (solo se il campo ha un'etichetta non vuota)
+                ['petto', 'vita', 'lunghezza'].forEach(field => {
+                    if (colDict[field] === '') return;
+                    const td = document.createElement('td');
+                    td.textContent = safeText(row[field]);
+                    tr.appendChild(td);
+                });
+
                 tbody.appendChild(tr);
             });
         }
+
+        /* ── Helper: restituisce il dizionario colonne per-SKU nella lingua corrente ── */
+        function _getSizeColumns(sku, lang) {
+            const dict = window.translationsSpecColumns;
+            if (!dict) {
+                // Fallback hardcoded italiano
+                return { taglia: 'Taglia', petto: 'Petto (cm)', vita: 'Vita (cm)', lunghezza: 'Lunghezza (cm)' };
+            }
+            const skuDict = dict[sku] || dict['_default'] || {};
+            return skuDict[lang] || skuDict['it'] || { taglia: 'Taglia', petto: 'Petto (cm)', vita: 'Vita (cm)', lunghezza: 'Lunghezza (cm)' };
+        }
+
+        /* ══════════════════════════════════════════════════════════
+           updateTableLabels()
+           Aggiorna al volo etichette e intestazioni senza ri-renderizzare
+           i dati. Chiamata da i18n-pdp.js ad ogni cambio lingua.
+        ══════════════════════════════════════════════════════════ */
+        function updateTableLabels() {
+            const i18nInst = window.i18nPDP ? window.i18nPDP() : null;
+            const lang = (i18nInst && i18nInst.currentLang)
+                ? i18nInst.currentLang
+                : (localStorage.getItem('lh360_lang') || 'it');
+
+            const specLabels  = (window.translationsSpecLabels  && window.translationsSpecLabels[lang])  ? window.translationsSpecLabels[lang]  : {};
+            const specValues  = window.translationsSpecValues  || {};
+            const sku         = currentProduct ? currentProduct.sku : null;
+            const colDict     = _getSizeColumns(sku, lang);
+
+            // ── Titolo guida taglie ──
+            const titleEl = document.getElementById('sizeGuideTitle');
+            if (titleEl && titleEl.style.display !== 'none') {
+                titleEl.textContent = specLabels['size_guide_title'] || 'Guida alle Taglie';
+            }
+
+            // ── Intestazioni colonne tabella ──
+            document.querySelectorAll('#sizeTableHead th[data-col-key]').forEach(th => {
+                const field = th.dataset.colKey;
+                if (colDict[field] !== undefined) th.textContent = colDict[field];
+            });
+
+            // ── Valori taglia nella prima colonna (es. "Unica" → "One Size") ──
+            document.querySelectorAll('#sizeTableBody td[data-spec-value-key]').forEach(td => {
+                const rawVal = td.dataset.specValueKey;
+                if (rawVal && lang !== 'it' && specValues[rawVal] && specValues[rawVal][lang]) {
+                    td.textContent = specValues[rawVal][lang];
+                } else if (rawVal && lang === 'it') {
+                    td.textContent = rawVal; // ripristina italiano
+                }
+            });
+
+            // ── Etichette specifiche (Composizione, Peso…) ──
+            document.querySelectorAll('[data-spec-label-key]').forEach(el => {
+                const labelKey = el.dataset.specLabelKey;
+                if (labelKey && specLabels[labelKey]) el.textContent = specLabels[labelKey];
+            });
+
+            // ── Valori specifiche (Vestibilità, Origine…) ──
+            document.querySelectorAll('[data-spec-value-key]').forEach(el => {
+                const rawVal = el.dataset.specValueKey;
+                if (!rawVal) return;
+                if (lang !== 'it' && specValues[rawVal] && specValues[rawVal][lang]) {
+                    el.textContent = specValues[rawVal][lang];
+                } else if (lang === 'it') {
+                    el.textContent = rawVal;
+                }
+            });
+        }
+
+        // Rendi disponibile globalmente (richiesto da i18n-pdp.js)
+        window.updateTableLabels = updateTableLabels;
 
 /* --- LOGICA TEMPORALE AGGIORNATA --- */
 function getDynamicTime(dateTimeStr) {
@@ -3286,8 +3447,16 @@ async function generateDeviceFingerprint() {
             // Ricalcola specifiche al cambio lingua
 document.addEventListener('languageChanged', () => {
     if (currentProduct) {
+        // ✅ Re-renderizza specifiche (etichette + valori tradotti)
         renderSpecsGrid(currentProduct.specs || {});
-        // ✅ Re-renderizza le taglie con la nuova lingua, ripristinando la selezione
+        // ✅ Re-renderizza guida taglie (intestazioni + valori per-SKU tradotti)
+        if (currentProduct.sizeGuide) {
+            renderSizeGuide(currentProduct.sizeGuide);
+        } else {
+            // Aggiorna solo le etichette se la guida è già visibile
+            if (typeof updateTableLabels === 'function') updateTableLabels();
+        }
+        // ✅ Re-renderizza i bottoni taglia con la nuova lingua
         if (currentProduct.sizes && currentProduct.sizes.length > 0) {
             renderSizes(currentProduct.sizes);
             // Ripristina il bottone attivo in base alla selezione corrente
