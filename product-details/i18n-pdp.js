@@ -241,6 +241,14 @@ document.querySelectorAll('[data-i18n-placeholder]').forEach(el => {
         updateDynamicContent();
     }
 
+    // ✅ Aggiorna recensioni (testo "nessuna recensione", paese, conteggio)
+    if (typeof renderReviewsPage === 'function') {
+        renderReviewsPage();
+    }
+    if (typeof updateReviewsSummaryData === 'function' && typeof allReviewsCache !== 'undefined') {
+        updateReviewsSummaryData(allReviewsCache);
+    }
+
     document.dispatchEvent(new CustomEvent('languageChanged', { detail: { lang: langCode } }));
 
     console.log(`✅ Lingua PDP cambiata: ${langCode.toUpperCase()}`);
