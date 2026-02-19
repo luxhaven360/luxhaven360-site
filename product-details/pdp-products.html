@@ -3178,7 +3178,14 @@ if (prod.discountPrice && prod.discountPrice < prod.price) {
 
             renderSpecsGrid(prod.specs || {});
             // ── DELIVERY ESTIMATOR ────────────────────────────────────
-            initDeliveryEstimator(prod.delivery);
+            // La funzione è async: dopo che Printful risponde, ri-applica la lingua attiva
+            initDeliveryEstimator(prod.delivery).then(() => {
+                const _inst = window.i18nPDP ? window.i18nPDP() : null;
+                const _lang = (_inst && _inst.currentLang) ? _inst.currentLang : 'it';
+                if (typeof updateDeliveryEstimatorLanguage === 'function') {
+                    updateDeliveryEstimatorLanguage(_lang);
+                }
+            });
             // ──────────────────────────────────────────────────────────
 
 /**
@@ -3274,7 +3281,9 @@ async function initDeliveryEstimator(deliveryText) {
     } catch (_) {}
     window._lh360_userCountry = countryCode;
 
-    const lang = (window.i18n && window.i18n.currentLang) ? window.i18n.currentLang : 'it';
+    // ✅ FIX: usa i18nPDP (non window.i18n che è undefined in questo contesto)
+    const _i18nInst = window.i18nPDP ? window.i18nPDP() : null;
+    const lang = (_i18nInst && _i18nInst.currentLang) ? _i18nInst.currentLang : 'it';
 
     // 2. Chiama GAS → Printful API
     const sku = new URLSearchParams(window.location.search).get('sku') || '';
