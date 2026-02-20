@@ -1308,9 +1308,6 @@ function hideLoaderImmediately() {
 window.addEventListener('pageshow', (event) => {
     // Se la pagina viene ripristinata dalla cache (tasto indietro)
     if (event.persisted) {
-        // Scroll subito a 0 per prevenire il ripristino della posizione da parte del browser
-        window.scrollTo(0, 0);
-        
         // Nascondi eventuali loader dinamici
         hideLoaderImmediately();
         
@@ -1324,19 +1321,16 @@ window.addEventListener('pageshow', (event) => {
             // Ricarica i prodotti e poi nascondi il loader
             initDynamicProducts().then(() => {
                 setTimeout(() => {
-                    introLoader.style.transition = 'opacity 0.15s ease-out';
                     introLoader.style.opacity = '0';
                     document.body.style.overflow = '';
-                    window.scrollTo(0, 0);
                     setTimeout(() => {
                         introLoader.style.display = 'none';
-                    }, 150);
-                }, 300);
+                    }, 400);
+                }, 800);
             });
         }
     } else {
         hideLoaderImmediately();
-        window.scrollTo(0, 0);
     }
 });
 
