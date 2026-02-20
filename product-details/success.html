@@ -3,9 +3,6 @@
 <head>
     <script src="../siteguard-client.js"></script>
     <meta charset="UTF-8">
-    <!-- PERFORMANCE: preconnect GAS -->
-    <link rel="preconnect" href="https://script.google.com" crossorigin>
-    <link rel="dns-prefetch" href="https://www.google.com">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Ordine Confermato</title>
     <!-- Connection Monitor Styles -->
@@ -1349,6 +1346,15 @@ if (sessionId && !isRefresh) {
     localStorage.setItem(`lh360_success_loaded_${sessionId}`, 'true');
 }
 
+/** Restituisce "Sessione scaduta" tradotto nella lingua corrente */
+function getSessionExpiredText() {
+    const i18n = window.i18nPDP && window.i18nPDP();
+    const lang = (i18n && i18n.currentLang) ? i18n.currentLang : 'it';
+    const T = window.translationsSessionExpired || {};
+    return T[lang] || T['it'] || 'Sessione scaduta';
+}
+
+
 // Status messages - FILTRATI se è un refresh
 function getAllStatusMessages() {
     const i18n = window.i18nPDP();
@@ -2554,6 +2560,16 @@ function updateTimelineDates(i18n) {
  */
 function updateDeliveryCard() {
     // Se la stima Printful è già inizializzata, ri-renderizza in modo i18n-aware
+    // ── REFRESH: mostra "Sessione scaduta" al posto dei dati di consegna ──
+    if (isRefresh) {
+        const expiredText = getSessionExpiredText();
+        const deliveryElem = document.getElementById('deliveryValue');
+        if (deliveryElem) {
+            deliveryElem.textContent = expiredText;
+            deliveryElem.removeAttribute('data-i18n');
+        }
+        return;
+    }
     // (aggiorna anche il testo del badge split-shipment)
     if (window._successDelivery && window._successDelivery.initialized) {
         renderSuccessDeliveryUI();
@@ -2662,6 +2678,21 @@ function buildSuccessTimelineText(minDays, maxDays, lang) {
  * usando lo stato memorizzato in window._successDelivery.
  */
 function renderSuccessDeliveryUI() {
+    // ── REFRESH: mostra "Sessione scaduta" al posto dei dati di consegna ──
+    if (isRefresh) {
+        const expiredText = getSessionExpiredText();
+        const deliveryElem = document.getElementById('deliveryValue');
+        if (deliveryElem) {
+            deliveryElem.textContent = expiredText;
+            deliveryElem.removeAttribute('data-i18n');
+        }
+        const deliveredDateElem = document.getElementById('date-delivered');
+        if (deliveredDateElem) {
+            deliveredDateElem.textContent = expiredText;
+            deliveredDateElem.removeAttribute('data-i18n');
+        }
+        return;
+    }
     const state = window._successDelivery;
     if (!state || !state.initialized) return;
 
@@ -2890,9 +2921,24 @@ function updateAllTranslations() {
     // 3. ✅ FIX ORDINE: aggiorna prima la delivery card (aggiorna timelineState.estimated_dates.delivered
     //    nella nuova lingua), poi la timeline (che leggerà già il valore tradotto corretto).
     if (window._successDelivery && window._successDelivery.initialized) {
-        renderSuccessDeliveryUI();
+        renderSuccessDeliveryUI(); // gestisce già isRefresh internamente
     } else {
-        updateDeliveryCard();
+        updateDeliveryCard();      // gestisce già isRefresh internamente
+    }
+
+    // ── REFRESH: ri-applica "Sessione scaduta" tradotto dopo cambio lingua ──
+    if (isRefresh) {
+        const expiredText = getSessionExpiredText();
+        const deliveryElem = document.getElementById('deliveryValue');
+        if (deliveryElem) {
+            deliveryElem.textContent = expiredText;
+            deliveryElem.removeAttribute('data-i18n');
+        }
+        const deliveredDateElem = document.getElementById('date-delivered');
+        if (deliveredDateElem) {
+            deliveredDateElem.textContent = expiredText;
+            deliveredDateElem.removeAttribute('data-i18n');
+        }
     }
 
     // 4. AGGIORNA TIMELINE (a questo punto timelineState.estimated_dates.delivered è già tradotto)
