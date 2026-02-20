@@ -3,6 +3,9 @@
 <head>
     <script src="../siteguard-client.js"></script>
     <meta charset="utf-8" />
+    <!-- PERFORMANCE: preconnect GAS -->
+    <link rel="preconnect" href="https://script.google.com" crossorigin>
+    <link rel="dns-prefetch" href="https://www.google.com">
     <meta name="viewport" content="width=device-width,initial-scale=1" />
     <title>Dettaglio Prodotto</title>
     <!-- Connection Monitor Styles -->
@@ -3083,50 +3086,50 @@ if (!emailDomain || !validDomains.includes(emailDomain)) {
         const skuFromQs = qs('sku');
         const skuFromLS = localStorage.getItem('lh360_selected_sku');
         const sku = skuFromQs || skuFromLS;
-        
+
         if (!sku) {
-             document.querySelector('.container').innerHTML = '<div style="padding:4rem;color:#fca5a5;text-align:center;">SKU prodotto mancante.</div>';
-             hideGlobalLoader();
-             return;
+            document.querySelector('.container').innerHTML = '<div style="padding:4rem;color:#fca5a5;text-align:center;">SKU prodotto mancante.</div>';
+            hideGlobalLoader();
+            return;
         }
 
         currentProductSku = sku;
-        
-        // 1. URL API SENZA callback (per ricevere JSON puro, non script)
-        const apiUrl = `${WEB_APP_URL}?action=get_product_details&sku=${encodeURIComponent(sku)}&t=${Date.now()}`;
 
+        const CACHE_KEY = 'lh360_pdp_' + sku;
+        const CACHE_TTL = 600000; // 10 minuti
+
+        // ── 1. Serve dalla cache se fresca (risposta istantanea) ──
         try {
-            // 2. Uso di FETCH invece di script tag
-            const response = await fetch(apiUrl, {
-                method: 'GET',
-                redirect: 'follow' // Importante per gestire il redirect di Google Apps Script
-            });
-
-            if (!response.ok) {
-                throw new Error(`Errore HTTP: ${response.status}`);
+            const raw = localStorage.getItem(CACHE_KEY);
+            if (raw) {
+                const { data, ts } = JSON.parse(raw);
+                if (Date.now() - ts < CACHE_TTL && data.success && data.product) {
+                    populateProduct(data.product);
+                    productLoaded = true;
+                    loadReviews(sku);
+                    completeLoader();
+                    // Aggiorna in background senza bloccare l'utente
+                    _fetchProductAndCache(sku, CACHE_KEY).catch(() => {});
+                    return;
+                }
             }
+        } catch (_) {}
 
-            const data = await response.json();
-
-            // 3. Verifica successo logico
+        // ── 2. Nessuna cache valida: carica dal server ──
+        try {
+            const data = await _fetchProductAndCache(sku, CACHE_KEY);
             if (!data.success || !data.product) {
-                console.error("Errore API:", data.error);
+                console.error('Errore API:', data.error);
                 document.querySelector('.container').innerHTML = `<div style="padding:4rem;color:#fca5a5;text-align:center;">Prodotto non trovato o errore server.<br><small>${data.error || ''}</small></div>`;
                 hideGlobalLoader();
                 return;
             }
-
-            // 4. Popola il prodotto
-            const prod = data.product;
-            populateProduct(prod);
-            
+            populateProduct(data.product);
             productLoaded = true;
-            // Carica recensioni dopo aver caricato il prodotto
             loadReviews(sku);
             completeLoader();
-
         } catch (error) {
-            console.error("Errore LoadProduct:", error);
+            console.error('Errore LoadProduct:', error);
             document.querySelector('.container').innerHTML = `
                 <div style="padding:4rem;color:#fca5a5;text-align:center;">
                     <h3 style="margin-bottom:1rem">Errore di connessione</h3>
@@ -3136,6 +3139,17 @@ if (!emailDomain || !validDomains.includes(emailDomain)) {
             hideGlobalLoader();
         }
     }
+
+        async function _fetchProductAndCache(sku, cacheKey) {
+            const apiUrl = `${WEB_APP_URL}?action=get_product_details&sku=${encodeURIComponent(sku)}`;
+            const response = await fetch(apiUrl, { method: 'GET', redirect: 'follow' });
+            if (!response.ok) throw new Error(`Errore HTTP: ${response.status}`);
+            const data = await response.json();
+            if (data.success && data.product) {
+                try { localStorage.setItem(cacheKey, JSON.stringify({ data, ts: Date.now() })); } catch(_) {}
+            }
+            return data;
+        }
 
         // Helper per nascondere il loader in caso di errore immediato
         function hideGlobalLoader() {
@@ -4276,4 +4290,3 @@ document.addEventListener('languageChanged', () => {
     </script>
 </body>
 </html>
-
