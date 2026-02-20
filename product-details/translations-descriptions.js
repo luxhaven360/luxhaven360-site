@@ -1285,3 +1285,17 @@ const translationsDeliveryTrackingLabel = {
   es: 'Entrega prevista'
 };
 if (typeof window !== 'undefined') window.translationsDeliveryTrackingLabel = translationsDeliveryTrackingLabel;
+
+
+/* ============================================================
+ *  TRADUZIONI STATI ORDINE — badge in tracking-order.html
+ *  Chiave = valore italiano salvato nel DB (Order Tracking sheet)
+ *  La pagina usa sempre questi per tradurre il badge stato.
+ * ============================================================ */
+const translationsOrderStatus = {
+  'Confermato':      { it: 'Confermato',      en: 'Confirmed',       fr: 'Confirmé',       de: 'Bestätigt',       es: 'Confirmado'      },
+  'In Preparazione': { it: 'In Preparazione', en: 'Preparing',       fr: 'En préparation', de: 'In Vorbereitung', es: 'En preparación'  },
+  'In Transito':     { it: 'In Transito',     en: 'In Transit',      fr: 'En transit',     de: 'Unterwegs',       es: 'En tránsito'     },
+  'Consegnato':      { it: 'Consegnato',      en: 'Delivered',       fr: 'Livré',          de: 'Zugestellt',      es: 'Entregado'       }
+};
+if (typeof window !== 'undefined') window.translationsOrderStatus = translationsOrderStatus;
