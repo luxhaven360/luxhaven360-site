@@ -1299,3 +1299,16 @@ const translationsOrderStatus = {
   'Consegnato':      { it: 'Consegnato',      en: 'Delivered',       fr: 'Livré',          de: 'Zugestellt',      es: 'Entregado'       }
 };
 if (typeof window !== 'undefined') window.translationsOrderStatus = translationsOrderStatus;
+
+/* ============================================================
+ *  LABEL "SESSIONE SCADUTA" — card Consegna Prevista e
+ *  sottostato "Consegnato" in success.html dopo un refresh
+ * ============================================================ */
+const translationsSessionExpired = {
+  it: 'Sessione scaduta',
+  en: 'Session expired',
+  fr: 'Session expirée',
+  de: 'Sitzung abgelaufen',
+  es: 'Sesión expirada'
+};
+if (typeof window !== 'undefined') window.translationsSessionExpired = translationsSessionExpired;
