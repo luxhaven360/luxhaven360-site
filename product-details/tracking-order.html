@@ -10,6 +10,7 @@
     <!-- Sistema i18n -->
 <script src="../translations.js"></script>
 <script src="translations-pdp.js"></script>
+<script src="translations-descriptions.js"></script>
 <script src="i18n-pdp.js"></script>
     
     <style>
@@ -1277,6 +1278,65 @@ const MESI_EN_TO_IT = {
     'october': 'ottobre', 'november': 'novembre', 'december': 'dicembre'
 };
 
+// ─── TRADUZIONI MESI PER LINGUA ─────────────────────────────────────────────
+// Fallback inline se translations-descriptions.js non è ancora caricato
+const MONTHS_BY_LANG_FALLBACK = {
+    it: ['gennaio','febbraio','marzo','aprile','maggio','giugno','luglio','agosto','settembre','ottobre','novembre','dicembre'],
+    en: ['january','february','march','april','may','june','july','august','september','october','november','december'],
+    fr: ['janvier','février','mars','avril','mai','juin','juillet','août','septembre','octobre','novembre','décembre'],
+    de: ['januar','februar','märz','april','mai','juni','juli','august','september','oktober','november','dezember'],
+    es: ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre']
+};
+const DELIVERY_UNDEFINED_BY_LANG_FALLBACK = {
+    it: 'Da definire', en: 'To be confirmed', fr: 'À définir', de: 'Noch offen', es: 'Por definir'
+};
+
+/**
+ * Traduce una stringa di data di consegna dalla lingua italiana alla lingua corrente.
+ * Gestisce: "3–18 Marzo 2026", "24 Febbraio – 12 Marzo 2026", "Da definire",
+ *            "10-18 giorni lavorativi", "24h", ecc.
+ * Viene chiamata alla fine di formatDataItalianaConsegna.
+ */
+function translateDeliveryDate(dateStr) {
+    if (!dateStr) return dateStr;
+
+    const i18n = window.i18nPDP ? window.i18nPDP() : null;
+    const lang = (i18n && i18n.currentLang) || localStorage.getItem('lh360_lang') || 'it';
+
+    // Italiano → nessuna traduzione necessaria
+    if (lang === 'it') return dateStr;
+
+    const monthsByLang = (window.translationsMonths || MONTHS_BY_LANG_FALLBACK);
+    const undefinedByLang = (window.translationsDeliveryUndefined || DELIVERY_UNDEFINED_BY_LANG_FALLBACK);
+
+    // ── Traduce "Da definire" / "Data non disponibile" ──────────────────────
+    if (dateStr === 'Da definire' || dateStr === 'Data non disponibile') {
+        return undefinedByLang[lang] || dateStr;
+    }
+
+    let result = dateStr;
+
+    // ── Traduce "giorni lavorativi" ─────────────────────────────────────────
+    const workingDaysTranslations = {
+        en: 'business days', fr: 'jours ouvrés', de: 'Werktage', es: 'días hábiles'
+    };
+    if (result.includes('giorni lavorativi') && workingDaysTranslations[lang]) {
+        result = result.replace(/giorni lavorativi/gi, workingDaysTranslations[lang]);
+    }
+
+    // ── Traduce nomi dei mesi ────────────────────────────────────────────────
+    const italianMonths = monthsByLang['it'] || MONTHS_BY_LANG_FALLBACK['it'];
+    const targetMonths  = monthsByLang[lang]  || monthsByLang['en'];
+    if (targetMonths) {
+        italianMonths.forEach((itMonth, idx) => {
+            const re = new RegExp('\\b' + itMonth + '\\b', 'gi');
+            result = result.replace(re, targetMonths[idx]);
+        });
+    }
+
+    return result;
+}
+
 const STATE_STEPS = {
     'Confermato': 0,
     'In Preparazione': 1,
@@ -1417,86 +1477,125 @@ if (singleNoYearMatch) {
  * Formatta la data di consegna usando la data ordine come riferimento
  * (non la data odierna)
  */
+/**
+ * Formatta e TRADUCE la data di consegna prevista nella lingua corrente.
+ * Accetta qualsiasi formato prodotto da formatDeliveryRange / calculateDeliveryRangeAdvanced:
+ *   "3–18 Marzo 2026", "24 Febbraio – 12 Marzo 2026", "Da definire", ecc.
+ *
+ * @param {string|Date} input      - Valore raw dalla risposta API
+ * @param {string}      orderDate  - Data ordine (dd/MM/yyyy) come contesto per l'anno
+ * @returns {string} Data formattata nella lingua corrente
+ */
 function formatDataItalianaConsegna(input, orderDate) {
-    if (!input) return 'Data non disponibile';
+    const italian = _formatDataItalianaConsegnaIT(input, orderDate);
+    return translateDeliveryDate(italian);
+}
+
+/**
+ * Logica interna — produce sempre output in italiano con anno incluso.
+ * Il risultato viene poi tradotto da formatDataItalianaConsegna.
+ */
+function _formatDataItalianaConsegnaIT(input, orderDate) {
+    if (!input) return 'Da definire';
     const str = input.toString().trim();
     
-    // Parse data ordine come riferimento
+    // Parse data ordine come riferimento per determinare l'anno
     let referenceDate = orderDate ? parseAnyDateFormat(orderDate) : new Date();
     if (!referenceDate || isNaN(referenceDate.getTime())) {
         referenceDate = new Date();
     }
 
-    // Formati testuali (ore, giorni) → restituisci così com'è
+    // ── CASO 0: Stringa con anno già incluso e mese in italiano ─────────────
+    // Formato "3–18 Marzo 2026" (prodotto da formatDeliveryRange aggiornato)
+    const rangeWithYearMatch = str.match(
+        /^(\d+)\s*[-–—]\s*(\d+)\s+(gennaio|febbraio|marzo|aprile|maggio|giugno|luglio|agosto|settembre|ottobre|novembre|dicembre)\s+(\d{4})$/i
+    );
+    if (rangeWithYearMatch) {
+        const [, d1, d2, m, y] = rangeWithYearMatch;
+        return `${parseInt(d1)}–${parseInt(d2)} ${m.toLowerCase()} ${y}`;
+    }
+
+    // Formato "24 Febbraio – 12 Marzo 2026" (mesi diversi, stesso anno)
+    const crossMonthWithYearMatch = str.match(
+        /^(\d+)\s+(gennaio|febbraio|marzo|aprile|maggio|giugno|luglio|agosto|settembre|ottobre|novembre|dicembre)\s*[-–—]\s*(\d+)\s+(gennaio|febbraio|marzo|aprile|maggio|giugno|luglio|agosto|settembre|ottobre|novembre|dicembre)\s+(\d{4})$/i
+    );
+    if (crossMonthWithYearMatch) {
+        const [, d1, m1, d2, m2, y] = crossMonthWithYearMatch;
+        return `${parseInt(d1)} ${m1.toLowerCase()} – ${parseInt(d2)} ${m2.toLowerCase()} ${y}`;
+    }
+
+    // Formato "24 Febbraio 2026 – 12 Marzo 2027" (anni diversi)
+    const crossYearMatch = str.match(
+        /^(\d+)\s+(gennaio|febbraio|marzo|aprile|maggio|giugno|luglio|agosto|settembre|ottobre|novembre|dicembre)\s+(\d{4})\s*[-–—]\s*(\d+)\s+(gennaio|febbraio|marzo|aprile|maggio|giugno|luglio|agosto|settembre|ottobre|novembre|dicembre)\s+(\d{4})$/i
+    );
+    if (crossYearMatch) {
+        const [, d1, m1, y1, d2, m2, y2] = crossYearMatch;
+        return `${parseInt(d1)} ${m1.toLowerCase()} ${y1} – ${parseInt(d2)} ${m2.toLowerCase()} ${y2}`;
+    }
+
+    // ── CASO 1: Formati testuali senza anno (ore, giorni) ─────────────────
     if (str.includes('h') || str.includes('giorn')) {
-        return str;
+        return str; // Restituisci così com'è (verrà tradotto dopo se contiene "giorni")
     }
     
-    // Range con trattino e un solo mese (es: "28-30 Dicembre")
-    const rangeOnlyMatch = str.match(/^(\d+)\s*[-–—]\s*(\d+)\s+(gennaio|febbraio|marzo|aprile|maggio|giugno|luglio|agosto|settembre|ottobre|novembre|dicembre)$/i);
+    // ── CASO 2: Range stesso mese SENZA anno (es: "28-30 Dicembre") ────────
+    const rangeOnlyMatch = str.match(
+        /^(\d+)\s*[-–—]\s*(\d+)\s+(gennaio|febbraio|marzo|aprile|maggio|giugno|luglio|agosto|settembre|ottobre|novembre|dicembre)$/i
+    );
     if (rangeOnlyMatch) {
         const day1 = parseInt(rangeOnlyMatch[1]);
         const day2 = parseInt(rangeOnlyMatch[2]);
         const monthName = rangeOnlyMatch[3].toLowerCase();
         const monthIndex = MESI_IT[monthName];
-        
-        // Usa l'anno della data ordine come base
         let year = referenceDate.getFullYear();
         const testDate = new Date(year, monthIndex, day1);
-        
-        // Se la consegna è PRIMA della data ordine, incrementa l'anno
-        if (testDate < referenceDate) {
-            year++;
-        }
-        
-        return `${day1}-${day2} ${monthName} ${year}`;
+        if (testDate < referenceDate) year++;
+        return `${day1}–${day2} ${monthName} ${year}`;
     }
     
-    // Range con anno già specificato (es: "28-30 Dicembre 2025")
-    const rangeWithYearMatch = str.match(/^(\d+)\s*[-–—]\s*(\d+)\s+(gennaio|febbraio|marzo|aprile|maggio|giugno|luglio|agosto|settembre|ottobre|novembre|dicembre)\s+(\d{4})$/i);
-    if (rangeWithYearMatch) {
-        const day1 = rangeWithYearMatch[1];
-        const day2 = rangeWithYearMatch[2];
-        const month = rangeWithYearMatch[3];
-        const year = rangeWithYearMatch[4];
-        return `${day1}-${day2} ${month.toLowerCase()} ${year}`;
-    }
-    
-    // Range con due mesi diversi (es: "31 Dicembre - 4 Gennaio")
-    const crossMonthMatch = str.match(/(\d+)\s+(gennaio|febbraio|marzo|aprile|maggio|giugno|luglio|agosto|settembre|ottobre|novembre|dicembre)\s*[-–—]\s*(\d+)\s+(gennaio|febbraio|marzo|aprile|maggio|giugno|luglio|agosto|settembre|ottobre|novembre|dicembre)/i);
+    // ── CASO 3: Range mesi diversi SENZA anno (es: "31 Dicembre - 4 Gennaio") ──
+    const crossMonthMatch = str.match(
+        /(\d+)\s+(gennaio|febbraio|marzo|aprile|maggio|giugno|luglio|agosto|settembre|ottobre|novembre|dicembre)\s*[-–—]\s*(\d+)\s+(gennaio|febbraio|marzo|aprile|maggio|giugno|luglio|agosto|settembre|ottobre|novembre|dicembre)/i
+    );
     if (crossMonthMatch) {
-        return lowercaseMonthsInTracking(str);
+        const [, d1, m1, d2, m2] = crossMonthMatch;
+        const m1Idx = MESI_IT[m1.toLowerCase()];
+        const m2Idx = MESI_IT[m2.toLowerCase()];
+        let year1 = referenceDate.getFullYear();
+        const testDate1 = new Date(year1, m1Idx, parseInt(d1));
+        if (testDate1 < referenceDate) year1++;
+        const year2 = m2Idx <= m1Idx ? year1 + 1 : year1; // se mese2 < mese1 → anno successivo
+        const sameYear = year1 === year2;
+        if (sameYear) {
+            return `${parseInt(d1)} ${m1.toLowerCase()} – ${parseInt(d2)} ${m2.toLowerCase()} ${year1}`;
+        }
+        return `${parseInt(d1)} ${m1.toLowerCase()} ${year1} – ${parseInt(d2)} ${m2.toLowerCase()} ${year2}`;
     }
     
-    // Singola data senza anno (es: "2 gennaio") ← QUI LA MODIFICA CRITICA
-    const singleNoYearMatch = str.match(/^(\d+)\s+(gennaio|febbraio|marzo|aprile|maggio|giugno|luglio|agosto|settembre|ottobre|novembre|dicembre)$/i);
+    // ── CASO 4: Singola data senza anno (es: "2 gennaio") ──────────────────
+    const singleNoYearMatch = str.match(
+        /^(\d+)\s+(gennaio|febbraio|marzo|aprile|maggio|giugno|luglio|agosto|settembre|ottobre|novembre|dicembre)$/i
+    );
     if (singleNoYearMatch) {
         const day = parseInt(singleNoYearMatch[1]);
         const monthName = singleNoYearMatch[2].toLowerCase();
         const monthIndex = MESI_IT[monthName];
-        
-        // Usa l'anno della data ordine come base
         let year = referenceDate.getFullYear();
         const testDate = new Date(year, monthIndex, day);
-        
-        // Se la consegna è PRIMA della data ordine, incrementa l'anno
-        if (testDate < referenceDate) {
-            year++;
-        }
-        
+        if (testDate < referenceDate) year++;
         return `${day} ${monthName} ${year}`;
     }
     
-    // Singola data con anno (es: "2 gennaio 2025")
-    const singleWithYearMatch = str.match(/^(\d+)\s+(gennaio|febbraio|marzo|aprile|maggio|giugno|luglio|agosto|settembre|ottobre|novembre|dicembre)\s+(\d{4})$/i);
+    // ── CASO 5: Singola data con anno (es: "2 gennaio 2026") ───────────────
+    const singleWithYearMatch = str.match(
+        /^(\d+)\s+(gennaio|febbraio|marzo|aprile|maggio|giugno|luglio|agosto|settembre|ottobre|novembre|dicembre)\s+(\d{4})$/i
+    );
     if (singleWithYearMatch) {
-        const day = singleWithYearMatch[1];
-        const month = singleWithYearMatch[2];
-        const year = singleWithYearMatch[3];
-        return `${day} ${month.toLowerCase()} ${year}`;
+        const [, d, m, y] = singleWithYearMatch;
+        return `${parseInt(d)} ${m.toLowerCase()} ${y}`;
     }
     
-    // Fallback: parse come Date
+    // ── FALLBACK: parse come oggetto Date ───────────────────────────────────
     let date;
     if (input instanceof Date) {
         date = input;
@@ -1506,14 +1605,9 @@ function formatDataItalianaConsegna(input, orderDate) {
     
     if (date && !isNaN(date.getTime())) {
         const giorno = date.getDate();
-        const mese = MESI_NOMI[date.getMonth()];
-        let anno = date.getFullYear();
-        
-        // Verifica coerenza con data ordine
-        if (date < referenceDate) {
-            anno = referenceDate.getFullYear() + 1;
-        }
-        
+        const mese   = MESI_NOMI[date.getMonth()];
+        let anno     = date.getFullYear();
+        if (date < referenceDate) anno = referenceDate.getFullYear() + 1;
         return `${giorno} ${mese} ${anno}`;
     }
     
