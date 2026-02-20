@@ -1682,13 +1682,18 @@ function addWorkingDaysClient(startDate, daysToAdd) {
 
 /**
  * Calcola il progresso % basato su:
- *   - dataOrdine (Date) → inizio intervallo
- *   - printfulMaxDays (number) → giorni lavorativi MAX da Printful → calcola dataFine
- *   - statoCorrente → milestone minima garantita
+ *   - dataOrdine (Date|string)     → inizio intervallo
+ *   - printfulMaxDays (number)     → giorni lavorativi MAX da Printful → calcola dataFine
+ *   - statoCorrente (string)       → milestone minima garantita
+ *   - consegnaPrevista (string)    → [FALLBACK] data/range di consegna dal foglio
+ *                                    usata quando Printful non ha risposto
  *
- * Se printfulMaxDays è null, usa il fallback step-based.
+ * Priorità end-date:
+ *   1. order date + printfulMaxDays working days  (Printful live)
+ *   2. fine del range di consegna_prevista        (dato dal foglio)
+ *   3. milestoneMin statica                       (nessun dato disponibile)
  */
-function calcolaProgressoRealistico(dataOrdine, printfulMaxDays, statoCorrente) {
+function calcolaProgressoRealistico(dataOrdine, printfulMaxDays, statoCorrente, consegnaPrevista) {
     const ora = new Date();
     const dataInizio = (dataOrdine instanceof Date) ? dataOrdine : parseAnyDateFormat(dataOrdine);
     const stepCorrente = STATE_STEPS[statoCorrente] || 0;
@@ -1699,20 +1704,71 @@ function calcolaProgressoRealistico(dataOrdine, printfulMaxDays, statoCorrente) 
     const milestoneMin = milestone[stepCorrente];
     const milestoneMax = milestone[Math.min(stepCorrente + 1, 3)];
 
-    if (!dataInizio || printfulMaxDays == null) return milestoneMin;
+    if (!dataInizio) return milestoneMin;
 
-    const dataFine = addWorkingDaysClient(dataInizio, printfulMaxDays);
+    // ── Determina dataFine ─────────────────────────────────────────────────
+    let dataFine = null;
+
+    if (printfulMaxDays != null) {
+        // Priorità 1: calcola dalla data ordine + giorni lavorativi Printful
+        dataFine = addWorkingDaysClient(dataInizio, printfulMaxDays);
+    } else if (consegnaPrevista) {
+        // Priorità 2: estrai la data massima dal range di consegna_prevista
+        // Supporta: "3–18 marzo 2026", "24 febbraio – 12 marzo 2026",
+        //           "2 marzo 2026", "10-18 giorni lavorativi", ecc.
+        const str = consegnaPrevista.toString().toLowerCase().trim();
+
+        // Range stesso mese: "3–18 marzo 2026"  → prende il giorno maggiore
+        const rangeMatch = str.match(
+            /(\d+)\s*[-–—]\s*(\d+)\s+(gennaio|febbraio|marzo|aprile|maggio|giugno|luglio|agosto|settembre|ottobre|novembre|dicembre)\s+(\d{4})/i
+        );
+        if (rangeMatch) {
+            const day = parseInt(rangeMatch[2]); // giorno MAX
+            const month = MESI_IT[rangeMatch[3].toLowerCase()];
+            const year = parseInt(rangeMatch[4]);
+            dataFine = new Date(year, month, day);
+        }
+
+        if (!dataFine) {
+            // Range mesi diversi: "24 febbraio – 12 marzo 2026" → prende la seconda data
+            const crossMonthMatch = str.match(
+                /\d+\s+(?:gennaio|febbraio|marzo|aprile|maggio|giugno|luglio|agosto|settembre|ottobre|novembre|dicembre)(?:\s+\d{4})?\s*[-–—]\s*(\d+)\s+(gennaio|febbraio|marzo|aprile|maggio|giugno|luglio|agosto|settembre|ottobre|novembre|dicembre)\s+(\d{4})/i
+            );
+            if (crossMonthMatch) {
+                const day = parseInt(crossMonthMatch[1]);
+                const month = MESI_IT[crossMonthMatch[2].toLowerCase()];
+                const year = parseInt(crossMonthMatch[3]);
+                dataFine = new Date(year, month, day);
+            }
+        }
+
+        if (!dataFine) {
+            // Singola data: "2 marzo 2026"
+            dataFine = parseAnyDateFormat(consegnaPrevista);
+        }
+
+        if (!dataFine) {
+            // Giorni lavorativi: "10-18 giorni lavorativi" → usa max
+            const workDaysMatch = str.match(/(\d+)\s*[-–]\s*(\d+)\s*(?:giorni|days|jours|werktage|días)/i);
+            if (workDaysMatch) {
+                const maxDays = parseInt(workDaysMatch[2]);
+                dataFine = addWorkingDaysClient(dataInizio, maxDays);
+            }
+        }
+    }
+
+    // ── Nessuna end-date → fallback statico ────────────────────────────────
+    if (!dataFine || isNaN(dataFine.getTime())) return milestoneMin;
+
     const durataMs = dataFine - dataInizio;
     if (durataMs <= 0) return milestoneMin;
 
-    let progressoGrezzo = ((ora - dataInizio) / durataMs) * 100;
-    progressoGrezzo = Math.max(milestoneMin, Math.min(milestoneMax, progressoGrezzo));
+    // Progresso proporzionale al tempo trascorso, confinato nelle milestone dello step
+    const progressoGrezzo = Math.max(milestoneMin, Math.min(milestoneMax,
+        ((ora - dataInizio) / durataMs) * 100
+    ));
 
-    const range = milestoneMax - milestoneMin;
-    if (range === 0) return milestoneMin;
-    const progressoSmooth = milestoneMin + ((progressoGrezzo - milestoneMin) / range) * range;
-
-    return Math.max(0, Math.min(100, Math.round(progressoSmooth)));
+    return Math.max(0, Math.min(100, Math.round(progressoGrezzo)));
 }
 
 // ==================================================================
@@ -1888,10 +1944,10 @@ async function updateOrderCardsWithPrintful(pageOrders) {
             }
         }
 
-        // 2. Ricalcola e aggiorna la progress bar
+        // 2. Ricalcola e aggiorna la progress bar (ora con printfulMax disponibile)
         const dataInizio = parseAnyDateFormat(order.data);
         if (dataInizio && order._printfulMax != null) {
-            const progress = calcolaProgressoRealistico(dataInizio, order._printfulMax, order.stato);
+            const progress = calcolaProgressoRealistico(dataInizio, order._printfulMax, order.stato, order.consegna_prevista);
             const progressMobile1 = Math.min(100, progress * 2);
             const progressMobile2 = Math.max(0, (progress - 50) * 2);
 
@@ -1922,6 +1978,25 @@ function updatePrintfulDeliveryTexts(lang) {
     });
 }
 
+/**
+ * ✅ Aggiorna il testo del badge stato ordine in tutte le card DOM
+ *    senza ri-renderizzare l'intera pagina.
+ *    Usata quando cambia lingua e renderOrdersPage() non è ancora stato chiamato.
+ */
+function updateStatusBadges(lang) {
+    const statusMap = window.translationsOrderStatus || {};
+    allOrdersCache.forEach(order => {
+        const cardEl = document.querySelector(`.order-card[data-order-id="${order.id}"]`);
+        if (!cardEl) return;
+        const badgeEl = cardEl.querySelector('.status-badge');
+        if (!badgeEl) return;
+        const translated = (statusMap[order.stato] && statusMap[order.stato][lang])
+            ? statusMap[order.stato][lang]
+            : order.stato;
+        badgeEl.textContent = translated;
+    });
+}
+
         // ==================================================================
         // CREAZIONE CARD ORDINE (VERSIONE UNIFICATA)
         // ==================================================================
@@ -1943,9 +2018,9 @@ function updatePrintfulDeliveryTexts(lang) {
     // consegna_prevista iniziale dal foglio — verrà sovrascritta da Printful in updateOrderCardsWithPrintful
     const dataConsegnaFormatted = formatDataItalianaConsegna(order.consegna_prevista, order.data);
     
-    // Progresso iniziale: Printful non ancora disponibile → usa milestone pura di stato.
+    // Progresso iniziale: Printful non ancora disponibile → usa consegna_prevista dal foglio come fallback.
     // Verrà aggiornato da updateOrderCardsWithPrintful() dopo la risposta Printful.
-    const progress = calcolaProgressoRealistico(order.data, order._printfulMax ?? null, order.stato);
+    const progress = calcolaProgressoRealistico(order.data, order._printfulMax ?? null, order.stato, order.consegna_prevista);
     const progressDesktop = progress;
     const progressMobileRow1 = Math.min(100, progress * 2);
     const progressMobileRow2 = Math.max(0, (progress - 50) * 2);
@@ -1979,6 +2054,13 @@ function updatePrintfulDeliveryTexts(lang) {
     const productToggleText = i18n ? i18n.t('tracking_products_toggle') : 'Visualizza dettagli prodotti';
     const productCategoryLabel = i18n ? i18n.t('tracking_product_category_label') : 'Categoria:';
     
+    // ✅ Traduzione badge stato usando translationsOrderStatus (da translations-descriptions.js)
+    const lang = i18n ? i18n.currentLang : 'it';
+    const _statusMap = window.translationsOrderStatus || {};
+    const translatedStatus = (_statusMap[order.stato] && _statusMap[order.stato][lang])
+        ? _statusMap[order.stato][lang]
+        : order.stato;
+    
     return `
     <div class="order-card" data-order-id="${order.id}" style="animation-delay: ${index * 0.15}s">
         <div class="order-header">
@@ -1990,7 +2072,7 @@ function updatePrintfulDeliveryTexts(lang) {
                 <div class="order-date">${dataOrdineFormatted}</div>
             </div>
             <div class="status-badge ${order.stato.toLowerCase().replace(/\s+/g, '-')}">
-                ${order.stato}
+                ${translatedStatus}
             </div>
         </div>
         
@@ -2106,6 +2188,9 @@ function initializeI18n() {
         const lang = (i18n && i18n.currentLang) ? i18n.currentLang : 'it';
         
         translateStaticElements();
+        
+        // ✅ Aggiorna badge stato ordine in tutte le card già renderizzate
+        updateStatusBadges(lang);
         
         // Se ordini già renderizzati, ri-renderizza con nuova lingua
         if (ordersRendered && allOrdersCache.length > 0) {
