@@ -1934,8 +1934,11 @@ function updatePrintfulDeliveryTexts(lang) {
     const orderCategory = order.category || (i18n ? i18n.t('pdp_category_merch') : 'Prodotto');
     
     const dataOrdineFormatted = translateDeliveryDate(formatDataItaliana(order.data));            
-    // consegna_prevista iniziale dal foglio — verrà sovrascritta da Printful in updateOrderCardsWithPrintful
-    const dataConsegnaFormatted = formatDataItalianaConsegna(order.consegna_prevista, order.data);
+    // ✅ FIX #1: usa subito i dati Printful se già disponibili (evita flash del fallback)
+    const _lang_for_delivery = i18n ? i18n.currentLang : 'it';
+    const dataConsegnaFormatted = (order._printfulMin != null)
+        ? buildTrackingDeliveryText(order._printfulMin, order._printfulMax, _lang_for_delivery)
+        : formatDataItalianaConsegna(order.consegna_prevista, order.data);
     
     // Progresso iniziale: Printful non ancora disponibile → usa milestone pura di stato.
     // Verrà aggiornato da updateOrderCardsWithPrintful() dopo la risposta Printful.
@@ -1973,6 +1976,12 @@ function updatePrintfulDeliveryTexts(lang) {
     const productToggleText = i18n ? i18n.t('tracking_products_toggle') : 'Visualizza dettagli prodotti';
     const productCategoryLabel = i18n ? i18n.t('tracking_product_category_label') : 'Categoria:';
     
+    // ✅ FIX #3: Traduci il badge stato
+    const _statusMap = window.translationsOrderStatus || {};
+    const _statusEntry = _statusMap[order.stato] || {};
+    const _currentLang = i18n ? i18n.currentLang : 'it';
+    const statusLabel = _statusEntry[_currentLang] || _statusEntry['it'] || order.stato;
+
     return `
     <div class="order-card" data-order-id="${order.id}" style="animation-delay: ${index * 0.15}s">
         <div class="order-header">
@@ -1984,7 +1993,7 @@ function updatePrintfulDeliveryTexts(lang) {
                 <div class="order-date">${dataOrdineFormatted}</div>
             </div>
             <div class="status-badge ${order.stato.toLowerCase().replace(/\s+/g, '-')}">
-                ${order.stato}
+                ${statusLabel}
             </div>
         </div>
         
@@ -2183,6 +2192,29 @@ async function loadOrders() {
             showEmptyState('Nessun ordine trovato', 'Non è stato trovato un ordine recente in questo dispositivo.');
         } else {
             if (emptyEl) emptyEl.style.display = 'none';
+            
+            // ✅ FIX #1: Pre-fetch Printful PRIMA di renderizzare per evitare il flash del fallback
+            try {
+                const countryCode = await getTrackingUserCountry().catch(() => 'IT');
+                for (const order of pendingOrders) {
+                    // Salta se già in cache per questo paese
+                    if (order._printfulMin != null && order._printfulCountry === countryCode) continue;
+                    const skus = order.products
+                        ? [...new Set(order.products.map(p => p.sku).filter(Boolean))]
+                        : [];
+                    if (skus.length === 0) continue;
+                    const printful = await fetchTrackingPrintfulDays(skus, countryCode).catch(() => null);
+                    if (printful) {
+                        order._printfulMin     = printful.min;
+                        order._printfulMax     = printful.max;
+                        order._printfulCountry = countryCode;
+                        console.log(`✅ [latest pre-fetch] ${order.id}: ${printful.min}–${printful.max} gg → ${countryCode}`);
+                    }
+                }
+            } catch (err) {
+                console.warn('[latest pre-fetch] Errore durante pre-fetch Printful:', err);
+            }
+            
             renderOrders(pendingOrders);
             ordersRendered = true;
         }
