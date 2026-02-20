@@ -372,6 +372,7 @@ if (errorOverlay && errorOverlay.classList.contains('show')) {
      */
     monitorFetchCalls() {
         const originalFetch = window.fetch;
+        window._originalFetch = originalFetch;
         const self = this;
         
         window.fetch = async function(...args) {
