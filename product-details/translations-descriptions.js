@@ -1240,3 +1240,48 @@ const translationsDelivery = {
 if (typeof window !== 'undefined') {
   window.translationsDelivery = translationsDelivery;
 }
+
+
+/* ============================================================
+ *  TRADUZIONI MESI — usate da tracking-order.html
+ *  per localizzare le date di consegna prevista
+ *  (es. "3–18 marzo" → "3–18 March" in inglese)
+ * ============================================================ */
+const translationsMonths = {
+  it: ['gennaio','febbraio','marzo','aprile','maggio','giugno',
+       'luglio','agosto','settembre','ottobre','novembre','dicembre'],
+  en: ['january','february','march','april','may','june',
+       'july','august','september','october','november','december'],
+  fr: ['janvier','février','mars','avril','mai','juin',
+       'juillet','août','septembre','octobre','novembre','décembre'],
+  de: ['januar','februar','märz','april','mai','juni',
+       'juli','august','september','oktober','november','dezember'],
+  es: ['enero','febrero','marzo','abril','mayo','junio',
+       'julio','agosto','septiembre','octubre','noviembre','diciembre']
+};
+if (typeof window !== 'undefined') window.translationsMonths = translationsMonths;
+
+/* ============================================================
+ *  LABEL "CONSEGNA NON ANCORA DEFINITA" per pagina tracking
+ *  Corrisponde al valore "Da definire" salvato nel foglio OT
+ * ============================================================ */
+const translationsDeliveryUndefined = {
+  it: 'Da definire',
+  en: 'To be confirmed',
+  fr: 'À définir',
+  de: 'Noch offen',
+  es: 'Por definir'
+};
+if (typeof window !== 'undefined') window.translationsDeliveryUndefined = translationsDeliveryUndefined;
+
+/* ============================================================
+ *  LABEL "CONSEGNA PREVISTA" per la card tracking
+ * ============================================================ */
+const translationsDeliveryTrackingLabel = {
+  it: 'Consegna prevista',
+  en: 'Expected delivery',
+  fr: 'Livraison prévue',
+  de: 'Voraussichtliche Lieferung',
+  es: 'Entrega prevista'
+};
+if (typeof window !== 'undefined') window.translationsDeliveryTrackingLabel = translationsDeliveryTrackingLabel;
