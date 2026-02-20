@@ -1306,6 +1306,11 @@ function hideLoaderImmediately() {
 
 // Aggiungi listener per nascondere loader su pageshow (quando si torna indietro) e load
 window.addEventListener('pageshow', (event) => {
+    // ✅ Torna SEMPRE in cima alla pagina (fix scroll verso il basso al ritorno)
+    window.scrollTo(0, 0);
+    document.documentElement.scrollTop = 0;
+    document.body.scrollTop = 0;
+
     // Se la pagina viene ripristinata dalla cache (tasto indietro)
     if (event.persisted) {
         // Nascondi eventuali loader dinamici
@@ -1318,15 +1323,16 @@ window.addEventListener('pageshow', (event) => {
             introLoader.style.opacity = '1';
             document.body.style.overflow = 'hidden';
             
-            // Ricarica i prodotti e poi nascondi il loader
+            // Ricarica i prodotti e poi nascondi il loader SUBITO
             initDynamicProducts().then(() => {
+                introLoader.style.opacity = '0';
+                document.body.style.overflow = '';
+                // ✅ Timeout ridotto a 150ms per corrispondere alla transizione CSS
                 setTimeout(() => {
-                    introLoader.style.opacity = '0';
-                    document.body.style.overflow = '';
-                    setTimeout(() => {
-                        introLoader.style.display = 'none';
-                    }, 400);
-                }, 800);
+                    introLoader.style.display = 'none';
+                    // ✅ Re-scroll dopo nascondere il loader (sicurezza)
+                    window.scrollTo(0, 0);
+                }, 150);
             });
         }
     } else {
