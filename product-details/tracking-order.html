@@ -2181,7 +2181,7 @@ async function loadOrders() {
     }
     const viewMode = urlParams.get('view');
 
-    // Modalità latest (unchanged)
+    // Modalità latest: renderizza subito con i dati da localStorage (zero attesa)
     if (viewMode === 'latest') {
         console.log('Modalità VISTA: solo ultimo ordine (latest)');
         if (loadingEl) loadingEl.style.display = 'none';
@@ -2192,29 +2192,8 @@ async function loadOrders() {
             showEmptyState('Nessun ordine trovato', 'Non è stato trovato un ordine recente in questo dispositivo.');
         } else {
             if (emptyEl) emptyEl.style.display = 'none';
-            
-            // ✅ FIX #1: Pre-fetch Printful PRIMA di renderizzare per evitare il flash del fallback
-            try {
-                const countryCode = await getTrackingUserCountry().catch(() => 'IT');
-                for (const order of pendingOrders) {
-                    // Salta se già in cache per questo paese
-                    if (order._printfulMin != null && order._printfulCountry === countryCode) continue;
-                    const skus = order.products
-                        ? [...new Set(order.products.map(p => p.sku).filter(Boolean))]
-                        : [];
-                    if (skus.length === 0) continue;
-                    const printful = await fetchTrackingPrintfulDays(skus, countryCode).catch(() => null);
-                    if (printful) {
-                        order._printfulMin     = printful.min;
-                        order._printfulMax     = printful.max;
-                        order._printfulCountry = countryCode;
-                        console.log(`✅ [latest pre-fetch] ${order.id}: ${printful.min}–${printful.max} gg → ${countryCode}`);
-                    }
-                }
-            } catch (err) {
-                console.warn('[latest pre-fetch] Errore durante pre-fetch Printful:', err);
-            }
-            
+            // ✅ _printfulMin/_printfulMax sono già in localStorage (salvati da success.html)
+            // → createOrderCard li legge subito → valore corretto senza nessun flash né attesa
             renderOrders(pendingOrders);
             ordersRendered = true;
         }
