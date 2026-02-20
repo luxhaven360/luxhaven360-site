@@ -2819,6 +2819,30 @@ async function initSuccessDelivery(cartItems, fallbackDeliveryText) {
 
     console.log(`[SuccessDelivery] ${window._successDelivery.source}: ${combinedMin}–${combinedMax} gg → ${countryCode} | splitShipment: ${splitShipment}`);
     renderSuccessDeliveryUI();
+
+    // ✅ FIX #2: Se Printful ha risposto con dati reali, aggiorna localStorage E il foglio OT
+    if (combinedMin != null && anyPrintfulSuccess) {
+        try {
+            const pending = JSON.parse(localStorage.getItem('lh360_pending_order') || 'null');
+            if (pending && pending.id) {
+                const deliveryText = `${combinedMin}–${combinedMax} giorni lavorativi`;
+                pending.consegna_prevista = deliveryText;
+                localStorage.setItem('lh360_pending_order', JSON.stringify(pending));
+                console.log(`✅ [SuccessDelivery] lh360_pending_order aggiornato: "${deliveryText}"`);
+
+                // Notifica il backend → aggiorna colonna "Consegna Prevista" nel foglio Order Tracking
+                const updateUrl = `${webAppUrl}?action=update_order_delivery` +
+                    `&orderId=${encodeURIComponent(pending.id)}` +
+                    `&delivery=${encodeURIComponent(deliveryText)}` +
+                    `&_=${Date.now()}`;
+                fetch(updateUrl, { credentials: 'omit', redirect: 'follow' })
+                    .then(() => console.log(`📤 [SuccessDelivery] OT sheet aggiornato: ${pending.id} → "${deliveryText}"`))
+                    .catch(err => console.warn('[SuccessDelivery] Errore aggiornamento OT sheet:', err));
+            }
+        } catch (err) {
+            console.warn('[SuccessDelivery] Errore aggiornamento localStorage/backend:', err);
+        }
+    }
 }
 
 /* ─────────────────────────────────────────────────────────────────────── */
