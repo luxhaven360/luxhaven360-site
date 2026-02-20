@@ -2187,20 +2187,29 @@ async function loadOrders() {
             ordersRendered = true;
 
             // ✅ FIX FOGLIO: aggiorna colonna "Consegna Prevista" in Order Tracking
-            // con il valore reale Printful. Questo è il momento giusto: quando l'utente
-            // arriva qui, populateOrderTracking() (avviato da trigger_poll in success.html)
-            // ha già completato lato server → la riga in OT esiste con certezza.
-            // La chiamata analoga in success.html era soggetta a race condition.
+            // USA JSONP (script tag) — NON fetch() — perché GAS blocca fetch() cross-origin.
             for (const order of pendingOrders) {
                 if (order._printfulMin != null) {
-                    const deliveryText = order._printfulMin + '\u2013' + order._printfulMax + ' giorni lavorativi';
-                    const updateUrl = WEB_APP_URL + '?action=update_order_delivery' +
+                    const deliveryText = order._printfulMin + '–' + order._printfulMax + ' giorni lavorativi';
+                    const cbName = 'cb_upd_' + Date.now() + '_' + Math.random().toString(36).slice(2);
+                    const scriptEl = document.createElement('script');
+                    scriptEl.src = WEB_APP_URL +
+                        '?action=update_order_delivery' +
                         '&orderId=' + encodeURIComponent(order.id) +
                         '&delivery=' + encodeURIComponent(deliveryText) +
+                        '&callback=' + cbName +
                         '&_=' + Date.now();
-                    fetch(updateUrl, { credentials: 'omit', redirect: 'follow' })
-                        .then(function() { console.log('📤 [TrackingLatest] OT aggiornato: ' + order.id + ' → ' + deliveryText); })
-                        .catch(function(err) { console.warn('[TrackingLatest] Errore update OT per ' + order.id, err); });
+                    window[cbName] = function(resp) {
+                        try { document.body.removeChild(scriptEl); } catch(e) {}
+                        try { delete window[cbName]; } catch(e) {}
+                        console.log('📤 [OT aggiornato] ' + order.id + ' → "' + deliveryText + '"', resp);
+                    };
+                    scriptEl.onerror = function() {
+                        try { document.body.removeChild(scriptEl); } catch(e) {}
+                        try { delete window[cbName]; } catch(e) {}
+                        console.warn('[TrackingLatest] Errore JSONP update OT: ' + order.id);
+                    };
+                    document.body.appendChild(scriptEl);
                 }
             }
         }
