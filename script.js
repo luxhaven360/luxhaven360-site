@@ -747,24 +747,41 @@ btn.dataset.title = prod.title || '';
  * Chiamata UNA VOLTA all'avvio dell'app
  */
   async function loadExchangeRates() {
+    const CACHE_KEY = 'lh360_exchange_rates';
+    const CACHE_TTL = 3600000; // 1 ora in ms
+
+    // ── 1. Serve dalla localStorage se fresca (risposta istantanea) ──
     try {
-        const response = await fetch(`${WEB_APP_URL}?action=get_exchange_rates&t=${Date.now()}`);
+        const cached = localStorage.getItem(CACHE_KEY);
+        if (cached) {
+            const { data, ts } = JSON.parse(cached);
+            if (Date.now() - ts < CACHE_TTL && data.success && data.rates) {
+                exchangeRates = data.rates;
+                setTimeout(() => updateAllPricesForLanguage(), 0);
+                // Aggiorna in background senza bloccare l'utente
+                _fetchAndCacheExchangeRates(CACHE_KEY);
+                return;
+            }
+        }
+    } catch (_) {}
+
+    // ── 2. Nessuna cache valida: carica dal server ──
+    await _fetchAndCacheExchangeRates(CACHE_KEY);
+}
+
+async function _fetchAndCacheExchangeRates(cacheKey) {
+    try {
+        const response = await fetch(`${WEB_APP_URL}?action=get_exchange_rates`);
         const data = await response.json();
-        
         if (data.success && data.rates) {
             exchangeRates = data.rates;
-            console.log('✅ Tassi di cambio aggiornati:', exchangeRates);
-            console.log('📅 Ultimo aggiornamento:', data.updated || 'N/A');
-            
-            // ✅ Forza refresh immediato di TUTTI i prezzi
-            setTimeout(() => {
-                console.log('🔄 Aggiornamento prezzi con nuovi tassi...');
-                updateAllPricesForLanguage();
-                console.log('✅ Prezzi aggiornati');
-            }, 50);
+            try {
+                localStorage.setItem(cacheKey, JSON.stringify({ data, ts: Date.now() }));
+            } catch (_) {}
+            setTimeout(() => updateAllPricesForLanguage(), 50);
         }
     } catch (error) {
-        console.warn('⚠️ Errore caricamento tassi, uso fallback:', error);
+        console.warn('Errore caricamento tassi, uso fallback:', error);
     }
 }
 
@@ -1155,81 +1172,32 @@ async function initDynamicProducts(retryCount = 0) {
 
     try {
         // === 2. CHIAMATE PARALLELE (shop + bookable) ===
-        const shopPromise = fetch(`${WEB_APP_URL}?action=get_products&category=shop&t=${Date.now()}&r=${retryCount}`)
-            .then(res => res.json());
-        
-        const bookablePromise = fetch(`${WEB_APP_URL}?action=get_bookable_products&category=all&t=${Date.now()}&r=${retryCount}`)
-            .then(res => res.json());
+        const PROD_CACHE_KEY = 'lh360_products_v1';
+        const PROD_CACHE_TTL = 300000; // 5 minuti in ms
 
-        const [shopData, bookableData] = await Promise.all([shopPromise, bookablePromise]);
+        // ── Stale-while-revalidate: mostra cache istantaneamente, aggiorna in background ──
+        let cachedProducts = null;
+        try {
+            const raw = localStorage.getItem(PROD_CACHE_KEY);
+            if (raw) {
+                const { data, ts } = JSON.parse(raw);
+                if (Date.now() - ts < PROD_CACHE_TTL) cachedProducts = data;
+            }
+        } catch (_) {}
 
-        // 3. Pulizia griglie
-        Object.values(grids).forEach(g => g.innerHTML = '');
-
-        const countBySection = {};
-
-        // === 4a. RENDERING PRODOTTI SHOP ===
-        if (shopData.success && shopData.products) {
-            shopData.products.forEach(prod => {
-                if (prod.category === 'shop' && grids.shop) {
-                    prod.sectionName = 'shop';
-                    const card = createProductCard(prod, 'Acquista');
-                    grids.shop.appendChild(card);
-                    countBySection.shop = (countBySection.shop || 0) + 1;
-                }
-            });
+        // Se abbiamo cache valida e non è un retry, usa subito la cache
+        if (cachedProducts && retryCount === 0) {
+            const [shopData, bookableData] = cachedProducts;
+            _renderProducts(shopData, bookableData, grids);
+            // Aggiorna in background (senza bloccare il rendering)
+            _fetchAndCacheProducts(PROD_CACHE_KEY).catch(() => {});
+            return;
         }
 
-        // === 4b. RENDERING PRODOTTI BOOKABLE (properties, supercars, stays) ===
-if (bookableData.success && bookableData.products) {
-    const propertyProducts = [];
-    const supercarProducts = [];
-    
-    bookableData.products.forEach(prod => {
-        const targetSection = SECTIONS.find(s => s.id === prod.category);
-        
-        if (targetSection && grids[targetSection.id]) {
-            prod.sectionName = targetSection.id;
-            prod.icon = prod.mainImage || '📦';
-            
-            const card = createProductCard(prod, targetSection.defaultCta);
-            
-            // ✅ AGGIUNGI SKU COME DATA ATTRIBUTE
-            card.dataset.sku = prod.sku;
-            
-            grids[targetSection.id].appendChild(card);
-            countBySection[targetSection.id] = (countBySection[targetSection.id] || 0) + 1;
-            
-            // ✅ RACCOGLI PRODOTTI PER FILTRI
-            if (prod.category === 'properties') propertyProducts.push(prod);
-            if (prod.category === 'supercars') supercarProducts.push(prod);
-        }
-    });
-    
-    // ✅ INIZIALIZZA FILTRI
-    if (propertyProducts.length > 0) {
-        initPropertyFilters(propertyProducts);
-    }
-    
-    if (supercarProducts.length > 0) {
-        initSupercarFilters(supercarProducts);
-    }
-}
+        // Nessuna cache: carica dal server
+        const [shopData, bookableData] = await _fetchAndCacheProducts(PROD_CACHE_KEY);
 
-        // 5. Gestione sezioni vuote CON EMPTY STATE PREMIUM
-SECTIONS.forEach(section => {
-    if (!countBySection[section.id] && grids[section.id]) {
-        // Genera empty state premium per Immobili e Esperienze
-        if (section.id === 'properties') {
-            grids[section.id].innerHTML = generatePropertiesEmptyState();
-        } else if (section.id === 'stays') {
-            grids[section.id].innerHTML = generateExperiencesEmptyState();
-        } else {
-            // Per altre sezioni (shop, supercars) mantieni messaggio semplice
-            grids[section.id].innerHTML = `<div class="empty" style="grid-column: 1/-1; text-align: center; padding: 3rem; opacity: 0.5;">Nessun prodotto disponibile al momento.</div>`;
-        }
-    }
-});
+        _renderProducts(shopData, bookableData, grids);
 
     } catch (error) {
         console.warn(`Tentativo ${retryCount + 1} fallito:`, error);
@@ -1264,6 +1232,81 @@ function showErrorInAllGrids() {
     });
 }
                                      
+/**
+ * ── Helper: Scarica prodotti shop e prenotabili dal server e li mette in cache ──
+ */
+async function _fetchAndCacheProducts(cacheKey) {
+    const shopData = await fetch(`${WEB_APP_URL}?action=get_products&category=shop`)
+        .then(r => r.json());
+    const bookableData = await fetch(`${WEB_APP_URL}?action=get_bookable_products&category=all`)
+        .then(r => r.json());
+    try {
+        localStorage.setItem(cacheKey, JSON.stringify({
+            data: [shopData, bookableData],
+            ts: Date.now()
+        }));
+    } catch (_) {}
+    return [shopData, bookableData];
+}
+
+/**
+ * ── Helper: Renderizza shopData e bookableData nelle griglie ──
+ */
+function _renderProducts(shopData, bookableData, grids) {
+    // Pulizia griglie
+    Object.values(grids).forEach(g => g.innerHTML = '');
+
+    const countBySection = {};
+
+    // === RENDERING PRODOTTI SHOP ===
+    if (shopData && shopData.success && shopData.products) {
+        shopData.products.forEach(prod => {
+            if (prod.category === 'shop' && grids.shop) {
+                prod.sectionName = 'shop';
+                const card = createProductCard(prod, 'Acquista');
+                grids.shop.appendChild(card);
+                countBySection.shop = (countBySection.shop || 0) + 1;
+            }
+        });
+    }
+
+    // === RENDERING PRODOTTI BOOKABLE ===
+    if (bookableData && bookableData.success && bookableData.products) {
+        const propertyProducts = [];
+        const supercarProducts = [];
+
+        bookableData.products.forEach(prod => {
+            const targetSection = SECTIONS.find(s => s.id === prod.category);
+            if (targetSection && grids[targetSection.id]) {
+                prod.sectionName = targetSection.id;
+                prod.icon = prod.mainImage || '📦';
+                const card = createProductCard(prod, targetSection.defaultCta);
+                card.dataset.sku = prod.sku;
+                grids[targetSection.id].appendChild(card);
+                countBySection[targetSection.id] = (countBySection[targetSection.id] || 0) + 1;
+                if (prod.category === 'properties') propertyProducts.push(prod);
+                if (prod.category === 'supercars') supercarProducts.push(prod);
+            }
+        });
+
+        if (propertyProducts.length > 0) initPropertyFilters(propertyProducts);
+        if (supercarProducts.length > 0) initSupercarFilters(supercarProducts);
+    }
+
+    // Gestione sezioni vuote
+    SECTIONS.forEach(section => {
+        if (!countBySection[section.id] && grids[section.id]) {
+            if (section.id === 'properties') {
+                grids[section.id].innerHTML = generatePropertiesEmptyState();
+            } else if (section.id === 'stays') {
+                grids[section.id].innerHTML = generateExperiencesEmptyState();
+            } else {
+                grids[section.id].innerHTML = '<div class="empty" style="grid-column: 1/-1; text-align: center; padding: 3rem; opacity: 0.5;">Nessun prodotto disponibile al momento.</div>';
+            }
+        }
+    });
+}
+
 // --- LOADER UTILITIES ---
 
 // Inietta l'HTML del loader se non esiste
