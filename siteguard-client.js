@@ -37,7 +37,7 @@
    * NON è lo stesso URL del tuo backend principale (Code.gs).
    * Lo trovi in: Apps Script → Distribuisci → Gestisci distribuzioni
    */
-  const SITEGUARD_URL = "https://script.google.com/macros/s/TUO_SITEGUARD_DEPLOYMENT_ID/exec";
+  const SITEGUARD_URL = "https://script.google.com/macros/s/AKfycbyLT41A8PPuQwyjCHkFA6anJhp-ywVJhy7TlMpxydaw3osPuplcsfafiNANA3s1hzk7/exec";
 
   // true = log in console durante sviluppo; false = silenzioso in produzione
   const DEBUG = false;
