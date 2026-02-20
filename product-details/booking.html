@@ -3,6 +3,9 @@
 <head>
     <script src="../siteguard-client.js"></script>
     <meta charset="UTF-8">
+    <!-- PERFORMANCE: preconnect GAS -->
+    <link rel="preconnect" href="https://script.google.com" crossorigin>
+    <link rel="dns-prefetch" href="https://www.google.com">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Prenota il Tuo Test Drive</title>
     <script src="https://cdn.tailwindcss.com"></script>
@@ -2407,7 +2410,27 @@ window.addEventListener('resize', () => {
     // FETCH DATI BACKEND
     // ========================================
     async function fetchProductDetails(sku) {
-    const url = `${WEB_APP_URL}?action=get_bookable_product_details&sku=${encodeURIComponent(sku)}&t=${Date.now()}`;
+    const CACHE_KEY = 'lh360_booking_' + sku;
+    const CACHE_TTL = 600000; // 10 minuti
+
+    // ── Serve dalla cache se fresca ──
+    try {
+        const raw = localStorage.getItem(CACHE_KEY);
+        if (raw) {
+            const { product, ts } = JSON.parse(raw);
+            if (Date.now() - ts < CACHE_TTL && product) {
+                // Aggiorna in background
+                _fetchBookableAndCache(sku, CACHE_KEY).catch(() => {});
+                return product;
+            }
+        }
+    } catch (_) {}
+
+    return _fetchBookableAndCache(sku, CACHE_KEY);
+    }
+
+    async function _fetchBookableAndCache(sku, cacheKey) {
+    const url = `${WEB_APP_URL}?action=get_bookable_product_details&sku=${encodeURIComponent(sku)}`;
     
     console.log('🔗 Fetching product details:', url);
     
@@ -2454,6 +2477,9 @@ window.addEventListener('resize', () => {
         console.log('   - Chilometraggio prices:', data.product.chilometraggioPrices);
         console.log('   - Combo prices:', data.product.comboPrices);
         
+        if (data.success && data.product) {
+            try { localStorage.setItem(cacheKey, JSON.stringify({ product: data.product, ts: Date.now() })); } catch(_) {}
+        }
         return data.product;
     } catch (error) {
         console.error('❌ Fetch error details:', {
