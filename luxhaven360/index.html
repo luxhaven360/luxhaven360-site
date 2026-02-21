@@ -877,7 +877,42 @@
     }
     .lux-error.show { display: block; }
 
-    /* Stripe loading */
+    /* ── FORGOT PASSWORD ── */
+    .lux-success {
+      font-size: 0.72rem; color: #4ade80;
+      background: rgba(74,222,128,0.08);
+      border: 1px solid rgba(74,222,128,0.2);
+      padding: 0.6rem 0.9rem; margin-bottom: 1rem;
+    }
+    .lux-forgot-link {
+      display: block; text-align: right;
+      font-size: 0.65rem; color: var(--muted);
+      cursor: pointer; margin-top: -0.5rem; margin-bottom: 1rem;
+      transition: color 0.2s;
+    }
+    .lux-forgot-link:hover { color: var(--gold); }
+    .lux-reset-step { display: none; }
+    .lux-reset-step.active { display: block; }
+    .lux-otp-inputs {
+      display: flex; gap: 0.5rem; justify-content: center; margin-bottom: 1rem;
+    }
+    .lux-otp-input {
+      width: 44px; height: 52px;
+      background: var(--dark); border: 1px solid var(--border);
+      color: var(--cream); font-family: var(--font-disp);
+      font-size: 1.4rem; font-weight: 400;
+      text-align: center; outline: none;
+      transition: border-color 0.25s;
+      -webkit-appearance: none;
+    }
+    .lux-otp-input:focus { border-color: var(--gold); }
+    .lux-back-link {
+      display: inline-flex; align-items: center; gap: 0.4rem;
+      font-size: 0.65rem; color: var(--muted); cursor: pointer;
+      background: none; border: none; padding: 0;
+      margin-bottom: 1.25rem; transition: color 0.2s;
+    }
+    .lux-back-link:hover { color: var(--gold); }
     .lux-stripe-loading {
       text-align: center; padding: 2.5rem;
     }
@@ -1491,8 +1526,55 @@
           <label class="lux-label" data-i18n="auth.password">Password</label>
           <input class="lux-input" type="password" id="loginPassword" autocomplete="current-password" required>
         </div>
+        <span class="lux-forgot-link" onclick="openForgotPassword()" data-i18n="auth.forgot.link">Password dimenticata?</span>
         <button class="lux-submit" id="btnLogin" onclick="handleLogin()" data-i18n="auth.login.btn">Accedi e procedi al pagamento</button>
         <p class="lux-form-note" data-i18n="auth.login.note">Non hai un account? <a onclick="switchTab('register')">Registrati</a></p>
+      </div>
+
+      <!-- FORGOT PASSWORD FORM -->
+      <div id="formForgotPwd" style="display:none;">
+
+        <!-- Step 1: email -->
+        <div class="lux-reset-step active" id="resetStep1">
+          <button class="lux-back-link" onclick="closeForgotPassword()">
+            &#8592; <span data-i18n="auth.forgot.back">Torna al login</span>
+          </button>
+          <div class="lux-field">
+            <label class="lux-label" data-i18n="auth.email">Email</label>
+            <input class="lux-input" type="email" id="resetEmail" autocomplete="email" required>
+          </div>
+          <button class="lux-submit" id="btnSendReset" onclick="handleSendReset()" data-i18n="auth.forgot.send">Invia codice di verifica</button>
+        </div>
+
+        <!-- Step 2: OTP + new password -->
+        <div class="lux-reset-step" id="resetStep2">
+          <button class="lux-back-link" onclick="goToResetStep(1)">
+            &#8592; <span data-i18n="auth.forgot.back_step1">Modifica email</span>
+          </button>
+          <p style="font-size:0.78rem;color:var(--muted);margin-bottom:1.2rem;" data-i18n="auth.forgot.step2_hint">Inserisci il codice a 6 cifre ricevuto via email.</p>
+          <div class="lux-otp-inputs" id="otpInputs">
+            <input class="lux-otp-input" type="text" maxlength="1" inputmode="numeric" oninput="otpNext(this,0)">
+            <input class="lux-otp-input" type="text" maxlength="1" inputmode="numeric" oninput="otpNext(this,1)">
+            <input class="lux-otp-input" type="text" maxlength="1" inputmode="numeric" oninput="otpNext(this,2)">
+            <input class="lux-otp-input" type="text" maxlength="1" inputmode="numeric" oninput="otpNext(this,3)">
+            <input class="lux-otp-input" type="text" maxlength="1" inputmode="numeric" oninput="otpNext(this,4)">
+            <input class="lux-otp-input" type="text" maxlength="1" inputmode="numeric" oninput="otpNext(this,5)">
+          </div>
+          <div class="lux-field">
+            <label class="lux-label" data-i18n="auth.forgot.new_pwd">Nuova password</label>
+            <input class="lux-input" type="password" id="resetNewPwd" autocomplete="new-password" oninput="checkPwdStrength(this.value)" required>
+            <div class="lux-pwd-strength"><div class="lux-pwd-strength-bar" id="resetPwdBar"></div></div>
+          </div>
+          <div class="lux-field">
+            <label class="lux-label" data-i18n="auth.confirm_password">Conferma Password</label>
+            <input class="lux-input" type="password" id="resetConfirmPwd" autocomplete="new-password" required>
+          </div>
+          <button class="lux-submit" id="btnConfirmReset" onclick="handleConfirmReset()" data-i18n="auth.forgot.confirm">Imposta nuova password</button>
+          <p class="lux-form-note" style="margin-top:0.75rem;">
+            <a onclick="handleSendReset(true)" data-i18n="auth.forgot.resend">Non hai ricevuto il codice? Invia di nuovo</a>
+          </p>
+        </div>
+
       </div>
 
       <!-- Stripe Loading -->
@@ -2266,11 +2348,12 @@
   /* Piano correntemente selezionato */
   let selectedPlan = null;
 
-  /* Prezzi piani */
+  /* Prezzi piani — priceId: inserisci il tuo vero Price ID Stripe (es. price_1ABC123xyz...)
+     oppure lascia null per usare pagamento one-shot dinamico */
   const PLAN_DATA = {
-    explorer: { nameKey:'p1.name', tier:'Explorer', eurPrice:4, priceId:'price_explorer_monthly' },
-    prestige:  { nameKey:'p2.name', tier:'Prestige', eurPrice:12, priceId:'price_prestige_monthly' },
-    elite:     { nameKey:'p3.name', tier:'Élite', eurPrice:29, priceId:'price_elite_monthly' },
+    explorer: { nameKey:'p1.name', tier:'Explorer', eurPrice:4,  priceId: null },
+    prestige:  { nameKey:'p2.name', tier:'Prestige',  eurPrice:12, priceId: null },
+    elite:     { nameKey:'p3.name', tier:'Élite',     eurPrice:29, priceId: null },
   };
 
   /* ── STORAGE AUTH ── */
@@ -2377,6 +2460,8 @@
     // Pulisci area errore checkout
     const errArea = document.getElementById('checkoutErrorArea');
     if (errArea) errArea.style.display = 'none';
+    // Chiudi eventuale pannello "password dimenticata"
+    document.getElementById('formForgotPwd').style.display = 'none';
     authModalMode = 'auth';
   }
   document.getElementById('authOverlay').addEventListener('click', function(e) {
@@ -2398,6 +2483,7 @@
     const isReg = tab === 'register';
     document.getElementById('formRegister').style.display = isReg ? '' : 'none';
     document.getElementById('formLogin').style.display = isReg ? 'none' : '';
+    document.getElementById('formForgotPwd').style.display = 'none';
     document.getElementById('tabRegister').classList.toggle('active', isReg);
     document.getElementById('tabLogin').classList.toggle('active', !isReg);
     document.getElementById('authError').classList.remove('show');
@@ -2409,7 +2495,11 @@
 
   /* ── PASSWORD STRENGTH ── */
   function checkPwdStrength(v) {
-    const bar = document.getElementById('pwdBar');
+    // Aggiorna la barra del form attivo (registrazione o reset)
+    const bar = document.getElementById(
+      document.getElementById('formForgotPwd').style.display !== 'none' ? 'resetPwdBar' : 'pwdBar'
+    );
+    if (!bar) return;
     let score = 0;
     if (v.length >= 8) score++;
     if (/[A-Z]/.test(v)) score++;
@@ -2730,6 +2820,160 @@
     }
   });
 
+  /* ── FORGOT PASSWORD ── */
+  let _resetEmailCache = '';
+
+  function openForgotPassword() {
+    document.getElementById('formLogin').style.display = 'none';
+    document.getElementById('formForgotPwd').style.display = '';
+    document.getElementById('authError').classList.remove('show');
+    // Pre-fill email if the user already typed it
+    const loginEmail = document.getElementById('loginEmail').value.trim();
+    if (loginEmail) document.getElementById('resetEmail').value = loginEmail;
+    goToResetStep(1);
+    const t = i18n[currentLang] || i18n.it;
+    document.getElementById('authTitle').textContent = t['auth.forgot.title'] || 'Ripristina password';
+  }
+
+  function closeForgotPassword() {
+    document.getElementById('formForgotPwd').style.display = 'none';
+    document.getElementById('formLogin').style.display = '';
+    document.getElementById('authError').classList.remove('show');
+    const t = i18n[currentLang] || i18n.it;
+    document.getElementById('authTitle').textContent = t['auth.login.title'] || 'Accedi al tuo account';
+  }
+
+  function goToResetStep(step) {
+    document.querySelectorAll('.lux-reset-step').forEach((el, i) => {
+      el.classList.toggle('active', i + 1 === step);
+    });
+    document.getElementById('authError').classList.remove('show');
+    // Clear OTP inputs when going back to step 1
+    if (step === 1) {
+      document.querySelectorAll('.lux-otp-input').forEach(el => el.value = '');
+    }
+  }
+
+  async function handleSendReset(isResend = false) {
+    const t = i18n[currentLang] || i18n.it;
+    const email = document.getElementById('resetEmail').value.trim().toLowerCase();
+    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      return showAuthError(t['auth.err.email'] || 'Email non valida.');
+    }
+
+    _resetEmailCache = email;
+    const btn = document.getElementById('btnSendReset');
+    btn.disabled = true;
+    btn.textContent = '...';
+
+    try {
+      const res = await fetch(APPS_SCRIPT_URL, {
+        method: 'POST',
+        body: JSON.stringify({ action: 'sendPasswordReset', email }),
+        headers: { 'Content-Type': 'text/plain' }
+      });
+      const data = await res.json();
+      if (data.success) {
+        goToResetStep(2);
+        document.getElementById('authError').classList.remove('show');
+        if (isResend) showToast(t['auth.forgot.resent'] || 'Codice inviato di nuovo.', 'success');
+        // Focus primo campo OTP
+        setTimeout(() => {
+          const first = document.querySelector('.lux-otp-input');
+          if (first) first.focus();
+        }, 100);
+      } else {
+        showAuthError(data.error || t['auth.err.connection'] || 'Errore di connessione.');
+      }
+    } catch (e) {
+      showAuthError(t['auth.err.connection'] || 'Errore di connessione.');
+    } finally {
+      btn.disabled = false;
+      applyTranslations(currentLang);
+    }
+  }
+
+  /* Avanzamento automatico tra le celle OTP */
+  function otpNext(input, idx) {
+    input.value = input.value.replace(/\D/g, '').slice(-1);
+    const inputs = document.querySelectorAll('.lux-otp-input');
+    if (input.value && idx < 5) inputs[idx + 1].focus();
+    // Backspace support
+    input.addEventListener('keydown', function(e) {
+      if (e.key === 'Backspace' && !this.value && idx > 0) {
+        inputs[idx - 1].focus();
+      }
+    }, { once: true });
+  }
+
+  /* Gestisce anche il paste di 6 cifre nell'OTP */
+  document.addEventListener('paste', function(e) {
+    const otpArea = document.getElementById('otpInputs');
+    if (!otpArea || !otpArea.contains(document.activeElement)) return;
+    const text = (e.clipboardData || window.clipboardData).getData('text').replace(/\D/g, '').slice(0, 6);
+    if (text.length < 2) return;
+    e.preventDefault();
+    document.querySelectorAll('.lux-otp-input').forEach((el, i) => {
+      el.value = text[i] || '';
+    });
+  });
+
+  async function handleConfirmReset() {
+    const t = i18n[currentLang] || i18n.it;
+    const otpInputs = document.querySelectorAll('.lux-otp-input');
+    const code = Array.from(otpInputs).map(el => el.value).join('');
+    if (code.length < 6) return showAuthError(t['auth.forgot.err.code'] || 'Inserisci il codice completo a 6 cifre.');
+
+    const newPwd = document.getElementById('resetNewPwd').value;
+    const confirmPwd = document.getElementById('resetConfirmPwd').value;
+    if (newPwd.length < 8) return showAuthError(t['auth.err.pwdlen'] || 'La password deve avere almeno 8 caratteri.');
+    if (newPwd !== confirmPwd) return showAuthError(t['auth.err.pwdmatch'] || 'Le password non coincidono.');
+
+    const btn = document.getElementById('btnConfirmReset');
+    btn.disabled = true;
+    btn.textContent = '...';
+
+    try {
+      const res = await fetch(APPS_SCRIPT_URL, {
+        method: 'POST',
+        body: JSON.stringify({ action: 'verifyResetCode', email: _resetEmailCache, code }),
+        headers: { 'Content-Type': 'text/plain' }
+      });
+      const data = await res.json();
+      if (data.valid) {
+        // Aggiorna la password nell'account locale
+        const accounts = JSON.parse(localStorage.getItem('lh360_accounts') || '{}');
+        if (accounts[_resetEmailCache]) {
+          const hash = await hashPwd(newPwd);
+          accounts[_resetEmailCache].hash = hash;
+          localStorage.setItem('lh360_accounts', JSON.stringify(accounts));
+
+          // Se l'utente è loggato con questo account, aggiorna anche la sessione
+          const u = getUser();
+          if (u && u.email === _resetEmailCache) {
+            u.subscription = accounts[_resetEmailCache].subscription || u.subscription;
+            saveUser(u);
+          }
+        }
+        // Torna al login con messaggio di successo
+        document.getElementById('formForgotPwd').style.display = 'none';
+        document.getElementById('formLogin').style.display = '';
+        document.getElementById('loginEmail').value = _resetEmailCache;
+        const t2 = i18n[currentLang] || i18n.it;
+        document.getElementById('authTitle').textContent = t2['auth.login.title'] || 'Accedi al tuo account';
+        showToast(t2['auth.forgot.success'] || 'Password aggiornata. Accedi con la nuova password.', 'success');
+        _resetEmailCache = '';
+      } else {
+        showAuthError(data.error || t['auth.forgot.err.invalid'] || 'Codice non valido. Riprova.');
+      }
+    } catch (e) {
+      showAuthError(t['auth.err.connection'] || 'Errore di connessione.');
+    } finally {
+      btn.disabled = false;
+      applyTranslations(currentLang);
+    }
+  }
+
   /* ── INIT ── */
   updateNavUser();
   handleStripeCallback();
@@ -2780,8 +3024,19 @@
       'auth.close': 'Chiudi',
       'auth.err.notconfigured': '⚙️ Apps Script non ancora configurato. Segui le istruzioni nel file Abbonamenti.gs per attivare il pagamento Stripe.',
       'auth.err.connection': 'Errore di connessione. Verifica la configurazione di Apps Script e riprova.',
-    },
-    en: {
+      'auth.forgot.link': 'Password dimenticata?',
+      'auth.forgot.title': 'Ripristina password',
+      'auth.forgot.back': 'Torna al login',
+      'auth.forgot.back_step1': 'Modifica email',
+      'auth.forgot.send': 'Invia codice di verifica',
+      'auth.forgot.step2_hint': 'Inserisci il codice a 6 cifre ricevuto via email.',
+      'auth.forgot.new_pwd': 'Nuova password',
+      'auth.forgot.confirm': 'Imposta nuova password',
+      'auth.forgot.resend': 'Non hai ricevuto il codice? Invia di nuovo',
+      'auth.forgot.resent': 'Codice inviato di nuovo.',
+      'auth.forgot.success': 'Password aggiornata con successo. Accedi con la nuova password.',
+      'auth.forgot.err.code': 'Inserisci il codice completo a 6 cifre.',
+      'auth.forgot.err.invalid': 'Codice non valido. Controlla l\'email e riprova.',
       'auth.tab.register': 'Sign Up',
       'auth.tab.login': 'Sign In',
       'auth.register.title': 'Create your account',
@@ -2824,8 +3079,19 @@
       'auth.close': 'Close',
       'auth.err.notconfigured': '⚙️ Apps Script not configured yet. Follow the instructions in Abbonamenti.gs to activate Stripe payments.',
       'auth.err.connection': 'Connection error. Please check the Apps Script configuration and try again.',
-    },
-    fr: {
+      'auth.forgot.link': 'Forgot password?',
+      'auth.forgot.title': 'Reset your password',
+      'auth.forgot.back': 'Back to login',
+      'auth.forgot.back_step1': 'Edit email',
+      'auth.forgot.send': 'Send verification code',
+      'auth.forgot.step2_hint': 'Enter the 6-digit code sent to your email.',
+      'auth.forgot.new_pwd': 'New password',
+      'auth.forgot.confirm': 'Set new password',
+      'auth.forgot.resend': "Didn't receive the code? Send again",
+      'auth.forgot.resent': 'Code sent again.',
+      'auth.forgot.success': 'Password updated. Sign in with your new password.',
+      'auth.forgot.err.code': 'Please enter the complete 6-digit code.',
+      'auth.forgot.err.invalid': 'Invalid code. Check your email and try again.',
       'auth.tab.register': "S'inscrire",
       'auth.tab.login': 'Se connecter',
       'auth.register.title': 'Créer votre compte',
@@ -2868,8 +3134,19 @@
       'auth.close': 'Fermer',
       'auth.err.notconfigured': '⚙️ Apps Script non configuré. Suivez les instructions dans Abbonamenti.gs pour activer les paiements Stripe.',
       'auth.err.connection': 'Erreur de connexion. Vérifiez la configuration Apps Script et réessayez.',
-    },
-    de: {
+      'auth.forgot.link': 'Mot de passe oublié?',
+      'auth.forgot.title': 'Réinitialiser le mot de passe',
+      'auth.forgot.back': 'Retour à la connexion',
+      'auth.forgot.back_step1': 'Modifier l\'email',
+      'auth.forgot.send': 'Envoyer le code de vérification',
+      'auth.forgot.step2_hint': 'Entrez le code à 6 chiffres reçu par email.',
+      'auth.forgot.new_pwd': 'Nouveau mot de passe',
+      'auth.forgot.confirm': 'Définir le nouveau mot de passe',
+      'auth.forgot.resend': 'Vous n\'avez pas reçu le code? Renvoyer',
+      'auth.forgot.resent': 'Code renvoyé.',
+      'auth.forgot.success': 'Mot de passe mis à jour. Connectez-vous avec votre nouveau mot de passe.',
+      'auth.forgot.err.code': 'Veuillez entrer le code complet à 6 chiffres.',
+      'auth.forgot.err.invalid': 'Code invalide. Vérifiez votre email et réessayez.',
       'auth.tab.register': 'Registrieren',
       'auth.tab.login': 'Anmelden',
       'auth.register.title': 'Konto erstellen',
@@ -2912,8 +3189,19 @@
       'auth.close': 'Schließen',
       'auth.err.notconfigured': '⚙️ Apps Script noch nicht konfiguriert. Folgen Sie den Anweisungen in Abbonamenti.gs.',
       'auth.err.connection': 'Verbindungsfehler. Überprüfen Sie die Apps Script-Konfiguration und versuchen Sie es erneut.',
-    },
-    es: {
+      'auth.forgot.link': 'Passwort vergessen?',
+      'auth.forgot.title': 'Passwort zurücksetzen',
+      'auth.forgot.back': 'Zurück zum Login',
+      'auth.forgot.back_step1': 'E-Mail ändern',
+      'auth.forgot.send': 'Verifizierungscode senden',
+      'auth.forgot.step2_hint': 'Geben Sie den 6-stelligen Code ein, der an Ihre E-Mail gesendet wurde.',
+      'auth.forgot.new_pwd': 'Neues Passwort',
+      'auth.forgot.confirm': 'Neues Passwort festlegen',
+      'auth.forgot.resend': 'Code nicht erhalten? Erneut senden',
+      'auth.forgot.resent': 'Code erneut gesendet.',
+      'auth.forgot.success': 'Passwort aktualisiert. Melden Sie sich mit dem neuen Passwort an.',
+      'auth.forgot.err.code': 'Bitte geben Sie den vollständigen 6-stelligen Code ein.',
+      'auth.forgot.err.invalid': 'Ungültiger Code. Überprüfen Sie Ihre E-Mail und versuchen Sie es erneut.',
       'auth.tab.register': 'Registrarse',
       'auth.tab.login': 'Iniciar sesión',
       'auth.register.title': 'Crear tu cuenta',
@@ -2956,8 +3244,19 @@
       'auth.close': 'Cerrar',
       'auth.err.notconfigured': '⚙️ Apps Script no configurado aún. Sigue las instrucciones en Abbonamenti.gs para activar los pagos de Stripe.',
       'auth.err.connection': 'Error de conexión. Verifica la configuración de Apps Script e inténtalo de nuevo.',
-    }
-  };
+      'auth.forgot.link': '¿Olvidaste tu contraseña?',
+      'auth.forgot.title': 'Restablecer contraseña',
+      'auth.forgot.back': 'Volver al inicio de sesión',
+      'auth.forgot.back_step1': 'Editar email',
+      'auth.forgot.send': 'Enviar código de verificación',
+      'auth.forgot.step2_hint': 'Introduce el código de 6 dígitos recibido por email.',
+      'auth.forgot.new_pwd': 'Nueva contraseña',
+      'auth.forgot.confirm': 'Establecer nueva contraseña',
+      'auth.forgot.resend': '¿No recibiste el código? Enviar de nuevo',
+      'auth.forgot.resent': 'Código reenviado.',
+      'auth.forgot.success': 'Contraseña actualizada. Inicia sesión con tu nueva contraseña.',
+      'auth.forgot.err.code': 'Por favor introduce el código completo de 6 dígitos.',
+      'auth.forgot.err.invalid': 'Código no válido. Revisa tu email e inténtalo de nuevo.',
 
   // Merge auth translations into main i18n
   Object.keys(authI18n).forEach(lang => {
