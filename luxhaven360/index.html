@@ -2311,31 +2311,73 @@
   }
 
   /* ── PLAN CLICK HANDLER ── */
+  /* Rileva se l'URL di Apps Script è ancora il placeholder */
+  const IS_SCRIPT_CONFIGURED = !APPS_SCRIPT_URL.includes('YOUR_DEPLOYMENT_ID');
+
+  /* Modalità corrente del modal: 'auth' (login/register) oppure 'checkout' (già loggato) */
+  let authModalMode = 'auth';
+
   function handlePlanClick(planKey, planPrefix) {
     const u = getUser();
     selectedPlan = { key: planKey, prefix: planPrefix, ...PLAN_DATA[planKey] };
 
     if (u) {
-      // Già loggato → vai direttamente a Stripe
-      initiateStripeCheckout(u);
+      // Già loggato → apri modal direttamente in modalità checkout
+      openCheckoutModal(u);
     } else {
       openAuthModal();
     }
   }
 
+  /* ── APRI IN MODALITÀ CHECKOUT (utente loggato) ── */
+  function openCheckoutModal(user) {
+    authModalMode = 'checkout';
+    updateAuthBanner();
+
+    const overlay = document.getElementById('authOverlay');
+    const t = i18n[currentLang] || i18n.it;
+
+    // Titolo
+    document.getElementById('authTitle').textContent = t['auth.checkout.title'] || 'Procedi al pagamento';
+
+    // Nascondi tabs e form, mostra solo loading
+    document.getElementById('authTabs').style.display = 'none';
+    document.getElementById('formRegister').style.display = 'none';
+    document.getElementById('formLogin').style.display = 'none';
+    document.getElementById('authError').classList.remove('show');
+    document.getElementById('stripeLoading').style.display = 'block';
+
+    overlay.classList.add('open');
+    document.body.style.overflow = 'hidden';
+
+    // Avvia checkout subito
+    initiateStripeCheckout(user);
+  }
+
   /* ── AUTH MODAL ── */
   function openAuthModal() {
+    authModalMode = 'auth';
     const overlay = document.getElementById('authOverlay');
     updateAuthBanner();
+
+    // Ripristina tabs e titolo
+    document.getElementById('authTabs').style.display = '';
     overlay.classList.add('open');
     document.body.style.overflow = 'hidden';
     switchTab('register');
   }
+
   function closeAuthModal() {
     document.getElementById('authOverlay').classList.remove('open');
     document.body.style.overflow = '';
     document.getElementById('stripeLoading').style.display = 'none';
     document.getElementById('authError').classList.remove('show');
+    // Ripristina tabs se erano nascosti
+    document.getElementById('authTabs').style.display = '';
+    // Pulisci area errore checkout
+    const errArea = document.getElementById('checkoutErrorArea');
+    if (errArea) errArea.style.display = 'none';
+    authModalMode = 'auth';
   }
   document.getElementById('authOverlay').addEventListener('click', function(e) {
     if (e.target === this) closeAuthModal();
@@ -2455,6 +2497,10 @@
 
   /* ── STRIPE CHECKOUT ── */
   async function proceedToStripe(user) {
+    // Pulisci eventuale area errore da tentativi precedenti
+    const prevErr = document.getElementById('checkoutErrorArea');
+    if (prevErr) prevErr.style.display = 'none';
+
     document.getElementById('formRegister').style.display = 'none';
     document.getElementById('formLogin').style.display = 'none';
     document.getElementById('stripeLoading').style.display = 'block';
@@ -2464,6 +2510,15 @@
 
   async function initiateStripeCheckout(user) {
     if (!selectedPlan) return;
+
+    /* ── Controlla configurazione ── */
+    if (!IS_SCRIPT_CONFIGURED) {
+      const t = i18n[currentLang] || i18n.it;
+      _checkoutError(t['auth.err.notconfigured'] ||
+        '⚙️ Apps Script non configurato. Incolla il tuo URL di distribuzione nella variabile APPS_SCRIPT_URL nel file index.html.');
+      return;
+    }
+
     try {
       const isEn = currentLang === 'en';
       const rate = usdRate || 1.08;
@@ -2501,13 +2556,59 @@
         throw new Error(data.error || 'Errore Stripe');
       }
     } catch (e) {
-      document.getElementById('stripeLoading').style.display = 'none';
-      document.getElementById('formRegister').style.display = '';
-      showAuthError('Errore di connessione. Riprova.');
-      const btn = document.getElementById('btnRegister');
-      btn.disabled = false;
-      btn.setAttribute('data-i18n', 'auth.register.btn');
-      applyTranslations(currentLang);
+      const t = i18n[currentLang] || i18n.it;
+      const msg = e.message && e.message.includes('Stripe')
+        ? e.message
+        : (t['auth.err.connection'] || 'Errore di connessione. Verifica la configurazione di Apps Script e riprova.');
+      _checkoutError(msg);
+    }
+  }
+
+  /* Helper: mostra errore nel modal (funziona in qualsiasi modalità) */
+  function _checkoutError(msg) {
+    // Assicura che il modal sia aperto
+    document.getElementById('authOverlay').classList.add('open');
+    document.body.style.overflow = 'hidden';
+
+    // Nascondi loading
+    document.getElementById('stripeLoading').style.display = 'none';
+
+    if (authModalMode === 'checkout') {
+      // Utente loggato: mostra errore con pulsante chiudi
+      document.getElementById('authTabs').style.display = 'none';
+      document.getElementById('formRegister').style.display = 'none';
+      document.getElementById('formLogin').style.display = 'none';
+
+      // Crea o aggiorna area errore checkout
+      let errArea = document.getElementById('checkoutErrorArea');
+      if (!errArea) {
+        errArea = document.createElement('div');
+        errArea.id = 'checkoutErrorArea';
+        errArea.style.cssText = 'padding: 1rem 0; text-align: center;';
+        document.getElementById('stripeLoading').insertAdjacentElement('afterend', errArea);
+      }
+      const t = i18n[currentLang] || i18n.it;
+      errArea.style.display = 'block';
+      errArea.innerHTML = `
+        <div class="lux-error show" style="display:block; text-align:left; margin-bottom:1.25rem;">${msg}</div>
+        <button class="lux-submit" onclick="closeAuthModal()" style="background: var(--border); color: var(--muted);">
+          ${t['auth.close'] || 'Chiudi'}
+        </button>
+      `;
+    } else {
+      // Flusso registrazione/login: ripristina il form corretto
+      const activeForm = document.getElementById('tabRegister')?.classList.contains('active')
+        ? 'register' : 'login';
+      document.getElementById('formRegister').style.display = activeForm === 'register' ? '' : 'none';
+      document.getElementById('formLogin').style.display = activeForm === 'login' ? '' : 'none';
+
+      showAuthError(msg);
+
+      // Riabilita pulsanti
+      const btnReg = document.getElementById('btnRegister');
+      const btnLog = document.getElementById('btnLogin');
+      if (btnReg) { btnReg.disabled = false; applyTranslations(currentLang); }
+      if (btnLog) { btnLog.disabled = false; applyTranslations(currentLang); }
     }
   }
 
@@ -2675,6 +2776,10 @@
       'profile.no': 'No',
       'toast.welcome': 'Benvenuto,',
       'toast.logout': 'Disconnesso con successo.',
+      'auth.checkout.title': 'Procedi al pagamento',
+      'auth.close': 'Chiudi',
+      'auth.err.notconfigured': '⚙️ Apps Script non ancora configurato. Segui le istruzioni nel file Abbonamenti.gs per attivare il pagamento Stripe.',
+      'auth.err.connection': 'Errore di connessione. Verifica la configurazione di Apps Script e riprova.',
     },
     en: {
       'auth.tab.register': 'Sign Up',
@@ -2715,6 +2820,10 @@
       'profile.no': 'No',
       'toast.welcome': 'Welcome,',
       'toast.logout': 'Signed out successfully.',
+      'auth.checkout.title': 'Proceed to payment',
+      'auth.close': 'Close',
+      'auth.err.notconfigured': '⚙️ Apps Script not configured yet. Follow the instructions in Abbonamenti.gs to activate Stripe payments.',
+      'auth.err.connection': 'Connection error. Please check the Apps Script configuration and try again.',
     },
     fr: {
       'auth.tab.register': "S'inscrire",
@@ -2755,6 +2864,10 @@
       'profile.no': 'Non',
       'toast.welcome': 'Bienvenue,',
       'toast.logout': 'Déconnexion réussie.',
+      'auth.checkout.title': 'Procéder au paiement',
+      'auth.close': 'Fermer',
+      'auth.err.notconfigured': '⚙️ Apps Script non configuré. Suivez les instructions dans Abbonamenti.gs pour activer les paiements Stripe.',
+      'auth.err.connection': 'Erreur de connexion. Vérifiez la configuration Apps Script et réessayez.',
     },
     de: {
       'auth.tab.register': 'Registrieren',
@@ -2795,6 +2908,10 @@
       'profile.no': 'Nein',
       'toast.welcome': 'Willkommen,',
       'toast.logout': 'Erfolgreich abgemeldet.',
+      'auth.checkout.title': 'Zur Zahlung',
+      'auth.close': 'Schließen',
+      'auth.err.notconfigured': '⚙️ Apps Script noch nicht konfiguriert. Folgen Sie den Anweisungen in Abbonamenti.gs.',
+      'auth.err.connection': 'Verbindungsfehler. Überprüfen Sie die Apps Script-Konfiguration und versuchen Sie es erneut.',
     },
     es: {
       'auth.tab.register': 'Registrarse',
@@ -2835,6 +2952,10 @@
       'profile.no': 'No',
       'toast.welcome': 'Bienvenido,',
       'toast.logout': 'Sesión cerrada correctamente.',
+      'auth.checkout.title': 'Proceder al pago',
+      'auth.close': 'Cerrar',
+      'auth.err.notconfigured': '⚙️ Apps Script no configurado aún. Sigue las instrucciones en Abbonamenti.gs para activar los pagos de Stripe.',
+      'auth.err.connection': 'Error de conexión. Verifica la configuración de Apps Script e inténtalo de nuevo.',
     }
   };
 
