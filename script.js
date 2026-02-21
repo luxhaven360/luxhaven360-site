@@ -1217,19 +1217,24 @@ async function initDynamicProducts(retryCount = 0) {
 
 // Funzione helper per mostrare l'errore grafico
 function showErrorInAllGrids() {
-    SECTIONS.forEach(section => {
-        const gridEl = document.getElementById(section.gridId);
-        if (gridEl) {
-            gridEl.innerHTML = `
-                <div class="error-container" style="grid-column: 1/-1; text-align: center; padding: 3rem 1rem;">
-                    <div style="color: #ff6b6b; font-size: 1.5rem; margin-bottom: 1rem;">⚠️</div>
-                    <div style="color: #fafafa; margin-bottom: 1.5rem;">Impossibile caricare i prodotti.</div>
-                    <button onclick="window.location.reload()" class="btn" style="background: #D4AF37; color: #000; border:none; padding: 0.8rem 1.5rem; cursor: pointer;">
-                        Ricarica Pagina
-                    </button>
-                </div>`;
-        }
-    });
+    // Usa LuxError overlay se disponibile, altrimenti fallback inline
+    if (window.LuxError) {
+        LuxError.show('loading', () => window.location.reload());
+    } else {
+        SECTIONS.forEach(section => {
+            const gridEl = document.getElementById(section.gridId);
+            if (gridEl) {
+                gridEl.innerHTML = `
+                    <div class="error-container" style="grid-column: 1/-1; text-align: center; padding: 3rem 1rem;">
+                        <div style="color: #ff6b6b; font-size: 1.5rem; margin-bottom: 1rem;">⚠️</div>
+                        <div style="color: #fafafa; margin-bottom: 1.5rem;">Impossibile caricare i prodotti.</div>
+                        <button onclick="window.location.reload()" class="btn" style="background: #D4AF37; color: #000; border:none; padding: 0.8rem 1.5rem; cursor: pointer;">
+                            Ricarica Pagina
+                        </button>
+                    </div>`;
+            }
+        });
+    }
 }
                                      
 /**
