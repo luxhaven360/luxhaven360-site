@@ -1400,7 +1400,6 @@ window.addEventListener('load', async () => {
     loadOrderDetails();
     
     // ✅ Inizializza traduzioni in background (non bloccare la UI)
-    // initializeTranslations() rimane async ma non lo aspettiamo qui: aggiornerà i testi quando pronto.
     initializeTranslations();
 
     // Timeout di sicurezza
@@ -1408,6 +1407,37 @@ window.addEventListener('load', async () => {
         console.warn('Timeout caricamento dati: forzatura visualizzazione.');
         completeLoadingSequence();
     }, 12000);
+});
+
+// ── PAGEHIDE: pulisce tutti i timer per evitare accumulo e crash del browser ──
+window.addEventListener('pagehide', () => {
+    clearTimeout(loadTimeout);
+    clearInterval(progressInterval);
+});
+
+// ── PAGESHOW: ri-inizializza la pagina quando viene ripristinata dalla bfcache ──
+// (es. dopo aver premuto "indietro" da tracking-order.html)
+window.addEventListener('pageshow', (event) => {
+    if (!event.persisted) return; // Caricamento normale: già gestito da 'load'
+
+    // La pagina era in bfcache: 'load' non è scattato, quindi le traduzioni
+    // e lo stato "Sessione scaduta" non sono stati ri-applicati.
+    // Ri-applichiamo tutto.
+    const i18n = window.i18nPDP && window.i18nPDP();
+    if (i18n && typeof updateAllTranslations === 'function') {
+        updateAllTranslations();
+    } else {
+        // i18n non ancora pronto: aspetta e riprova
+        const retryTranslations = setInterval(() => {
+            const i18nReady = window.i18nPDP && window.i18nPDP();
+            if (i18nReady && typeof updateAllTranslations === 'function') {
+                clearInterval(retryTranslations);
+                updateAllTranslations();
+            }
+        }, 100);
+        // Sicurezza: ferma dopo 3 secondi
+        setTimeout(() => clearInterval(retryTranslations), 3000);
+    }
 });
 
 function startLoadingSequence() {
@@ -2293,8 +2323,12 @@ function updateTimeline(data) {
                     dateElem.textContent = i18n ? i18n.t('success_timeline_to_schedule') : 'da programmare';
                 }
             } else if (step === 'delivered') {
+                // ── REFRESH: mostra "Sessione scaduta" nel sottostato Consegnato ──
+                if (isRefresh) {
+                    dateElem.textContent = getSessionExpiredText();
+                    dateElem.removeAttribute('data-i18n');
                 // Consegnato: data o stima tradotta
-                if (actualDate) {
+                } else if (actualDate) {
                     const formattedDate = i18n ? i18n.formatShortDate(new Date(actualDate)) : formatDateFallback(new Date(actualDate));
                     dateElem.textContent = formattedDate;
                 } else {
@@ -2551,8 +2585,19 @@ function updateTimelineDates(i18n) {
         return;
     }
     
-    // ✅ Richiama updateTimeline con lo stato salvato
+    // Richiama updateTimeline con lo stato salvato
+    // (updateTimeline gestisce già isRefresh nel ramo 'delivered')
     updateTimeline(timelineState);
+
+    // ── Doppia difesa: se refresh, ri-applica "Sessione scaduta" su date-delivered ──
+    // (nel caso in cui updateTimeline venisse sovrapposta da altre logiche)
+    if (isRefresh) {
+        const dateDeliveredElem = document.getElementById('date-delivered');
+        if (dateDeliveredElem) {
+            dateDeliveredElem.textContent = getSessionExpiredText();
+            dateDeliveredElem.removeAttribute('data-i18n');
+        }
+    }
 }
 
 /**
