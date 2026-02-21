@@ -3432,9 +3432,12 @@
   async function handleStripeCallback() {
     const params = new URLSearchParams(window.location.search);
     if (params.get('success') === '1') {
-      const planKey    = params.get('plan');
-      const user       = getUser();
+      const planKey     = params.get('plan');
       const billingBack = params.get('billing') || 'monthly';
+      const sessionId   = params.get('session_id') || '';
+      const user        = getUser();
+
+      /* ── 1. Aggiornamento locale (se utente disponibile in localStorage) ── */
       if (user && planKey && PLAN_DATA[planKey]) {
         const now    = new Date();
         const expire = new Date(now);
@@ -3460,26 +3463,75 @@
           accounts[user.email].subscription = user.subscription;
           localStorage.setItem('lh360_accounts', JSON.stringify(accounts));
         }
+      }
 
-        // Salva su Sheets tramite Apps Script (Abbonamenti.gs)
-        try {
-          await fetch(APPS_SCRIPT_URL, {
+      /* ── 2. Salvataggio su Google Sheets via Apps Script ── */
+      // Strategia primaria: usa il session_id Stripe per recuperare i dati
+      // server-side (più affidabile, funziona anche senza sessione locale).
+      // Strategia di fallback: invia i dati utente locali.
+      const currentUser = user || {};
+      try {
+        const saveRes = await fetch(APPS_SCRIPT_URL, {
+          method: 'POST',
+          body: JSON.stringify({
+            action:       'saveSubscriptionFromSession',
+            sessionId:    sessionId,
+            user:         currentUser,
+            subscription: currentUser.subscription || {
+              plan:          planKey,
+              billingPeriod: billingBack,
+              status:        'active',
+              autoRenew:     true
+            }
+          }),
+          headers: { 'Content-Type': 'text/plain' }
+        });
+        const saveData = await saveRes.json().catch(() => ({}));
+        if (saveData && saveData.error) {
+          // Fallback: tenta salvataggio con dati locali
+          if (user && planKey) {
+            await fetch(APPS_SCRIPT_URL, {
+              method: 'POST',
+              body: JSON.stringify({
+                action:       'saveSubscription',
+                user:         user,
+                subscription: user.subscription
+              }),
+              headers: { 'Content-Type': 'text/plain' }
+            }).catch(() => {});
+          }
+        }
+      } catch(e) {
+        // Fallback silenzioso con dati locali
+        if (user && planKey) {
+          fetch(APPS_SCRIPT_URL, {
             method: 'POST',
             body: JSON.stringify({
-              action: 'saveSubscription',
-              user: user,
+              action:       'saveSubscription',
+              user:         user,
               subscription: user.subscription
             }),
             headers: { 'Content-Type': 'text/plain' }
-          });
-        } catch(e) {}
-
-        updateNavUser();
-        window.history.replaceState({}, document.title, window.location.pathname + '#subscriptions');
-        openSuccessModal(user, planKey, billingBack);
-      } else {
-        window.history.replaceState({}, document.title, window.location.pathname + window.location.hash);
+          }).catch(() => {});
+        }
       }
+
+      /* ── 3. Aggiorna navigazione e mostra conferma ── */
+      updateNavUser();
+      window.history.replaceState({}, document.title, window.location.pathname + '#subscriptions');
+
+      // Mostra il modale di conferma pagamento con i dati disponibili
+      const userForModal = getUser() || { subscription: {
+        plan:          planKey,
+        tier:          (PLAN_DATA[planKey] || {}).tier || planKey,
+        startDate:     new Date().toISOString().split('T')[0],
+        expireDate:    (() => {
+          const d = new Date();
+          billingBack === 'annual' ? d.setFullYear(d.getFullYear()+1) : d.setMonth(d.getMonth()+1);
+          return d.toISOString().split('T')[0];
+        })()
+      }};
+      openSuccessModal(userForModal, planKey, billingBack);
     } else if (params.get('cancelled') === '1') {
       closeAuthModal();
       window.history.replaceState({}, document.title, window.location.pathname + window.location.hash);
