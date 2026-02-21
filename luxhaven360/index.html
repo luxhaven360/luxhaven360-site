@@ -2421,7 +2421,7 @@
       'plans.billing.monthly': "Mensile",
       'plans.billing.annual': "Annuale",
       'plans.billing.save': "Risparmia ~20%",
-      'plans.billing.billed_annual': "Fatturato {amt} / anno",
+      'plans.billing.billed_annual': "Importo annuale {amt}",
       'plans.billing.per_year': "/ anno",
     },
     en: {
@@ -2489,7 +2489,7 @@
       'plans.billing.monthly': "Monthly",
       'plans.billing.annual': "Annual",
       'plans.billing.save': "Save ~20%",
-      'plans.billing.billed_annual': "Billed {amt} / year",
+      'plans.billing.billed_annual': "Annual total {amt}",
       'plans.billing.per_year': "/ year",
     },
     fr: {
@@ -2557,7 +2557,7 @@
       'plans.billing.monthly': "Mensuel",
       'plans.billing.annual': "Annuel",
       'plans.billing.save': "Économisez ~20%",
-      'plans.billing.billed_annual': "Facturé {amt} / an",
+      'plans.billing.billed_annual': "Montant annuel {amt}",
       'plans.billing.per_year': "/ an",
     },
     de: {
@@ -2625,7 +2625,7 @@
       'plans.billing.monthly': "Monatlich",
       'plans.billing.annual': "Jährlich",
       'plans.billing.save': "~20% sparen",
-      'plans.billing.billed_annual': "{amt} / Jahr abgerechnet",
+      'plans.billing.billed_annual': "Jahresbetrag {amt}",
       'plans.billing.per_year': "/ Jahr",
     },
     es: {
@@ -2693,7 +2693,7 @@
       'plans.billing.monthly': "Mensual",
       'plans.billing.annual': "Anual",
       'plans.billing.save': "Ahorra ~20%",
-      'plans.billing.billed_annual': "Facturado {amt} / año",
+      'plans.billing.billed_annual': "Importe anual {amt}",
       'plans.billing.per_year': "/ año",
     }
   };
@@ -2703,7 +2703,7 @@
     if (i18n[lang]) Object.assign(i18n[lang], authI18n[lang]);
   });
 
-  let currentLang     = 'it';
+  let currentLang     = localStorage.getItem('lh360_lang') || 'it';
   let selectedBilling = 'monthly'; // 'monthly' | 'annual' — deve stare prima di updatePrices
 
   /* ── CURRENCY CONVERSION ── */
@@ -2801,6 +2801,7 @@
 
   function setLang(lang) {
     currentLang = lang;
+    localStorage.setItem('lh360_lang', lang);
     applyTranslations(lang);
     updatePrices(lang);
     document.querySelectorAll('.lang-btn').forEach(btn => {
@@ -2813,6 +2814,7 @@
 
   document.querySelectorAll('.lang-btn').forEach(btn => {
     btn.addEventListener('click', () => setLang(btn.dataset.lang));
+    btn.classList.toggle('active', btn.dataset.lang === _savedLang);
   });
 
   /* ── NAV SCROLL ── */
@@ -2849,9 +2851,13 @@
 
   document.querySelectorAll('.reveal').forEach(el => observer.observe(el));
 
+  /* ── LANGUAGE PERSISTENCE ── */
+  // _savedLang is read from currentLang which already loads from localStorage above
+  const _savedLang = currentLang;
+
   // Initialize on load
-  applyTranslations('it');
-  updatePrices('it');
+  applyTranslations(_savedLang);
+  updatePrices(_savedLang);
 
   /* ═══════════════════════════════════════════
      CONFIGURATION — sostituisci con i tuoi URL
@@ -3297,10 +3303,32 @@
         showToast((t['toast.welcome'] || 'Benvenuto!') + ' ' + user.firstName + ' 🎉', 'success');
       }
       // Pulisci URL
-      window.history.replaceState({}, document.title, window.location.pathname);
+      window.history.replaceState({}, document.title, window.location.pathname + window.location.hash);
     } else if (params.get('cancelled') === '1') {
-      window.history.replaceState({}, document.title, window.location.pathname);
+      // Utente tornato indietro da Stripe — chiudi qualsiasi modal aperto e pulisci URL
+      closeAuthModal();
+      window.history.replaceState({}, document.title, window.location.pathname + window.location.hash);
+    } else {
+      // Nessun parametro Stripe — assicura che il loading sia nascosto (caso: back del browser)
+      const loadingEl = document.getElementById('stripeLoading');
+      if (loadingEl) loadingEl.style.display = 'none';
     }
+  }
+
+  /* ── DATE FORMATTER ── */
+  function formatDate(dateStr, lang) {
+    if (!dateStr || dateStr === '—') return dateStr;
+    const d = new Date(dateStr + 'T00:00:00');
+    if (isNaN(d.getTime())) return dateStr;
+    const monthNames = {
+      it: ['gennaio','febbraio','marzo','aprile','maggio','giugno','luglio','agosto','settembre','ottobre','novembre','dicembre'],
+      en: ['January','February','March','April','May','June','July','August','September','October','November','December'],
+      fr: ['janvier','février','mars','avril','mai','juin','juillet','août','septembre','octobre','novembre','décembre'],
+      de: ['Januar','Februar','März','April','Mai','Juni','Juli','August','September','Oktober','November','Dezember'],
+      es: ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'],
+    };
+    const months = monthNames[lang] || monthNames.it;
+    return d.getDate() + ' ' + months[d.getMonth()] + ' ' + d.getFullYear();
   }
 
   /* ── PROFILE MODAL ── */
@@ -3324,8 +3352,8 @@
       statusEl.textContent = isActive ? (t['profile.badge.active']||'Attivo') : (t['profile.badge.inactive']||'Non attivo');
       statusEl.className = 'profile-badge ' + (isActive ? 'active' : 'none');
 
-      document.getElementById('profileStart').textContent  = sub.startDate  || '—';
-      document.getElementById('profileExpire').textContent = sub.expireDate || '—';
+      document.getElementById('profileStart').textContent  = sub.startDate  ? formatDate(sub.startDate,  currentLang) : '—';
+      document.getElementById('profileExpire').textContent = sub.expireDate ? formatDate(sub.expireDate, currentLang) : '—';
       document.getElementById('profileRenew').textContent  = sub.autoRenew ? (t['profile.yes']||'Sì') : (t['profile.no']||'No');
 
       const billingVal = sub.billingPeriod === 'annual'
@@ -3472,7 +3500,7 @@
     try {
       const res = await fetch(APPS_SCRIPT_URL, {
         method: 'POST',
-        body: JSON.stringify({ action: 'sendPasswordReset', email }),
+        body: JSON.stringify({ action: 'sendPasswordReset', email, lang: currentLang }),
         headers: { 'Content-Type': 'text/plain' }
       });
       const data = await res.json();
