@@ -801,7 +801,14 @@
       margin-bottom: 1.5rem;
       display: flex; align-items: center; gap: 0.75rem;
     }
-    .lux-plan-banner-icon { color: var(--gold); font-size: 1.1rem; }
+    .lux-plan-banner-icon {
+      color: var(--gold); font-size: 1.1rem;
+      display: flex; align-items: center; justify-content: center;
+      width: 36px; height: 36px; flex-shrink: 0;
+      border: 1px solid rgba(201,168,76,0.35);
+      background: rgba(201,168,76,0.06);
+    }
+    .lux-plan-banner-icon svg { width: 18px; height: 18px; stroke: var(--gold); fill: none; stroke-width: 1.5; }
     .lux-plan-banner-text { flex: 1; }
     .lux-plan-banner-name {
       font-family: var(--font-disp);
@@ -1598,7 +1605,7 @@
     <div class="lux-modal-body">
       <!-- Plan banner -->
       <div class="lux-plan-banner" id="authPlanBanner">
-        <span class="lux-plan-banner-icon">◆</span>
+        <span class="lux-plan-banner-icon" id="authPlanIcon">◆</span>
         <div class="lux-plan-banner-text">
           <div class="lux-plan-banner-name" id="authPlanName">Explorer</div>
           <div class="lux-plan-banner-price" id="authPlanPrice">€4 / mese</div>
@@ -3002,6 +3009,23 @@
     if (e.target === this) closeAuthModal();
   });
 
+  /* ── PLAN ICONS (SVG per piano) ── */
+  const PLAN_ICONS = {
+    explorer: `<svg viewBox="0 0 24 24" aria-hidden="true">
+      <circle cx="12" cy="12" r="9"/>
+      <polygon points="12,8 14.5,14 12,13 9.5,14"/>
+      <line x1="12" y1="13" x2="12" y2="16"/>
+    </svg>`,
+    prestige: `<svg viewBox="0 0 24 24" aria-hidden="true">
+      <polygon points="12,3 15.5,8.5 22,9.3 17.2,14 18.5,21 12,17.5 5.5,21 6.8,14 2,9.3 8.5,8.5"/>
+    </svg>`,
+    elite: `<svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M3 11 L5 4 L9 8 L12 2 L15 8 L19 4 L21 11 Z"/>
+      <rect x="3" y="11" width="18" height="3" rx="0.5"/>
+      <rect x="5" y="14" width="14" height="6" rx="0.5"/>
+    </svg>`,
+  };
+
   function updateAuthBanner() {
     if (!selectedPlan) return;
     const t      = i18n[currentLang] || i18n.it;
@@ -3016,6 +3040,12 @@
       : (t['permonth']               || '/ mese');
     document.getElementById('authPlanName').textContent  = selectedPlan.tier + ' — ' + (t[selectedPlan.nameKey] || '');
     document.getElementById('authPlanPrice').textContent = sym + amount + ' ' + period;
+
+    // Aggiorna icona dinamica in base al piano
+    const iconEl = document.getElementById('authPlanIcon');
+    if (iconEl) {
+      iconEl.innerHTML = PLAN_ICONS[selectedPlan.key] || '◆';
+    }
   }
 
   function switchTab(tab) {
@@ -3608,6 +3638,32 @@
   /* ── INIT ── */
   updateNavUser();
   handleStripeCallback();
+
+  /* ── FIX BACK-NAVIGATION (bfcache / freccia indietro) ──
+     Quando l'utente torna sulla pagina dal browser (pulsante back o freccia),
+     il browser può ripristinare la pagina dalla cache (bfcache) con il modal
+     ancora visibile e il loading attivo. I due listener qui sotto garantiscono
+     che il modal venga sempre chiuso correttamente. */
+
+  // pageshow: si attiva quando la pagina viene mostrata dalla bfcache (persisted=true)
+  window.addEventListener('pageshow', function(e) {
+    if (e.persisted) {
+      closeAuthModal();
+    }
+  });
+
+  // visibilitychange: cattura il ritorno alla scheda / back navigation su mobile
+  document.addEventListener('visibilitychange', function() {
+    if (document.visibilityState === 'visible') {
+      const overlay = document.getElementById('authOverlay');
+      const loading = document.getElementById('stripeLoading');
+      // Chiudi solo se il modal è aperto con il loader attivo (stato "in attesa di Stripe")
+      if (overlay && overlay.classList.contains('open') &&
+          loading && loading.style.display !== 'none') {
+        closeAuthModal();
+      }
+    }
+  });
 
 
 </script>
