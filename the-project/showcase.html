@@ -1649,12 +1649,19 @@ function renderDynamicContent() {
   // ── 5. Aggiorna propertyData e carData con i dati dinamici
   Object.assign(propertyData, dynamicProperties);
   Object.assign(carData, dynamicSupercars);
-  storiesData.splice(0, storiesData.length, ...dynamicArticles.map(a => ({
-    cat: a.catLang[lang] || a.cat,
-    title: a.titleLang[lang] || a.title,
-    img:   a.heroImg,
-    content: a.contentLang[lang] || a.content
-  })));
+  // Ricostruisci storiesData: articoli statici sempre presenti + dinamici in coda
+  storiesData.splice(0, storiesData.length,
+    ..._staticStoriesData,
+    ...dynamicArticles.map(a => ({
+      cat:         a.catLang[lang]     || a.cat,
+      catLang:     a.catLang,
+      title:       a.titleLang[lang]   || a.title,
+      titleLang:   a.titleLang,
+      img:         a.heroImg           || a.cardImg,
+      contentLang: a.contentLang,
+      content:     a.contentLang[lang] || a.content
+    }))
+  );
 }
 
 function renderFeaturedSection(p, lang) {
@@ -1748,125 +1755,111 @@ function renderSupercarSection(cars, lang) {
 
 function renderStoriesSection(articles, lang) {
   // Gli articoli STATICI rimangono sempre visibili (id="stories-static").
-  // Gli articoli DINAMICI vengono AGGIUNTI nella stessa grid, dopo i 3 statici.
-  // Se il totale supera 3 visibili, compaiono frecce ← → per scorrere il gruppo dinamico.
+  // Gli articoli DINAMICI vengono AGGIUNTI nella stessa grid dopo i 3 statici.
+  // Tutti gli articoli (statici + dinamici) sono navigabili con le frecce ← →
+  // se il totale supera il numero di colonne visibili (3 su desktop).
 
   const grid = document.getElementById('stories-static');
   if (!grid) return;
 
-  // Rimuovi eventuali card dinamiche precedenti (classe story-card-dynamic)
+  // Rimuovi card dinamiche precedenti
   grid.querySelectorAll('.story-card-dynamic').forEach(el => el.remove());
 
-  // Rimuovi frecce precedenti
-  const existingNav = document.getElementById('stories-grid-nav');
-  if (existingNav) existingNav.remove();
+  if (articles && articles.length > 0) {
+    const STATIC_COUNT = 3;
+    articles.forEach((a, i) => {
+      const draftClass = (PREVIEW_MODE && a.isDraft) ? ' is-draft' : '';
+      const div = document.createElement('div');
+      div.className = `story-card story-card-dynamic${draftClass}`;
+      div.onclick = () => openStoryPopup(STATIC_COUNT + i);
+      div.innerHTML = `
+        <img class="story-img" src="${a.cardImg}" alt="${a.titleLang[lang] || a.title}" loading="lazy" />
+        <div class="story-body">
+          <p class="story-cat">${a.catLang[lang] || a.cat}</p>
+          <h3 class="story-title">${a.titleLang[lang] || a.title}</h3>
+          <p class="story-excerpt">${a.excerptLang[lang] || a.excerpt}</p>
+          <span class="story-read-more">${getTranslation('story.read')}</span>
+        </div>`;
+      grid.appendChild(div);
+    });
+  }
 
-  if (!articles || articles.length === 0) return;
-
-  // Aggiungi le card dinamiche alla stessa grid
-  articles.forEach((a, i) => {
-    const draftClass = (PREVIEW_MODE && a.isDraft) ? ' is-draft' : '';
-    const div = document.createElement('div');
-    div.className = `story-card story-card-dynamic${draftClass}`;
-    div.onclick = () => openDynamicStoryPopup(i);
-    div.innerHTML = `
-      <img class="story-img" src="${a.cardImg}" alt="${a.titleLang[lang] || a.title}" loading="lazy" />
-      <div class="story-body">
-        <p class="story-cat">${a.catLang[lang] || a.cat}</p>
-        <h3 class="story-title">${a.titleLang[lang] || a.title}</h3>
-        <p class="story-excerpt">${a.excerptLang[lang] || a.excerpt}</p>
-        <span class="story-read-more">${getTranslation('story.read')}</span>
-      </div>`;
-    grid.appendChild(div);
-  });
-
-  // Se ci sono articoli dinamici, aggiungi le frecce di navigazione sotto la grid
-  _storiesCarouselIndex = 0;
-  _renderStoriesNav(articles.length);
+  _initStoriesCarousel();
 }
 
-let _storiesCarouselIndex = 0;
+/* ── Paged carousel per tutti gli articoli (statici + dinamici) ── */
+let _storiesPage = 0;
 
-function _renderStoriesNav(dynamicCount) {
-  // Quante card dinamiche sono visibili per riga in base al breakpoint
-  const cols = window.innerWidth <= 500 ? 1 : (window.innerWidth <= 768 ? 2 : 3);
+function _storiesCols() {
+  return window.innerWidth <= 600 ? 1 : (window.innerWidth <= 900 ? 2 : 3);
+}
+
+function _initStoriesCarousel() {
+  _storiesPage = 0;
+  _showStoriesPage(0);
 
   // Rimuovi nav precedente
-  const old = document.getElementById('stories-grid-nav');
-  if (old) old.remove();
+  const oldNav = document.getElementById('stories-grid-nav');
+  if (oldNav) oldNav.remove();
 
-  if (dynamicCount <= 0) return;
+  const grid  = document.getElementById('stories-static');
+  if (!grid) return;
+  const total = grid.querySelectorAll('.story-card').length;
+  const cols  = _storiesCols();
+  if (total <= cols) return; // nessuna freccia necessaria
 
-  // Frecce solo se le card dinamiche non stanno tutte nella prima "pagina"
-  const maxIndex = Math.max(0, dynamicCount - 1); // ogni clic avanza di 1 card
+  const pages   = Math.ceil(total / cols);
+  const section = document.querySelector('.stories-section');
+  if (!section) return;
 
   const nav = document.createElement('div');
   nav.id = 'stories-grid-nav';
   nav.className = 'stories-grid-nav';
   nav.innerHTML = `
-    <button class="stories-nav-btn" id="stories-nav-prev" onclick="storiesCarouselPrev()" aria-label="Precedente" ${_storiesCarouselIndex === 0 ? 'disabled' : ''}>&#8592;</button>
-    <span class="stories-nav-info" id="stories-nav-info">${_storiesCarouselIndex + 1} / ${dynamicCount}</span>
-    <button class="stories-nav-btn" id="stories-nav-next" onclick="storiesCarouselNext()" aria-label="Successivo" ${_storiesCarouselIndex >= maxIndex ? 'disabled' : ''}>&#8594;</button>`;
-
-  const section = document.querySelector('.stories-section');
-  if (section) section.appendChild(nav);
-  _applyStoriesOffset();
+    <button class="stories-nav-btn" id="stories-nav-prev" onclick="storiesCarouselPrev()" aria-label="Precedente" disabled>&#8592;</button>
+    <span class="stories-nav-info" id="stories-nav-info">1 / ${pages}</span>
+    <button class="stories-nav-btn" id="stories-nav-next" onclick="storiesCarouselNext()" aria-label="Successivo" ${pages <= 1 ? 'disabled' : ''}>&#8594;</button>`;
+  section.appendChild(nav);
 }
 
-function _applyStoriesOffset() {
-  const grid  = document.getElementById('stories-static');
+function _showStoriesPage(page) {
+  const grid = document.getElementById('stories-static');
   if (!grid) return;
-  const cards = Array.from(grid.querySelectorAll('.story-card-dynamic'));
-  if (!cards.length) return;
+  const cards = Array.from(grid.querySelectorAll('.story-card'));
+  const cols  = _storiesCols();
+  const start = page * cols;
+  const total = cards.length;
+  const pages = Math.ceil(total / cols);
 
-  // Nascondi/mostra le card dinamiche in base all'indice corrente
   cards.forEach((c, i) => {
-    c.style.display = (i === _storiesCarouselIndex) ? '' : 'none';
+    c.style.display = (i >= start && i < start + cols) ? '' : 'none';
   });
 
-  // Aggiorna pulsanti e contatore
-  const prevBtn  = document.getElementById('stories-nav-prev');
-  const nextBtn  = document.getElementById('stories-nav-next');
-  const infoEl   = document.getElementById('stories-nav-info');
-  if (prevBtn) prevBtn.disabled = (_storiesCarouselIndex === 0);
-  if (nextBtn) nextBtn.disabled = (_storiesCarouselIndex >= cards.length - 1);
-  if (infoEl)  infoEl.textContent = `${_storiesCarouselIndex + 1} / ${cards.length}`;
+  const prevBtn = document.getElementById('stories-nav-prev');
+  const nextBtn = document.getElementById('stories-nav-next');
+  const infoEl  = document.getElementById('stories-nav-info');
+  if (prevBtn) prevBtn.disabled = (page === 0);
+  if (nextBtn) nextBtn.disabled = (page >= pages - 1);
+  if (infoEl)  infoEl.textContent = `${page + 1} / ${pages}`;
 }
 
 function storiesCarouselPrev() {
-  if (_storiesCarouselIndex > 0) { _storiesCarouselIndex--; _applyStoriesOffset(); }
+  if (_storiesPage > 0) { _storiesPage--; _showStoriesPage(_storiesPage); }
 }
 function storiesCarouselNext() {
-  const grid  = document.getElementById('stories-static');
+  const grid = document.getElementById('stories-static');
   if (!grid) return;
-  const total = grid.querySelectorAll('.story-card-dynamic').length;
-  if (_storiesCarouselIndex < total - 1) { _storiesCarouselIndex++; _applyStoriesOffset(); }
+  const total = grid.querySelectorAll('.story-card').length;
+  const pages = Math.ceil(total / _storiesCols());
+  if (_storiesPage < pages - 1) { _storiesPage++; _showStoriesPage(_storiesPage); }
 }
 
-function openDynamicStoryPopup(dynamicIndex) {
-  const a = dynamicArticles[dynamicIndex];
-  if (!a) return;
-  const lang  = currentLang || 'it';
-  const popup = document.getElementById('modal-story');
-  if (!popup) return;
-  const eyebrow = document.getElementById('story-eyebrow');
-  const titleH  = document.getElementById('story-title-h');
-  const dateEl  = document.getElementById('story-date');
-  const imgEl   = document.getElementById('story-img');
-  const bodyEl  = document.getElementById('story-body-html');
-  if (eyebrow) eyebrow.textContent = a.catLang[lang] || a.cat;
-  if (titleH)  titleH.textContent  = a.titleLang[lang] || a.title;
-  if (dateEl)  dateEl.textContent  = '';
-  if (imgEl)   imgEl.src           = a.cardImg;
-  if (bodyEl)  bodyEl.innerHTML    = a.bodyLang?.[lang] || a.body || a.excerptLang[lang] || a.excerpt;
-  const prevEl = document.getElementById('story-prev');
-  const nextEl = document.getElementById('story-next');
-  const dotsEl = document.getElementById('story-dots');
-  if (prevEl) prevEl.style.visibility = 'hidden';
-  if (nextEl) nextEl.style.visibility = 'hidden';
-  if (dotsEl) dotsEl.innerHTML = '';
-  openModal('modal-story');
-}
+window.addEventListener('resize', () => {
+  const grid = document.getElementById('stories-static');
+  if (grid) _initStoriesCarousel();
+});
+
+/* openDynamicStoryPopup rimosso: i dinamici usano openStoryPopup(3+i) */
 
 /* Helper — accesso rapido alle stringhe i18n dal JS */
 function getTranslation(key) {
@@ -2659,6 +2652,9 @@ const storiesData = [
     }
   }
 ];
+
+// Snapshot immutabile degli articoli statici — usato per ricostruire storiesData dopo caricamento dinamico
+const _staticStoriesData = storiesData.slice();
 
 let currentStoryIndex = 0;
 
@@ -3494,38 +3490,34 @@ document.querySelectorAll('.filter-btn').forEach(btn => {
   // Patch static buttons to use interest form
   patchStaticButtons();
 
+  // Inizializza il carousel degli articoli (3 statici di default)
+  _initStoriesCarousel();
+
   // Load dynamic content from Google Sheets (if URL configured)
   initDynamicContent();
 
   /* ══════════════════════════════════════════════════════
-     FIX BACK-FORWARD CACHE: se l'utente torna con il tasto
-     "indietro" del browser, la pagina viene ripristinata
-     dal bfcache già caricata — ma l'overlay di loading
-     potrebbe essere ancora visibile o i contenuti non
-     renderizzati. Forziamo un re-check e hideLoding.
+     FIX BACK-FORWARD CACHE
+     Quando il browser ripristina la pagina dal bfcache
+     (tasto indietro), ci limitiamo a:
+     1) nascondere l'eventuale loading overlay rimasto aperto
+     2) ri-applicare i pulsanti statici (onclick handlers)
+     NON chiamiamo renderDynamicContent() per evitare
+     che il re-render pesante blocchi il thread principale.
   ══════════════════════════════════════════════════════ */
   window.addEventListener('pageshow', function(e) {
     if (e.persisted) {
-      // La pagina è stata ripristinata dal bfcache
-      const loadingEl = document.getElementById('sheets-loading');
-      if (loadingEl && !loadingEl.classList.contains('done')) {
-        hideLoding();
-      }
-      // Se i contenuti dinamici erano stati caricati, ri-renderizzali
-      if (sheetsLoaded && dynamicArticles.length > 0) {
-        renderDynamicContent();
-      }
+      hideLoding();
+      patchStaticButtons();
     }
   });
 
-  // Fallback: visibilitychange per browser che non supportano pageshow.persisted
-  document.addEventListener('visibilitychange', function() {
-    if (document.visibilityState === 'visible') {
-      const loadingEl = document.getElementById('sheets-loading');
-      if (loadingEl && !loadingEl.classList.contains('done')) {
-        // Se è passato più di 10s e il loading è ancora visibile, nascondilo
-        hideLoding();
-      }
+  // Pulisce il polling preview alla navigazione verso un'altra pagina,
+  // per evitare di accumulare intervalli multipli al ritorno con bfcache.
+  window.addEventListener('pagehide', function() {
+    if (_previewInterval) {
+      clearInterval(_previewInterval);
+      _previewInterval = null;
     }
   });
 
