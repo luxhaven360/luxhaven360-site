@@ -113,6 +113,101 @@
       }
     }
 
+
+    /* ══════════════════════════════════════════════════════
+       🔐 PREVIEW BANNER — visibile solo in modalità anteprima
+    ══════════════════════════════════════════════════════ */
+    #preview-banner {
+      position: fixed; bottom: 0; left: 0; right: 0; z-index: 9999;
+      background: linear-gradient(90deg, rgba(8,8,8,0.97), rgba(15,10,3,0.97));
+      border-top: 1px solid var(--gold);
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 0.75rem 2rem;
+      gap: 1.5rem;
+      backdrop-filter: blur(12px);
+      font-family: var(--font-body);
+    }
+    .preview-banner-left {
+      display: flex; align-items: center; gap: 1rem;
+    }
+    .preview-badge {
+      font-size: 0.52rem; letter-spacing: 0.25em; text-transform: uppercase;
+      background: var(--gold); color: var(--black);
+      padding: 0.2rem 0.65rem; font-weight: 600;
+      flex-shrink: 0;
+    }
+    .preview-label {
+      font-size: 0.7rem; color: var(--cream); letter-spacing: 0.06em;
+    }
+    .preview-label em {
+      color: var(--muted); font-style: normal; font-size: 0.62rem; margin-left: 0.5rem;
+    }
+    #preview-timestamp {
+      color: var(--gold-lt); font-size: 0.6rem; letter-spacing: 0.05em;
+    }
+    .preview-banner-actions {
+      display: flex; align-items: center; gap: 0.75rem;
+    }
+    #preview-refresh-btn {
+      display: inline-flex; align-items: center; gap: 0.4rem;
+      font-family: var(--font-body); font-size: 0.6rem;
+      letter-spacing: 0.18em; text-transform: uppercase;
+      color: var(--gold); background: none;
+      border: 1px solid rgba(201,168,76,0.4);
+      padding: 0.3rem 0.9rem; cursor: pointer;
+      transition: all 0.25s;
+    }
+    #preview-refresh-btn:hover { background: rgba(201,168,76,0.1); border-color: var(--gold); }
+    #preview-refresh-btn.spinning svg { animation: spin 0.8s linear infinite; }
+    @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+    #preview-close-btn {
+      background: none; border: none; color: var(--muted);
+      font-size: 1rem; cursor: pointer; padding: 0.15rem 0.3rem;
+      transition: color 0.2s; line-height: 1;
+    }
+    #preview-close-btn:hover { color: var(--cream); }
+    .preview-polling-dot {
+      width: 7px; height: 7px; border-radius: 50%;
+      background: var(--gold); flex-shrink: 0;
+      animation: pulse-dot 2s ease-in-out infinite;
+    }
+    @keyframes pulse-dot {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.4; transform: scale(0.7); }
+    }
+    @media (max-width: 600px) {
+      #preview-banner { flex-direction: column; align-items: flex-start; padding: 0.75rem 1.2rem; gap: 0.75rem; }
+    }
+
+    /* ── DRAFT INDICATOR (preview mode only) */
+    .gallery-card.is-draft { opacity: 0.7; }
+    .gallery-card.is-draft::before {
+      content: '● BOZZA';
+      position: absolute; top: 0.6rem; left: 0.6rem; z-index: 5;
+      font-family: var(--font-body); font-size: 0.48rem;
+      letter-spacing: 0.2em; font-weight: 600;
+      background: rgba(255,80,80,0.9); color: #fff;
+      padding: 0.2rem 0.55rem; border-radius: 2px;
+    }
+    .supercar-card.is-draft { opacity: 0.7; position: relative; }
+    .supercar-card.is-draft::before {
+      content: '● BOZZA';
+      position: absolute; top: 0.6rem; left: 0.6rem; z-index: 5;
+      font-family: var(--font-body); font-size: 0.48rem;
+      letter-spacing: 0.2em; font-weight: 600;
+      background: rgba(255,80,80,0.9); color: #fff;
+      padding: 0.2rem 0.55rem; border-radius: 2px;
+    }
+    .story-card.is-draft { opacity: 0.7; position: relative; }
+    .story-card.is-draft::before {
+      content: '● BOZZA';
+      position: absolute; top: 0.6rem; left: 0.6rem; z-index: 5;
+      font-family: var(--font-body); font-size: 0.48rem;
+      letter-spacing: 0.2em; font-weight: 600;
+      background: rgba(255,80,80,0.9); color: #fff;
+      padding: 0.2rem 0.55rem; border-radius: 2px;
+    }
+
     /* ── HERO ── */
     .showcase-hero {
       min-height: 70vh; display: flex; align-items: flex-end;
@@ -1258,27 +1353,55 @@
 const APPS_SCRIPT_URL = '';   // ← es: 'https://script.google.com/macros/s/AKfyc.../exec'
 
 /* ══════════════════════════════════════════════════════
+   🔐  ANTEPRIMA PRIVATA (Creator Preview Mode)
+   Per attivare la modalità anteprima, apri la pagina con:
+   showcase.html?preview=LH360_PREVIEW_PRIVATA
+   Solo tu conosci questo token — gli altri utenti vedono
+   esclusivamente i contenuti con Attivo=TRUE nel foglio.
+══════════════════════════════════════════════════════ */
+const PREVIEW_TOKEN = 'LH360_PREVIEW_PRIVATA';
+const _urlParams    = new URLSearchParams(window.location.search);
+const PREVIEW_MODE  = _urlParams.get('preview') === PREVIEW_TOKEN;
+
+/* ══════════════════════════════════════════════════════
    DYNAMIC DATA — verrà popolato dalla chiamata API
 ══════════════════════════════════════════════════════ */
 let dynamicProperties = {};   // { id: {...} }
 let dynamicSupercars  = {};   // { id: {...} }
 let dynamicArticles   = [];   // [ {...} ]
 let sheetsLoaded      = false;
+let _previewInterval  = null; // polling per aggiornamenti in tempo reale
 
 /* ══════════════════════════════════════════════════════
    INIT — eseguito all'avvio
 ══════════════════════════════════════════════════════ */
 async function initDynamicContent() {
   if (!APPS_SCRIPT_URL) {
-    // Nessun URL configurato: usa dati statici, nascondi loading
     hideLoding();
+    if (PREVIEW_MODE) showPreviewBanner(false);
     return;
   }
 
-  setLoadingStatus('Connessione a Google Sheets…');
+  // Se siamo in preview mode, mostra subito il banner
+  if (PREVIEW_MODE) showPreviewBanner(true);
+
+  await _fetchAndRender();
+
+  // In preview mode: polling ogni 30 secondi per aggiornamenti in tempo reale
+  if (PREVIEW_MODE) {
+    _previewInterval = setInterval(() => _fetchAndRender(true), 30000);
+  }
+}
+
+/* Fetch dati e aggiorna UI — usato sia all'avvio che dal polling */
+async function _fetchAndRender(silent = false) {
+  if (!silent) setLoadingStatus('Connessione a Google Sheets…');
 
   try {
-    const response = await fetch(APPS_SCRIPT_URL + '?action=all', {
+    // In preview mode, invia il token → il backend restituisce TUTTI i record
+    // inclusi quelli con Attivo=FALSE (bozze, contenuti in preparazione)
+    const previewParam = PREVIEW_MODE ? '&preview=' + PREVIEW_TOKEN : '';
+    const response = await fetch(APPS_SCRIPT_URL + '?action=all' + previewParam, {
       method: 'GET',
       mode: 'cors',
       cache: 'no-store'
@@ -1289,9 +1412,12 @@ async function initDynamicContent() {
 
     if (data.status !== 'ok') throw new Error(data.error || 'Errore API');
 
-    setLoadingStatus('Elaborazione dati…');
+    if (!silent) setLoadingStatus('Elaborazione dati…');
 
-    // ── Mappa proprietà per ID
+    // Resetta e rimappa i dati
+    dynamicProperties = {};
+    dynamicSupercars  = {};
+
     if (Array.isArray(data.properties)) {
       data.properties.forEach(row => {
         const id   = row['ID'];
@@ -1305,19 +1431,20 @@ async function initDynamicContent() {
       });
     }
 
-    // ── Mappa articoli
     if (Array.isArray(data.articles)) {
       dynamicArticles = data.articles.map(sheetArticleToItem);
     }
 
-    // ── Aggiorna UI
     renderDynamicContent();
     sheetsLoaded = true;
+
+    // In preview mode: aggiorna il timestamp dell'ultimo refresh
+    if (PREVIEW_MODE) updatePreviewTimestamp(data.timestamp);
 
   } catch (err) {
     console.warn('LuxHaven360: caricamento Sheets fallito, uso dati statici.', err.message);
   } finally {
-    hideLoding();
+    if (!silent) hideLoding();
   }
 }
 
@@ -1398,7 +1525,8 @@ function sheetRowToItem(row) {
     featured:  row['In Evidenza'] === 'TRUE',
     potenza:   row['Potenza'],
     speed100:  row['0-100 km/h'],
-    vmax:      row['Velocità Max']
+    vmax:      row['Velocità Max'],
+    isDraft:   row['_preview_draft'] === 'TRUE'
   };
 }
 
@@ -1531,8 +1659,9 @@ function renderSupercarSection(cars, lang) {
     const badge = c.badge === 'testdrive'
       ? getTranslation('sc.badge.testdrive')
       : getTranslation('sc.badge.exclusive');
+    const draftClass = (PREVIEW_MODE && c.isDraft) ? ' is-draft' : '';
     return `
-      <div class="supercar-card">
+      <div class="supercar-card${draftClass}">
         <img src="${c.cardImg}" alt="${c.name}" loading="lazy" />
         <div class="supercar-overlay">
           <span class="supercar-badge">${badge}</span>
@@ -1555,8 +1684,19 @@ function renderStoriesSection(articles, lang) {
   const grid = document.querySelector('.stories-grid');
   if (!grid) return;
 
-  grid.innerHTML = articles.slice(0, 3).map((a, i) => `
-    <div class="story-card" onclick="openStoryPopup(${i})">
+  grid.innerHTML = articles.slice(0, 3).map((a, i) => {
+    const draftClass = (PREVIEW_MODE && a.isDraft) ? ' is-draft' : '';
+    return `
+    <div class="story-card${draftClass}" onclick="openStoryPopup(${i})">
+      <img class="story-img" src="${a.cardImg}" alt="${a.titleLang[lang] || a.title}" loading="lazy" />
+      <div class="story-body">
+        <p class="story-cat">${a.catLang[lang] || a.cat}</p>
+        <h3 class="story-title">${a.titleLang[lang] || a.title}</h3>
+        <p class="story-excerpt">${a.excerptLang[lang] || a.excerpt}</p>
+        <span class="story-read-more">${getTranslation('story.read')}</span>
+      </div>
+    </div>`;
+  }).join('');
       <img class="story-img" src="${a.cardImg}" alt="${a.titleLang[lang] || a.title}" loading="lazy" />
       <div class="story-body">
         <p class="story-cat">${a.catLang[lang] || a.cat}</p>
@@ -3182,6 +3322,60 @@ document.querySelectorAll('.filter-btn').forEach(btn => {
   // Load dynamic content from Google Sheets (if URL configured)
   initDynamicContent();
 
+
+/* ══════════════════════════════════════════════════════
+   🔐 PREVIEW MODE — helper functions
+══════════════════════════════════════════════════════ */
+function showPreviewBanner(hasUrl) {
+  const banner = document.getElementById('preview-banner');
+  if (banner) banner.style.display = 'flex';
+  if (!hasUrl) {
+    const ts = document.getElementById('preview-timestamp');
+    if (ts) ts.textContent = '⚠️  APPS_SCRIPT_URL non configurato — dati statici in uso.';
+    const dot = document.getElementById('preview-dot');
+    if (dot) dot.style.background = 'var(--muted)';
+  }
+}
+
+function updatePreviewTimestamp(isoTs) {
+  const el = document.getElementById('preview-timestamp');
+  if (!el) return;
+  const d = isoTs ? new Date(isoTs) : new Date();
+  el.textContent = 'Ultimo aggiornamento: ' + d.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+}
+
+async function previewManualRefresh() {
+  const btn = document.getElementById('preview-refresh-btn');
+  if (btn) btn.classList.add('spinning');
+  await _fetchAndRender(false);
+  if (btn) btn.classList.remove('spinning');
+}
+
+
 </script>
+
+<!-- 🔐 PREVIEW BANNER — iniettato via JS solo in modalità anteprima -->
+<div id="preview-banner" style="display:none;">
+  <div class="preview-banner-left">
+    <div class="preview-polling-dot" id="preview-dot"></div>
+    <span class="preview-badge">Anteprima</span>
+    <div>
+      <span class="preview-label">
+        Modalità Creatore — contenuti live dal foglio Google
+        <em>· Aggiornamento automatico ogni 30 sec</em>
+      </span>
+      <br>
+      <span id="preview-timestamp">In attesa del primo caricamento…</span>
+    </div>
+  </div>
+  <div class="preview-banner-actions">
+    <button id="preview-refresh-btn" onclick="previewManualRefresh()" title="Aggiorna ora">
+      <svg id="preview-refresh-icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 4v6h6M23 20v-6h-6"/><path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15"/></svg>
+      Aggiorna ora
+    </button>
+    <button id="preview-close-btn" onclick="document.getElementById('preview-banner').style.display='none'" title="Nascondi banner">✕</button>
+  </div>
+</div>
+
 </body>
 </html>
