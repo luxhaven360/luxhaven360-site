@@ -532,53 +532,23 @@
     }
     .story-card:hover .story-read-more { opacity: 1; }
 
-    /* ── CAROUSEL ARTICOLI DINAMICI ── */
-    .stories-dynamic-wrapper {
-      margin-top: 3rem;
-    }
-    .stories-dynamic-label {
-      font-size: 0.75rem; letter-spacing: 0.15em; text-transform: uppercase;
-      color: var(--gold); margin-bottom: 1.2rem; text-align: center;
-    }
-    .stories-dynamic-nav {
-      display: flex; align-items: stretch; gap: 0;
+    /* ── NAVIGAZIONE ARTICOLI DINAMICI ── */
+    .stories-grid-nav {
+      display: flex; align-items: center; justify-content: center;
+      gap: 1rem; margin-top: 2rem;
     }
     .stories-nav-btn {
       background: rgba(201,168,76,0.08); border: 1px solid rgba(201,168,76,0.25);
-      color: var(--gold); font-size: 1.3rem; cursor: pointer;
-      padding: 0 1.1rem; border-radius: 0; transition: background 0.2s, color 0.2s;
-      flex-shrink: 0; display: flex; align-items: center;
+      color: var(--gold); font-size: 1.1rem; cursor: pointer;
+      width: 2.4rem; height: 2.4rem; border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      transition: background 0.2s, color 0.2s;
     }
-    .stories-nav-btn:hover { background: rgba(201,168,76,0.18); color: var(--cream); }
+    .stories-nav-btn:hover { background: rgba(201,168,76,0.2); color: var(--cream); }
     .stories-nav-btn:disabled { opacity: 0.3; cursor: default; }
-    #stories-nav-prev { border-radius: 6px 0 0 6px; }
-    #stories-nav-next { border-radius: 0 6px 6px 0; }
-    .stories-dynamic-track-outer {
-      overflow: hidden; flex: 1;
-    }
-    .stories-dynamic-track {
-      display: flex; gap: 1.5rem;
-      transition: transform 0.4s cubic-bezier(0.4,0,0.2,1);
-      padding: 0 0.5rem;
-    }
-    .stories-dynamic-track .story-card {
-      flex: 0 0 calc((100% - 3rem) / 3);
-      min-width: 240px;
-    }
-    .stories-nav-dots {
-      display: flex; justify-content: center; gap: 0.5rem; margin-top: 1rem;
-    }
-    .stories-nav-dot {
-      width: 7px; height: 7px; border-radius: 50%;
-      background: rgba(201,168,76,0.3); cursor: pointer;
-      transition: background 0.2s, transform 0.2s;
-    }
-    .stories-nav-dot.active { background: var(--gold); transform: scale(1.3); }
-    @media (max-width: 768px) {
-      .stories-dynamic-track .story-card { flex: 0 0 calc(50% - 0.75rem); }
-    }
-    @media (max-width: 500px) {
-      .stories-dynamic-track .story-card { flex: 0 0 85%; }
+    .stories-nav-info {
+      font-size: 0.7rem; letter-spacing: 0.15em; color: var(--muted);
+      min-width: 3rem; text-align: center;
     }
 
     /* ── CTA FOOTER ── */
@@ -1285,18 +1255,7 @@
         </div>
       </div>
     </div>
-    <!-- ░░ ARTICOLI DINAMICI — carousel con frecce (visibile solo se presenti) ░░ -->
-    <div class="stories-dynamic-wrapper" id="stories-dynamic-wrapper" style="display:none;">
-      <p class="stories-dynamic-label" data-i18n="stories.dynamic.label">Articoli dal foglio Google</p>
-      <div class="stories-dynamic-nav">
-        <button class="stories-nav-btn" id="stories-nav-prev" onclick="storiesCarouselPrev()" aria-label="Precedente">&#8592;</button>
-        <div class="stories-dynamic-track-outer">
-          <div class="stories-dynamic-track" id="stories-dynamic-track"></div>
-        </div>
-        <button class="stories-nav-btn" id="stories-nav-next" onclick="storiesCarouselNext()" aria-label="Successivo">&#8594;</button>
-      </div>
-      <div class="stories-nav-dots" id="stories-nav-dots"></div>
-    </div>
+
   </section>
 </div><!-- /#sec-editorial -->
 
@@ -1788,92 +1747,101 @@ function renderSupercarSection(cars, lang) {
 }
 
 function renderStoriesSection(articles, lang) {
-  // Gli articoli STATICI rimangono sempre visibili — non li tocchiamo.
-  // Gli articoli DINAMICI vengono mostrati in un carousel separato sotto.
+  // Gli articoli STATICI rimangono sempre visibili (id="stories-static").
+  // Gli articoli DINAMICI vengono AGGIUNTI nella stessa grid, dopo i 3 statici.
+  // Se il totale supera 3 visibili, compaiono frecce ← → per scorrere il gruppo dinamico.
 
-  const wrapper = document.getElementById('stories-dynamic-wrapper');
-  const track   = document.getElementById('stories-dynamic-track');
-  if (!wrapper || !track) return;
+  const grid = document.getElementById('stories-static');
+  if (!grid) return;
 
-  if (!articles || articles.length === 0) {
-    wrapper.style.display = 'none';
-    return;
-  }
+  // Rimuovi eventuali card dinamiche precedenti (classe story-card-dynamic)
+  grid.querySelectorAll('.story-card-dynamic').forEach(el => el.remove());
 
-  track.innerHTML = articles.map((a, i) => {
+  // Rimuovi frecce precedenti
+  const existingNav = document.getElementById('stories-grid-nav');
+  if (existingNav) existingNav.remove();
+
+  if (!articles || articles.length === 0) return;
+
+  // Aggiungi le card dinamiche alla stessa grid
+  articles.forEach((a, i) => {
     const draftClass = (PREVIEW_MODE && a.isDraft) ? ' is-draft' : '';
-    return `
-    <div class="story-card${draftClass}" onclick="openDynamicStoryPopup(${i})">
+    const div = document.createElement('div');
+    div.className = `story-card story-card-dynamic${draftClass}`;
+    div.onclick = () => openDynamicStoryPopup(i);
+    div.innerHTML = `
       <img class="story-img" src="${a.cardImg}" alt="${a.titleLang[lang] || a.title}" loading="lazy" />
       <div class="story-body">
         <p class="story-cat">${a.catLang[lang] || a.cat}</p>
         <h3 class="story-title">${a.titleLang[lang] || a.title}</h3>
         <p class="story-excerpt">${a.excerptLang[lang] || a.excerpt}</p>
         <span class="story-read-more">${getTranslation('story.read')}</span>
-      </div>
-    </div>`;
-  }).join('');
+      </div>`;
+    grid.appendChild(div);
+  });
 
-  wrapper.style.display = '';
+  // Se ci sono articoli dinamici, aggiungi le frecce di navigazione sotto la grid
   _storiesCarouselIndex = 0;
-  _updateStoriesCarousel();
+  _renderStoriesNav(articles.length);
 }
 
 let _storiesCarouselIndex = 0;
-const _storiesCarouselVisible = () => {
-  if (window.innerWidth <= 500) return 1;
-  if (window.innerWidth <= 768) return 2;
-  return 3;
-};
 
-function _updateStoriesCarousel() {
-  const track   = document.getElementById('stories-dynamic-track');
-  const dotsEl  = document.getElementById('stories-nav-dots');
-  const prevBtn = document.getElementById('stories-nav-prev');
-  const nextBtn = document.getElementById('stories-nav-next');
-  if (!track) return;
+function _renderStoriesNav(dynamicCount) {
+  // Quante card dinamiche sono visibili per riga in base al breakpoint
+  const cols = window.innerWidth <= 500 ? 1 : (window.innerWidth <= 768 ? 2 : 3);
 
-  const cards    = track.querySelectorAll('.story-card');
-  const total    = cards.length;
-  const visible  = _storiesCarouselVisible();
-  const maxIndex = Math.max(0, total - visible);
+  // Rimuovi nav precedente
+  const old = document.getElementById('stories-grid-nav');
+  if (old) old.remove();
 
-  _storiesCarouselIndex = Math.min(_storiesCarouselIndex, maxIndex);
+  if (dynamicCount <= 0) return;
 
-  const cardWidth = cards[0] ? cards[0].offsetWidth : 0;
-  const gap       = 24; // 1.5rem
-  const offset    = _storiesCarouselIndex * (cardWidth + gap);
-  track.style.transform = `translateX(-${offset}px)`;
+  // Frecce solo se le card dinamiche non stanno tutte nella prima "pagina"
+  const maxIndex = Math.max(0, dynamicCount - 1); // ogni clic avanza di 1 card
 
+  const nav = document.createElement('div');
+  nav.id = 'stories-grid-nav';
+  nav.className = 'stories-grid-nav';
+  nav.innerHTML = `
+    <button class="stories-nav-btn" id="stories-nav-prev" onclick="storiesCarouselPrev()" aria-label="Precedente" ${_storiesCarouselIndex === 0 ? 'disabled' : ''}>&#8592;</button>
+    <span class="stories-nav-info" id="stories-nav-info">${_storiesCarouselIndex + 1} / ${dynamicCount}</span>
+    <button class="stories-nav-btn" id="stories-nav-next" onclick="storiesCarouselNext()" aria-label="Successivo" ${_storiesCarouselIndex >= maxIndex ? 'disabled' : ''}>&#8594;</button>`;
+
+  const section = document.querySelector('.stories-section');
+  if (section) section.appendChild(nav);
+  _applyStoriesOffset();
+}
+
+function _applyStoriesOffset() {
+  const grid  = document.getElementById('stories-static');
+  if (!grid) return;
+  const cards = Array.from(grid.querySelectorAll('.story-card-dynamic'));
+  if (!cards.length) return;
+
+  // Nascondi/mostra le card dinamiche in base all'indice corrente
+  cards.forEach((c, i) => {
+    c.style.display = (i === _storiesCarouselIndex) ? '' : 'none';
+  });
+
+  // Aggiorna pulsanti e contatore
+  const prevBtn  = document.getElementById('stories-nav-prev');
+  const nextBtn  = document.getElementById('stories-nav-next');
+  const infoEl   = document.getElementById('stories-nav-info');
   if (prevBtn) prevBtn.disabled = (_storiesCarouselIndex === 0);
-  if (nextBtn) nextBtn.disabled = (_storiesCarouselIndex >= maxIndex);
-
-  if (dotsEl) {
-    const pages = maxIndex + 1;
-    dotsEl.innerHTML = Array.from({length: pages}, (_, i) =>
-      `<span class="stories-nav-dot${i === _storiesCarouselIndex ? ' active' : ''}" onclick="storiesCarouselGoTo(${i})"></span>`
-    ).join('');
-  }
+  if (nextBtn) nextBtn.disabled = (_storiesCarouselIndex >= cards.length - 1);
+  if (infoEl)  infoEl.textContent = `${_storiesCarouselIndex + 1} / ${cards.length}`;
 }
 
 function storiesCarouselPrev() {
-  if (_storiesCarouselIndex > 0) { _storiesCarouselIndex--; _updateStoriesCarousel(); }
+  if (_storiesCarouselIndex > 0) { _storiesCarouselIndex--; _applyStoriesOffset(); }
 }
 function storiesCarouselNext() {
-  const track = document.getElementById('stories-dynamic-track');
-  if (!track) return;
-  const total   = track.querySelectorAll('.story-card').length;
-  const visible = _storiesCarouselVisible();
-  if (_storiesCarouselIndex < total - visible) { _storiesCarouselIndex++; _updateStoriesCarousel(); }
+  const grid  = document.getElementById('stories-static');
+  if (!grid) return;
+  const total = grid.querySelectorAll('.story-card-dynamic').length;
+  if (_storiesCarouselIndex < total - 1) { _storiesCarouselIndex++; _applyStoriesOffset(); }
 }
-function storiesCarouselGoTo(idx) {
-  _storiesCarouselIndex = idx;
-  _updateStoriesCarousel();
-}
-window.addEventListener('resize', () => {
-  const w = document.getElementById('stories-dynamic-wrapper');
-  if (w && w.style.display !== 'none') _updateStoriesCarousel();
-});
 
 function openDynamicStoryPopup(dynamicIndex) {
   const a = dynamicArticles[dynamicIndex];
