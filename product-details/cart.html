@@ -1229,7 +1229,19 @@ window.addEventListener('DOMContentLoaded', () => {
         <span class="summary-value" id="total">€ 0,00</span>
     </div>
 
-    <button type="button" class="checkout-btn" id="checkoutBtn" data-i18n="cart_checkout_btn">Procedi al Checkout</button>
+    <!-- EARLY ACCESS — nascosto in admin mode -->
+    <div id="lhCartEarlyWrap">
+      <div class="early-access-badge" style="margin-bottom:0.7rem">
+        <span class="pulse-dot"></span>
+        <span>🥇 Founder Reservation Program</span>
+      </div>
+      <button type="button" id="cartReserveBtn" class="btn-reserve">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+        Prenota Ora — Early Access
+      </button>
+    </div>
+    <!-- ADMIN MODE — visibile solo in admin mode -->
+    <button type="button" class="checkout-btn" id="checkoutBtn" data-i18n="cart_checkout_btn" style="display:none">Procedi al Checkout</button>
 
     <div class="trust-badges">
         <div class="trust-badge">
@@ -2618,5 +2630,731 @@ window.addEventListener('storage', (event) => {
         if (box) box.classList.toggle('open');
     }
 </script>
+<!-- ══════════════════════════════════════════════════════
+     FOUNDER RESERVATION PROGRAM — v2.0
+     Early Access Phase | Admin via sequenza tastiera
+══════════════════════════════════════════════════════ -->
+<style>
+:root {
+  --founder-gold: #c9a84c;
+  --founder-gold-light: #e8c97a;
+  --founder-gold-dim: rgba(201,168,76,0.12);
+  --founder-border: rgba(201,168,76,0.22);
+}
+
+/* ── Reserve Button ─────────────────────────────────── */
+.btn-reserve {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.55rem;
+  width: 100%;
+  padding: 1.05rem 1.75rem;
+  background: linear-gradient(135deg, #c9a84c 0%, #e8c97a 48%, #b8902e 100%);
+  color: #0a0a0b;
+  font-weight: 700;
+  font-size: 0.97rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  border: none;
+  border-radius: 0.75rem;
+  cursor: pointer;
+  position: relative;
+  overflow: hidden;
+  transition: transform 0.3s cubic-bezier(0.16,1,0.3,1),
+              box-shadow 0.3s cubic-bezier(0.16,1,0.3,1);
+  box-shadow: 0 4px 24px rgba(201,168,76,0.28), 0 1px 3px rgba(0,0,0,0.4);
+}
+.btn-reserve::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(135deg, rgba(255,255,255,0.18) 0%, transparent 55%);
+  opacity: 0;
+  transition: opacity 0.28s;
+}
+.btn-reserve:hover { transform: translateY(-2px); box-shadow: 0 8px 32px rgba(201,168,76,0.42), 0 2px 8px rgba(0,0,0,0.45); }
+.btn-reserve:hover::before { opacity: 1; }
+.btn-reserve:active { transform: translateY(0); }
+
+/* ── Early Access Badge ─────────────────────────────── */
+.early-access-badge {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  padding: 0.42rem 0.95rem;
+  background: var(--founder-gold-dim);
+  border: 1px solid var(--founder-border);
+  border-radius: 2rem;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--founder-gold);
+  margin-bottom: 0.7rem;
+}
+.early-access-badge .pulse-dot {
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--founder-gold);
+  flex-shrink: 0;
+  animation: lh-pulse-gold 2s infinite;
+}
+@keyframes lh-pulse-gold {
+  0%,100% { opacity:1; transform:scale(1); }
+  50%      { opacity:0.45; transform:scale(0.65); }
+}
+
+/* ── Modal ──────────────────────────────────────────── */
+#founderModal {
+  position: fixed; inset: 0; z-index: 99999;
+  display: none; align-items: center; justify-content: center;
+  padding: 1rem;
+  opacity: 0;
+  transition: opacity 0.32s cubic-bezier(0.16,1,0.3,1);
+}
+#founderModal.lh-open { display: flex; }
+#founderModal.lh-visible { opacity: 1; }
+#founderModal .lh-backdrop {
+  position: absolute; inset: 0;
+  background: rgba(0,0,0,0.82);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+}
+#founderModal .lh-card {
+  position: relative; z-index: 1;
+  width: 100%; max-width: 510px;
+  background: #111113;
+  border: 1px solid rgba(201,168,76,0.22);
+  border-radius: 1.5rem;
+  overflow: hidden;
+  box-shadow: 0 24px 80px rgba(0,0,0,0.75), 0 0 0 1px rgba(201,168,76,0.07);
+  transform: translateY(22px) scale(0.97);
+  transition: transform 0.38s cubic-bezier(0.16,1,0.3,1);
+}
+#founderModal.lh-visible .lh-card { transform: translateY(0) scale(1); }
+.lh-gold-bar { height: 3px; background: linear-gradient(90deg, transparent, #c9a84c, #e8c97a, #c9a84c, transparent); }
+.lh-inner { padding: 1.9rem 2rem 2.1rem; }
+.lh-close {
+  position: absolute; top: 1.2rem; right: 1.2rem;
+  width: 1.9rem; height: 1.9rem;
+  background: rgba(255,255,255,0.07); border: none; border-radius: 50%;
+  color: #71717a; font-size: 0.95rem; line-height: 1;
+  cursor: pointer; display: flex; align-items: center; justify-content: center;
+  transition: all 0.2s; z-index: 2;
+}
+.lh-close:hover { background: rgba(255,255,255,0.13); color: #fff; }
+
+.lh-badge-pill {
+  display: inline-flex; align-items: center; gap: 0.38rem;
+  padding: 0.32rem 0.8rem;
+  background: var(--founder-gold-dim);
+  border: 1px solid var(--founder-border);
+  border-radius: 2rem;
+  font-size: 0.68rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase;
+  color: var(--founder-gold); margin-bottom: 1.1rem;
+}
+.lh-title {
+  font-size: 1.6rem; font-weight: 300; color: #fafafa;
+  letter-spacing: -0.02em; line-height: 1.2; margin-bottom: 0.45rem;
+}
+.lh-subtitle { font-size: 0.86rem; color: #71717a; line-height: 1.5; margin-bottom: 1.4rem; }
+
+.lh-phases { display: grid; grid-template-columns: 1fr 1fr; gap: 0.7rem; margin-bottom: 1.6rem; }
+.lh-phase {
+  padding: 0.8rem 0.9rem;
+  border: 1px solid rgba(255,255,255,0.06);
+  background: rgba(255,255,255,0.025);
+  border-radius: 0.7rem;
+}
+.lh-phase.active { border-color: var(--founder-border); background: var(--founder-gold-dim); }
+.lh-phase-label { font-size: 0.67rem; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--founder-gold); margin-bottom: 0.28rem; }
+.lh-phase-desc  { font-size: 0.74rem; color: #a1a1aa; line-height: 1.4; }
+
+.lh-product-row {
+  display: flex; align-items: center; gap: 0.7rem;
+  padding: 0.8rem 0.95rem;
+  background: rgba(255,255,255,0.035);
+  border: 1px solid rgba(255,255,255,0.065);
+  border-radius: 0.7rem; margin-bottom: 1.4rem;
+}
+.lh-product-row .lh-icon { font-size: 1.4rem; flex-shrink: 0; }
+.lh-product-label { font-size: 0.67rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: #52525b; margin-bottom: 0.12rem; }
+.lh-product-name  { font-size: 0.87rem; font-weight: 500; color: #e4e4e7; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+.lh-form { display: flex; flex-direction: column; gap: 0.9rem; }
+.lh-field { display: flex; flex-direction: column; gap: 0.38rem; }
+.lh-field label { font-size: 0.77rem; font-weight: 600; letter-spacing: 0.03em; color: #a1a1aa; }
+.lh-field input {
+  padding: 0.78rem 0.95rem;
+  background: rgba(255,255,255,0.045);
+  border: 1px solid rgba(255,255,255,0.09);
+  border-radius: 0.62rem; color: #fafafa; font-size: 0.94rem;
+  transition: all 0.22s; outline: none; width: 100%;
+}
+.lh-field input::placeholder { color: #52525b; }
+.lh-field input:focus { border-color: rgba(201,168,76,0.48); background: rgba(201,168,76,0.05); box-shadow: 0 0 0 3px rgba(201,168,76,0.09); }
+.lh-field input.lh-err { border-color: #ef4444; }
+.lh-error-msg { font-size: 0.77rem; color: #ef4444; display: none; margin-top: -0.3rem; }
+.lh-error-msg.lh-show { display: block; }
+
+.lh-submit {
+  margin-top: 0.4rem; padding: 0.92rem;
+  background: linear-gradient(135deg, #c9a84c 0%, #e8c97a 50%, #b8902e 100%);
+  color: #0a0a0b; font-weight: 700; font-size: 0.9rem;
+  letter-spacing: 0.05em; text-transform: uppercase;
+  border: none; border-radius: 0.72rem; cursor: pointer;
+  transition: all 0.28s; box-shadow: 0 4px 18px rgba(201,168,76,0.28);
+}
+.lh-submit:hover { box-shadow: 0 6px 26px rgba(201,168,76,0.42); transform: translateY(-1px); }
+.lh-submit:disabled { opacity: 0.55; cursor: not-allowed; transform: none; }
+.lh-privacy { font-size: 0.7rem; color: #3f3f46; text-align: center; line-height: 1.5; margin-top: 0.7rem; }
+
+/* Success / Waitlist */
+.lh-success, .lh-waitlist { display: none; text-align: center; padding: 1.2rem 0 0.4rem; }
+.lh-success.lh-show, .lh-waitlist.lh-show { display: block; }
+.lh-big-icon { font-size: 3.2rem; display: block; margin-bottom: 0.9rem; animation: lh-pop 0.5s cubic-bezier(0.34,1.56,0.64,1) both; }
+@keyframes lh-pop { from { transform: scale(0.4); opacity:0; } to { transform: scale(1); opacity:1; } }
+.lh-success-title { font-size: 1.35rem; font-weight: 600; color: var(--founder-gold); margin-bottom: 0.7rem; }
+.lh-success-msg   { font-size: 0.86rem; color: #a1a1aa; line-height: 1.6; margin-bottom: 1.5rem; }
+.lh-founder-badge {
+  display: inline-flex; align-items: center; gap: 0.45rem;
+  padding: 0.46rem 1.15rem;
+  background: var(--founder-gold-dim); border: 1px solid var(--founder-border);
+  border-radius: 2rem; font-size: 0.77rem; font-weight: 700;
+  letter-spacing: 0.06em; color: var(--founder-gold); margin-bottom: 1.5rem;
+}
+.lh-close-btn {
+  padding: 0.75rem 2rem;
+  background: rgba(255,255,255,0.07);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 0.65rem; color: #e4e4e7;
+  font-size: 0.88rem; font-weight: 500; cursor: pointer;
+  transition: all 0.22s;
+}
+.lh-close-btn:hover { background: rgba(255,255,255,0.12); }
+
+/* ── Admin Mode ─────────────────────────────────────── */
+#lhAdminPanel {
+  position: fixed; inset: 0; z-index: 999999;
+  display: none; align-items: center; justify-content: center;
+  padding: 1rem;
+  background: rgba(0,0,0,0.88);
+  backdrop-filter: blur(18px);
+  opacity: 0; transition: opacity 0.25s;
+}
+#lhAdminPanel.lh-open { display: flex; }
+#lhAdminPanel.lh-visible { opacity: 1; }
+.lh-admin-card {
+  background: #0d0d0f;
+  border: 1px solid rgba(239,68,68,0.3);
+  border-radius: 1.2rem;
+  padding: 2rem;
+  width: 100%; max-width: 360px;
+  box-shadow: 0 0 0 1px rgba(239,68,68,0.1), 0 24px 60px rgba(0,0,0,0.8);
+  transform: scale(0.95);
+  transition: transform 0.28s cubic-bezier(0.16,1,0.3,1);
+}
+#lhAdminPanel.lh-visible .lh-admin-card { transform: scale(1); }
+.lh-admin-title {
+  font-size: 1rem; font-weight: 700; color: #f87171;
+  letter-spacing: 0.08em; text-transform: uppercase;
+  text-align: center; margin-bottom: 0.4rem;
+}
+.lh-admin-sub { font-size: 0.8rem; color: #52525b; text-align: center; margin-bottom: 1.4rem; }
+.lh-admin-input {
+  width: 100%; padding: 0.8rem 1rem;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(239,68,68,0.2);
+  border-radius: 0.6rem; color: #fafafa; font-size: 1rem;
+  letter-spacing: 0.1em; text-align: center;
+  outline: none; margin-bottom: 1rem; transition: all 0.2s;
+}
+.lh-admin-input:focus { border-color: rgba(239,68,68,0.5); box-shadow: 0 0 0 3px rgba(239,68,68,0.1); }
+.lh-admin-input.lh-shake {
+  animation: lh-shake 0.4s cubic-bezier(0.36,0.07,0.19,0.97);
+  border-color: #ef4444;
+}
+@keyframes lh-shake {
+  10%,90%  { transform: translateX(-2px); }
+  20%,80%  { transform: translateX(4px); }
+  30%,50%,70% { transform: translateX(-5px); }
+  40%,60%  { transform: translateX(5px); }
+}
+.lh-admin-btns { display: grid; grid-template-columns: 1fr 1fr; gap: 0.6rem; }
+.lh-admin-btn {
+  padding: 0.72rem; border: none; border-radius: 0.6rem;
+  font-size: 0.82rem; font-weight: 700; letter-spacing: 0.04em;
+  text-transform: uppercase; cursor: pointer; transition: all 0.2s;
+}
+.lh-admin-btn.confirm {
+  background: rgba(239,68,68,0.15);
+  border: 1px solid rgba(239,68,68,0.3);
+  color: #f87171;
+}
+.lh-admin-btn.confirm:hover { background: rgba(239,68,68,0.25); }
+.lh-admin-btn.cancel {
+  background: rgba(255,255,255,0.05);
+  border: 1px solid rgba(255,255,255,0.08);
+  color: #71717a;
+}
+.lh-admin-btn.cancel:hover { background: rgba(255,255,255,0.09); }
+
+/* Admin banner */
+#lhAdminBanner {
+  position: fixed; bottom: 1.2rem; right: 1.2rem; z-index: 99998;
+  display: none; align-items: center; gap: 0.75rem;
+  padding: 0.55rem 1.1rem;
+  background: rgba(239,68,68,0.12);
+  border: 1px solid rgba(239,68,68,0.35);
+  border-radius: 2rem;
+  font-size: 0.7rem; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase;
+  color: #f87171;
+  backdrop-filter: blur(8px);
+  cursor: pointer; transition: background 0.2s;
+}
+#lhAdminBanner:hover { background: rgba(239,68,68,0.2); }
+#lhAdminBanner .lh-dot {
+  width: 6px; height: 6px; border-radius: 50%; background: #ef4444;
+  animation: lh-pulse-red 1.5s infinite;
+}
+#lhAdminBanner .lh-deact {
+  font-size: 0.65rem; opacity: 0.55;
+  padding-left: 0.5rem; border-left: 1px solid rgba(239,68,68,0.25);
+}
+@keyframes lh-pulse-red { 0%,100%{opacity:1;} 50%{opacity:0.3;} }
+
+@media (max-width: 600px) {
+  .lh-inner { padding: 1.5rem 1.2rem 1.75rem; }
+  .lh-title  { font-size: 1.3rem; }
+  .lh-phases { grid-template-columns: 1fr; }
+}
+</style>
+
+<!-- ══ RESERVATION MODAL ════════════════════════════════ -->
+<div id="founderModal" role="dialog" aria-modal="true" aria-labelledby="lhModalTitle">
+  <div class="lh-backdrop" id="lhBackdrop"></div>
+  <div class="lh-card">
+    <div class="lh-gold-bar"></div>
+    <button class="lh-close" id="lhModalClose" aria-label="Chiudi">✕</button>
+    <div class="lh-inner">
+
+      <!-- FORM VIEW -->
+      <div id="lhFormView">
+        <div class="lh-badge-pill" id="lhBadgePill">🥇 Founder Reservation Program</div>
+        <h2 class="lh-title" id="lhModalTitle">Founder Reservation Program</h2>
+        <p class="lh-subtitle" id="lhModalSub">Entra tra i primi 200 Founder. Nessun pagamento richiesto ora.</p>
+
+        <div class="lh-phases">
+          <div class="lh-phase active">
+            <div class="lh-phase-label" id="lhP1Label">Fase 1 — Founder Candidate</div>
+            <div class="lh-phase-desc"  id="lhP1Desc">Prenota il prodotto, entra nei primi 200, accedi a vantaggi esclusivi.</div>
+          </div>
+          <div class="lh-phase">
+            <div class="lh-phase-label" id="lhP2Label">Fase 2 — Founder Verified</div>
+            <div class="lh-phase-desc"  id="lhP2Desc">Conferma il pagamento quando disponibile, mantieni lo status per sempre.</div>
+          </div>
+        </div>
+
+        <div class="lh-product-row">
+          <div class="lh-icon">📦</div>
+          <div>
+            <div class="lh-product-label" id="lhProductLabel">Prodotto selezionato</div>
+            <div class="lh-product-name"  id="lhProductName">—</div>
+          </div>
+        </div>
+
+        <div class="lh-form">
+          <div class="lh-field">
+            <label for="lhName" id="lhLabelName">Nome e Cognome</label>
+            <input type="text"  id="lhName"  autocomplete="name"  placeholder="Il tuo nome completo">
+          </div>
+          <div class="lh-field">
+            <label for="lhEmail" id="lhLabelEmail">Indirizzo Email</label>
+            <input type="email" id="lhEmail" autocomplete="email" placeholder="la@tua.email">
+          </div>
+          <div class="lh-error-msg" id="lhErrMsg"></div>
+          <button class="lh-submit" id="lhSubmitBtn">Conferma Prenotazione</button>
+          <p class="lh-privacy" id="lhPrivacy">I tuoi dati saranno usati esclusivamente per contattarti alla riapertura dei pagamenti.</p>
+        </div>
+      </div>
+
+      <!-- SUCCESS VIEW -->
+      <div class="lh-success" id="lhSuccessView">
+        <span class="lh-big-icon">🥇</span>
+        <div class="lh-success-title" id="lhSuccessTitle">Sei un Founder Candidate!</div>
+        <p class="lh-success-msg" id="lhSuccessMsg">La tua prenotazione è confermata. Sarai ricontattato via email quando i pagamenti saranno abilitati.</p>
+        <div class="lh-founder-badge" id="lhFounderBadge">✦ Founder Candidate</div>
+        <button class="lh-close-btn" id="lhSuccessClose">Chiudi</button>
+      </div>
+
+      <!-- WAITLIST VIEW -->
+      <div class="lh-waitlist" id="lhWaitlistView">
+        <span class="lh-big-icon">⏳</span>
+        <div class="lh-success-title" id="lhWaitTitle" style="color:#e4e4e7">Sei in Lista d'Attesa</div>
+        <p class="lh-success-msg" id="lhWaitMsg">I 200 posti Founder sono esauriti. Sei stato aggiunto alla lista d'attesa.</p>
+        <div class="lh-founder-badge" style="border-color:rgba(161,161,170,0.3);background:rgba(161,161,170,0.07);color:#a1a1aa">⏳ Waiting List</div>
+        <button class="lh-close-btn" id="lhWaitClose">Chiudi</button>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<!-- ══ ADMIN PANEL ══════════════════════════════════════ -->
+<div id="lhAdminPanel">
+  <div class="lh-admin-card">
+    <div class="lh-admin-title">🔐 Admin Mode</div>
+    <p class="lh-admin-sub">Inserisci la password per abilitare i pagamenti</p>
+    <input type="password" class="lh-admin-input" id="lhAdminPwd" placeholder="••••••••" autocomplete="off">
+    <div class="lh-admin-btns">
+      <button class="lh-admin-btn confirm" id="lhAdminConfirm">Accedi</button>
+      <button class="lh-admin-btn cancel"  id="lhAdminCancel">Annulla</button>
+    </div>
+  </div>
+</div>
+
+<!-- Admin active banner -->
+<div id="lhAdminBanner">
+  <span class="lh-dot"></span>
+  Admin Mode — Checkout Attivo
+  <span class="lh-deact">Clicca per disattivare</span>
+</div>
+
+<script>
+/* ═════════════════════════════════════════════════════════
+   FOUNDER RESERVATION SYSTEM v2.0
+   ═════════════════════════════════════════════════════════ */
+(function () {
+  'use strict';
+
+  /* ── CONFIGURAZIONE ──────────────────────────────────────
+     Hash SHA-256 della sequenza segreta.
+     NON modificare questo valore — è già configurato.       */
+  const ADMIN_HASH   = '8bfcd70fe0f401193fdf56cae7e025516f732da047219e669a99861b2c44123b';
+  const SEQ_LEN      = 14;   // lunghezza sequenza
+  const GAS_URL      = 'https://script.google.com/macros/s/INSERISCI_IL_TUO_DEPLOYMENT_ID/exec';
+  const MAX_FOUNDERS = 200;
+  /* ─────────────────────────────────────────────────────── */
+
+  /* ── SHA-256 via WebCrypto ──────────────────────────────*/
+  async function sha256(str) {
+    const buf  = new TextEncoder().encode(str);
+    const hash = await crypto.subtle.digest('SHA-256', buf);
+    return Array.from(new Uint8Array(hash)).map(b => b.toString(16).padStart(2,'0')).join('');
+  }
+
+  /* ── Admin state ─────────────────────────────────────── */
+  async function isAdmin() {
+    const stored = localStorage.getItem('lh360_adm');
+    if (!stored) return false;
+    return stored === ADMIN_HASH;
+  }
+
+  async function activateAdmin() {
+    localStorage.setItem('lh360_adm', ADMIN_HASH);
+    window.lh360AdminMode = true;
+    applyAdminUI();
+  }
+
+  function deactivateAdmin() {
+    localStorage.removeItem('lh360_adm');
+    window.lh360AdminMode = false;
+    applyAdminUI();
+    // Ricarica per ripristinare UI pulsanti
+    location.reload();
+  }
+
+  function applyAdminUI() {
+    const banner = document.getElementById('lhAdminBanner');
+    if (banner) banner.style.display = window.lh360AdminMode ? 'flex' : 'none';
+  }
+
+  /* ── Keyboard sequence listener ─────────────────────── */
+  let keyBuffer = '';
+  document.addEventListener('keydown', async function(e) {
+    // Ignora quando si sta scrivendo in input/textarea
+    const tag = document.activeElement && document.activeElement.tagName;
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+
+    if (e.key.length === 1) {
+      keyBuffer += e.key.toUpperCase();
+      if (keyBuffer.length > SEQ_LEN * 2) keyBuffer = keyBuffer.slice(-SEQ_LEN * 2);
+
+      if (keyBuffer.length >= SEQ_LEN) {
+        const slice = keyBuffer.slice(-SEQ_LEN);
+        const hash  = await sha256(slice);
+        if (hash === ADMIN_HASH) {
+          keyBuffer = '';
+          openAdminPanel();
+        }
+      }
+    }
+  });
+
+  /* ── Admin Panel ─────────────────────────────────────── */
+  function openAdminPanel() {
+    const panel = document.getElementById('lhAdminPanel');
+    const pwd   = document.getElementById('lhAdminPwd');
+    if (!panel) return;
+    if (pwd) pwd.value = '';
+    panel.classList.add('lh-open');
+    requestAnimationFrame(() => {
+      panel.classList.add('lh-visible');
+      if (pwd) pwd.focus();
+    });
+  }
+
+  function closeAdminPanel() {
+    const panel = document.getElementById('lhAdminPanel');
+    if (!panel) return;
+    panel.classList.remove('lh-visible');
+    setTimeout(() => panel.classList.remove('lh-open'), 260);
+  }
+
+  async function confirmAdminPassword() {
+    const pwd   = document.getElementById('lhAdminPwd');
+    const input = document.getElementById('lhAdminPwd');
+    if (!pwd) return;
+
+    const hash = await sha256(pwd.value);
+    if (hash === ADMIN_HASH) {
+      closeAdminPanel();
+      await activateAdmin();
+    } else {
+      // Shake animation
+      input.classList.remove('lh-shake');
+      void input.offsetWidth; // reflow
+      input.classList.add('lh-shake');
+      input.value = '';
+      setTimeout(() => input.classList.remove('lh-shake'), 450);
+    }
+  }
+
+  /* ── i18n helper ─────────────────────────────────────── */
+  function t(key) {
+    try {
+      const i18n = window.i18nPDP && window.i18nPDP();
+      if (i18n && i18n.t) { const v = i18n.t(key); if (v && v !== key) return v; }
+    } catch(e) {}
+    const fb = {
+      reserve_btn: 'Prenota il tuo Posto',
+      reserve_btn_cart: 'Prenota Ora — Early Access',
+      reserve_badge_founder: '🥇 Founder Reservation Program',
+      reserve_modal_title: 'Founder Reservation Program',
+      reserve_modal_subtitle: 'Entra tra i primi 200 Founder. Nessun pagamento richiesto ora.',
+      reserve_field_name: 'Nome e Cognome',
+      reserve_field_email: 'Indirizzo Email',
+      reserve_field_name_placeholder: 'Il tuo nome completo',
+      reserve_field_email_placeholder: 'la@tua.email',
+      reserve_submit: 'Conferma Prenotazione',
+      reserve_submitting: 'Salvataggio in corso...',
+      reserve_success_title: 'Sei un Founder Candidate!',
+      reserve_success_msg: 'La tua prenotazione è confermata. Sarai ricontattato via email quando i pagamenti saranno abilitati per finalizzare il tuo acquisto con tutti i vantaggi Founder.',
+      reserve_waitlist_title: "Sei in Lista d'Attesa",
+      reserve_waitlist_msg: 'I 200 posti Founder sono esauriti. Sei stato aggiunto alla lista d\'attesa.',
+      reserve_close: 'Chiudi',
+      reserve_error: 'Errore durante la prenotazione. Riprova.',
+      reserve_field_required: 'Compila tutti i campi per continuare.',
+      reserve_field_email_invalid: "Inserisci un'email valida.",
+      reserve_phase1_label: 'Fase 1 — Founder Candidate',
+      reserve_phase1_desc: 'Prenota il prodotto, entra nei primi 200, accedi a vantaggi esclusivi.',
+      reserve_phase2_label: 'Fase 2 — Founder Verified',
+      reserve_phase2_desc: 'Conferma il pagamento quando disponibile, mantieni lo status per sempre.',
+      reserve_privacy: 'I tuoi dati saranno usati esclusivamente per contattarti alla riapertura dei pagamenti.',
+    };
+    return fb[key] || key;
+  }
+
+  function getLang() {
+    try { const i18n = window.i18nPDP && window.i18nPDP(); return (i18n && i18n.currentLang) || 'it'; } catch(e) { return 'it'; }
+  }
+
+  /* ── Modal reservation ───────────────────────────────── */
+  let _prodName = '', _prodSku = '', _prodPage = '';
+
+  window.openFounderModal = function(name, sku, page) {
+    _prodName = name || '—';
+    _prodSku  = sku  || '';
+    _prodPage = page || window.location.pathname;
+
+    // Traduzioni
+    const setT = (id, key) => { const el = document.getElementById(id); if (el) el.textContent = t(key); };
+    setT('lhBadgePill',    'reserve_badge_founder');
+    setT('lhModalTitle',   'reserve_modal_title');
+    setT('lhModalSub',     'reserve_modal_subtitle');
+    setT('lhP1Label',      'reserve_phase1_label');
+    setT('lhP1Desc',       'reserve_phase1_desc');
+    setT('lhP2Label',      'reserve_phase2_label');
+    setT('lhP2Desc',       'reserve_phase2_desc');
+    setT('lhSubmitBtn',    'reserve_submit');
+    setT('lhPrivacy',      'reserve_privacy');
+    setT('lhSuccessTitle', 'reserve_success_title');
+    setT('lhSuccessMsg',   'reserve_success_msg');
+    setT('lhWaitTitle',    'reserve_waitlist_title');
+    setT('lhWaitMsg',      'reserve_waitlist_msg');
+    setT('lhSuccessClose', 'reserve_close');
+    setT('lhWaitClose',    'reserve_close');
+
+    const nameEl  = document.getElementById('lhName');
+    const emailEl = document.getElementById('lhEmail');
+    const lblName = document.getElementById('lhLabelName');
+    const lblMail = document.getElementById('lhLabelEmail');
+    if (nameEl)  nameEl.placeholder  = t('reserve_field_name_placeholder');
+    if (emailEl) emailEl.placeholder = t('reserve_field_email_placeholder');
+    if (lblName) lblName.textContent  = t('reserve_field_name');
+    if (lblMail) lblMail.textContent  = t('reserve_field_email');
+
+    const pn = document.getElementById('lhProductName');
+    if (pn) pn.textContent = _prodName;
+
+    // Reset
+    if (nameEl)  nameEl.value  = '';
+    if (emailEl) emailEl.value = '';
+    const err = document.getElementById('lhErrMsg');
+    if (err) { err.textContent = ''; err.classList.remove('lh-show'); }
+    if (nameEl)  nameEl.classList.remove('lh-err');
+    if (emailEl) emailEl.classList.remove('lh-err');
+
+    document.getElementById('lhFormView').style.display = '';
+    document.getElementById('lhSuccessView').classList.remove('lh-show');
+    document.getElementById('lhWaitlistView').classList.remove('lh-show');
+
+    const modal = document.getElementById('founderModal');
+    modal.classList.add('lh-open');
+    requestAnimationFrame(() => {
+      modal.classList.add('lh-visible');
+      if (nameEl) nameEl.focus();
+    });
+    document.body.style.overflow = 'hidden';
+  };
+
+  window.closeFounderModal = function() {
+    const modal = document.getElementById('founderModal');
+    modal.classList.remove('lh-visible');
+    setTimeout(() => { modal.classList.remove('lh-open'); document.body.style.overflow = ''; }, 340);
+  };
+
+  async function submitReservation() {
+    const nameEl  = document.getElementById('lhName');
+    const emailEl = document.getElementById('lhEmail');
+    const subBtn  = document.getElementById('lhSubmitBtn');
+    const errEl   = document.getElementById('lhErrMsg');
+    const name    = nameEl.value.trim();
+    const email   = emailEl.value.trim();
+
+    errEl.classList.remove('lh-show');
+    nameEl.classList.remove('lh-err');
+    emailEl.classList.remove('lh-err');
+
+    if (!name || !email) {
+      errEl.textContent = t('reserve_field_required');
+      errEl.classList.add('lh-show');
+      if (!name)  nameEl.classList.add('lh-err');
+      if (!email) emailEl.classList.add('lh-err');
+      return;
+    }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      errEl.textContent = t('reserve_field_email_invalid');
+      errEl.classList.add('lh-show');
+      emailEl.classList.add('lh-err');
+      return;
+    }
+
+    const orig = subBtn.textContent;
+    subBtn.disabled = true;
+    subBtn.textContent = t('reserve_submitting');
+
+    try {
+      const payload = {
+        action: 'save_reservation',
+        name, email,
+        product:      _prodName,
+        sku:          _prodSku,
+        lang:         getLang(),
+        page:         _prodPage,
+        timestamp:    new Date().toISOString(),
+        max_founders: MAX_FOUNDERS
+      };
+      const res    = await fetch(GAS_URL, { method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'}, body: new URLSearchParams(payload) });
+      const result = await res.json();
+
+      document.getElementById('lhFormView').style.display = 'none';
+      if (result.waitlist) {
+        document.getElementById('lhWaitlistView').classList.add('lh-show');
+      } else {
+        const badge = document.getElementById('lhFounderBadge');
+        if (badge && result.founder_position) badge.textContent = `✦ Founder #${result.founder_position} — Candidate`;
+        document.getElementById('lhSuccessView').classList.add('lh-show');
+      }
+    } catch(err) {
+      console.error('Reservation error:', err);
+      errEl.textContent = t('reserve_error');
+      errEl.classList.add('lh-show');
+      subBtn.disabled  = false;
+      subBtn.textContent = orig;
+    }
+  }
+
+  /* ── Init ────────────────────────────────────────────── */
+  document.addEventListener('DOMContentLoaded', async function() {
+
+    // Check admin state on load
+    const adminOk = await isAdmin();
+    window.lh360AdminMode = adminOk;
+    applyAdminUI();
+
+    // Modal events
+    document.getElementById('lhModalClose')?.addEventListener('click',  window.closeFounderModal);
+    document.getElementById('lhBackdrop')  ?.addEventListener('click',  window.closeFounderModal);
+    document.getElementById('lhSubmitBtn') ?.addEventListener('click',  submitReservation);
+    document.getElementById('lhSuccessClose')?.addEventListener('click', window.closeFounderModal);
+    document.getElementById('lhWaitClose')   ?.addEventListener('click', window.closeFounderModal);
+    document.addEventListener('keydown', e => { if (e.key === 'Escape') { window.closeFounderModal(); closeAdminPanel(); } });
+
+    // Admin panel events
+    document.getElementById('lhAdminConfirm')?.addEventListener('click', confirmAdminPassword);
+    document.getElementById('lhAdminCancel') ?.addEventListener('click', closeAdminPanel);
+    document.getElementById('lhAdminPwd')    ?.addEventListener('keydown', e => { if (e.key === 'Enter') confirmAdminPassword(); });
+
+    // Admin banner → deactivate on click
+    document.getElementById('lhAdminBanner')?.addEventListener('click', () => {
+      if (confirm('Vuoi disattivare Admin Mode?')) deactivateAdmin();
+    });
+  });
+
+})();
+</script>
+
+<script>
+/* ── CART: setup admin UI + pulsante prenota ── */
+document.addEventListener('DOMContentLoaded', function () {
+  const earlyWrap  = document.getElementById('lhCartEarlyWrap');
+  const checkoutBtn = document.getElementById('checkoutBtn');
+  const reserveBtn  = document.getElementById('cartReserveBtn');
+
+  if (window.lh360AdminMode) {
+    if (earlyWrap)   earlyWrap.style.display   = 'none';
+    if (checkoutBtn) { checkoutBtn.style.display = ''; checkoutBtn.onclick = initiateCheckout; }
+  } else {
+    if (earlyWrap)   earlyWrap.style.display   = '';
+    if (checkoutBtn) checkoutBtn.style.display   = 'none';
+  }
+
+  if (reserveBtn) {
+    reserveBtn.addEventListener('click', function () {
+      let productName = 'Carrello', productSku = '';
+      try {
+        const cart = JSON.parse(localStorage.getItem('lh360_cart') || '[]');
+        if (cart.length === 1)      { productName = cart[0].title || 'Prodotto'; productSku = cart[0].sku || ''; }
+        else if (cart.length > 1)   { productName = cart.length + ' prodotti selezionati'; }
+      } catch(e) {}
+      window.openFounderModal(productName, productSku, 'cart');
+    });
+  }
+});
+</script>
+
 </body>
 </html>
