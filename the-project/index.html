@@ -1632,7 +1632,7 @@
           <li class="dim" data-i18n="p1f5">Accesso anticipato ai listing</li>
           <li class="dim" data-i18n="p1f6">Inviti a eventi esclusivi</li>
         </ul>
-        <button class="plan-cta" data-i18n="plan.cta.start" onclick="handlePlanClick('explorer','p1')">Inizia ora</button>
+        <button class="plan-cta" id="planCtaExplorer" data-i18n="plan.cta.start" onclick="handlePlanClick('explorer','p1')">Inizia ora</button>
       </div>
 
       <!-- PRESTIGE -->
@@ -1656,7 +1656,7 @@
           <li data-i18n="p2f5">Badge verificato nella community</li>
           <li data-i18n="p2f6">Inviti prioritari a eventi selezionati</li>
         </ul>
-        <button class="plan-cta" data-i18n="plan.cta.join" onclick="handlePlanClick('prestige','p2')">Entra nel club</button>
+        <button class="plan-cta" id="planCtaPrestige" data-i18n="plan.cta.join" onclick="handlePlanClick('prestige','p2')">Entra nel club</button>
       </div>
 
       <!-- ELITE -->
@@ -1679,7 +1679,7 @@
           <li data-i18n="p3f5">Inviti a esperienze fisiche (soggiorni, eventi)</li>
           <li data-i18n="p3f6">Riconoscimento Fondatore nella community</li>
         </ul>
-        <button class="plan-cta" data-i18n="plan.cta.elite" onclick="handlePlanClick('elite','p3')">Diventa Élite</button>
+        <button class="plan-cta" id="planCtaElite" data-i18n="plan.cta.elite" onclick="handlePlanClick('elite','p3')">Diventa Élite</button>
       </div>
 
     </div>
@@ -3117,6 +3117,8 @@
   let authModalMode = 'auth';
 
   function handlePlanClick(planKey, planPrefix) {
+    // Blocca se pagamenti disabilitati (e non admin)
+    if (!window._lhPaymentsEnabled) return;
     const u = getUser();
     selectedPlan = { key: planKey, prefix: planPrefix, billingPeriod: selectedBilling, ...PLAN_DATA[planKey] };
 
@@ -3939,6 +3941,305 @@
   });
 
 
+  /* ══════════════════════════════════════════════════════════════
+     GESTIONE PAGAMENTI GLOBALI — stessa logica del resto del sito
+     Fonte di verità: Google Apps Script principale (Code.gs)
+  ══════════════════════════════════════════════════════════════ */
+  (function() {
+    'use strict';
+
+    const PAY_GAS_URL   = 'https://script.google.com/macros/s/AKfycbwr79RkXIEocpuOKaM6uMJqE6VFs9wjlUPvrr__FvDbDDrD2ELB1NbfrWP3BCYpHj2u/exec';
+    const ADMIN_HASH    = '8bfcd70fe0f401193fdf56cae7e025516f732da047219e669a99861b2c44123b';
+    const SEQ_LEN       = 14;
+    const PAY_CACHE_KEY = 'lh360_pay_remote';
+    const PAY_CACHE_TS  = 'lh360_pay_remote_ts';
+    const PAY_CACHE_TTL = 60000;
+
+    let _isAdmin         = false;
+    let _adminTestPay    = false;
+    let _paymentsEnabled = false;
+    let _remoteLoaded    = false;
+
+    async function sha256(str) {
+      const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(str));
+      return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2,'0')).join('');
+    }
+
+    /* Fetch con AbortController timeout 8s — evita RESULT_CODE_HUNG */
+    async function fetchRemotePaymentStatus() {
+      const localFallback = localStorage.getItem('lh360_pay') === '1';
+      try {
+        const ts = parseInt(sessionStorage.getItem(PAY_CACHE_TS) || '0', 10);
+        if (Date.now() - ts < PAY_CACHE_TTL) {
+          const cached = sessionStorage.getItem(PAY_CACHE_KEY);
+          if (cached !== null) return cached === '1';
+        }
+      } catch(e) {}
+      try {
+        const ctrl = new AbortController();
+        const tid  = setTimeout(() => ctrl.abort(), 8000);
+        const r    = await fetch(PAY_GAS_URL + '?action=get_payment_status&t=' + Date.now(), { signal: ctrl.signal });
+        clearTimeout(tid);
+        const d    = await r.json();
+        const en   = !!(d.success && d.enabled);
+        try { localStorage.setItem('lh360_pay', en ? '1' : '0'); } catch(e) {}
+        try { sessionStorage.setItem(PAY_CACHE_KEY, en ? '1' : '0'); sessionStorage.setItem(PAY_CACHE_TS, Date.now().toString()); } catch(e) {}
+        return en;
+      } catch(e) {
+        console.warn('[LH/index] Payment status timeout/errore, uso fallback:', e.message);
+        return localFallback;
+      }
+    }
+
+    async function setRemotePaymentStatus(enabled) {
+      try { sessionStorage.removeItem(PAY_CACHE_KEY); sessionStorage.removeItem(PAY_CACHE_TS); } catch(e) {}
+      const ctrl = new AbortController();
+      const tid  = setTimeout(() => ctrl.abort(), 12000);
+      const r = await fetch(
+        PAY_GAS_URL + '?action=set_payment_status&value=' + (enabled ? '1' : '0') +
+        '&token=' + ADMIN_HASH + '&t=' + Date.now(), { signal: ctrl.signal }
+      );
+      clearTimeout(tid);
+      const d = await r.json();
+      if (!d.success) throw new Error(d.error || 'Server error');
+      try { localStorage.setItem('lh360_pay', enabled ? '1' : '0'); } catch(e) {}
+    }
+
+    /* Aggiorna UI pulsanti piani */
+    function applyPaymentUI(enabled) {
+      document.querySelectorAll('.plan-cta').forEach(btn => {
+        if (enabled) {
+          btn.classList.remove('lh-pay-disabled');
+          btn.disabled = false;
+        } else {
+          btn.classList.add('lh-pay-disabled');
+          btn.disabled = true;
+        }
+      });
+      window._lhPaymentsEnabled = enabled;
+      updateAdminDash();
+    }
+
+    function updateAdminDash() {
+      const statusVal = document.getElementById('lhAdmStatusVal');
+      const toggleBtn = document.getElementById('lhPayToggleBtn');
+      const toggleIco = document.getElementById('lhPayToggleIco');
+      const toggleTxt = document.getElementById('lhPayToggleTxt');
+      if (!statusVal) return;
+      if (!_remoteLoaded) {
+        statusVal.textContent = 'Caricamento...';
+        statusVal.className   = 'lh-adm-status-val off';
+      } else if (_paymentsEnabled) {
+        statusVal.textContent = '🌍 Abilitati (tutti gli utenti)';
+        statusVal.className   = 'lh-adm-status-val on';
+      } else {
+        statusVal.textContent = '🔒 Disabilitati — Test Admin attivo';
+        statusVal.className   = 'lh-adm-status-val off';
+      }
+      if (toggleBtn) { toggleBtn.disabled = false; toggleBtn.className = 'lh-pay-toggle-btn ' + (_paymentsEnabled ? 'disable' : 'enable'); }
+      if (toggleIco) toggleIco.textContent = _paymentsEnabled ? '🔒' : '🔓';
+      if (toggleTxt) toggleTxt.textContent = _paymentsEnabled ? 'Disabilita Pagamenti per Tutti' : 'Abilita Definitivamente per Tutti';
+    }
+
+    window.lhApplyPaymentState = async function(enabled) {
+      const btn = document.getElementById('lhPayToggleBtn');
+      const ico = document.getElementById('lhPayToggleIco');
+      const txt = document.getElementById('lhPayToggleTxt');
+      if (btn) btn.disabled = true;
+      if (ico) ico.textContent = '⏳';
+      if (txt) txt.textContent = enabled ? 'Abilitazione in corso...' : 'Disabilitazione in corso...';
+      try {
+        await setRemotePaymentStatus(enabled);
+        _paymentsEnabled = enabled;
+        _adminTestPay    = false;
+        try { sessionStorage.setItem(PAY_CACHE_KEY, enabled ? '1' : '0'); sessionStorage.setItem(PAY_CACHE_TS, Date.now().toString()); } catch(e) {}
+        applyPaymentUI(enabled);
+        if (txt) { txt.textContent = enabled ? '✅ Pagamenti abilitati per tutti!' : '✅ Pagamenti disabilitati per tutti!'; setTimeout(updateAdminDash, 2500); }
+      } catch(e) {
+        if (ico) ico.textContent = '❌';
+        if (txt) txt.textContent = 'Errore: ' + e.message + ' — riprova';
+        if (btn) btn.disabled = false;
+        setTimeout(updateAdminDash, 3500);
+      }
+    };
+
+    function setAdmin(val) {
+      _isAdmin = val;
+      const banner = document.getElementById('lhAdminBanner');
+      if (banner) banner.style.display = val ? 'flex' : 'none';
+      if (val) {
+        _adminTestPay = true;
+        window._lhPaymentsEnabled = true;
+        applyPaymentUI(true);
+        updateAdminDash();
+        fetchRemotePaymentStatus().then(remoteEnabled => {
+          _paymentsEnabled = remoteEnabled;
+          _remoteLoaded    = true;
+          updateAdminDash();
+        });
+      } else {
+        _adminTestPay = false;
+        applyPaymentUI(_paymentsEnabled);
+      }
+    }
+
+    function openAdminPanel() {
+      const panel = document.getElementById('lhAdminPanel');
+      if (!panel) return;
+      const auth = document.getElementById('lhAdmAuth');
+      const dash = document.getElementById('lhAdmDash');
+      const pwd  = document.getElementById('lhAdmPwd');
+      if (_isAdmin) { if (auth) auth.style.display = 'none'; if (dash) dash.classList.add('show'); updateAdminDash(); }
+      else { if (auth) auth.style.display = ''; if (dash) dash.classList.remove('show'); if (pwd) pwd.value = ''; }
+      panel.classList.add('lh-open');
+      requestAnimationFrame(() => { panel.classList.add('lh-vis'); if (!_isAdmin && pwd) pwd.focus(); });
+    }
+
+    function closeAdminPanel() {
+      const panel = document.getElementById('lhAdminPanel');
+      if (!panel) return;
+      panel.classList.remove('lh-vis');
+      setTimeout(() => panel.classList.remove('lh-open'), 260);
+    }
+
+    async function confirmAdminPwd() {
+      const pwd = document.getElementById('lhAdmPwd');
+      if (!pwd) return;
+      const h = await sha256(pwd.value);
+      if (h === ADMIN_HASH) {
+        pwd.value = '';
+        setAdmin(true);
+        const auth = document.getElementById('lhAdmAuth');
+        const dash = document.getElementById('lhAdmDash');
+        if (auth) auth.style.display = 'none';
+        if (dash) { dash.classList.add('show'); updateAdminDash(); }
+      } else {
+        pwd.classList.remove('shake'); void pwd.offsetWidth; pwd.classList.add('shake');
+        pwd.value = '';
+        setTimeout(() => pwd.classList.remove('shake'), 450);
+      }
+    }
+
+    /* Sequenza tastiera — stessa del resto del sito */
+    let keyBuf = '';
+    document.addEventListener('keydown', async function(e) {
+      const tag = document.activeElement && document.activeElement.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+      if (e.key.length === 1) {
+        keyBuf += e.key.toUpperCase();
+        if (keyBuf.length > SEQ_LEN * 2) keyBuf = keyBuf.slice(-SEQ_LEN * 2);
+        if (keyBuf.length >= SEQ_LEN) {
+          const h = await sha256(keyBuf.slice(-SEQ_LEN));
+          if (h === ADMIN_HASH) { keyBuf = ''; openAdminPanel(); }
+        }
+      }
+    });
+
+    document.addEventListener('DOMContentLoaded', function() {
+      document.getElementById('lhAdmX')        ?.addEventListener('click', closeAdminPanel);
+      document.getElementById('lhAdmCancel')   ?.addEventListener('click', closeAdminPanel);
+      document.getElementById('lhAdmConfirm')  ?.addEventListener('click', confirmAdminPwd);
+      document.getElementById('lhAdmPwd')      ?.addEventListener('keydown', e => { if (e.key === 'Enter') confirmAdminPwd(); });
+      document.getElementById('lhAdmLogout')   ?.addEventListener('click', () => { setAdmin(false); closeAdminPanel(); });
+      document.getElementById('lhAdminBanner') ?.addEventListener('click', openAdminPanel);
+      document.getElementById('lhPayToggleBtn')?.addEventListener('click', function() { window.lhApplyPaymentState(!_paymentsEnabled); });
+      document.addEventListener('keydown', e => { if (e.key === 'Escape') closeAdminPanel(); });
+
+      /* Boot: carica stato pagamenti senza mai bloccare la pagina */
+      fetchRemotePaymentStatus().then(enabled => {
+        _paymentsEnabled = enabled;
+        _remoteLoaded    = true;
+        window._lhPaymentsEnabled = enabled;
+        applyPaymentUI(enabled);
+      });
+    });
+
+  })();
+
 </script>
+
+<!-- ░░░░ ADMIN PANEL — PAGAMENTI GLOBALI ░░░░ -->
+<style>
+/* ── Admin Panel ── */
+#lhAdminPanel{display:none;position:fixed;inset:0;z-index:99999;align-items:center;justify-content:center;background:rgba(0,0,0,0.72);backdrop-filter:blur(6px);}
+#lhAdminPanel.lh-open{display:flex;}
+#lhAdminPanel.lh-vis .lh-adm-card{transform:scale(1);opacity:1;}
+.lh-adm-card{background:#111;border:1px solid rgba(201,168,76,0.3);border-radius:1.1rem;padding:2rem 1.75rem 1.5rem;width:340px;max-width:92vw;transform:scale(0.92);opacity:0;transition:transform 0.28s cubic-bezier(0.16,1,0.3,1),opacity 0.28s ease;}
+.lh-adm-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:1.25rem;}
+.lh-adm-title{font-size:0.97rem;font-weight:700;letter-spacing:0.07em;text-transform:uppercase;color:#c9a84c;}
+.lh-adm-x{background:none;border:none;color:#888;font-size:1.1rem;cursor:pointer;padding:0.2rem 0.4rem;}
+.lh-adm-x:hover{color:#fff;}
+.lh-adm-auth p{font-size:0.82rem;color:#888;margin-bottom:0.9rem;}
+.lh-adm-pwd{width:100%;padding:0.7rem 0.9rem;background:#1a1a1a;border:1px solid #333;border-radius:0.6rem;color:#fff;font-size:0.95rem;box-sizing:border-box;margin-bottom:1rem;outline:none;}
+.lh-adm-pwd:focus{border-color:#c9a84c;}
+.lh-adm-pwd.shake{animation:lh-shake 0.4s ease;}
+@keyframes lh-shake{0%,100%{transform:translateX(0)}20%{transform:translateX(-6px)}40%{transform:translateX(6px)}60%{transform:translateX(-4px)}80%{transform:translateX(4px)}}
+.lh-adm-auth-btns{display:flex;gap:0.6rem;}
+.lh-adm-btn{flex:1;padding:0.65rem;border-radius:0.55rem;font-size:0.84rem;font-weight:600;cursor:pointer;border:none;}
+.lh-adm-btn.ok{background:#c9a84c;color:#0a0a0b;}
+.lh-adm-btn.ok:hover{background:#e8c97a;}
+.lh-adm-btn.no{background:#222;color:#888;border:1px solid #333;}
+.lh-adm-btn.no:hover{color:#fff;}
+.lh-adm-dash{display:none;}
+.lh-adm-dash.show{display:block;}
+.lh-adm-status-row{display:flex;align-items:center;justify-content:space-between;padding:0.75rem 1rem;background:#1a1a1a;border-radius:0.65rem;margin-bottom:1rem;}
+.lh-adm-status-label{font-size:0.82rem;color:#888;font-weight:600;}
+.lh-adm-status-val{font-size:0.8rem;font-weight:700;padding:0.25rem 0.65rem;border-radius:2rem;}
+.lh-adm-status-val.on{background:rgba(34,197,94,0.15);color:#22c55e;}
+.lh-adm-status-val.off{background:rgba(239,68,68,0.12);color:#ef4444;}
+.lh-pay-toggle{margin-bottom:1rem;}
+.lh-pay-toggle-label{font-size:0.78rem;color:#666;display:block;margin-bottom:0.65rem;line-height:1.45;}
+.lh-pay-toggle-btn{width:100%;padding:0.75rem;border-radius:0.65rem;font-size:0.86rem;font-weight:700;letter-spacing:0.04em;cursor:pointer;border:none;display:flex;align-items:center;justify-content:center;gap:0.5rem;}
+.lh-pay-toggle-btn.enable{background:linear-gradient(135deg,#166534,#15803d);color:#fff;}
+.lh-pay-toggle-btn.enable:hover{background:linear-gradient(135deg,#15803d,#16a34a);}
+.lh-pay-toggle-btn.disable{background:#2a0a0a;color:#ef4444;border:1px solid rgba(239,68,68,0.3);}
+.lh-pay-toggle-btn.disable:hover{background:#3a0e0e;}
+.lh-pay-toggle-btn:disabled{opacity:0.6;cursor:not-allowed;}
+.lh-adm-logout{width:100%;padding:0.6rem;background:none;border:1px solid #2a2a2a;color:#555;border-radius:0.55rem;font-size:0.78rem;cursor:pointer;margin-top:0.5rem;}
+.lh-adm-logout:hover{color:#888;border-color:#444;}
+/* Admin active banner */
+#lhAdminBanner{display:none;position:fixed;bottom:1rem;left:50%;transform:translateX(-50%);z-index:99998;background:#0f0f0f;border:1px solid rgba(239,68,68,0.35);border-radius:2rem;padding:0.45rem 1rem;gap:0.5rem;align-items:center;cursor:pointer;font-size:0.75rem;color:#ef4444;font-weight:600;letter-spacing:0.05em;}
+.lh-rdot{width:7px;height:7px;border-radius:50%;background:#ef4444;animation:lh-blink2 1.8s infinite;}
+@keyframes lh-blink2{0%,100%{opacity:1;}50%{opacity:0.25;}}
+/* Disabled plan buttons */
+.plan-cta.lh-pay-disabled{opacity:0.45;cursor:not-allowed;pointer-events:none;}
+.plan-cta.lh-pay-disabled::after{content:" (Non disponibile)";font-size:0.75em;opacity:0.8;}
+</style>
+
+<!-- Admin Panel -->
+<div id="lhAdminPanel">
+  <div class="lh-adm-card">
+    <div class="lh-adm-header">
+      <span class="lh-adm-title">🔐 Admin Control</span>
+      <button class="lh-adm-x" id="lhAdmX">✕</button>
+    </div>
+    <div class="lh-adm-auth" id="lhAdmAuth">
+      <p>Inserisci la password per accedere</p>
+      <input type="password" class="lh-adm-pwd" id="lhAdmPwd" placeholder="••••••••" autocomplete="off">
+      <div class="lh-adm-auth-btns">
+        <button class="lh-adm-btn ok" id="lhAdmConfirm">Accedi</button>
+        <button class="lh-adm-btn no" id="lhAdmCancel">Annulla</button>
+      </div>
+    </div>
+    <div class="lh-adm-dash" id="lhAdmDash">
+      <div class="lh-adm-status-row">
+        <span class="lh-adm-status-label">Pagamenti Abbonamenti</span>
+        <span class="lh-adm-status-val off" id="lhAdmStatusVal">Caricamento...</span>
+      </div>
+      <div class="lh-pay-toggle">
+        <span class="lh-pay-toggle-label">Clicca per cambiare lo stato dei pagamenti su tutte le pagine in tempo reale.</span>
+        <button class="lh-pay-toggle-btn enable" id="lhPayToggleBtn">
+          <span id="lhPayToggleIco">🔓</span>
+          <span id="lhPayToggleTxt">Abilita Definitivamente per Tutti</span>
+        </button>
+      </div>
+      <button class="lh-adm-logout" id="lhAdmLogout">Esci da Admin Mode</button>
+    </div>
+  </div>
+</div>
+<div id="lhAdminBanner">
+  <span class="lh-rdot"></span>
+  <span id="lhAdminBannerTxt">Admin Mode — Clicca per aprire</span>
+</div>
 </body>
 </html>
