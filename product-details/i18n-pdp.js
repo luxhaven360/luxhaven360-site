@@ -207,7 +207,7 @@ document.querySelectorAll('[data-i18n-placeholder]').forEach(el => {
     this.translatePage();
     this.updateLanguageSelector();
 
-    // ✅ Dispatcha evento custom per aggiornamenti real-time nelle pagine
+    // ✅ Evento real-time: aggiorna traduzioni pulsanti prenotazione e booking
     window.dispatchEvent(new CustomEvent('lhLanguageChanged', { detail: { lang: langCode } }));
 
     if (typeof updateAllPricesForLanguage === 'function') {
