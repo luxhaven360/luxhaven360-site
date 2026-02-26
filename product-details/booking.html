@@ -1132,7 +1132,7 @@ textarea[placeholder="Hai richieste particolari?"] {
                         <span id="lhBkDisabledTxt">Prenotazioni non disponibili</span>
                       </button>
                       <div class="lh-booking-notice" id="lhBkNoticeTxt">
-                        <strong>Early Access</strong> — Le prenotazioni per le esperienze saranno disponibili presto.
+                        Le prenotazioni per le esperienze saranno disponibili presto. Sarai avvisato per email.
                       </div>
                     </div>
 <p class="text-xs text-center mt-4" style="color: #a59173;" data-i18n="booking_summary_secure">
@@ -7897,15 +7897,6 @@ document.addEventListener('DOMContentLoaded', () => {
 }
 </style>
 
-<!-- ═══ EARLY ACCESS BANNER ══════════════════════════════════════ -->
-<div id="lhEaBanner">
-  <span class="lh-banner-dot"></span>
-  <span class="lh-banner-text" id="lhBannerText">
-    <strong>Early Access</strong> — I prezzi mostrati sono indicativi. I pagamenti non sono attivi in questa fase.
-  </span>
-  <button class="lh-banner-dismiss" id="lhBannerDismiss" aria-label="Chiudi">✕</button>
-</div>
-
 <!-- ═══ RESERVATION MODAL ════════════════════════════════════════ -->
 <div id="lhReserveModal" role="dialog" aria-modal="true" aria-labelledby="lhRmTitle">
   <div class="lh-rm-backdrop" id="lhRmBackdrop"></div>
@@ -8032,7 +8023,9 @@ document.addEventListener('DOMContentLoaded', () => {
   /* ── STATE ───────────────────────────────────────────────────── */
   // isAdmin: ha passato la password in questa sessione
   // paymentsEnabled: ha abilitato i pagamenti (persiste in localStorage)
+  // _adminTestPay: pagamenti abilitati solo in modalità test admin (non persiste)
   let _isAdmin = false;
+  let _adminTestPay = false;
   let _paymentsEnabled = localStorage.getItem('lh360_pay') === '1';
 
   window.lh360AdminMode       = _isAdmin;
@@ -8179,38 +8172,43 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  /* ── APPLY PAYMENT STATE — aggiorna UI in tempo reale ─────────── */
-  window.lhApplyPaymentState = function(enabled) {
-    _paymentsEnabled = enabled;
-    window.lh360PaymentsEnabled = enabled;
-    localStorage.setItem('lh360_pay', enabled ? '1' : '0');
-
+  /* ── APPLY PAYMENT UI — aggiorna solo DOM, senza toccare localStorage ── */
+  function applyPaymentUI(effective) {
     // PDP
     const earlyWrap  = document.getElementById('lhEarlyCtaWrap');
     const buyNowBtn  = document.getElementById('buyNowBtn');
-    if (earlyWrap)  earlyWrap.style.display  = enabled ? 'none' : '';
-    if (buyNowBtn)  buyNowBtn.style.display   = enabled ? ''     : 'none';
+    if (earlyWrap)  earlyWrap.style.display  = effective ? 'none' : '';
+    if (buyNowBtn)  buyNowBtn.style.display   = effective ? ''     : 'none';
 
     // Cart
     const cartWrap    = document.getElementById('lhCartEarlyWrap');
     const checkoutBtn = document.getElementById('checkoutBtn');
-    if (cartWrap)    cartWrap.style.display   = enabled ? 'none' : '';
+    if (cartWrap)    cartWrap.style.display   = effective ? 'none' : '';
     if (checkoutBtn) {
-      checkoutBtn.style.display = enabled ? '' : 'none';
-      if (enabled && typeof initiateCheckout === 'function') checkoutBtn.onclick = initiateCheckout;
+      checkoutBtn.style.display = effective ? '' : 'none';
+      if (effective && typeof initiateCheckout === 'function') checkoutBtn.onclick = initiateCheckout;
     }
 
     // Booking
     const bkDisabled = document.getElementById('lhBookingDisabledWrap');
     const bkBtn      = document.querySelector('button[onclick="confirmBooking()"]');
-    if (bkDisabled) bkDisabled.style.display = enabled ? 'none' : '';
-    if (bkBtn)      bkBtn.style.display      = enabled ? ''     : 'none';
+    if (bkDisabled) bkDisabled.style.display = effective ? 'none' : '';
+    if (bkBtn)      bkBtn.style.display      = effective ? ''     : 'none';
 
     // Banner
-    updateBanner(enabled);
+    updateBanner(effective);
 
     // Admin dashboard UI
     updateAdminDash();
+  }
+
+  /* ── APPLY PAYMENT STATE — salva su localStorage e aggiorna UI ── */
+  window.lhApplyPaymentState = function(enabled) {
+    _paymentsEnabled = enabled;
+    _adminTestPay = false;
+    window.lh360PaymentsEnabled = enabled;
+    localStorage.setItem('lh360_pay', enabled ? '1' : '0');
+    applyPaymentUI(enabled);
   };
 
   /* ── ADMIN STATE ─────────────────────────────────────────────── */
@@ -8223,6 +8221,15 @@ document.addEventListener('DOMContentLoaded', () => {
       const txt = document.getElementById('lhAdminBannerTxt');
       if (txt) txt.textContent = 'Admin Mode — Clicca per aprire';
     }
+    if (val) {
+      _adminTestPay = true;
+      window.lh360PaymentsEnabled = true;
+      applyPaymentUI(true);
+    } else {
+      _adminTestPay = false;
+      window.lh360PaymentsEnabled = _paymentsEnabled;
+      applyPaymentUI(_paymentsEnabled);
+    }
   }
 
   function updateAdminDash() {
@@ -8230,15 +8237,16 @@ document.addEventListener('DOMContentLoaded', () => {
     const toggleBtn = document.getElementById('lhPayToggleBtn');
     const toggleIco = document.getElementById('lhPayToggleIco');
     const toggleTxt = document.getElementById('lhPayToggleTxt');
+    const effectivePay = _paymentsEnabled || _adminTestPay;
     if (statusVal) {
-      statusVal.textContent = _paymentsEnabled ? 'Abilitati' : 'Disabilitati';
-      statusVal.className   = 'lh-adm-status-val ' + (_paymentsEnabled ? 'on' : 'off');
+      statusVal.textContent = _paymentsEnabled ? 'Abilitati (Ufficiale)' : (_adminTestPay ? 'Abilitati (Test Admin)' : 'Disabilitati');
+      statusVal.className   = 'lh-adm-status-val ' + (effectivePay ? 'on' : 'off');
     }
     if (toggleBtn) {
       toggleBtn.className = 'lh-pay-toggle-btn ' + (_paymentsEnabled ? 'disable' : 'enable');
     }
     if (toggleIco) toggleIco.textContent = _paymentsEnabled ? '🔒' : '🔓';
-    if (toggleTxt) toggleTxt.textContent = _paymentsEnabled ? 'Disabilita Pagamenti' : 'Abilita Pagamenti';
+    if (toggleTxt) toggleTxt.textContent = _paymentsEnabled ? 'Disabilita Pagamenti' : 'Abilita Definitivamente (Tutti gli Utenti)';
   }
 
   /* ── KEYBOARD SEQUENCE ───────────────────────────────────────── */
@@ -8387,7 +8395,7 @@ document.addEventListener('DOMContentLoaded', () => {
     initBanner();
 
     // Applica stato pagamenti iniziale
-    window.lhApplyPaymentState(_paymentsEnabled);
+    applyPaymentUI(_paymentsEnabled); // Applica stato iniziale senza re-salvare su localStorage
 
     // Reservation modal events
     document.getElementById('lhRmClose')   ?.addEventListener('click', window.closeFounderModal);
@@ -8419,24 +8427,36 @@ document.addEventListener('DOMContentLoaded', () => {
 </script>
 
 <script>
-document.addEventListener('DOMContentLoaded', function () {
-  const i18n = window.i18nPDP && window.i18nPDP();
-  const disabledTxt = document.getElementById('lhBkDisabledTxt');
-  const noticeTxt   = document.getElementById('lhBkNoticeTxt');
-  if (i18n) {
-    const lang = i18n.currentLang || 'it';
-    const S = {
-      it:{ d:'Prenotazioni non disponibili', n:'<strong>Early Access</strong> — Le prenotazioni per le esperienze saranno disponibili presto. Sarai avvisato per email.' },
-      en:{ d:'Bookings not available',       n:'<strong>Early Access</strong> — Experience bookings will be available soon. You will be notified by email.' },
-      fr:{ d:'Réservations non disponibles', n:"<strong>Early Access</strong> — Les réservations d'expériences seront disponibles prochainement. Vous serez averti par email." },
-      de:{ d:'Buchungen nicht verfügbar',    n:'<strong>Early Access</strong> — Erfahrungsbuchungen werden bald verfügbar sein. Sie werden per E-Mail benachrichtigt.' },
-      es:{ d:'Reservas no disponibles',      n:'<strong>Early Access</strong> — Las reservas de experiencias estarán disponibles pronto. Serás notificado por email.' },
-    };
-    const t = S[lang]||S.it;
+(function() {
+  const BK_STRINGS = {
+    it:{ d:'Prenotazioni non disponibili', n:'Le prenotazioni per le esperienze saranno disponibili presto. Sarai avvisato per email.' },
+    en:{ d:'Bookings not available',       n:'Experience bookings will be available soon. You will be notified by email.' },
+    fr:{ d:'Réservations non disponibles', n:"Les réservations d'expériences seront disponibles prochainement. Vous serez averti par email." },
+    de:{ d:'Buchungen nicht verfügbar',    n:'Erfahrungsbuchungen werden bald verfügbar sein. Sie werden per E-Mail benachrichtigt.' },
+    es:{ d:'Reservas no disponibles',      n:'Las reservas de experiencias estarán disponibles pronto. Serás notificado por email.' },
+  };
+
+  function updateBookingDisabledTexts(lang) {
+    const disabledTxt = document.getElementById('lhBkDisabledTxt');
+    const noticeTxt   = document.getElementById('lhBkNoticeTxt');
+    const t = BK_STRINGS[lang] || BK_STRINGS.it;
     if(disabledTxt) disabledTxt.textContent = t.d;
-    if(noticeTxt)   noticeTxt.innerHTML     = t.n;
+    if(noticeTxt)   noticeTxt.textContent   = t.n;
   }
-});
+
+  document.addEventListener('DOMContentLoaded', function () {
+    const i18n = window.i18nPDP && window.i18nPDP();
+    const lang = i18n ? (i18n.currentLang || 'it') : (localStorage.getItem('lh360_lang') || 'it');
+    updateBookingDisabledTexts(lang);
+  });
+
+  // Aggiornamento real-time al cambio lingua
+  window.addEventListener('lhLanguageChanged', function(e) {
+    if (e.detail && e.detail.lang) {
+      updateBookingDisabledTexts(e.detail.lang);
+    }
+  });
+})();
 </script>
 </body>
 </html>
