@@ -207,6 +207,9 @@ document.querySelectorAll('[data-i18n-placeholder]').forEach(el => {
     this.translatePage();
     this.updateLanguageSelector();
 
+    // ✅ Dispatcha evento custom per aggiornamenti real-time nelle pagine
+    window.dispatchEvent(new CustomEvent('lhLanguageChanged', { detail: { lang: langCode } }));
+
     if (typeof updateAllPricesForLanguage === 'function') {
         updateAllPricesForLanguage();
     }
