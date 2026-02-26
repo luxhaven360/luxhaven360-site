@@ -8168,7 +8168,10 @@ document.addEventListener('DOMContentLoaded', () => {
   const _PAY_CACHE_TTL = 60000; // 60 secondi
 
   async function fetchRemotePaymentStatus() {
-    // Cache di sessione
+    // 1. Risposta immediata da localStorage (UI non si blocca mai)
+    const localFallback = localStorage.getItem('lh360_pay') === '1';
+
+    // 2. Cache di sessione (< 60s) → evita chiamate ripetute
     try {
       const ts = parseInt(sessionStorage.getItem(_PAY_CACHE_TS) || '0', 10);
       if (Date.now() - ts < _PAY_CACHE_TTL) {
@@ -8177,19 +8180,27 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     } catch(e) {}
 
+    // 3. Fetch con timeout 8s via AbortController — evita RESULT_CODE_HUNG da GAS cold start
     try {
-      const r = await fetch(GAS_URL + '?action=get_payment_status&t=' + Date.now());
+      const controller = new AbortController();
+      const timeoutId  = setTimeout(() => controller.abort(), 8000);
+      const r = await fetch(GAS_URL + '?action=get_payment_status&t=' + Date.now(), {
+        signal: controller.signal
+      });
+      clearTimeout(timeoutId);
       const d = await r.json();
       const enabled = !!(d.success && d.enabled);
+      // Aggiorna localStorage per il prossimo caricamento
+      try { localStorage.setItem('lh360_pay', enabled ? '1' : '0'); } catch(e) {}
       try {
         sessionStorage.setItem(_PAY_CACHE_KEY, enabled ? '1' : '0');
         sessionStorage.setItem(_PAY_CACHE_TS, Date.now().toString());
       } catch(e) {}
       return enabled;
     } catch(e) {
-      // Fallback a localStorage se il server non risponde
-      console.warn('[LH] Impossibile contattare server, uso fallback locale:', e.message);
-      return localStorage.getItem('lh360_pay') === '1';
+      // Timeout o errore rete → usa il valore locale (pagina sempre funzionante)
+      console.warn('[LH] Payment status: timeout/errore GAS, uso localStorage:', e.message);
+      return localFallback;
     }
   }
 
