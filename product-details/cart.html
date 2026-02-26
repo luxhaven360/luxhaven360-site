@@ -1236,7 +1236,7 @@ window.addEventListener('DOMContentLoaded', () => {
       </div>
       <button type="button" id="cartReserveBtn" class="btn-reserve">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
-        Prenota Ora — Early Access
+        <span data-i18n="reserve_btn_cart">Prenota Ora — Early Access</span>
       </button>
     </div>
     <button type="button" class="checkout-btn" id="checkoutBtn" data-i18n="cart_checkout_btn" style="display:none">Procedi al Checkout</button>
@@ -2984,15 +2984,6 @@ window.addEventListener('storage', (event) => {
 }
 </style>
 
-<!-- ═══ EARLY ACCESS BANNER ══════════════════════════════════════ -->
-<div id="lhEaBanner">
-  <span class="lh-banner-dot"></span>
-  <span class="lh-banner-text" id="lhBannerText">
-    <strong>Early Access</strong> — I prezzi mostrati sono indicativi. I pagamenti non sono attivi in questa fase.
-  </span>
-  <button class="lh-banner-dismiss" id="lhBannerDismiss" aria-label="Chiudi">✕</button>
-</div>
-
 <!-- ═══ RESERVATION MODAL ════════════════════════════════════════ -->
 <div id="lhReserveModal" role="dialog" aria-modal="true" aria-labelledby="lhRmTitle">
   <div class="lh-rm-backdrop" id="lhRmBackdrop"></div>
@@ -3119,7 +3110,9 @@ window.addEventListener('storage', (event) => {
   /* ── STATE ───────────────────────────────────────────────────── */
   // isAdmin: ha passato la password in questa sessione
   // paymentsEnabled: ha abilitato i pagamenti (persiste in localStorage)
+  // _adminTestPay: pagamenti abilitati solo in modalità test admin (non persiste)
   let _isAdmin = false;
+  let _adminTestPay = false;
   let _paymentsEnabled = localStorage.getItem('lh360_pay') === '1';
 
   window.lh360AdminMode       = _isAdmin;
@@ -3266,38 +3259,43 @@ window.addEventListener('storage', (event) => {
     }
   }
 
-  /* ── APPLY PAYMENT STATE — aggiorna UI in tempo reale ─────────── */
-  window.lhApplyPaymentState = function(enabled) {
-    _paymentsEnabled = enabled;
-    window.lh360PaymentsEnabled = enabled;
-    localStorage.setItem('lh360_pay', enabled ? '1' : '0');
-
+  /* ── APPLY PAYMENT UI — aggiorna solo DOM, senza toccare localStorage ── */
+  function applyPaymentUI(effective) {
     // PDP
     const earlyWrap  = document.getElementById('lhEarlyCtaWrap');
     const buyNowBtn  = document.getElementById('buyNowBtn');
-    if (earlyWrap)  earlyWrap.style.display  = enabled ? 'none' : '';
-    if (buyNowBtn)  buyNowBtn.style.display   = enabled ? ''     : 'none';
+    if (earlyWrap)  earlyWrap.style.display  = effective ? 'none' : '';
+    if (buyNowBtn)  buyNowBtn.style.display   = effective ? ''     : 'none';
 
     // Cart
     const cartWrap    = document.getElementById('lhCartEarlyWrap');
     const checkoutBtn = document.getElementById('checkoutBtn');
-    if (cartWrap)    cartWrap.style.display   = enabled ? 'none' : '';
+    if (cartWrap)    cartWrap.style.display   = effective ? 'none' : '';
     if (checkoutBtn) {
-      checkoutBtn.style.display = enabled ? '' : 'none';
-      if (enabled && typeof initiateCheckout === 'function') checkoutBtn.onclick = initiateCheckout;
+      checkoutBtn.style.display = effective ? '' : 'none';
+      if (effective && typeof initiateCheckout === 'function') checkoutBtn.onclick = initiateCheckout;
     }
 
     // Booking
     const bkDisabled = document.getElementById('lhBookingDisabledWrap');
     const bkBtn      = document.querySelector('button[onclick="confirmBooking()"]');
-    if (bkDisabled) bkDisabled.style.display = enabled ? 'none' : '';
-    if (bkBtn)      bkBtn.style.display      = enabled ? ''     : 'none';
+    if (bkDisabled) bkDisabled.style.display = effective ? 'none' : '';
+    if (bkBtn)      bkBtn.style.display      = effective ? ''     : 'none';
 
     // Banner
-    updateBanner(enabled);
+    updateBanner(effective);
 
     // Admin dashboard UI
     updateAdminDash();
+  }
+
+  /* ── APPLY PAYMENT STATE — salva su localStorage e aggiorna UI ── */
+  window.lhApplyPaymentState = function(enabled) {
+    _paymentsEnabled = enabled;
+    _adminTestPay = false;
+    window.lh360PaymentsEnabled = enabled;
+    localStorage.setItem('lh360_pay', enabled ? '1' : '0');
+    applyPaymentUI(enabled);
   };
 
   /* ── ADMIN STATE ─────────────────────────────────────────────── */
@@ -3310,6 +3308,15 @@ window.addEventListener('storage', (event) => {
       const txt = document.getElementById('lhAdminBannerTxt');
       if (txt) txt.textContent = 'Admin Mode — Clicca per aprire';
     }
+    if (val) {
+      _adminTestPay = true;
+      window.lh360PaymentsEnabled = true;
+      applyPaymentUI(true);
+    } else {
+      _adminTestPay = false;
+      window.lh360PaymentsEnabled = _paymentsEnabled;
+      applyPaymentUI(_paymentsEnabled);
+    }
   }
 
   function updateAdminDash() {
@@ -3317,15 +3324,16 @@ window.addEventListener('storage', (event) => {
     const toggleBtn = document.getElementById('lhPayToggleBtn');
     const toggleIco = document.getElementById('lhPayToggleIco');
     const toggleTxt = document.getElementById('lhPayToggleTxt');
+    const effectivePay = _paymentsEnabled || _adminTestPay;
     if (statusVal) {
-      statusVal.textContent = _paymentsEnabled ? 'Abilitati' : 'Disabilitati';
-      statusVal.className   = 'lh-adm-status-val ' + (_paymentsEnabled ? 'on' : 'off');
+      statusVal.textContent = _paymentsEnabled ? 'Abilitati (Ufficiale)' : (_adminTestPay ? 'Abilitati (Test Admin)' : 'Disabilitati');
+      statusVal.className   = 'lh-adm-status-val ' + (effectivePay ? 'on' : 'off');
     }
     if (toggleBtn) {
       toggleBtn.className = 'lh-pay-toggle-btn ' + (_paymentsEnabled ? 'disable' : 'enable');
     }
     if (toggleIco) toggleIco.textContent = _paymentsEnabled ? '🔒' : '🔓';
-    if (toggleTxt) toggleTxt.textContent = _paymentsEnabled ? 'Disabilita Pagamenti' : 'Abilita Pagamenti';
+    if (toggleTxt) toggleTxt.textContent = _paymentsEnabled ? 'Disabilita Pagamenti' : 'Abilita Definitivamente (Tutti gli Utenti)';
   }
 
   /* ── KEYBOARD SEQUENCE ───────────────────────────────────────── */
@@ -3474,7 +3482,7 @@ window.addEventListener('storage', (event) => {
     initBanner();
 
     // Applica stato pagamenti iniziale
-    window.lhApplyPaymentState(_paymentsEnabled);
+    applyPaymentUI(_paymentsEnabled); // Applica stato iniziale senza re-salvare su localStorage
 
     // Reservation modal events
     document.getElementById('lhRmClose')   ?.addEventListener('click', window.closeFounderModal);
@@ -3518,11 +3526,6 @@ document.addEventListener('DOMContentLoaded', function () {
       } catch(e){}
       window.openFounderModal(pn,ps,'cart');
     });
-  }
-  const i18n = window.i18nPDP && window.i18nPDP();
-  if (i18n && cartReserveBtn) {
-    const tn = Array.from(cartReserveBtn.childNodes).find(n=>n.nodeType===3);
-    if(tn) tn.textContent = ' ' + i18n.t('reserve_btn_cart');
   }
 });
 </script>
