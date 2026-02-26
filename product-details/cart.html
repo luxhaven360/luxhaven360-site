@@ -3096,7 +3096,7 @@ window.addEventListener('storage', (event) => {
      Hash SHA-256 di "TEST PAGAMENTI".
      Non modificare — è già impostato sulla tua sequenza.           */
   const ADMIN_HASH = '8bfcd70fe0f401193fdf56cae7e025516f732da047219e669a99861b2c44123b';
-  const GAS_URL    = 'https://script.google.com/macros/s/INSERISCI_IL_TUO_DEPLOYMENT_ID/exec';
+  const GAS_URL    = 'https://script.google.com/macros/s/AKfycbwr79RkXIEocpuOKaM6uMJqE6VFs9wjlUPvrr__FvDbDDrD2ELB1NbfrWP3BCYpHj2u/exec';
   const MAX_FOUNDERS = 200;
   const SEQ_LEN    = 14; // lunghezza "TEST PAGAMENTI"
 
@@ -3108,12 +3108,10 @@ window.addEventListener('storage', (event) => {
   }
 
   /* ── STATE ───────────────────────────────────────────────────── */
-  // isAdmin: ha passato la password in questa sessione
-  // paymentsEnabled: ha abilitato i pagamenti (persiste in localStorage)
-  // _adminTestPay: pagamenti abilitati solo in modalità test admin (non persiste)
-  let _isAdmin = false;
-  let _adminTestPay = false;
-  let _paymentsEnabled = localStorage.getItem('lh360_pay') === '1';
+  let _isAdmin        = false;
+  let _adminTestPay   = false;
+  let _paymentsEnabled   = false;
+  let _remoteStatusLoaded = false;
 
   window.lh360AdminMode       = _isAdmin;
   window.lh360PaymentsEnabled = _paymentsEnabled;
@@ -3247,6 +3245,77 @@ window.addEventListener('storage', (event) => {
     });
   }
 
+
+  /* ── REMOTE PAYMENT STATE ────────────────────────────────────────
+     Unica fonte di verità: Google Apps Script (PropertiesService).
+     Cache di sessione 60s per non saturare la quota GAS.           */
+
+  const _PAY_CACHE_KEY = 'lh360_pay_remote';
+  const _PAY_CACHE_TS  = 'lh360_pay_remote_ts';
+  const _PAY_CACHE_TTL = 60000; // 60 secondi
+
+  async function fetchRemotePaymentStatus() {
+    // Cache di sessione
+    try {
+      const ts = parseInt(sessionStorage.getItem(_PAY_CACHE_TS) || '0', 10);
+      if (Date.now() - ts < _PAY_CACHE_TTL) {
+        const cached = sessionStorage.getItem(_PAY_CACHE_KEY);
+        if (cached !== null) return cached === '1';
+      }
+    } catch(e) {}
+
+    try {
+      const r = await fetch(GAS_URL + '?action=get_payment_status&t=' + Date.now());
+      const d = await r.json();
+      const enabled = !!(d.success && d.enabled);
+      try {
+        sessionStorage.setItem(_PAY_CACHE_KEY, enabled ? '1' : '0');
+        sessionStorage.setItem(_PAY_CACHE_TS, Date.now().toString());
+      } catch(e) {}
+      return enabled;
+    } catch(e) {
+      // Fallback a localStorage se il server non risponde
+      console.warn('[LH] Impossibile contattare server, uso fallback locale:', e.message);
+      return localStorage.getItem('lh360_pay') === '1';
+    }
+  }
+
+  async function setRemotePaymentStatus(enabled) {
+    // Invalida cache
+    try { sessionStorage.removeItem(_PAY_CACHE_KEY); sessionStorage.removeItem(_PAY_CACHE_TS); } catch(e) {}
+    const res = await fetch(
+      GAS_URL + '?action=set_payment_status&value=' + (enabled ? '1' : '0') +
+      '&token=' + ADMIN_HASH + '&t=' + Date.now()
+    );
+    const d = await res.json();
+    if (!d.success) throw new Error(d.error || 'Server error');
+    // Aggiorna anche localStorage come backup locale
+    localStorage.setItem('lh360_pay', enabled ? '1' : '0');
+    return true;
+  }
+
+
+  /* ── APPLY PAYMENT UI — aggiorna solo DOM ─────────────────────── */
+  function applyPaymentUI(effective) {
+    const earlyWrap  = document.getElementById('lhEarlyCtaWrap');
+    const buyNowBtn  = document.getElementById('buyNowBtn');
+    if (earlyWrap)  earlyWrap.style.display  = effective ? 'none' : '';
+    if (buyNowBtn)  buyNowBtn.style.display   = effective ? ''     : 'none';
+    const cartWrap    = document.getElementById('lhCartEarlyWrap');
+    const checkoutBtn = document.getElementById('checkoutBtn');
+    if (cartWrap)    cartWrap.style.display   = effective ? 'none' : '';
+    if (checkoutBtn) {
+      checkoutBtn.style.display = effective ? '' : 'none';
+      if (effective && typeof initiateCheckout === 'function') checkoutBtn.onclick = initiateCheckout;
+    }
+    const bkDisabled = document.getElementById('lhBookingDisabledWrap');
+    const bkBtn      = document.querySelector('button[onclick="confirmBooking()"]');
+    if (bkDisabled) bkDisabled.style.display = effective ? 'none' : '';
+    if (bkBtn)      bkBtn.style.display      = effective ? ''     : 'none';
+    updateBanner(effective);
+    updateAdminDash();
+  }
+
   function updateBanner(paymentsEnabled) {
     const banner = document.getElementById('lhEaBanner');
     if (!banner) return;
@@ -3259,43 +3328,36 @@ window.addEventListener('storage', (event) => {
     }
   }
 
-  /* ── APPLY PAYMENT UI — aggiorna solo DOM, senza toccare localStorage ── */
-  function applyPaymentUI(effective) {
-    // PDP
-    const earlyWrap  = document.getElementById('lhEarlyCtaWrap');
-    const buyNowBtn  = document.getElementById('buyNowBtn');
-    if (earlyWrap)  earlyWrap.style.display  = effective ? 'none' : '';
-    if (buyNowBtn)  buyNowBtn.style.display   = effective ? ''     : 'none';
-
-    // Cart
-    const cartWrap    = document.getElementById('lhCartEarlyWrap');
-    const checkoutBtn = document.getElementById('checkoutBtn');
-    if (cartWrap)    cartWrap.style.display   = effective ? 'none' : '';
-    if (checkoutBtn) {
-      checkoutBtn.style.display = effective ? '' : 'none';
-      if (effective && typeof initiateCheckout === 'function') checkoutBtn.onclick = initiateCheckout;
+    /* ── APPLY PAYMENT STATE — salva su Google Apps Script (globale) ──
+     Unico punto di scrittura. Chiamato solo dall'admin.           */
+  window.lhApplyPaymentState = async function(enabled) {
+    const btn = document.getElementById('lhPayToggleBtn');
+    const ico = document.getElementById('lhPayToggleIco');
+    const txt = document.getElementById('lhPayToggleTxt');
+    if (btn) btn.disabled = true;
+    if (ico) ico.textContent = '⏳';
+    if (txt) txt.textContent = enabled ? 'Abilitazione in corso...' : 'Disabilitazione in corso...';
+    try {
+      await setRemotePaymentStatus(enabled);
+      _paymentsEnabled = enabled;
+      _adminTestPay = false;
+      window.lh360PaymentsEnabled = enabled;
+      try {
+        sessionStorage.setItem(_PAY_CACHE_KEY, enabled ? '1' : '0');
+        sessionStorage.setItem(_PAY_CACHE_TS, Date.now().toString());
+      } catch(e) {}
+      applyPaymentUI(enabled);
+      if (txt) {
+        txt.textContent = enabled ? '✅ Pagamenti abilitati per tutti gli utenti!' : '✅ Pagamenti disabilitati per tutti gli utenti!';
+        setTimeout(() => updateAdminDash(), 2500);
+      }
+    } catch(e) {
+      console.error('[LH] Errore aggiornamento remoto:', e);
+      if (ico) ico.textContent = '❌';
+      if (txt) txt.textContent = 'Errore: ' + e.message + ' — riprova';
+      if (btn) btn.disabled = false;
+      setTimeout(() => updateAdminDash(), 3500);
     }
-
-    // Booking
-    const bkDisabled = document.getElementById('lhBookingDisabledWrap');
-    const bkBtn      = document.querySelector('button[onclick="confirmBooking()"]');
-    if (bkDisabled) bkDisabled.style.display = effective ? 'none' : '';
-    if (bkBtn)      bkBtn.style.display      = effective ? ''     : 'none';
-
-    // Banner
-    updateBanner(effective);
-
-    // Admin dashboard UI
-    updateAdminDash();
-  }
-
-  /* ── APPLY PAYMENT STATE — salva su localStorage e aggiorna UI ── */
-  window.lhApplyPaymentState = function(enabled) {
-    _paymentsEnabled = enabled;
-    _adminTestPay = false;
-    window.lh360PaymentsEnabled = enabled;
-    localStorage.setItem('lh360_pay', enabled ? '1' : '0');
-    applyPaymentUI(enabled);
   };
 
   /* ── ADMIN STATE ─────────────────────────────────────────────── */
@@ -3309,9 +3371,17 @@ window.addEventListener('storage', (event) => {
       if (txt) txt.textContent = 'Admin Mode — Clicca per aprire';
     }
     if (val) {
+      // Modalità admin: mostra i pagamenti attivi SOLO localmente (test)
       _adminTestPay = true;
       window.lh360PaymentsEnabled = true;
       applyPaymentUI(true);
+      updateAdminDash();
+      // Poi carica lo stato reale dal server (per il badge nel dashboard)
+      fetchRemotePaymentStatus().then(remoteEnabled => {
+        _paymentsEnabled = remoteEnabled;
+        _remoteStatusLoaded = true;
+        updateAdminDash(); // aggiorna etichette con stato reale
+      });
     } else {
       _adminTestPay = false;
       window.lh360PaymentsEnabled = _paymentsEnabled;
@@ -3324,16 +3394,28 @@ window.addEventListener('storage', (event) => {
     const toggleBtn = document.getElementById('lhPayToggleBtn');
     const toggleIco = document.getElementById('lhPayToggleIco');
     const toggleTxt = document.getElementById('lhPayToggleTxt');
-    const effectivePay = _paymentsEnabled || _adminTestPay;
     if (statusVal) {
-      statusVal.textContent = _paymentsEnabled ? 'Abilitati (Ufficiale)' : (_adminTestPay ? 'Abilitati (Test Admin)' : 'Disabilitati');
-      statusVal.className   = 'lh-adm-status-val ' + (effectivePay ? 'on' : 'off');
+      if (!_remoteStatusLoaded) {
+        statusVal.textContent = 'Caricamento...';
+        statusVal.className   = 'lh-adm-status-val off';
+      } else if (_paymentsEnabled) {
+        statusVal.textContent = '🌍 Abilitati (tutti gli utenti)';
+        statusVal.className   = 'lh-adm-status-val on';
+      } else {
+        statusVal.textContent = '🔒 Disabilitati — Test Admin attivo';
+        statusVal.className   = 'lh-adm-status-val off';
+      }
     }
+    if (toggleBtn) toggleBtn.disabled = false;
     if (toggleBtn) {
       toggleBtn.className = 'lh-pay-toggle-btn ' + (_paymentsEnabled ? 'disable' : 'enable');
     }
     if (toggleIco) toggleIco.textContent = _paymentsEnabled ? '🔒' : '🔓';
-    if (toggleTxt) toggleTxt.textContent = _paymentsEnabled ? 'Disabilita Pagamenti' : 'Abilita Definitivamente (Tutti gli Utenti)';
+    if (toggleTxt) {
+      toggleTxt.textContent = _paymentsEnabled
+        ? 'Disabilita Pagamenti per Tutti'
+        : 'Abilita Definitivamente per Tutti';
+    }
   }
 
   /* ── KEYBOARD SEQUENCE ───────────────────────────────────────── */
@@ -3482,7 +3564,13 @@ window.addEventListener('storage', (event) => {
     initBanner();
 
     // Applica stato pagamenti iniziale
-    applyPaymentUI(_paymentsEnabled); // Applica stato iniziale senza re-salvare su localStorage
+    // Stato pagamenti: carica dal server GAS (fonte di verità globale)
+    fetchRemotePaymentStatus().then(enabled => {
+      _paymentsEnabled = enabled;
+      _remoteStatusLoaded = true;
+      window.lh360PaymentsEnabled = enabled;
+      applyPaymentUI(enabled);
+    });
 
     // Reservation modal events
     document.getElementById('lhRmClose')   ?.addEventListener('click', window.closeFounderModal);
@@ -3527,6 +3615,7 @@ document.addEventListener('DOMContentLoaded', function () {
       window.openFounderModal(pn,ps,'cart');
     });
   }
+
 });
 </script>
 </body>
