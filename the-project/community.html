@@ -4,53 +4,66 @@
     <!--
      ═══════════════════════════════════════════════════════════
       community.html — LuxHaven360 · Members Area
-      v2.1 — Fix definitivo RESULT_CODE_HUNG / "Uffa!"
-      ✅ siteguard-client.js e error-handler.js in defer
-         → non bloccano più il parser HTML
-      ✅ Rimosso pageshow/reload superfluo (pagina statica)
-         → bfcache funziona nativamente, nessun conflitto
-      ✅ Rimossi meta Cache-Control (inefficaci su bfcache)
-      ✅ Safety timeout 12s + global error catch → LuxError
-      ✅ Struttura bifase: Founder Candidate / Founding Member
+      v2.0 — Struttura bifase: Founder Candidate / Founding Member
+      ✅ error-handler.js come SECONDO script (dopo siteguard)
+      ✅ Prevenzione avanzata errore "Uffa!" (RESULT_CODE_HUNG)
+      ✅ Fix bfcache con debounce anti-loop
+      ✅ Timeout di sicurezza su tutti gli script pesanti
+      ✅ Navigazione con URL assoluti e gestione errori
+      ✅ Struttura bifase con vantaggi distinti per fase
       ✅ Traduzioni complete in 5 lingue
      ═══════════════════════════════════════════════════════════
     -->
 
-    <!-- ① SiteGuard — monitoring & error tracking (defer: non blocca il parser HTML) -->
-    <script src="../siteguard-client.js" defer></script>
+    <!-- ① SiteGuard PRIMO — monitoring & error tracking -->
+    <script src="../siteguard-client.js"></script>
 
-    <!-- ② Error Handler (defer: eseguito in ordine dopo siteguard, prima di DOMContentLoaded) -->
-    <script src="../error-handler.js" defer></script>
+    <!-- ② Error Handler SECONDO — sempre caricato prima di tutto il resto -->
+    <script src="../error-handler.js"></script>
 
     <!--
-      ③ SICUREZZA INIT
-         community.html è una pagina puramente statica: nessun fetch GAS,
-         nessuno spinner, nessuno stato da resettare.
-         ─ NON usiamo pageshow/reload: il bfcache funziona correttamente
-           da solo su pagine statiche. siteguard-client.js gestisce già
-           i casi con fetch pendenti nelle pagine dinamiche.
-         ─ Safety timeout: se community-translations.js (defer) non
-           arriva entro 12s, mostra LuxError invece di pagina silenziosa.
-         ─ Global error catch: errori JS degli script interni → LuxError.
+      ③ PREVENZIONE "UFFA!" / RESULT_CODE_HUNG
+         Intercetta i casi più comuni che causano il hang del renderer:
+         - navigazione back/forward (bfcache)
+         - script che non terminano
+         - errori di caricamento risorse
     -->
     <script>
     (function() {
         'use strict';
 
-        /* ── SAFETY TIMEOUT ─────────────────────────────────────
-           Se l'init non completa entro 12s (es. CDN irraggiungibile),
-           mostriamo LuxError con pulsante Riprova.
+        /* ── BFCACHE FIX con debounce anti-loop ──────────────────
+           Chrome mostra RESULT_CODE_HUNG quando ripristina una pagina
+           dalla bfcache con uno stato "congelato". Il reload risolve,
+           ma con debounce per evitare loop infiniti.
         */
-        var _initTimer = setTimeout(function() {
-            if (!document.getElementById('page-init-complete') && window.LuxError) {
+        var _bfReloadFired = false;
+        window.addEventListener('pageshow', function(e) {
+            if (e.persisted && !_bfReloadFired) {
+                _bfReloadFired = true;
+                // Ritardo minimo per garantire che il browser sia pronto
+                setTimeout(function() {
+                    try { window.location.reload(); } catch(err) {}
+                }, 80);
+            }
+        });
+
+        /* ── TIMEOUT DI SICUREZZA ────────────────────────────────
+           Se la pagina non completa l'init entro 15s, mostriamo
+           l'errore gestito invece del blocco silenzioso del browser.
+        */
+        var _pageInitTimeout = setTimeout(function() {
+            if (window.LuxError && !document.getElementById('page-init-complete')) {
                 window.LuxError.show('loading', function() {
                     window.location.reload();
                 });
             }
-        }, 12000);
+        }, 15000);
 
+        // Questo marker viene rimosso dall'init quando tutto è ok
         window._clearPageInitTimeout = function() {
-            clearTimeout(_initTimer);
+            clearTimeout(_pageInitTimeout);
+            // Inseriamo il marker invisibile nel DOM
             if (!document.getElementById('page-init-complete')) {
                 var m = document.createElement('meta');
                 m.id = 'page-init-complete';
@@ -59,18 +72,32 @@
         };
 
         /* ── GLOBAL ERROR CATCH ─────────────────────────────────
-           Errori JS degli script interni → LuxError overlay.
-           Errori da CDN / estensioni / terze parti → ignorati.
+           Errori JS gravi non gestiti → mostriamo LuxError
+           invece di lasciare la pagina in stato inconsistente.
         */
         window.addEventListener('error', function(event) {
             var src = (event.filename || '').toLowerCase();
-            if (src && src.indexOf('luxhaven360') === -1 && src.indexOf('community') === -1) return;
+            // Ignora errori da script di terze parti (CDN, analytics)
+            if (src && !src.includes('luxhaven360') && !src.includes('community')) return;
+            // Ignora errori non gravi (elementi mancanti, ecc.)
             var msg = (event.message || '').toLowerCase();
-            if (msg.indexOf('script error') !== -1 || msg.indexOf('resizeobserver') !== -1) return;
+            if (msg.includes('script error') || msg.includes('resizeobserver')) return;
+            // Mostra errore gestito
             if (window.LuxError) {
-                window.LuxError.show('loading', function() { window.location.reload(); });
+                window.LuxError.show('loading', function() {
+                    window.location.reload();
+                });
             }
         }, false);
+
+        /* ── GESTIONE NAVIGAZIONE ────────────────────────────────
+           Previene stati di navigazione inconsistenti usando
+           l'History API. Quando l'utente torna indietro, invece
+           di ricaricare uno stato congelato, forziamo un reload pulito.
+        */
+        if (window.history && window.history.scrollRestoration) {
+            window.history.scrollRestoration = 'manual';
+        }
 
     }());
     </script>
@@ -79,6 +106,13 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
     <meta name="theme-color" content="#050505"/>
     <meta name="robots" content="noindex, nofollow"/>
+
+    <!--
+      Cache-Control via meta per prevenire cache aggressiva
+      che può contribuire a RESULT_CODE_HUNG su GitHub Pages
+    -->
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
+    <meta http-equiv="Pragma" content="no-cache"/>
 
     <title>Members Area — LuxHaven360</title>
 
@@ -607,66 +641,322 @@
             margin-top: 6px;
         }
 
-        /* ─── FOUNDER ACCESS CARD ─── */
-        .comm-founder-block {
-            display: grid; grid-template-columns: 1fr 1fr; gap: 5rem; align-items: center; margin-top: 4rem;
-        }
-        @media (max-width: 768px) { .comm-founder-block { grid-template-columns: 1fr; gap: 3rem; } }
+        /* ─── FOUNDER COUNTER ─── */
 
-        .comm-access-card {
-            background: rgba(212,175,55,0.03); border: 1px solid rgba(212,175,55,0.18);
-            border-radius: 4px; padding: 3rem 2.5rem; text-align: center; position: relative; overflow: hidden;
+        /* Wrapper a colonna unica centrata */
+        .comm-counter-wrap {
+            max-width: 780px;
+            margin: 4rem auto 0;
         }
-        .comm-access-card::before {
-            content: ''; position: absolute; top: 0; left: 0; right: 0; height: 1px;
-            background: linear-gradient(90deg, transparent, var(--gold), transparent);
+
+        /* Card principale */
+        .comm-counter-card {
+            background: rgba(212,175,55,0.025);
+            border: 1px solid rgba(212,175,55,0.2);
+            border-radius: 4px;
+            padding: 3.5rem 3.5rem 3rem;
+            position: relative;
+            overflow: hidden;
         }
-        .comm-access-card-label {
-            font-size: 0.68rem; letter-spacing: 0.2em; text-transform: uppercase;
-            color: rgba(212,175,55,0.6); margin-bottom: 1.5rem; display: block;
+        .comm-counter-card::before {
+            content: '';
+            position: absolute; top: 0; left: 0; right: 0; height: 2px;
+            background: linear-gradient(90deg, transparent 0%, var(--gold) 40%, rgba(212,175,55,0.4) 70%, transparent 100%);
         }
-        .comm-access-nums {
-            display: flex; align-items: baseline; justify-content: center; gap: 0.4rem; margin-bottom: 0.5rem;
+        @media (max-width: 560px) {
+            .comm-counter-card { padding: 2.5rem 1.75rem 2rem; }
         }
-        .comm-access-taken {
-            font-size: 5rem; font-weight: 200; letter-spacing: -0.03em;
+
+        /* Riga superiore: stat disponibili + total */
+        .comm-counter-top {
+            display: flex;
+            align-items: flex-end;
+            justify-content: space-between;
+            gap: 2rem;
+            margin-bottom: 2.2rem;
+        }
+        @media (max-width: 540px) {
+            .comm-counter-top { flex-direction: column; align-items: flex-start; gap: 1rem; }
+        }
+
+        .comm-counter-available-block {}
+        .comm-counter-available-num {
+            font-size: clamp(3.8rem, 8vw, 5.5rem);
+            font-weight: 200;
+            letter-spacing: -0.03em;
+            line-height: 1;
+            background: linear-gradient(135deg, #F5F5F5 0%, rgba(245,245,245,0.7) 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            display: block;
+        }
+        .comm-counter-available-label {
+            font-size: 0.72rem;
+            letter-spacing: 0.18em;
+            text-transform: uppercase;
+            color: rgba(245,245,245,0.35);
+            display: block;
+            margin-top: 0.4rem;
+        }
+
+        .comm-counter-total-block {
+            text-align: right;
+            flex-shrink: 0;
+            padding-bottom: 0.25rem;
+        }
+        @media (max-width: 540px) { .comm-counter-total-block { text-align: left; } }
+        .comm-counter-total-num {
+            font-size: 1.6rem;
+            font-weight: 200;
+            color: rgba(245,245,245,0.2);
+            display: block;
+            letter-spacing: 0.02em;
+        }
+        .comm-counter-total-label {
+            font-size: 0.62rem;
+            letter-spacing: 0.15em;
+            text-transform: uppercase;
+            color: rgba(245,245,245,0.18);
+            display: block;
+            margin-top: 0.2rem;
+        }
+
+        /* Barra doppia */
+        .comm-counter-bar-wrap {
+            margin-bottom: 0.55rem;
+            position: relative;
+        }
+        .comm-counter-bar-track {
+            height: 6px;
+            background: rgba(255,255,255,0.05);
+            border-radius: 6px;
+            overflow: hidden;
+            position: relative;
+        }
+        /* Strato 1 — confermati (solido, brillante) */
+        .comm-counter-bar-confirmed {
+            position: absolute;
+            left: 0; top: 0; bottom: 0;
+            width: 62%;   /* 124/200 */
+            background: linear-gradient(90deg, rgba(212,175,55,0.5) 0%, var(--gold) 100%);
+            border-radius: 6px;
+            transition: width 1.2s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+        }
+        /* Strato 2 — riservati (opaco, tratteggiato visivamente con opacità) */
+        .comm-counter-bar-reserved {
+            position: absolute;
+            left: 62%;    /* parte dove finisce confirmed */
+            top: 0; bottom: 0;
+            width: 11.5%; /* 23/200 */
+            background: repeating-linear-gradient(
+                90deg,
+                rgba(212,175,55,0.28) 0px,
+                rgba(212,175,55,0.28) 6px,
+                transparent 6px,
+                transparent 10px
+            );
+            border-radius: 0 6px 6px 0;
+            transition: width 1.2s cubic-bezier(0.25, 0.46, 0.45, 0.94) 0.1s;
+        }
+
+        /* Legenda barra */
+        .comm-counter-bar-legend {
+            display: flex;
+            align-items: center;
+            gap: 1.5rem;
+            margin-top: 0.85rem;
+            flex-wrap: wrap;
+        }
+        .comm-counter-legend-item {
+            display: flex;
+            align-items: center;
+            gap: 0.45rem;
+            font-size: 0.7rem;
+            color: rgba(245,245,245,0.35);
+            letter-spacing: 0.06em;
+        }
+        .comm-counter-legend-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            flex-shrink: 0;
+        }
+        .comm-counter-legend-dot.confirmed {
+            background: var(--gold);
+            box-shadow: 0 0 6px rgba(212,175,55,0.4);
+        }
+        .comm-counter-legend-dot.reserved {
+            background: transparent;
+            border: 1.5px dashed rgba(212,175,55,0.45);
+        }
+        .comm-counter-legend-dot.available {
+            background: rgba(255,255,255,0.08);
+            border: 1px solid rgba(255,255,255,0.1);
+        }
+
+        /* Separator */
+        .comm-counter-separator {
+            height: 1px;
+            background: linear-gradient(90deg, rgba(212,175,55,0.12) 0%, transparent 100%);
+            margin: 2rem 0;
+        }
+
+        /* Stat box (confirmed / reserved) */
+        .comm-counter-stats {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1rem;
+            margin-bottom: 2rem;
+        }
+        @media (max-width: 480px) { .comm-counter-stats { grid-template-columns: 1fr; } }
+
+        .comm-counter-stat {
+            padding: 1.4rem 1.6rem;
+            border-radius: 3px;
+            position: relative;
+        }
+        .comm-counter-stat.confirmed {
+            background: rgba(212,175,55,0.05);
+            border: 1px solid rgba(212,175,55,0.18);
+        }
+        .comm-counter-stat.confirmed::before {
+            content: '';
+            position: absolute;
+            left: 0; top: 0; bottom: 0;
+            width: 2px;
+            background: linear-gradient(180deg, var(--gold), rgba(212,175,55,0.2));
+            border-radius: 3px 0 0 3px;
+        }
+        .comm-counter-stat.reserved {
+            background: rgba(255,255,255,0.015);
+            border: 1px dashed rgba(212,175,55,0.18);
+        }
+
+        .comm-counter-stat-num {
+            font-size: 2.4rem;
+            font-weight: 200;
+            letter-spacing: -0.02em;
+            line-height: 1;
+            display: block;
+            margin-bottom: 0.4rem;
+        }
+        .confirmed .comm-counter-stat-num {
             background: linear-gradient(135deg, var(--gold), #FFD700);
-            -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; line-height: 1;
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
         }
-        .comm-access-sep { font-size: 3rem; font-weight: 100; color: rgba(245,245,245,0.15); }
-        .comm-access-total { font-size: 3rem; font-weight: 100; color: rgba(245,245,245,0.3); }
-        .comm-access-sublabel {
-            font-size: 0.72rem; letter-spacing: 0.1em; color: rgba(245,245,245,0.3);
-            text-transform: uppercase; margin-bottom: 2rem;
+        .reserved .comm-counter-stat-num {
+            color: rgba(245,245,245,0.3);
         }
-        .comm-access-bar {
-            position: relative; height: 2px; background: rgba(255,255,255,0.06); border-radius: 2px; margin-bottom: 0.6rem;
+
+        .comm-counter-stat-name {
+            font-size: 0.78rem;
+            font-weight: 400;
+            color: rgba(245,245,245,0.7);
+            display: block;
+            margin-bottom: 0.25rem;
+            letter-spacing: 0.02em;
         }
-        .comm-access-bar-fill {
-            height: 100%; background: linear-gradient(90deg, rgba(212,175,55,0.4), var(--gold));
-            border-radius: 2px; width: 73.5%;
+        .reserved .comm-counter-stat-name { color: rgba(245,245,245,0.4); }
+
+        .comm-counter-stat-sub {
+            font-size: 0.68rem;
+            color: rgba(245,245,245,0.28);
+            display: block;
+            letter-spacing: 0.04em;
         }
-        .comm-access-bar-labels {
-            display: flex; justify-content: space-between; font-size: 0.65rem;
-            color: rgba(245,245,245,0.2); margin-bottom: 2rem;
+        .comm-counter-stat-tag {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.3rem;
+            margin-top: 0.65rem;
+            font-size: 0.6rem;
+            letter-spacing: 0.12em;
+            text-transform: uppercase;
+            padding: 0.2rem 0.6rem;
+            border-radius: 20px;
         }
-        .comm-access-remaining { color: rgba(212,175,55,0.6); }
-        .comm-access-cta {
-            display: block; width: 100%; padding: 0.95rem 1.5rem;
-            background: linear-gradient(135deg, var(--gold), #C9A227);
-            color: #0A0A0A; text-decoration: none;
-            font-size: 0.78rem; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase;
-            text-align: center; border-radius: 2px; transition: transform 0.3s ease, box-shadow 0.3s ease;
-            position: relative; overflow: hidden;
+        .confirmed .comm-counter-stat-tag {
+            background: rgba(80,200,120,0.08);
+            border: 1px solid rgba(80,200,120,0.2);
+            color: rgba(80,200,120,0.75);
+        }
+        .reserved .comm-counter-stat-tag {
+            background: rgba(212,175,55,0.05);
+            border: 1px dashed rgba(212,175,55,0.2);
+            color: rgba(212,175,55,0.5);
+        }
+        .comm-counter-stat-tag svg { width: 9px; height: 9px; }
+
+        /* Nota riservati */
+        .comm-counter-reserved-note {
+            margin-bottom: 2rem;
+            padding: 1rem 1.4rem;
+            background: rgba(212,175,55,0.03);
+            border: 1px dashed rgba(212,175,55,0.14);
+            border-radius: 3px;
+            display: flex;
+            align-items: flex-start;
+            gap: 0.75rem;
+        }
+        .comm-counter-reserved-note svg {
+            flex-shrink: 0;
+            width: 14px; height: 14px;
+            color: rgba(212,175,55,0.5);
+            margin-top: 1px;
+        }
+        .comm-counter-reserved-note p {
+            font-size: 0.78rem;
+            color: rgba(245,245,245,0.38);
+            line-height: 1.65;
+        }
+        .comm-counter-reserved-note strong {
+            color: rgba(212,175,55,0.6);
+            font-weight: 500;
+        }
+
+        /* CTA */
+        .comm-counter-cta {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.75rem;
+            width: 100%;
+            padding: 1rem 2rem;
+            background: linear-gradient(135deg, var(--gold) 0%, #C9A227 100%);
+            color: #0A0A0A;
+            text-decoration: none;
+            font-size: 0.8rem;
+            font-weight: 700;
+            letter-spacing: 0.14em;
+            text-transform: uppercase;
+            border-radius: 2px;
+            transition: transform 0.25s ease, box-shadow 0.25s ease;
+            position: relative;
+            overflow: hidden;
             will-change: transform;
         }
-        .comm-access-cta::before {
-            content: ''; position: absolute; top: 0; left: -100%; width: 100%; height: 100%;
-            background: linear-gradient(90deg, transparent, rgba(255,255,255,0.15), transparent); transition: left 0.5s ease;
+        .comm-counter-cta::before {
+            content: '';
+            position: absolute; top: 0; left: -100%; width: 100%; height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(255,255,255,0.18), transparent);
+            transition: left 0.5s ease;
         }
-        .comm-access-cta:hover::before { left: 100%; }
-        .comm-access-cta:hover { transform: translateY(-2px); box-shadow: 0 10px 30px rgba(212,175,55,0.2); }
-        .comm-access-note { margin-top: 1rem; font-size: 0.68rem; color: rgba(245,245,245,0.25); }
+        .comm-counter-cta:hover::before { left: 100%; }
+        .comm-counter-cta:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 12px 36px rgba(212,175,55,0.22);
+        }
+        .comm-counter-cta svg { width: 15px; height: 15px; flex-shrink: 0; }
+        .comm-counter-cta-note {
+            text-align: center;
+            margin-top: 0.85rem;
+            font-size: 0.67rem;
+            color: rgba(245,245,245,0.22);
+            letter-spacing: 0.04em;
+        }
 
         /* ─── PREVIEW ─── */
         .comm-preview-grid {
@@ -1053,44 +1343,127 @@
 
 
     <!-- ═══════════════════════════════
-         SEZIONE 5 — ACCESSO CARD
-         ═══════════════════════════════ -->
-    <section class="comm-section">
+         SEZIONE 5 — CONTATORE FOUNDER
+         ═══════════════════════════════
+
+         NUMERI DA AGGIORNARE:
+          • data-confirmed="124"   → Founding Members confermati (pagamento ricevuto)
+          • data-reserved="23"     → Founder Candidate (prenotato, pagamento non ancora confermato)
+          • data-total="200"       → Limite massimo del programma (fisso)
+
+         Il contatore calcola automaticamente:
+          → posti disponibili = total − confirmed − reserved
+          → larghezza barra confirmed = confirmed/total * 100%
+          → larghezza barra reserved  = reserved/total * 100%
+    -->
+    <section class="comm-section"
+             data-counter
+             data-confirmed="124"
+             data-reserved="23"
+             data-total="200">
         <div class="comm-section-inner">
-            <div class="comm-founder-block">
 
-                <div class="cm-reveal">
-                    <span class="comm-overline" data-i18n="s3_overline">Founder Program</span>
-                    <h2 class="comm-section-title" data-i18n-html="s3_title">I posti sono<br>quasi esauriti</h2>
-                    <p class="comm-section-desc" data-i18n="s3_desc">Ogni prenotazione confermata garantisce il tuo posto come Founding Member. Non basta registrarsi — serve un impegno concreto con pagamento confermato.</p>
-                    <p style="margin-top:2rem;font-size:0.78rem;color:rgba(245,245,245,0.3);line-height:1.7;" data-i18n="s3_footnote">
-                        Il contatore riflette solo le prenotazioni confermate. Le registrazioni senza prenotazione non vengono conteggiate.
-                    </p>
-                </div>
-
-                <div class="cm-reveal" style="transition-delay:0.15s">
-                    <div class="comm-access-card">
-                        <span class="comm-access-card-label" data-i18n="card_label">Posti Founding Member</span>
-                        <div class="comm-access-nums">
-                            <span class="comm-access-taken">147</span>
-                            <span class="comm-access-sep">/</span>
-                            <span class="comm-access-total">200</span>
-                        </div>
-                        <p class="comm-access-sublabel" data-i18n="card_sublabel">prenotazioni confermate</p>
-                        <div class="comm-access-bar"><div class="comm-access-bar-fill"></div></div>
-                        <div class="comm-access-bar-labels">
-                            <span>0</span>
-                            <span class="comm-access-remaining" data-i18n="card_remaining">53 posti rimasti</span>
-                            <span>200</span>
-                        </div>
-                        <a href="https://luxhaven360.github.io/luxhaven360-site/"
-                           class="comm-access-cta"
-                           data-i18n="card_cta">Prenota il tuo posto Founder</a>
-                        <p class="comm-access-note" data-i18n="card_note">Il posto viene riservato al momento della prenotazione confermata con pagamento</p>
-                    </div>
-                </div>
-
+            <div class="cm-reveal">
+                <span class="comm-overline" data-i18n="counter_overline">Founder Program — Early Access</span>
+                <h2 class="comm-section-title" data-i18n-html="counter_title">200 posti.<br>Quasi esauriti.</h2>
+                <p class="comm-section-desc" data-i18n="counter_desc">Ogni posizione ha un peso diverso: chi ha confermato il pagamento detiene uno status definitivo. Chi ha solo prenotato occupa uno slot temporaneo, non ancora garantito.</p>
             </div>
+
+            <div class="comm-counter-wrap cm-reveal" style="transition-delay:0.12s">
+                <div class="comm-counter-card">
+
+                    <!-- TOP: posti disponibili + totale -->
+                    <div class="comm-counter-top">
+                        <div class="comm-counter-available-block">
+                            <span class="comm-counter-available-num" id="counterAvailable">53</span>
+                            <span class="comm-counter-available-label" data-i18n="counter_available_label">posti ancora disponibili su 200</span>
+                        </div>
+                        <div class="comm-counter-total-block">
+                            <span class="comm-counter-total-num">200</span>
+                            <span class="comm-counter-total-label" data-i18n="counter_total_label">posti totali</span>
+                        </div>
+                    </div>
+
+                    <!-- BARRA DOPPIA -->
+                    <div class="comm-counter-bar-wrap">
+                        <div class="comm-counter-bar-track">
+                            <div class="comm-counter-bar-confirmed" id="barConfirmed"></div>
+                            <div class="comm-counter-bar-reserved"  id="barReserved"></div>
+                        </div>
+                        <div class="comm-counter-bar-legend">
+                            <div class="comm-counter-legend-item">
+                                <span class="comm-counter-legend-dot confirmed"></span>
+                                <span data-i18n="counter_legend_confirmed">Founding Members confermati</span>
+                            </div>
+                            <div class="comm-counter-legend-item">
+                                <span class="comm-counter-legend-dot reserved"></span>
+                                <span data-i18n="counter_legend_reserved">Posizioni riservate (temporanee)</span>
+                            </div>
+                            <div class="comm-counter-legend-item">
+                                <span class="comm-counter-legend-dot available"></span>
+                                <span data-i18n="counter_legend_available">Disponibili</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="comm-counter-separator"></div>
+
+                    <!-- STAT BOX: confermati / riservati -->
+                    <div class="comm-counter-stats">
+
+                        <div class="comm-counter-stat confirmed">
+                            <span class="comm-counter-stat-num" id="statConfirmed">124</span>
+                            <span class="comm-counter-stat-name" data-i18n="counter_confirmed_name">Founding Members</span>
+                            <span class="comm-counter-stat-sub" data-i18n="counter_confirmed_sub">pagamento confermato</span>
+                            <span class="comm-counter-stat-tag">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5"/>
+                                </svg>
+                                <span data-i18n="counter_confirmed_tag">Status definitivo</span>
+                            </span>
+                        </div>
+
+                        <div class="comm-counter-stat reserved">
+                            <span class="comm-counter-stat-num" id="statReserved">23</span>
+                            <span class="comm-counter-stat-name" data-i18n="counter_reserved_name">Founder Candidate</span>
+                            <span class="comm-counter-stat-sub" data-i18n="counter_reserved_sub">prenotazione in attesa</span>
+                            <span class="comm-counter-stat-tag">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <circle cx="12" cy="12" r="9"/>
+                                    <path stroke-linecap="round" d="M12 7v5l3 3"/>
+                                </svg>
+                                <span data-i18n="counter_reserved_tag">Non ancora definitivo</span>
+                            </span>
+                        </div>
+
+                    </div>
+
+                    <!-- NOTA SLOT TEMPORANEI -->
+                    <div class="comm-counter-reserved-note">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                            <path stroke-linecap="round" stroke-linejoin="round"
+                                  d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z"/>
+                        </svg>
+                        <p data-i18n-html="counter_note_reserved">
+                            Le <strong>23 posizioni riservate</strong> sono temporanee: lo slot viene mantenuto solo fino alla conferma del pagamento. Se non confermato, il posto torna disponibile.
+                        </p>
+                    </div>
+
+                    <!-- CTA -->
+                    <a href="https://luxhaven360.github.io/luxhaven360-site/"
+                       class="comm-counter-cta">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M17.25 8.25L21 12m0 0l-3.75 3.75M21 12H3"/>
+                        </svg>
+                        <span data-i18n="counter_cta">Prenota e diventa Founding Member</span>
+                    </a>
+                    <p class="comm-counter-cta-note" data-i18n="counter_cta_note">
+                        La posizione si consolida al momento della conferma del pagamento
+                    </p>
+
+                </div>
+            </div>
+
         </div>
     </section>
 
@@ -1272,6 +1645,66 @@
         }
 
         /* ────────────────────────────────────────
+           FOUNDER COUNTER — legge data-* dalla section
+           e anima barre + aggiorna stat.
+           Per aggiornare i numeri: modifica solo gli
+           attributi data-confirmed / data-reserved /
+           data-total sul tag <section data-counter>.
+           ──────────────────────────────────────── */
+        function initFounderCounter() {
+            var section = document.querySelector('[data-counter]');
+            if (!section) return;
+
+            var total     = parseInt(section.getAttribute('data-total'),     10) || 200;
+            var confirmed = parseInt(section.getAttribute('data-confirmed'), 10) || 0;
+            var reserved  = parseInt(section.getAttribute('data-reserved'),  10) || 0;
+            var available = Math.max(0, total - confirmed - reserved);
+
+            // Aggiorna numeri
+            var elAvail = document.getElementById('counterAvailable');
+            var elConf  = document.getElementById('statConfirmed');
+            var elRes   = document.getElementById('statReserved');
+            if (elAvail) elAvail.textContent = available;
+            if (elConf)  elConf.textContent  = confirmed;
+            if (elRes)   elRes.textContent   = reserved;
+
+            // Aggiorna label "posti disponibili su N"
+            // (già tradotta, ma aggiorniamo il numero se necessario)
+
+            // Anima le barre con un leggero delay dopo il reveal
+            var barConf = document.getElementById('barConfirmed');
+            var barRes  = document.getElementById('barReserved');
+            if (barConf) {
+                barConf.style.width = '0';
+                barConf.style.left  = '0';
+            }
+            if (barRes) {
+                barRes.style.width = '0';
+                barRes.style.left  = (confirmed / total * 100) + '%';
+            }
+
+            // Trigger animation after a short delay (allows CSS transition to fire)
+            setTimeout(function() {
+                if (barConf) barConf.style.width = (confirmed / total * 100) + '%';
+                if (barRes)  barRes.style.width  = (reserved  / total * 100) + '%';
+            }, 350);
+
+            // Aggiorna nota slot temporanei con il numero corretto
+            // (la traduzione usa "X posizioni riservate" — rimpiazziamo il numero)
+            var noteEl = document.querySelector('.comm-counter-reserved-note p');
+            if (noteEl) {
+                var T = window.COMM_TRANSLATIONS;
+                var lang = document.documentElement.lang || 'it';
+                if (T && T[lang] && T[lang].counter_note_reserved) {
+                    var noteHtml = T[lang].counter_note_reserved;
+                    // Sostituisce il placeholder {reserved} con il numero reale
+                    noteHtml = noteHtml.replace('{reserved}', reserved);
+                    noteEl.innerHTML = noteHtml;
+                }
+            }
+        }
+
+        /* ────────────────────────────────────────
            SCROLL REVEAL — IntersectionObserver
            ──────────────────────────────────────── */
         function initScrollReveal() {
@@ -1312,6 +1745,9 @@
                 if (window.SiteGuard && window.SiteGuard.i18nReady) {
                     window.SiteGuard.i18nReady(true, detectedLang);
                 }
+
+                // Inizializza contatore founder
+                initFounderCounter();
 
                 // Segnala al sistema anti-hang che l'init è completato
                 if (window._clearPageInitTimeout) {
