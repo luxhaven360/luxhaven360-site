@@ -25,6 +25,7 @@ class LuxHavenConnectionMonitor {
         this.maxRetries = 3;
         this.wasOffline = false;
         this.initialCheckDone = false; // 🆕 Flag per primo check
+        this._pendingAbortControllers = new Set(); // 🆕 BFCache: traccia fetch attivi
         
         this.init();
     }
@@ -38,6 +39,27 @@ class LuxHavenConnectionMonitor {
         document.addEventListener('languageChanged', () => {
            console.log('🌐 Lingua cambiata, aggiorno avvisi connessione');
            this.updateWarningsLanguage();
+        });
+        
+        // ✅ BFCACHE FIX:
+        // "beforeunload" disabilita la BFCache di Chrome → causa RESULT_CODE_HUNG.
+        // Usiamo "pagehide" che è compatibile con BFCache e cancelliamo le fetch attive.
+        window.addEventListener('pagehide', () => {
+            this.destroy();
+        });
+
+        // Quando la pagina viene ripristinata dalla BFCache, reinizializziamo
+        window.addEventListener('pageshow', (event) => {
+            if (event.persisted) {
+                // La pagina è stata ripristinata dalla BFCache: reinizializziamo il monitor
+                this.isOnline = navigator.onLine;
+                this.hasShownWarning = false;
+                this.initialCheckDone = false;
+                this._pendingAbortControllers = new Set();
+                if (this.isOnline) {
+                    setTimeout(() => this.checkConnection(true), 500);
+                }
+            }
         });
         
         // ✅ STRATEGIA OTTIMIZZATA:
@@ -83,14 +105,19 @@ class LuxHavenConnectionMonitor {
         try {
             const startTime = performance.now();
             
+            // 🆕 BFCache: usa AbortController per poter cancellare la fetch su pagehide
+            const ac = new AbortController();
+            this._pendingAbortControllers.add(ac);
+
             // Test ping a Google favicon (piccolo, veloce, no CORS)
             const response = await fetch('https://www.google.com/favicon.ico', {
                 method: 'HEAD',
                 mode: 'no-cors',
                 cache: 'no-cache',
-                signal: AbortSignal.timeout(5000)
+                signal: ac.signal
             });
             
+            this._pendingAbortControllers.delete(ac);
             const endTime = performance.now();
             const latency = endTime - startTime;
 
@@ -121,7 +148,10 @@ class LuxHavenConnectionMonitor {
             this.retryAttempts = 0;
             
         } catch (error) {
-            // Gestione errori silenziosa (no console spam)
+            // Ignora AbortError (fetch cancellata su pagehide, normale per BFCache)
+            if (error.name === 'AbortError') return;
+            
+            // Log silenzioso per errori di rete
             if (!silent) {
                 console.debug('Connection check:', error.message);
             }
@@ -408,11 +438,19 @@ if (errorOverlay && errorOverlay.classList.contains('show')) {
     }
 
     /**
-     * Cleanup risorse
+     * Cleanup risorse — compatibile con BFCache (chiamato su pagehide)
      */
     destroy() {
         if (this.checkInterval) {
             clearInterval(this.checkInterval);
+            this.checkInterval = null;
+        }
+        // 🆕 Cancella tutte le fetch pendenti per sbloccare BFCache
+        if (this._pendingAbortControllers) {
+            this._pendingAbortControllers.forEach(ac => {
+                try { ac.abort(); } catch(e) {}
+            });
+            this._pendingAbortControllers.clear();
         }
         this.hideAllWarnings();
     }
@@ -430,9 +468,6 @@ if (document.readyState === 'loading') {
     luxConnectionMonitor = new LuxHavenConnectionMonitor();
 }
 
-// Cleanup su unload
-window.addEventListener('beforeunload', () => {
-    if (luxConnectionMonitor) {
-        luxConnectionMonitor.destroy();
-    }
-});
+// ✅ Il cleanup è gestito via 'pagehide' all'interno della classe (compatibile BFCache).
+// NON registriamo 'beforeunload' qui: farlo disabiliterebbe la BFCache di Chrome
+// e causerebbe RESULT_CODE_HUNG al ritorno dalla navigazione.
