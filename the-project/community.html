@@ -4,66 +4,53 @@
     <!--
      ═══════════════════════════════════════════════════════════
       community.html — LuxHaven360 · Members Area
-      v2.0 — Struttura bifase: Founder Candidate / Founding Member
-      ✅ error-handler.js come SECONDO script (dopo siteguard)
-      ✅ Prevenzione avanzata errore "Uffa!" (RESULT_CODE_HUNG)
-      ✅ Fix bfcache con debounce anti-loop
-      ✅ Timeout di sicurezza su tutti gli script pesanti
-      ✅ Navigazione con URL assoluti e gestione errori
-      ✅ Struttura bifase con vantaggi distinti per fase
+      v2.1 — Fix definitivo RESULT_CODE_HUNG / "Uffa!"
+      ✅ siteguard-client.js e error-handler.js in defer
+         → non bloccano più il parser HTML
+      ✅ Rimosso pageshow/reload superfluo (pagina statica)
+         → bfcache funziona nativamente, nessun conflitto
+      ✅ Rimossi meta Cache-Control (inefficaci su bfcache)
+      ✅ Safety timeout 12s + global error catch → LuxError
+      ✅ Struttura bifase: Founder Candidate / Founding Member
       ✅ Traduzioni complete in 5 lingue
      ═══════════════════════════════════════════════════════════
     -->
 
-    <!-- ① SiteGuard PRIMO — monitoring & error tracking -->
-    <script src="../siteguard-client.js"></script>
+    <!-- ① SiteGuard — monitoring & error tracking (defer: non blocca il parser HTML) -->
+    <script src="../siteguard-client.js" defer></script>
 
-    <!-- ② Error Handler SECONDO — sempre caricato prima di tutto il resto -->
-    <script src="../error-handler.js"></script>
+    <!-- ② Error Handler (defer: eseguito in ordine dopo siteguard, prima di DOMContentLoaded) -->
+    <script src="../error-handler.js" defer></script>
 
     <!--
-      ③ PREVENZIONE "UFFA!" / RESULT_CODE_HUNG
-         Intercetta i casi più comuni che causano il hang del renderer:
-         - navigazione back/forward (bfcache)
-         - script che non terminano
-         - errori di caricamento risorse
+      ③ SICUREZZA INIT
+         community.html è una pagina puramente statica: nessun fetch GAS,
+         nessuno spinner, nessuno stato da resettare.
+         ─ NON usiamo pageshow/reload: il bfcache funziona correttamente
+           da solo su pagine statiche. siteguard-client.js gestisce già
+           i casi con fetch pendenti nelle pagine dinamiche.
+         ─ Safety timeout: se community-translations.js (defer) non
+           arriva entro 12s, mostra LuxError invece di pagina silenziosa.
+         ─ Global error catch: errori JS degli script interni → LuxError.
     -->
     <script>
     (function() {
         'use strict';
 
-        /* ── BFCACHE FIX con debounce anti-loop ──────────────────
-           Chrome mostra RESULT_CODE_HUNG quando ripristina una pagina
-           dalla bfcache con uno stato "congelato". Il reload risolve,
-           ma con debounce per evitare loop infiniti.
+        /* ── SAFETY TIMEOUT ─────────────────────────────────────
+           Se l'init non completa entro 12s (es. CDN irraggiungibile),
+           mostriamo LuxError con pulsante Riprova.
         */
-        var _bfReloadFired = false;
-        window.addEventListener('pageshow', function(e) {
-            if (e.persisted && !_bfReloadFired) {
-                _bfReloadFired = true;
-                // Ritardo minimo per garantire che il browser sia pronto
-                setTimeout(function() {
-                    try { window.location.reload(); } catch(err) {}
-                }, 80);
-            }
-        });
-
-        /* ── TIMEOUT DI SICUREZZA ────────────────────────────────
-           Se la pagina non completa l'init entro 15s, mostriamo
-           l'errore gestito invece del blocco silenzioso del browser.
-        */
-        var _pageInitTimeout = setTimeout(function() {
-            if (window.LuxError && !document.getElementById('page-init-complete')) {
+        var _initTimer = setTimeout(function() {
+            if (!document.getElementById('page-init-complete') && window.LuxError) {
                 window.LuxError.show('loading', function() {
                     window.location.reload();
                 });
             }
-        }, 15000);
+        }, 12000);
 
-        // Questo marker viene rimosso dall'init quando tutto è ok
         window._clearPageInitTimeout = function() {
-            clearTimeout(_pageInitTimeout);
-            // Inseriamo il marker invisibile nel DOM
+            clearTimeout(_initTimer);
             if (!document.getElementById('page-init-complete')) {
                 var m = document.createElement('meta');
                 m.id = 'page-init-complete';
@@ -72,32 +59,18 @@
         };
 
         /* ── GLOBAL ERROR CATCH ─────────────────────────────────
-           Errori JS gravi non gestiti → mostriamo LuxError
-           invece di lasciare la pagina in stato inconsistente.
+           Errori JS degli script interni → LuxError overlay.
+           Errori da CDN / estensioni / terze parti → ignorati.
         */
         window.addEventListener('error', function(event) {
             var src = (event.filename || '').toLowerCase();
-            // Ignora errori da script di terze parti (CDN, analytics)
-            if (src && !src.includes('luxhaven360') && !src.includes('community')) return;
-            // Ignora errori non gravi (elementi mancanti, ecc.)
+            if (src && src.indexOf('luxhaven360') === -1 && src.indexOf('community') === -1) return;
             var msg = (event.message || '').toLowerCase();
-            if (msg.includes('script error') || msg.includes('resizeobserver')) return;
-            // Mostra errore gestito
+            if (msg.indexOf('script error') !== -1 || msg.indexOf('resizeobserver') !== -1) return;
             if (window.LuxError) {
-                window.LuxError.show('loading', function() {
-                    window.location.reload();
-                });
+                window.LuxError.show('loading', function() { window.location.reload(); });
             }
         }, false);
-
-        /* ── GESTIONE NAVIGAZIONE ────────────────────────────────
-           Previene stati di navigazione inconsistenti usando
-           l'History API. Quando l'utente torna indietro, invece
-           di ricaricare uno stato congelato, forziamo un reload pulito.
-        */
-        if (window.history && window.history.scrollRestoration) {
-            window.history.scrollRestoration = 'manual';
-        }
 
     }());
     </script>
@@ -106,13 +79,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
     <meta name="theme-color" content="#050505"/>
     <meta name="robots" content="noindex, nofollow"/>
-
-    <!--
-      Cache-Control via meta per prevenire cache aggressiva
-      che può contribuire a RESULT_CODE_HUNG su GitHub Pages
-    -->
-    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
-    <meta http-equiv="Pragma" content="no-cache"/>
 
     <title>Members Area — LuxHaven360</title>
 
