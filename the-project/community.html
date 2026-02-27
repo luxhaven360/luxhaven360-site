@@ -4,35 +4,124 @@
     <!--
      ═══════════════════════════════════════════════════════════
       community.html — LuxHaven360 · Members Area
-      OTTIMIZZAZIONI PERFORMANCE:
-       ✅ siteguard-client.js come PRIMO script (monitoring)
-       ✅ Preconnect / DNS-prefetch per risorse critiche
-       ✅ flag-icons CSS non-bloccante (media trick)
-       ✅ Traduzioni estratte in community-translations.js (defer)
-       ✅ Script init in defer + DOMContentLoaded
-       ✅ content-visibility: auto sulle sezioni off-screen
-       ✅ will-change ottimizzato su elementi animati
-       ✅ Fix bfcache: pageshow event + forced scroll top
-       ✅ URL assoluti uniformi per navigazione
-       ✅ Meta theme-color e SEO base
+      v2.0 — Struttura bifase: Founder Candidate / Founding Member
+      ✅ error-handler.js come SECONDO script (dopo siteguard)
+      ✅ Prevenzione avanzata errore "Uffa!" (RESULT_CODE_HUNG)
+      ✅ Fix bfcache con debounce anti-loop
+      ✅ Timeout di sicurezza su tutti gli script pesanti
+      ✅ Navigazione con URL assoluti e gestione errori
+      ✅ Struttura bifase con vantaggi distinti per fase
+      ✅ Traduzioni complete in 5 lingue
      ═══════════════════════════════════════════════════════════
     -->
 
     <!-- ① SiteGuard PRIMO — monitoring & error tracking -->
     <script src="../siteguard-client.js"></script>
 
+    <!-- ② Error Handler SECONDO — sempre caricato prima di tutto il resto -->
+    <script src="../error-handler.js"></script>
+
+    <!--
+      ③ PREVENZIONE "UFFA!" / RESULT_CODE_HUNG
+         Intercetta i casi più comuni che causano il hang del renderer:
+         - navigazione back/forward (bfcache)
+         - script che non terminano
+         - errori di caricamento risorse
+    -->
+    <script>
+    (function() {
+        'use strict';
+
+        /* ── BFCACHE FIX con debounce anti-loop ──────────────────
+           Chrome mostra RESULT_CODE_HUNG quando ripristina una pagina
+           dalla bfcache con uno stato "congelato". Il reload risolve,
+           ma con debounce per evitare loop infiniti.
+        */
+        var _bfReloadFired = false;
+        window.addEventListener('pageshow', function(e) {
+            if (e.persisted && !_bfReloadFired) {
+                _bfReloadFired = true;
+                // Ritardo minimo per garantire che il browser sia pronto
+                setTimeout(function() {
+                    try { window.location.reload(); } catch(err) {}
+                }, 80);
+            }
+        });
+
+        /* ── TIMEOUT DI SICUREZZA ────────────────────────────────
+           Se la pagina non completa l'init entro 15s, mostriamo
+           l'errore gestito invece del blocco silenzioso del browser.
+        */
+        var _pageInitTimeout = setTimeout(function() {
+            if (window.LuxError && !document.getElementById('page-init-complete')) {
+                window.LuxError.show('loading', function() {
+                    window.location.reload();
+                });
+            }
+        }, 15000);
+
+        // Questo marker viene rimosso dall'init quando tutto è ok
+        window._clearPageInitTimeout = function() {
+            clearTimeout(_pageInitTimeout);
+            // Inseriamo il marker invisibile nel DOM
+            if (!document.getElementById('page-init-complete')) {
+                var m = document.createElement('meta');
+                m.id = 'page-init-complete';
+                document.head.appendChild(m);
+            }
+        };
+
+        /* ── GLOBAL ERROR CATCH ─────────────────────────────────
+           Errori JS gravi non gestiti → mostriamo LuxError
+           invece di lasciare la pagina in stato inconsistente.
+        */
+        window.addEventListener('error', function(event) {
+            var src = (event.filename || '').toLowerCase();
+            // Ignora errori da script di terze parti (CDN, analytics)
+            if (src && !src.includes('luxhaven360') && !src.includes('community')) return;
+            // Ignora errori non gravi (elementi mancanti, ecc.)
+            var msg = (event.message || '').toLowerCase();
+            if (msg.includes('script error') || msg.includes('resizeobserver')) return;
+            // Mostra errore gestito
+            if (window.LuxError) {
+                window.LuxError.show('loading', function() {
+                    window.location.reload();
+                });
+            }
+        }, false);
+
+        /* ── GESTIONE NAVIGAZIONE ────────────────────────────────
+           Previene stati di navigazione inconsistenti usando
+           l'History API. Quando l'utente torna indietro, invece
+           di ricaricare uno stato congelato, forziamo un reload pulito.
+        */
+        if (window.history && window.history.scrollRestoration) {
+            window.history.scrollRestoration = 'manual';
+        }
+
+    }());
+    </script>
+
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
     <meta name="theme-color" content="#050505"/>
     <meta name="robots" content="noindex, nofollow"/>
+
+    <!--
+      Cache-Control via meta per prevenire cache aggressiva
+      che può contribuire a RESULT_CODE_HUNG su GitHub Pages
+    -->
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
+    <meta http-equiv="Pragma" content="no-cache"/>
+
     <title>Members Area — LuxHaven360</title>
 
-    <!-- ② Preconnect / DNS-prefetch — riduce latenza risorse esterne -->
+    <!-- ④ Preconnect / DNS-prefetch -->
     <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
     <link rel="dns-prefetch" href="https://cdn.jsdelivr.net">
     <link rel="preconnect" href="https://luxhaven360.github.io">
 
-    <!-- ③ flag-icons CSS — non-bloccante (media trick) -->
+    <!-- ⑤ flag-icons CSS — non-bloccante (media trick) -->
     <link rel="stylesheet"
           href="https://cdn.jsdelivr.net/gh/lipis/flag-icons@7.0.0/css/flag-icons.min.css"
           media="print"
@@ -51,15 +140,21 @@
         img { display: block; max-width: 100%; }
 
         /* ══════════════════════════════════════════
-           COMMUNITY PAGE — STYLES
+           COMMUNITY PAGE — STYLES v2.0
            ══════════════════════════════════════════ */
 
         :root {
             --gold: #D4AF37;
+            --gold-dim: rgba(212,175,55,0.5);
+            --gold-faint: rgba(212,175,55,0.08);
             --dark: #0A0A0A;
             --darker: #050505;
             --light: #F5F5F5;
-            --accent: #8B7355;
+            --phase1-accent: rgba(139, 115, 85, 0.7);
+            --phase1-border: rgba(139, 115, 85, 0.25);
+            --phase2-accent: var(--gold);
+            --success: rgba(80, 200, 120, 0.8);
+            --denied: rgba(200, 80, 80, 0.7);
         }
 
         html { scroll-behavior: smooth; }
@@ -88,7 +183,6 @@
             align-items: center;
             justify-content: space-between;
             gap: 1rem;
-            /* GPU compositing layer per il nav fisso */
             will-change: transform;
             transform: translateZ(0);
         }
@@ -197,8 +291,6 @@
             background:
                 radial-gradient(ellipse 80% 60% at 50% 40%, rgba(212,175,55,0.055) 0%, transparent 65%),
                 radial-gradient(ellipse 40% 40% at 10% 80%, rgba(212,175,55,0.03) 0%, transparent 60%);
-            /* Layer GPU dedicato per le radial-gradient statici */
-            will-change: auto;
         }
         .comm-hero-grid {
             position: absolute; inset: 0;
@@ -247,7 +339,6 @@
         /* ─── SECTIONS ─── */
         .comm-section {
             padding: 7rem 5%; position: relative;
-            /* content-visibility sulle sezioni off-screen riduce il rendering iniziale */
             content-visibility: auto;
             contain-intrinsic-size: 0 600px;
         }
@@ -272,31 +363,285 @@
             font-size: 0.95rem; color: rgba(245,245,245,0.5); line-height: 1.8; max-width: 560px;
         }
 
-        /* ─── BENEFITS ─── */
-        .comm-benefits-grid {
-            display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-            gap: 1.5px; margin-top: 4rem; border: 1.5px solid rgba(212,175,55,0.08);
+        /* ─── PHASE COMPARISON CARDS ─── */
+        .comm-phases-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1.5rem;
+            margin-top: 4rem;
         }
-        .comm-benefit-card {
-            padding: 2.5rem 2rem; background: rgba(255,255,255,0.015);
-            border: 1.5px solid rgba(212,175,55,0.06);
-            transition: background 0.3s ease, border-color 0.3s ease;
-            position: relative; overflow: hidden;
-        }
-        .comm-benefit-card::after {
-            content: ''; position: absolute; top: 0; left: 0; width: 2px; height: 0;
-            background: linear-gradient(180deg, var(--gold), transparent); transition: height 0.4s ease;
-        }
-        .comm-benefit-card:hover { background: rgba(212,175,55,0.03); border-color: rgba(212,175,55,0.18); }
-        .comm-benefit-card:hover::after { height: 100%; }
-        .comm-benefit-num {
-            font-size: 0.62rem; letter-spacing: 0.2em; color: rgba(212,175,55,0.4);
-            text-transform: uppercase; margin-bottom: 1.2rem; display: block;
-        }
-        .comm-benefit-title { font-size: 1rem; font-weight: 400; color: var(--light); margin-bottom: 0.7rem; letter-spacing: 0.02em; }
-        .comm-benefit-text { font-size: 0.83rem; color: rgba(245,245,245,0.45); line-height: 1.7; }
+        @media (max-width: 680px) { .comm-phases-grid { grid-template-columns: 1fr; } }
 
-        /* ─── FOUNDER BLOCK ─── */
+        .comm-phase-card {
+            border-radius: 4px;
+            padding: 2.5rem 2rem;
+            position: relative;
+            overflow: hidden;
+        }
+        .comm-phase-card.phase-1 {
+            background: rgba(139,115,85,0.04);
+            border: 1px solid var(--phase1-border);
+        }
+        .comm-phase-card.phase-2 {
+            background: rgba(212,175,55,0.05);
+            border: 1px solid rgba(212,175,55,0.28);
+        }
+        .comm-phase-card.phase-2::before {
+            content: '';
+            position: absolute; top: 0; left: 0; right: 0; height: 2px;
+            background: linear-gradient(90deg, transparent, var(--gold), transparent);
+        }
+
+        .comm-phase-step {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            font-size: 0.62rem;
+            letter-spacing: 0.2em;
+            text-transform: uppercase;
+            padding: 0.3rem 0.9rem;
+            border-radius: 20px;
+            margin-bottom: 1.5rem;
+        }
+        .phase-1 .comm-phase-step {
+            background: rgba(139,115,85,0.1);
+            border: 1px solid var(--phase1-border);
+            color: var(--phase1-accent);
+        }
+        .phase-2 .comm-phase-step {
+            background: rgba(212,175,55,0.08);
+            border: 1px solid rgba(212,175,55,0.3);
+            color: var(--gold);
+        }
+
+        .comm-phase-badge {
+            display: inline-block;
+            font-size: 0.58rem;
+            letter-spacing: 0.15em;
+            text-transform: uppercase;
+            padding: 0.2rem 0.65rem;
+            border-radius: 20px;
+            margin-left: 0.5rem;
+            vertical-align: middle;
+        }
+        .phase-1 .comm-phase-badge {
+            background: rgba(139,115,85,0.08);
+            border: 1px solid rgba(139,115,85,0.2);
+            color: rgba(139,115,85,0.6);
+        }
+        .phase-2 .comm-phase-badge {
+            background: rgba(212,175,55,0.06);
+            border: 1px solid rgba(212,175,55,0.2);
+            color: rgba(212,175,55,0.6);
+        }
+
+        .comm-phase-name {
+            font-size: 1.4rem;
+            font-weight: 300;
+            letter-spacing: 0.04em;
+            color: var(--light);
+            margin-bottom: 0.8rem;
+            line-height: 1.2;
+        }
+
+        .comm-phase-who {
+            font-size: 0.83rem;
+            color: rgba(245,245,245,0.45);
+            line-height: 1.7;
+            padding-top: 1rem;
+            border-top: 1px solid rgba(255,255,255,0.05);
+        }
+
+        /* ─── PHASE 1 SECTION ─── */
+        .comm-phase1-wrapper {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 4rem;
+            margin-top: 4rem;
+            align-items: start;
+        }
+        @media (max-width: 820px) { .comm-phase1-wrapper { grid-template-columns: 1fr; gap: 3rem; } }
+
+        .comm-phase1-header {
+            padding-bottom: 1.5rem;
+            border-bottom: 1px solid var(--phase1-border);
+            margin-bottom: 1.5rem;
+        }
+        .comm-phase1-header .comm-overline { color: var(--phase1-accent); }
+
+        /* Lista vantaggi inclusi */
+        .comm-benefits-list { margin-top: 0; }
+        .comm-benefit-item {
+            padding: 1.4rem 0;
+            border-bottom: 1px solid rgba(255,255,255,0.04);
+            display: flex;
+            gap: 1rem;
+            align-items: flex-start;
+        }
+        .comm-benefit-icon {
+            flex-shrink: 0;
+            width: 28px;
+            height: 28px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-top: 2px;
+        }
+        .comm-benefit-icon.included {
+            background: rgba(80,200,120,0.08);
+            border: 1px solid rgba(80,200,120,0.2);
+        }
+        .comm-benefit-icon.included svg { width: 13px; height: 13px; color: var(--success); }
+
+        .comm-benefit-body {}
+        .comm-benefit-name {
+            font-size: 0.92rem;
+            font-weight: 400;
+            color: rgba(245,245,245,0.85);
+            margin-bottom: 0.3rem;
+            letter-spacing: 0.01em;
+        }
+        .comm-benefit-desc {
+            font-size: 0.8rem;
+            color: rgba(245,245,245,0.4);
+            line-height: 1.6;
+        }
+
+        /* Lista esclusi */
+        .comm-excluded-block {
+            background: rgba(200,80,80,0.03);
+            border: 1px solid rgba(200,80,80,0.1);
+            border-radius: 4px;
+            padding: 1.8rem 2rem;
+        }
+        .comm-excluded-label {
+            font-size: 0.62rem;
+            letter-spacing: 0.2em;
+            text-transform: uppercase;
+            color: rgba(200,80,80,0.6);
+            margin-bottom: 1.2rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        .comm-excluded-label svg { width: 12px; height: 12px; }
+
+        .comm-excluded-list {}
+        .comm-excluded-item {
+            display: flex;
+            align-items: center;
+            gap: 0.7rem;
+            padding: 0.55rem 0;
+            font-size: 0.82rem;
+            color: rgba(245,245,245,0.35);
+            border-bottom: 1px solid rgba(255,255,255,0.03);
+        }
+        .comm-excluded-item:last-child { border-bottom: none; }
+        .comm-excluded-item svg {
+            flex-shrink: 0;
+            width: 14px; height: 14px;
+            color: rgba(200,80,80,0.5);
+        }
+
+        .comm-phase1-note {
+            margin-top: 1.8rem;
+            padding: 1.2rem 1.5rem;
+            background: rgba(139,115,85,0.05);
+            border-left: 2px solid var(--phase1-border);
+            border-radius: 0 4px 4px 0;
+            font-size: 0.8rem;
+            color: rgba(245,245,245,0.4);
+            line-height: 1.7;
+        }
+
+        .comm-phase1-cta {
+            display: inline-block;
+            margin-top: 2rem;
+            padding: 0.8rem 2rem;
+            border: 1px solid var(--phase1-border);
+            color: var(--phase1-accent);
+            font-size: 0.75rem;
+            letter-spacing: 0.14em;
+            text-transform: uppercase;
+            border-radius: 2px;
+            transition: background 0.3s ease, border-color 0.3s ease;
+            text-decoration: none;
+        }
+        .comm-phase1-cta:hover {
+            background: rgba(139,115,85,0.08);
+            border-color: rgba(139,115,85,0.4);
+        }
+
+        /* ─── PHASE 2 SECTION ─── */
+        .comm-phase2-header {
+            padding-bottom: 1.5rem;
+            border-bottom: 1px solid rgba(212,175,55,0.15);
+            margin-bottom: 2.5rem;
+        }
+
+        .comm-phase2-groups {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1.5rem;
+            margin-top: 0;
+        }
+        @media (max-width: 680px) { .comm-phase2-groups { grid-template-columns: 1fr; } }
+
+        .comm-phase2-group {
+            background: rgba(212,175,55,0.025);
+            border: 1px solid rgba(212,175,55,0.1);
+            border-radius: 4px;
+            padding: 2rem 1.8rem;
+            position: relative;
+            overflow: hidden;
+        }
+        .comm-phase2-group::after {
+            content: '';
+            position: absolute;
+            top: 0; left: 0; width: 2px; height: 0;
+            background: linear-gradient(180deg, var(--gold), transparent);
+            transition: height 0.4s ease;
+        }
+        .comm-phase2-group:hover::after { height: 100%; }
+        .comm-phase2-group:hover { border-color: rgba(212,175,55,0.22); }
+
+        .comm-phase2-group-title {
+            font-size: 0.68rem;
+            letter-spacing: 0.2em;
+            text-transform: uppercase;
+            color: var(--gold);
+            opacity: 0.75;
+            margin-bottom: 1.3rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        .comm-phase2-group-title svg { width: 13px; height: 13px; }
+
+        .comm-phase2-items {}
+        .comm-phase2-item {
+            display: flex;
+            align-items: flex-start;
+            gap: 0.6rem;
+            padding: 0.5rem 0;
+            font-size: 0.83rem;
+            color: rgba(245,245,245,0.65);
+            line-height: 1.5;
+            border-bottom: 1px solid rgba(255,255,255,0.03);
+        }
+        .comm-phase2-item:last-child { border-bottom: none; }
+        .comm-phase2-item::before {
+            content: '';
+            flex-shrink: 0;
+            width: 5px; height: 5px;
+            border-radius: 50%;
+            background: var(--gold);
+            opacity: 0.5;
+            margin-top: 6px;
+        }
+
+        /* ─── FOUNDER ACCESS CARD ─── */
         .comm-founder-block {
             display: grid; grid-template-columns: 1fr 1fr; gap: 5rem; align-items: center; margin-top: 4rem;
         }
@@ -356,18 +701,6 @@
         .comm-access-cta:hover::before { left: 100%; }
         .comm-access-cta:hover { transform: translateY(-2px); box-shadow: 0 10px 30px rgba(212,175,55,0.2); }
         .comm-access-note { margin-top: 1rem; font-size: 0.68rem; color: rgba(245,245,245,0.25); }
-
-        .comm-founder-privileges { list-style: none; margin-top: 2.5rem; }
-        .comm-founder-privileges li {
-            display: flex; align-items: flex-start; gap: 0.7rem;
-            padding: 0.75rem 0; border-bottom: 1px solid rgba(255,255,255,0.04);
-            font-size: 0.88rem; color: rgba(245,245,245,0.6); line-height: 1.4;
-        }
-        .comm-founder-privileges li::before {
-            content: ''; flex-shrink: 0; width: 4px; height: 4px; border-radius: 50%;
-            background: var(--gold); margin-top: 6px; opacity: 0.7;
-        }
-        .comm-founder-privileges li strong { color: rgba(245,245,245,0.85); font-weight: 500; }
 
         /* ─── PREVIEW ─── */
         .comm-preview-grid {
@@ -445,7 +778,6 @@
         .cm-reveal {
             opacity: 0; transform: translateY(20px);
             transition: opacity 0.7s ease, transform 0.7s ease;
-            /* Promuove su compositor layer solo durante la transizione */
         }
         .cm-reveal.visible { opacity: 1; transform: translateY(0); }
 
@@ -453,6 +785,7 @@
         @media (max-width: 480px) {
             .comm-nav { padding: 1rem 4%; }
             .comm-nav-logo { display: none; }
+            .comm-section { padding: 5rem 5%; }
         }
     </style>
 </head>
@@ -462,11 +795,6 @@
          NAVIGATION
          ═══════════════════════════════ -->
     <nav class="comm-nav">
-
-        <!--
-          URL assoluto: garantisce navigazione corretta
-          indipendentemente dalla cartella di deploy su GitHub Pages
-        -->
         <a href="https://luxhaven360.github.io/luxhaven360-site/"
            class="comm-nav-back"
            id="backBtn">
@@ -495,7 +823,6 @@
                 <button class="comm-lang-option" data-lang="es"><span class="fi fi-es"></span> Español</button>
             </div>
         </div>
-
     </nav>
 
 
@@ -516,7 +843,7 @@
                 Uno spazio <em>riservato</em><br>a chi è davvero dentro
             </h1>
             <p class="comm-hero-text" data-i18n="hero_text">
-                La Community non è aperta al pubblico. È un ambiente esclusivo costruito attorno a chi ha scelto di far parte del progetto fin dall'inizio — i Founder e i membri selezionati della piattaforma.
+                La Community non è aperta al pubblico. È un ambiente esclusivo strutturato in due fasi, riservato a chi ha scelto di far parte del progetto fin dall'inizio.
             </p>
             <div class="comm-hero-divider"></div>
         </div>
@@ -524,78 +851,260 @@
 
 
     <!-- ═══════════════════════════════
-         SEZIONE 2 — VANTAGGI
+         SEZIONE 2 — COME FUNZIONA (PHASES OVERVIEW)
          ═══════════════════════════════ -->
     <section class="comm-section">
         <div class="comm-section-inner">
             <div class="cm-reveal">
-                <span class="comm-overline" data-i18n="s2_overline">Cosa offre la Community</span>
-                <h2 class="comm-section-title" data-i18n-html="s2_title">Accesso a ciò che<br>gli altri non vedono</h2>
-                <p class="comm-section-desc" data-i18n="s2_desc">Tutto ciò che avviene nella Community non è disponibile al pubblico. È un canale diretto tra il progetto e chi ne fa parte attivamente.</p>
+                <span class="comm-overline" data-i18n="phases_overline">Come funziona</span>
+                <h2 class="comm-section-title" data-i18n-html="phases_title">Due fasi, due<br>livelli di accesso</h2>
+                <p class="comm-section-desc" data-i18n="phases_desc">Il Founder Program è articolato in modo preciso: ogni fase ha vantaggi definiti, chiari e distinti. Nessuna ambiguità, nessuna confusione.</p>
             </div>
-            <div class="comm-benefits-grid cm-reveal" style="transition-delay:0.1s">
-                <div class="comm-benefit-card">
-                    <span class="comm-benefit-num">01</span>
-                    <h3 class="comm-benefit-title" data-i18n="b1_title">Aggiornamenti esclusivi</h3>
-                    <p class="comm-benefit-text" data-i18n="b1_text">Notizie, decisioni e sviluppi del progetto vengono condivisi qui prima di qualsiasi annuncio pubblico.</p>
+
+            <div class="comm-phases-grid cm-reveal" style="transition-delay:0.1s">
+
+                <!-- FASE 1 -->
+                <div class="comm-phase-card phase-1">
+                    <div class="comm-phase-step">
+                        <span data-i18n="phase1_step">Fase 1</span>
+                    </div>
+                    <h3 class="comm-phase-name">
+                        <span data-i18n="phase1_name">Founder Candidate</span>
+                        <span class="comm-phase-badge" data-i18n="phase1_tag">Accesso temporaneo</span>
+                    </h3>
+                    <p class="comm-phase-who" data-i18n="phase1_who">
+                        Hai prenotato e sei nei primi 200. Il pagamento non è ancora confermato.
+                    </p>
                 </div>
-                <div class="comm-benefit-card">
-                    <span class="comm-benefit-num">02</span>
-                    <h3 class="comm-benefit-title" data-i18n="b2_title">Anteprime di prodotti</h3>
-                    <p class="comm-benefit-text" data-i18n="b2_text">I nuovi listing — immobili, supercar, esperienze — vengono mostrati ai membri giorni prima della pubblicazione ufficiale.</p>
+
+                <!-- FASE 2 -->
+                <div class="comm-phase-card phase-2">
+                    <div class="comm-phase-step">
+                        <span data-i18n="phase2_step">Fase 2</span>
+                    </div>
+                    <h3 class="comm-phase-name">
+                        <span data-i18n="phase2_name">Founding Member</span>
+                        <span class="comm-phase-badge" data-i18n="phase2_tag">Accesso permanente</span>
+                    </h3>
+                    <p class="comm-phase-who" data-i18n="phase2_who">
+                        Hai prenotato, confermato e pagato. Fai parte dei Founding Members.
+                    </p>
                 </div>
-                <div class="comm-benefit-card">
-                    <span class="comm-benefit-num">03</span>
-                    <h3 class="comm-benefit-title" data-i18n="b3_title">Accesso anticipato</h3>
-                    <p class="comm-benefit-text" data-i18n="b3_text">I membri possono prenotare le opportunità in anteprima, prima che vengano rese disponibili al resto della piattaforma.</p>
-                </div>
-                <div class="comm-benefit-card">
-                    <span class="comm-benefit-num">04</span>
-                    <h3 class="comm-benefit-title" data-i18n="b4_title">Interazione con il progetto</h3>
-                    <p class="comm-benefit-text" data-i18n="b4_text">Feedback diretti, proposte e preferenze vengono raccolti dalla Community e influenzano concretamente le decisioni.</p>
-                </div>
-                <div class="comm-benefit-card">
-                    <span class="comm-benefit-num">05</span>
-                    <h3 class="comm-benefit-title" data-i18n="b5_title">Area Founder dedicata</h3>
-                    <p class="comm-benefit-text" data-i18n="b5_text">Uno spazio separato e riservato ai soli Founder, con contenuti e comunicazioni non condivisi con nessun altro.</p>
-                </div>
-                <div class="comm-benefit-card">
-                    <span class="comm-benefit-num">06</span>
-                    <h3 class="comm-benefit-title" data-i18n="b6_title">Canale diretto</h3>
-                    <p class="comm-benefit-text" data-i18n="b6_text">Accesso diretto al team LuxHaven360 per richieste, domande o proposte — senza intermediari.</p>
-                </div>
+
             </div>
         </div>
     </section>
 
 
     <!-- ═══════════════════════════════
-         SEZIONE 3 — FOUNDER ACCESS
+         SEZIONE 3 — FASE 1: FOUNDER CANDIDATE
+         ═══════════════════════════════ -->
+    <section class="comm-section">
+        <div class="comm-section-inner">
+            <div class="comm-phase1-header cm-reveal">
+                <span class="comm-overline" data-i18n="s_phase1_overline">Founder Candidate — Fase 1</span>
+                <h2 class="comm-section-title" data-i18n-html="s_phase1_title">Il tuo punto di<br>partenza esclusivo</h2>
+                <p class="comm-section-desc" data-i18n="s_phase1_desc">Come Founder Candidate hai già un accesso privilegiato alla Community. Questi vantaggi sono attivi dal momento della prenotazione, anche prima di confermare il pagamento.</p>
+            </div>
+
+            <div class="comm-phase1-wrapper">
+
+                <!-- COLONNA SINISTRA: VANTAGGI INCLUSI -->
+                <div class="cm-reveal" style="transition-delay:0.08s">
+                    <p style="font-size:0.68rem;letter-spacing:0.2em;text-transform:uppercase;color:rgba(80,200,120,0.7);margin-bottom:1.5rem;" data-i18n="s_phase1_included_label">Cosa include la Fase 1</p>
+
+                    <div class="comm-benefits-list">
+
+                        <div class="comm-benefit-item">
+                            <div class="comm-benefit-icon included">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5"/></svg>
+                            </div>
+                            <div class="comm-benefit-body">
+                                <p class="comm-benefit-name" data-i18n="f1_b1_title">Accesso base alla Community</p>
+                                <p class="comm-benefit-desc" data-i18n="f1_b1_text">Entri nello spazio riservato e puoi partecipare alle discussioni aperte ai Founder Candidate.</p>
+                            </div>
+                        </div>
+
+                        <div class="comm-benefit-item">
+                            <div class="comm-benefit-icon included">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5"/></svg>
+                            </div>
+                            <div class="comm-benefit-body">
+                                <p class="comm-benefit-name" data-i18n="f1_b2_title">Aggiornamenti esclusivi sul progetto</p>
+                                <p class="comm-benefit-desc" data-i18n="f1_b2_text">Ricevi notizie e sviluppi del progetto prima di qualsiasi comunicazione pubblica.</p>
+                            </div>
+                        </div>
+
+                        <div class="comm-benefit-item">
+                            <div class="comm-benefit-icon included">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5"/></svg>
+                            </div>
+                            <div class="comm-benefit-body">
+                                <p class="comm-benefit-name" data-i18n="f1_b3_title">Anteprime dei nuovi prodotti</p>
+                                <p class="comm-benefit-desc" data-i18n="f1_b3_text">Accesso in anteprima ai nuovi listing prima della pubblicazione ufficiale.</p>
+                            </div>
+                        </div>
+
+                        <div class="comm-benefit-item">
+                            <div class="comm-benefit-icon included">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5"/></svg>
+                            </div>
+                            <div class="comm-benefit-body">
+                                <p class="comm-benefit-name" data-i18n="f1_b4_title">Interazione e feedback</p>
+                                <p class="comm-benefit-desc" data-i18n="f1_b4_text">Puoi interagire, lasciare feedback e contribuire allo sviluppo del progetto in questa fase.</p>
+                            </div>
+                        </div>
+
+                    </div>
+
+                    <div class="comm-phase1-note">
+                        <span data-i18n="f1_note">I vantaggi della Fase 1 sono attivi e reali, ma non permanenti. Si consolidano completamente con la conferma del pagamento.</span>
+                    </div>
+
+                    <a href="https://luxhaven360.github.io/luxhaven360-site/"
+                       class="comm-phase1-cta" data-i18n="f1_cta">
+                        Conferma il pagamento → Fase 2
+                    </a>
+                </div>
+
+                <!-- COLONNA DESTRA: ESCLUSI -->
+                <div class="cm-reveal" style="transition-delay:0.18s">
+                    <div class="comm-excluded-block">
+                        <div class="comm-excluded-label">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"/>
+                            </svg>
+                            <span data-i18n="s_phase1_excluded_label">Non disponibile in Fase 1</span>
+                        </div>
+                        <div class="comm-excluded-list">
+                            <div class="comm-excluded-item">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+                                <span data-i18n="f1_e1">Accesso anticipato alle prenotazioni reali</span>
+                            </div>
+                            <div class="comm-excluded-item">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+                                <span data-i18n="f1_e2">Area Founder dedicata</span>
+                            </div>
+                            <div class="comm-excluded-item">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+                                <span data-i18n="f1_e3">Status Founding Member</span>
+                            </div>
+                            <div class="comm-excluded-item">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+                                <span data-i18n="f1_e4">Canale diretto con il team</span>
+                            </div>
+                            <div class="comm-excluded-item">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+                                <span data-i18n="f1_e5">Accesso prioritario permanente</span>
+                            </div>
+                            <div class="comm-excluded-item">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+                                <span data-i18n="f1_e6">Condizioni riservate nel tempo</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+    </section>
+
+
+    <!-- ═══════════════════════════════
+         SEZIONE 4 — FASE 2: FOUNDING MEMBER
+         ═══════════════════════════════ -->
+    <section class="comm-section">
+        <div class="comm-section-inner">
+            <div class="comm-phase2-header cm-reveal">
+                <span class="comm-overline" data-i18n="s_phase2_overline">Founding Member — Fase 2</span>
+                <h2 class="comm-section-title" data-i18n-html="s_phase2_title">Accesso completo,<br>status permanente</h2>
+                <p class="comm-section-desc" data-i18n="s_phase2_desc">Confermando il pagamento entri nei Founding Members — il livello più esclusivo del progetto. Tutti i vantaggi si sbloccano e restano tuoi per sempre.</p>
+            </div>
+
+            <div class="comm-phase2-groups cm-reveal" style="transition-delay:0.1s">
+
+                <!-- GRUPPO 1: COMMUNITY -->
+                <div class="comm-phase2-group">
+                    <div class="comm-phase2-group-title">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M18 18.72a9.094 9.094 0 003.741-.479 3 3 0 00-4.682-2.72m.94 3.198l.001.031c0 .225-.012.447-.037.666A11.944 11.944 0 0112 21c-2.17 0-4.207-.576-5.963-1.584A6.062 6.062 0 016 18.719m12 0a5.971 5.971 0 00-.941-3.197m0 0A5.995 5.995 0 0012 12.75a5.995 5.995 0 00-5.058 2.772m0 0a3 3 0 00-4.681 2.72 8.986 8.986 0 003.74.477m.94-3.197a5.971 5.971 0 00-.94 3.197M15 6.75a3 3 0 11-6 0 3 3 0 016 0zm6 3a2.25 2.25 0 11-4.5 0 2.25 2.25 0 014.5 0zm-13.5 0a2.25 2.25 0 11-4.5 0 2.25 2.25 0 014.5 0z"/>
+                        </svg>
+                        <span data-i18n="f2_g1_title">Accesso Community Completo</span>
+                    </div>
+                    <div class="comm-phase2-items">
+                        <div class="comm-phase2-item"><span data-i18n="f2_g1_b1">Area Founder dedicata — spazio riservato esclusivo</span></div>
+                        <div class="comm-phase2-item"><span data-i18n="f2_g1_b2">Canale diretto con il team LuxHaven360</span></div>
+                        <div class="comm-phase2-item"><span data-i18n="f2_g1_b3">Spazio riservato per comunicazioni private</span></div>
+                    </div>
+                </div>
+
+                <!-- GRUPPO 2: OPERATIVI -->
+                <div class="comm-phase2-group">
+                    <div class="comm-phase2-group-title">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 13.5l10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75z"/>
+                        </svg>
+                        <span data-i18n="f2_g2_title">Vantaggi Operativi</span>
+                    </div>
+                    <div class="comm-phase2-items">
+                        <div class="comm-phase2-item"><span data-i18n="f2_g2_b1">Accesso prioritario a tutti i nuovi listing</span></div>
+                        <div class="comm-phase2-item"><span data-i18n="f2_g2_b2">Prenotazioni anticipate reali — non solo anteprime</span></div>
+                        <div class="comm-phase2-item"><span data-i18n="f2_g2_b3">Accesso anticipato ai future drops</span></div>
+                    </div>
+                </div>
+
+                <!-- GRUPPO 3: STATUS -->
+                <div class="comm-phase2-group">
+                    <div class="comm-phase2-group-title">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12c0 1.268-.63 2.39-1.593 3.068a3.745 3.745 0 01-1.043 3.296 3.745 3.745 0 01-3.296 1.043A3.745 3.745 0 0112 21c-1.268 0-2.39-.63-3.068-1.593a3.746 3.746 0 01-3.296-1.043 3.745 3.745 0 01-1.043-3.296A3.745 3.745 0 013 12c0-1.268.63-2.39 1.593-3.068a3.745 3.745 0 011.043-3.296 3.746 3.746 0 013.296-1.043A3.746 3.746 0 0112 3c1.268 0 2.39.63 3.068 1.593a3.746 3.746 0 013.296 1.043 3.746 3.746 0 011.043 3.296A3.745 3.745 0 0121 12z"/>
+                        </svg>
+                        <span data-i18n="f2_g3_title">Status Permanente</span>
+                    </div>
+                    <div class="comm-phase2-items">
+                        <div class="comm-phase2-item"><span data-i18n="f2_g3_b1">Titolo ufficiale Founding Member</span></div>
+                        <div class="comm-phase2-item"><span data-i18n="f2_g3_b2">Posizione garantita nei primi 200</span></div>
+                        <div class="comm-phase2-item"><span data-i18n="f2_g3_b3">Benefici che si consolidano nel tempo</span></div>
+                    </div>
+                </div>
+
+                <!-- GRUPPO 4: INFLUENZA -->
+                <div class="comm-phase2-group">
+                    <div class="comm-phase2-group-title">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 3v11.25A2.25 2.25 0 006 16.5h2.25M3.75 3h-1.5m1.5 0h16.5m0 0h1.5m-1.5 0v11.25A2.25 2.25 0 0118 16.5h-2.25m-7.5 0h7.5m-7.5 0l-1 3m8.5-3l1 3m0 0l.5 1.5m-.5-1.5h-9.5m0 0l-.5 1.5M9 11.25v1.5M12 9v3.75m3-6v6"/>
+                        </svg>
+                        <span data-i18n="f2_g4_title">Influenza sul Progetto</span>
+                    </div>
+                    <div class="comm-phase2-items">
+                        <div class="comm-phase2-item"><span data-i18n="f2_g4_b1">Possibilità concreta di influenzare lo sviluppo del progetto</span></div>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+    </section>
+
+
+    <!-- ═══════════════════════════════
+         SEZIONE 5 — ACCESSO CARD
          ═══════════════════════════════ -->
     <section class="comm-section">
         <div class="comm-section-inner">
             <div class="comm-founder-block">
 
-                <div class="comm-founder-left cm-reveal">
+                <div class="cm-reveal">
                     <span class="comm-overline" data-i18n="s3_overline">Founder Program</span>
-                    <h2 class="comm-section-title" data-i18n-html="s3_title">Solo i Founder<br>hanno accesso completo</h2>
-                    <p class="comm-section-desc" data-i18n="s3_desc">L'accesso alla Community è riservato a chi ha effettuato una prenotazione confermata durante la fase Early Access. Non basta registrarsi — serve un impegno concreto.</p>
-                    <ul class="comm-founder-privileges">
-                        <li><span data-i18n-html="priv1">Status permanente <strong>Founding Member</strong></span></li>
-                        <li><span data-i18n="priv2">Accesso prioritario a tutti i nuovi listing</span></li>
-                        <li><span data-i18n="priv3">Accesso anticipato ai future drops</span></li>
-                        <li><span data-i18n="priv4">Area Founder dedicata nella Community</span></li>
-                        <li><span data-i18n="priv5">Possibilità di influenzare lo sviluppo del progetto</span></li>
-                        <li><span data-i18n="priv6">Condizioni riservate che si consolidano nel tempo</span></li>
-                    </ul>
+                    <h2 class="comm-section-title" data-i18n-html="s3_title">I posti sono<br>quasi esauriti</h2>
+                    <p class="comm-section-desc" data-i18n="s3_desc">Ogni prenotazione confermata garantisce il tuo posto come Founding Member. Non basta registrarsi — serve un impegno concreto con pagamento confermato.</p>
                     <p style="margin-top:2rem;font-size:0.78rem;color:rgba(245,245,245,0.3);line-height:1.7;" data-i18n="s3_footnote">
                         Il contatore riflette solo le prenotazioni confermate. Le registrazioni senza prenotazione non vengono conteggiate.
                     </p>
                 </div>
 
-                <div class="comm-founder-right cm-reveal" style="transition-delay:0.15s">
+                <div class="cm-reveal" style="transition-delay:0.15s">
                     <div class="comm-access-card">
-                        <span class="comm-access-card-label" data-i18n="card_label">Posti Founder disponibili</span>
+                        <span class="comm-access-card-label" data-i18n="card_label">Posti Founding Member</span>
                         <div class="comm-access-nums">
                             <span class="comm-access-taken">147</span>
                             <span class="comm-access-sep">/</span>
@@ -608,11 +1117,10 @@
                             <span class="comm-access-remaining" data-i18n="card_remaining">53 posti rimasti</span>
                             <span>200</span>
                         </div>
-                        <!-- URL assoluto per uniformità con il resto del sito -->
                         <a href="https://luxhaven360.github.io/luxhaven360-site/"
                            class="comm-access-cta"
                            data-i18n="card_cta">Prenota il tuo posto Founder</a>
-                        <p class="comm-access-note" data-i18n="card_note">Il posto viene riservato al momento della prenotazione confermata</p>
+                        <p class="comm-access-note" data-i18n="card_note">Il posto viene riservato al momento della prenotazione confermata con pagamento</p>
                     </div>
                 </div>
 
@@ -622,14 +1130,14 @@
 
 
     <!-- ═══════════════════════════════
-         SEZIONE 4 — PREVIEW
+         SEZIONE 6 — PREVIEW
          ═══════════════════════════════ -->
     <section class="comm-section">
         <div class="comm-section-inner">
             <div class="cm-reveal">
                 <span class="comm-overline" data-i18n="s4_overline">Anteprima</span>
                 <h2 class="comm-section-title" data-i18n="s4_title">Un'idea di cosa ti aspetta</h2>
-                <p class="comm-section-desc" data-i18n="s4_desc">Ecco una preview dei contenuti disponibili nell'area riservata. I dettagli restano accessibili solo ai Founder e ai membri attivi.</p>
+                <p class="comm-section-desc" data-i18n="s4_desc">Ecco una preview dei contenuti disponibili nell'area riservata. I dettagli completi sono accessibili solo ai Founding Members.</p>
             </div>
 
             <div class="comm-preview-grid cm-reveal" style="transition-delay:0.1s">
@@ -643,7 +1151,7 @@
                     <div class="comm-preview-body">
                         <span class="comm-preview-type" data-i18n="p1_type">Founder Update</span>
                         <p class="comm-preview-title comm-preview-blur" data-i18n="p1_title">Aggiornamento strategico — Q1 2025</p>
-                        <span class="comm-preview-date" data-i18n="p1_date">Riservato ai Founder</span>
+                        <span class="comm-preview-date" data-i18n="p1_date">Riservato ai Founding Members</span>
                     </div>
                 </div>
 
@@ -656,7 +1164,7 @@
                     <div class="comm-preview-body">
                         <span class="comm-preview-type" data-i18n="p2_type">Nuovo Listing</span>
                         <p class="comm-preview-title comm-preview-blur" data-i18n="p2_title">Villa — Costa Amalfitana, 7 beds</p>
-                        <span class="comm-preview-date" data-i18n="p2_date">Riservato ai Founder · In arrivo</span>
+                        <span class="comm-preview-date" data-i18n="p2_date">Riservato ai Founding Members · In arrivo</span>
                     </div>
                 </div>
 
@@ -669,7 +1177,7 @@
                     <div class="comm-preview-body">
                         <span class="comm-preview-type" data-i18n="p3_type">Roadmap 2025</span>
                         <p class="comm-preview-title comm-preview-blur" data-i18n="p3_title">Fasi di sviluppo e lancio ufficiale</p>
-                        <span class="comm-preview-date" data-i18n="p3_date">Riservato ai Founder</span>
+                        <span class="comm-preview-date" data-i18n="p3_date">Riservato ai Founding Members</span>
                     </div>
                 </div>
 
@@ -677,7 +1185,7 @@
 
             <div class="comm-preview-access-banner cm-reveal" style="transition-delay:0.2s">
                 <p class="comm-preview-access-text" data-i18n-html="banner_text">
-                    <strong>Vuoi accedere a questi contenuti?</strong> Prenota un prodotto per riservare il tuo posto come Founding Member.
+                    <strong>Vuoi accedere a questi contenuti?</strong> Prenota e conferma il pagamento per diventare Founding Member.
                 </p>
                 <a href="https://luxhaven360.github.io/luxhaven360-site/"
                    class="comm-preview-access-btn">
@@ -685,7 +1193,7 @@
                          style="width:12px;height:12px">
                         <path stroke-linecap="round" stroke-linejoin="round" d="M17.25 8.25L21 12m0 0l-3.75 3.75M21 12H3"/>
                     </svg>
-                    <span data-i18n="banner_cta">Diventa Founder</span>
+                    <span data-i18n="banner_cta">Diventa Founding Member</span>
                 </a>
             </div>
 
@@ -699,10 +1207,10 @@
     </footer>
 
 
-    <!-- ④ Traduzioni in file esterno — defer evita il blocco del parser -->
+    <!-- ⑥ Traduzioni in file esterno — defer evita il blocco del parser -->
     <script src="community-translations.js" defer></script>
 
-    <!-- ⑤ Logica i18n — defer + attende il caricamento delle traduzioni -->
+    <!-- ⑦ Logica i18n e init — defer + attende il caricamento delle traduzioni -->
     <script defer>
     (function () {
         'use strict';
@@ -811,54 +1319,49 @@
                         observer.unobserve(e.target);
                     }
                 });
-            }, { threshold: 0.12, rootMargin: '0px 0px -40px 0px' });
+            }, { threshold: 0.1, rootMargin: '0px 0px -30px 0px' });
 
             reveals.forEach(function(el) { observer.observe(el); });
         }
 
         /* ────────────────────────────────────────
-           FIX BFCACHE — evita RESULT_CODE_HUNG
-           al ritorno con il tasto Indietro del browser
-           ──────────────────────────────────────── */
-        window.addEventListener('pageshow', function(e) {
-            if (e.persisted) {
-                /*
-                  La pagina è stata ripristinata dalla back-forward cache.
-                  Ricarichiamo silenziosamente per evitare che il thread
-                  rimanga bloccato su uno stato congelato.
-                */
-                window.location.reload();
-            }
-        });
-
-        /* ────────────────────────────────────────
            INIZIALIZZAZIONE
            ──────────────────────────────────────── */
         function init() {
-            document.getElementById('comm-year').textContent = new Date().getFullYear();
-
-            // Langue salvata — condivisa con index.html tramite localStorage
-            var detectedLang = 'it';
             try {
-                var stored = localStorage.getItem('lh360_lang');
-                var T = window.COMM_TRANSLATIONS;
-                if (stored && T && T[stored]) detectedLang = stored;
-            } catch(e) {}
+                document.getElementById('comm-year').textContent = new Date().getFullYear();
 
-            setLanguage(detectedLang);
-            initLangSelector();
-            initScrollReveal();
+                var detectedLang = 'it';
+                try {
+                    var stored = localStorage.getItem('lh360_lang');
+                    var T = window.COMM_TRANSLATIONS;
+                    if (stored && T && T[stored]) detectedLang = stored;
+                } catch(e) {}
 
-            // Notifica SiteGuard del corretto caricamento i18n
-            if (window.SiteGuard && window.SiteGuard.i18nReady) {
-                window.SiteGuard.i18nReady(true, detectedLang);
+                setLanguage(detectedLang);
+                initLangSelector();
+                initScrollReveal();
+
+                // Notifica SiteGuard del corretto caricamento i18n
+                if (window.SiteGuard && window.SiteGuard.i18nReady) {
+                    window.SiteGuard.i18nReady(true, detectedLang);
+                }
+
+                // Segnala al sistema anti-hang che l'init è completato
+                if (window._clearPageInitTimeout) {
+                    window._clearPageInitTimeout();
+                }
+
+            } catch (err) {
+                // Se init fallisce, mostra errore gestito anziché pagina vuota
+                if (window.LuxError) {
+                    window.LuxError.show('loading', function() {
+                        window.location.reload();
+                    });
+                }
             }
         }
 
-        /*
-          Attendiamo DOMContentLoaded per sicurezza,
-          ma con defer il DOM è già pronto in quasi tutti i casi.
-        */
         if (document.readyState === 'loading') {
             document.addEventListener('DOMContentLoaded', init);
         } else {
