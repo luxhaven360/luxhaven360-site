@@ -1348,8 +1348,8 @@
          ═══════════════════════════════
 
          NUMERI DA AGGIORNARE:
-          • data-confirmed="124"   → Founding Members confermati (pagamento ricevuto)
-          • data-reserved="23"     → Founder Candidate (prenotato, pagamento non ancora confermato)
+          • data-confirmed="0"     → Founding Members confermati (pagamento ricevuto)
+          • data-reserved="0"      → Founder Candidate (prenotato, pagamento non ancora confermato)
           • data-total="200"       → Limite massimo del programma (fisso)
 
          Il contatore calcola automaticamente:
@@ -1359,8 +1359,8 @@
     -->
     <section class="comm-section"
              data-counter
-             data-confirmed="124"
-             data-reserved="23"
+             data-confirmed="0"
+             data-reserved="0"
              data-total="200">
         <div class="comm-section-inner">
 
@@ -1376,7 +1376,7 @@
                     <!-- TOP: posti disponibili + totale -->
                     <div class="comm-counter-top">
                         <div class="comm-counter-available-block">
-                            <span class="comm-counter-available-num" id="counterAvailable">53</span>
+                            <span class="comm-counter-available-num" id="counterAvailable">—</span>
                             <span class="comm-counter-available-label" data-i18n="counter_available_label">posti ancora disponibili su 200</span>
                         </div>
                         <div class="comm-counter-total-block">
@@ -1413,7 +1413,7 @@
                     <div class="comm-counter-stats">
 
                         <div class="comm-counter-stat confirmed">
-                            <span class="comm-counter-stat-num" id="statConfirmed">124</span>
+                            <span class="comm-counter-stat-num" id="statConfirmed">—</span>
                             <span class="comm-counter-stat-name" data-i18n="counter_confirmed_name">Founding Members</span>
                             <span class="comm-counter-stat-sub" data-i18n="counter_confirmed_sub">pagamento confermato</span>
                             <span class="comm-counter-stat-tag">
@@ -1425,7 +1425,7 @@
                         </div>
 
                         <div class="comm-counter-stat reserved">
-                            <span class="comm-counter-stat-num" id="statReserved">23</span>
+                            <span class="comm-counter-stat-num" id="statReserved">—</span>
                             <span class="comm-counter-stat-name" data-i18n="counter_reserved_name">Founder Candidate</span>
                             <span class="comm-counter-stat-sub" data-i18n="counter_reserved_sub">prenotazione in attesa</span>
                             <span class="comm-counter-stat-tag">
@@ -1724,29 +1724,42 @@
         function fetchAndUpdateCounter() {
             var section  = document.querySelector('[data-counter]');
             var total    = section ? (parseInt(section.getAttribute('data-total'), 10) || 200) : 200;
-
-            // Valori di fallback dagli attributi statici
             var fallbackMembers    = section ? (parseInt(section.getAttribute('data-confirmed'), 10) || 0) : 0;
             var fallbackCandidates = section ? (parseInt(section.getAttribute('data-reserved'),  10) || 0) : 0;
 
-            // Prova prima il cache localStorage (max 5 minuti)
+            // Invalida la cache se contiene valori demo o formato vecchio
             try {
                 var cached = JSON.parse(localStorage.getItem('lh360_stats_cache') || 'null');
-                if (cached && cached.ts && (Date.now() - cached.ts) < 5 * 60 * 1000) {
+                var cacheValid = cached &&
+                    cached.ts &&
+                    (Date.now() - cached.ts) < 5 * 60 * 1000 &&
+                    typeof cached.founding_member_count !== 'undefined' &&
+                    typeof cached.candidate_count       !== 'undefined' &&
+                    !(cached.founding_member_count === 124 && cached.candidate_count === 23);
+                if (cacheValid) {
                     renderFounderCounter(cached.founding_member_count, cached.candidate_count, total);
+                } else {
+                    localStorage.removeItem('lh360_stats_cache');
                 }
-            } catch(e) {}
+            } catch(e) {
+                localStorage.removeItem('lh360_stats_cache');
+            }
 
             // Fetch live dal GAS
             var url = GAS_STATS_URL + '?action=get_stats&t=' + Date.now();
             fetch(url, { method: 'GET', mode: 'cors', cache: 'no-store' })
                 .then(function(res) { return res.json(); })
                 .then(function(data) {
-                    if (!data || !data.success) throw new Error('GAS error');
-                    var members    = typeof data.founding_member_count !== 'undefined' ? data.founding_member_count : 0;
-                    var candidates = typeof data.candidate_count       !== 'undefined' ? data.candidate_count       : (data.founder_count || 0);
+                    if (!data || !data.success) throw new Error('GAS error: ' + JSON.stringify(data));
+                    var members, candidates;
+                    if (typeof data.founding_member_count !== 'undefined') {
+                        members    = data.founding_member_count;
+                        candidates = data.candidate_count || 0;
+                    } else {
+                        members    = 0;
+                        candidates = data.founder_count || 0;
+                    }
                     renderFounderCounter(members, candidates, total);
-                    // Aggiorna cache
                     try {
                         localStorage.setItem('lh360_stats_cache', JSON.stringify({
                             founding_member_count: members,
@@ -1755,8 +1768,8 @@
                         }));
                     } catch(e) {}
                 })
-                .catch(function() {
-                    // Fallback ai valori statici se la rete fallisce
+                .catch(function(err) {
+                    console.warn('⚠️ GAS stats fetch fallito:', err);
                     renderFounderCounter(fallbackMembers, fallbackCandidates, total);
                 });
         }
