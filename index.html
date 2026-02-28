@@ -540,6 +540,89 @@
          * Initialise the Early Access counter.
          * Reads data-ea-confirmed / data-ea-reserved / data-ea-total from the section element.
          */
+
+        /**
+         * Aggiorna tutti gli elementi del counter EA con i valori forniti.
+         * @param {number} foundingMembers  - Founding Members (pagamento confermato)
+         * @param {number} candidates       - Founder Candidate (prenotato, non confermato)
+         * @param {number} total            - Posti totali (sempre 200)
+         */
+        function renderEACounter(foundingMembers, candidates, total) {
+            var section   = document.getElementById('founder-access');
+            var available = Math.max(0, total - foundingMembers - candidates);
+
+            // Aggiorna attributi data-* per coerenza con il resto del codice
+            if (section) {
+                section.setAttribute('data-ea-confirmed', foundingMembers);
+                section.setAttribute('data-ea-reserved',  candidates);
+                section.setAttribute('data-ea-total',     total);
+            }
+
+            // Aggiorna numeri
+            var elAvail = document.getElementById('eaAvailable');
+            var elConf  = document.getElementById('eaStatConfirmed');
+            var elRes   = document.getElementById('eaStatReserved');
+            if (elAvail) elAvail.textContent = available;
+            if (elConf)  elConf.textContent  = foundingMembers;
+            if (elRes)   elRes.textContent   = candidates;
+
+            // Anima le barre
+            var barConf = document.getElementById('eaBarConfirmed');
+            var barRes  = document.getElementById('eaBarReserved');
+            if (barConf) { barConf.style.width = '0'; barConf.style.left = '0'; }
+            if (barRes)  { barRes.style.width  = '0'; barRes.style.left  = (foundingMembers / total * 100) + '%'; }
+
+            setTimeout(function() {
+                if (barConf) barConf.style.width = (foundingMembers / total * 100) + '%';
+                if (barRes)  barRes.style.width  = (candidates      / total * 100) + '%';
+            }, 400);
+
+            // Aggiorna placeholder {reserved} nella nota
+            updateEAReservedNote(candidates);
+        }
+
+        /**
+         * Recupera i contatori live dal GAS, aggiorna il counter EA e
+         * salva i valori in localStorage come fallback.
+         * In caso di errore usa i valori statici degli attributi data-ea-*.
+         */
+        function fetchAndUpdateEACounter() {
+            var section    = document.getElementById('founder-access');
+            var total      = section ? (parseInt(section.getAttribute('data-ea-total'),     10) || 200) : 200;
+            var fbMembers  = section ? (parseInt(section.getAttribute('data-ea-confirmed'), 10) || 0)   : 0;
+            var fbCandidates = section ? (parseInt(section.getAttribute('data-ea-reserved'), 10) || 0)  : 0;
+
+            // Prova prima il cache localStorage (max 5 minuti)
+            try {
+                var cached = JSON.parse(localStorage.getItem('lh360_stats_cache') || 'null');
+                if (cached && cached.ts && (Date.now() - cached.ts) < 5 * 60 * 1000) {
+                    renderEACounter(cached.founding_member_count, cached.candidate_count, total);
+                }
+            } catch(e) {}
+
+            // Fetch live dal GAS
+            var url = WEB_APP_URL + '?action=get_stats&t=' + Date.now();
+            fetch(url, { method: 'GET', mode: 'cors', cache: 'no-store' })
+                .then(function(res) { return res.json(); })
+                .then(function(data) {
+                    if (!data || !data.success) throw new Error('GAS error');
+                    var members    = typeof data.founding_member_count !== 'undefined' ? data.founding_member_count : 0;
+                    var candidates = typeof data.candidate_count       !== 'undefined' ? data.candidate_count       : (data.founder_count || 0);
+                    renderEACounter(members, candidates, total);
+                    // Aggiorna/condivide cache con community.html
+                    try {
+                        localStorage.setItem('lh360_stats_cache', JSON.stringify({
+                            founding_member_count: members,
+                            candidate_count:       candidates,
+                            ts:                    Date.now()
+                        }));
+                    } catch(e) {}
+                })
+                .catch(function() {
+                    renderEACounter(fbMembers, fbCandidates, total);
+                });
+        }
+
         function initEACounter() {
             var section = document.getElementById('founder-access');
             if (!section) return;
@@ -547,29 +630,12 @@
             var total     = parseInt(section.getAttribute('data-ea-total'),     10) || 200;
             var confirmed = parseInt(section.getAttribute('data-ea-confirmed'), 10) || 0;
             var reserved  = parseInt(section.getAttribute('data-ea-reserved'),  10) || 0;
-            var available = Math.max(0, total - confirmed - reserved);
 
-            // Update numeric displays
-            var elAvail = document.getElementById('eaAvailable');
-            var elConf  = document.getElementById('eaStatConfirmed');
-            var elRes   = document.getElementById('eaStatReserved');
-            if (elAvail) elAvail.textContent = available;
-            if (elConf)  elConf.textContent  = confirmed;
-            if (elRes)   elRes.textContent   = reserved;
+            // Prima passata immediata con i valori statici (nessun flickering visibile)
+            renderEACounter(confirmed, reserved, total);
 
-            // Animate dual-layer bar
-            var barConf = document.getElementById('eaBarConfirmed');
-            var barRes  = document.getElementById('eaBarReserved');
-            if (barConf) { barConf.style.width = '0'; barConf.style.left = '0'; }
-            if (barRes)  { barRes.style.width  = '0'; barRes.style.left  = (confirmed / total * 100) + '%'; }
-
-            setTimeout(function() {
-                if (barConf) barConf.style.width = (confirmed / total * 100) + '%';
-                if (barRes)  barRes.style.width  = (reserved  / total * 100) + '%';
-            }, 400);
-
-            // Replace {reserved} placeholder in note element
-            updateEAReservedNote(reserved);
+            // Poi fetch live per aggiornare con i dati reali dal foglio Google
+            fetchAndUpdateEACounter();
         }
 
         /**
