@@ -18,7 +18,7 @@ function showSection(sectionId) {
     const eaMiniBar = document.getElementById('ea-mini-bar');
     if (sectionId === 'home') {
         if (founderSection) { founderSection.style.display = ''; founderSection.removeAttribute('hidden'); }
-        if (eaMiniBar) eaMiniBar.style.display = 'none';
+        if (eaMiniBar) eaMiniBar.style.display = 'flex';
     } else {
         if (founderSection) founderSection.style.display = 'none';
         if (eaMiniBar) eaMiniBar.style.display = 'flex';
