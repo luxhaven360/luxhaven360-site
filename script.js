@@ -12,6 +12,17 @@ function showSection(sectionId) {
         s.classList.remove('active');
         s.style.display = 'none';
     });
+
+    // ✅ STEP 2b: GESTIONE SEZIONE FOUNDER EARLY ACCESS
+    const founderSection = document.getElementById('founder-access');
+    const eaMiniBar = document.getElementById('ea-mini-bar');
+    if (sectionId === 'home') {
+        if (founderSection) { founderSection.style.display = ''; founderSection.removeAttribute('hidden'); }
+        if (eaMiniBar) eaMiniBar.style.display = 'none';
+    } else {
+        if (founderSection) founderSection.style.display = 'none';
+        if (eaMiniBar) eaMiniBar.style.display = 'flex';
+    }
     
     // ✅ STEP 3: MOSTRA SOLO LA SEZIONE RICHIESTA
     if (sectionId === 'home') {
