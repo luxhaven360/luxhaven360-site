@@ -200,6 +200,11 @@ class I18n {
       }
     });
     console.log('  ✅ Pulsanti aggiornati');
+
+    // Dispatch custom event for post-translation hooks (e.g. EA counter note)
+    try {
+      document.dispatchEvent(new CustomEvent('lh360:translated', { detail: { lang: this.currentLang } }));
+    } catch(e) {}
   }
 
   /**
