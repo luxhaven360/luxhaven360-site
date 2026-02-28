@@ -665,6 +665,11 @@
         /**
          * After each i18n translation, replace {reserved} in the note paragraph.
          */
+        // Cache del template originale (con placeholder {reserved}) —
+        // va salvato prima di qualsiasi sostituzione, così può essere
+        // riapplicato a ogni aggiornamento del counter.
+        var _eaNoteTemplate = null;
+
         function updateEAReservedNote(reservedCount) {
             var section = document.getElementById('founder-access');
             var reserved = reservedCount !== undefined
@@ -672,9 +677,20 @@
                 : parseInt((section && section.getAttribute('data-ea-reserved')) || '0', 10);
 
             var noteEl = document.querySelector('.ea-note-text');
-            if (noteEl && noteEl.innerHTML) {
-                // Replace the placeholder left by the i18n system
-                noteEl.innerHTML = noteEl.innerHTML.replace(/\{reserved\}/g, reserved);
+            if (!noteEl) return;
+
+            // La prima volta che viene chiamata (dopo che i18n ha scritto
+            // il template con {reserved} nel DOM), lo salviamo.
+            // Se il template contiene ancora {reserved}, aggiorniamo la cache
+            // (può succedere al cambio lingua quando i18n riscrive l'innerHTML).
+            if (_eaNoteTemplate === null || noteEl.innerHTML.indexOf('{reserved}') !== -1) {
+                _eaNoteTemplate = noteEl.innerHTML;
+            }
+
+            // Riapplica sempre dal template originale → nessun problema
+            // di placeholder "consumato" da chiamate precedenti.
+            if (_eaNoteTemplate) {
+                noteEl.innerHTML = _eaNoteTemplate.replace(/\{reserved\}/g, reserved);
             }
         }
 
