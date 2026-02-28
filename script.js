@@ -87,7 +87,51 @@ function showSection(sectionId) {
         }
     }, 200); // Delay per aspettare rendering DOM
     
+    // Sincronizza posizione mini-bar e padding sezioni
+    setTimeout(() => syncMiniBarOffset(), 50);
+
     console.log(`✅ Sezione "${sectionId}" attiva`);
+}
+
+/**
+ * 📐 Sincronizza la posizione della mini-bar Early Access
+ * e il padding delle sezioni/hero in base all'altezza reale della navbar.
+ */
+function syncMiniBarOffset() {
+    const navbar       = document.getElementById('navbar');
+    const miniBar      = document.getElementById('ea-mini-bar');
+    const miniBarInner = miniBar ? miniBar.querySelector('.ea-mini-bar-inner') : null;
+
+    if (!navbar || !miniBar || !miniBarInner) return;
+
+    // 1. Leggi altezza reale navbar
+    const navH = navbar.getBoundingClientRect().height;
+
+    // 2. Posiziona la mini-bar subito sotto la navbar
+    miniBarInner.style.marginTop = navH + 'px';
+
+    // 3. Se la mini-bar è visibile, compensa hero e sezioni
+    const isVisible = miniBar.style.display !== 'none';
+    if (isVisible) {
+        const miniBarH = miniBarInner.getBoundingClientRect().height;
+
+        // Aggiungi spazio alla hero per non coprire il contenuto
+        const heroContent = document.querySelector('.hero-content');
+        if (heroContent) {
+            heroContent.style.paddingTop = miniBarH + 'px';
+        }
+
+        // Aggiorna padding-top delle sezioni
+        document.querySelectorAll('.section').forEach(s => {
+            s.style.paddingTop = (navH + miniBarH + 20) + 'px';
+        });
+    } else {
+        const heroContent = document.querySelector('.hero-content');
+        if (heroContent) heroContent.style.paddingTop = '';
+        document.querySelectorAll('.section').forEach(s => {
+            s.style.paddingTop = '';
+        });
+    }
 }
 
 /**
@@ -1830,3 +1874,13 @@ function updateAllBriefDescriptionsForLanguage() {
     
     console.log(`✅ ${updatedCount} descrizioni brevi aggiornate`);
 }
+
+// ========================================
+// SYNC MINI-BAR: aggiorna offset al resize e al caricamento
+// ========================================
+window.addEventListener("resize", () => syncMiniBarOffset());
+document.addEventListener("DOMContentLoaded", () => {
+    // Prima chiamata dopo il caricamento
+    setTimeout(() => syncMiniBarOffset(), 300);
+});
+
