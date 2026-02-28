@@ -129,8 +129,8 @@
          EARLY ACCESS — FOUNDER RESERVATION PROGRAM
          ======================================== -->
     <section class="founder-section" id="founder-access"
-             data-ea-confirmed="124"
-             data-ea-reserved="23"
+             data-ea-confirmed="0"
+             data-ea-reserved="0"
              data-ea-total="200">
         <div class="founder-inner">
 
@@ -159,7 +159,7 @@
                     <!-- TOP: posti disponibili + totale -->
                     <div class="ea-counter-top">
                         <div class="ea-counter-available-block">
-                            <span class="ea-counter-available-num" id="eaAvailable">53</span>
+                            <span class="ea-counter-available-num" id="eaAvailable">—</span>
                             <span class="ea-counter-available-label" data-i18n="ea_available_label">posti ancora disponibili su 200</span>
                         </div>
                         <div class="ea-counter-total-block">
@@ -196,7 +196,7 @@
                     <div class="ea-counter-stats">
 
                         <div class="ea-counter-stat confirmed">
-                            <span class="ea-stat-num" id="eaStatConfirmed">124</span>
+                            <span class="ea-stat-num" id="eaStatConfirmed">—</span>
                             <span class="ea-stat-name" data-i18n="ea_confirmed_name">Founding Members</span>
                             <span class="ea-stat-sub" data-i18n="ea_confirmed_sub">pagamento confermato</span>
                             <span class="ea-stat-tag confirmed-tag">
@@ -208,7 +208,7 @@
                         </div>
 
                         <div class="ea-counter-stat reserved">
-                            <span class="ea-stat-num" id="eaStatReserved">23</span>
+                            <span class="ea-stat-num" id="eaStatReserved">—</span>
                             <span class="ea-stat-name" data-i18n="ea_reserved_name">Founder Candidate</span>
                             <span class="ea-stat-sub" data-i18n="ea_reserved_sub">prenotazione in attesa</span>
                             <span class="ea-stat-tag reserved-tag">
@@ -592,24 +592,46 @@
             var fbMembers  = section ? (parseInt(section.getAttribute('data-ea-confirmed'), 10) || 0)   : 0;
             var fbCandidates = section ? (parseInt(section.getAttribute('data-ea-reserved'), 10) || 0)  : 0;
 
-            // Prova prima il cache localStorage (max 5 minuti)
+            // Invalida la cache se contiene valori che sembrano demo (124/23)
+            // o se il formato è vecchio (mancano i nuovi campi)
             try {
                 var cached = JSON.parse(localStorage.getItem('lh360_stats_cache') || 'null');
-                if (cached && cached.ts && (Date.now() - cached.ts) < 5 * 60 * 1000) {
+                var cacheValid = cached &&
+                    cached.ts &&
+                    (Date.now() - cached.ts) < 5 * 60 * 1000 &&
+                    typeof cached.founding_member_count !== 'undefined' &&
+                    typeof cached.candidate_count       !== 'undefined' &&
+                    // Scarta cache con valori demo hardcoded
+                    !(cached.founding_member_count === 124 && cached.candidate_count === 23);
+                if (cacheValid) {
                     renderEACounter(cached.founding_member_count, cached.candidate_count, total);
+                } else {
+                    // Pulisce cache stale/demo
+                    localStorage.removeItem('lh360_stats_cache');
                 }
-            } catch(e) {}
+            } catch(e) {
+                localStorage.removeItem('lh360_stats_cache');
+            }
 
             // Fetch live dal GAS
             var url = WEB_APP_URL + '?action=get_stats&t=' + Date.now();
             fetch(url, { method: 'GET', mode: 'cors', cache: 'no-store' })
                 .then(function(res) { return res.json(); })
                 .then(function(data) {
-                    if (!data || !data.success) throw new Error('GAS error');
-                    var members    = typeof data.founding_member_count !== 'undefined' ? data.founding_member_count : 0;
-                    var candidates = typeof data.candidate_count       !== 'undefined' ? data.candidate_count       : (data.founder_count || 0);
+                    if (!data || !data.success) throw new Error('GAS error: ' + JSON.stringify(data));
+                    // Supporta sia il nuovo formato (founding_member_count / candidate_count)
+                    // che il vecchio (founder_count = totale prenotati, nessun founding_member)
+                    var members, candidates;
+                    if (typeof data.founding_member_count !== 'undefined') {
+                        members    = data.founding_member_count;
+                        candidates = data.candidate_count || 0;
+                    } else {
+                        // Vecchio GAS non ancora ridistribuito: tutti i prenotati sono Candidate
+                        members    = 0;
+                        candidates = data.founder_count || 0;
+                    }
                     renderEACounter(members, candidates, total);
-                    // Aggiorna/condivide cache con community.html
+                    // Salva in cache
                     try {
                         localStorage.setItem('lh360_stats_cache', JSON.stringify({
                             founding_member_count: members,
@@ -618,7 +640,8 @@
                         }));
                     } catch(e) {}
                 })
-                .catch(function() {
+                .catch(function(err) {
+                    console.warn('⚠️ GAS stats fetch fallito:', err);
                     renderEACounter(fbMembers, fbCandidates, total);
                 });
         }
