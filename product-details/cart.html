@@ -1977,6 +1977,20 @@ async function initializeCart() {
   
   // 4. Carica prodotti consigliati
   loadRecommendedProducts();
+
+  // 5. ✅ Applica lo stato del pulsante di prenotazione DOPO che il rendering e
+  // la traduzione i18n sono completati. La chiamata nel DOMContentLoaded non è
+  // sufficiente perché renderCart() + i18n.applyTranslations() vengono eseguiti
+  // dentro initializeCart(), sovrascrivendo il testo del bottone con la chiave
+  // generica data-i18n="reserve_btn_cart" → "Prenota Ora — Early Access".
+  if (typeof window.lhApplyReservationUI === 'function') {
+    let cartSku = null;
+    try {
+      const cartState = JSON.parse(localStorage.getItem('lh360_cart') || '[]');
+      if (cartState.length === 1) cartSku = cartState[0].sku || null;
+    } catch(e) {}
+    window.lhApplyReservationUI(cartSku, 'cart');
+  }
 }
 
     /**
@@ -3925,17 +3939,6 @@ document.addEventListener('DOMContentLoaded', function () {
       } catch(e){}
       window.openFounderModal(pn,ps,'cart');
     });
-  }
-
-  // Applica lo stato prenotazione al caricamento pagina.
-  // Nel cart, il "currentSku" è lo SKU del primo prodotto nel carrello.
-  if (typeof window.lhApplyReservationUI === 'function') {
-    let cartSku = null;
-    try {
-      const cart = JSON.parse(localStorage.getItem('lh360_cart')||'[]');
-      if (cart.length === 1) cartSku = cart[0].sku || null;
-    } catch(e) {}
-    window.lhApplyReservationUI(cartSku, 'cart');
   }
 
   // ✅ Ripristina lo stato del pulsante di prenotazione ad ogni cambio lingua.
