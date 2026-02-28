@@ -23,8 +23,6 @@ function showSection(sectionId) {
         if (founderSection) founderSection.style.display = 'none';
         if (eaMiniBar) eaMiniBar.style.display = 'flex';
     }
-    // Aggiorna posizionamento mini-bar e classi compensazione
-    if (typeof window._syncMiniBar === 'function') window._syncMiniBar();
     
     // ✅ STEP 3: MOSTRA SOLO LA SEZIONE RICHIESTA
     if (sectionId === 'home') {
@@ -141,10 +139,13 @@ function toggleMenu() {
 // Navbar scroll effect
 window.addEventListener('scroll', () => {
     const navbar = document.getElementById('navbar');
+    const miniBar = document.getElementById('ea-mini-bar');
     if (window.scrollY > 50) {
         navbar.classList.add('scrolled');
+        if (miniBar) miniBar.style.top = '66px';
     } else {
         navbar.classList.remove('scrolled');
+        if (miniBar) miniBar.style.top = '82px';
     }
 });
 
