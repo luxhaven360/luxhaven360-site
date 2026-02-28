@@ -1592,7 +1592,7 @@
 
             // ✅ FIX {reserved}: dopo aver applicato le traduzioni, rimpiazza il
             // placeholder {reserved} nella nota slot temporanei con il numero reale.
-            // Questo serve sia al primo caricamento che ad ogni cambio lingua.
+            // Legge i valori aggiornati dagli attributi data-* (aggiornati da renderFounderCounter).
             var noteEl = document.querySelector('.comm-counter-reserved-note p');
             if (noteEl && t.counter_note_reserved) {
                 var section = document.querySelector('[data-counter]');
@@ -1657,63 +1657,120 @@
         }
 
         /* ────────────────────────────────────────
+           GAS URL — usato per il fetch live dei contatori
+           ──────────────────────────────────────── */
+        var GAS_STATS_URL = 'https://script.google.com/macros/s/AKfycbwr79RkXIEocpuOKaM6uMJqE6VFs9wjlUPvrr__FvDbDDrD2ELB1NbfrWP3BCYpHj2u/exec';
+
+        /* ────────────────────────────────────────
            FOUNDER COUNTER — legge data-* dalla section
            e anima barre + aggiorna stat.
            Per aggiornare i numeri: modifica solo gli
            attributi data-confirmed / data-reserved /
            data-total sul tag <section data-counter>.
            ──────────────────────────────────────── */
-        function initFounderCounter() {
-            var section = document.querySelector('[data-counter]');
-            if (!section) return;
 
-            var total     = parseInt(section.getAttribute('data-total'),     10) || 200;
-            var confirmed = parseInt(section.getAttribute('data-confirmed'), 10) || 0;
-            var reserved  = parseInt(section.getAttribute('data-reserved'),  10) || 0;
-            var available = Math.max(0, total - confirmed - reserved);
+        /**
+         * Aggiorna tutti gli elementi del counter con i valori forniti.
+         * @param {number} foundingMembers  - Founding Members (pagamento confermato)
+         * @param {number} candidates       - Founder Candidate (prenotato, non confermato)
+         * @param {number} total            - Posti totali (sempre 200)
+         */
+        function renderFounderCounter(foundingMembers, candidates, total) {
+            var section   = document.querySelector('[data-counter]');
+            var available = Math.max(0, total - foundingMembers - candidates);
+
+            // Aggiorna attributi data-* per coerenza con altri codici che li leggono
+            if (section) {
+                section.setAttribute('data-confirmed', foundingMembers);
+                section.setAttribute('data-reserved',  candidates);
+                section.setAttribute('data-total',     total);
+            }
 
             // Aggiorna numeri
             var elAvail = document.getElementById('counterAvailable');
             var elConf  = document.getElementById('statConfirmed');
             var elRes   = document.getElementById('statReserved');
             if (elAvail) elAvail.textContent = available;
-            if (elConf)  elConf.textContent  = confirmed;
-            if (elRes)   elRes.textContent   = reserved;
+            if (elConf)  elConf.textContent  = foundingMembers;
+            if (elRes)   elRes.textContent   = candidates;
 
-            // Aggiorna label "posti disponibili su N"
-            // (già tradotta, ma aggiorniamo il numero se necessario)
-
-            // Anima le barre con un leggero delay dopo il reveal
+            // Anima le barre
             var barConf = document.getElementById('barConfirmed');
             var barRes  = document.getElementById('barReserved');
-            if (barConf) {
-                barConf.style.width = '0';
-                barConf.style.left  = '0';
-            }
-            if (barRes) {
-                barRes.style.width = '0';
-                barRes.style.left  = (confirmed / total * 100) + '%';
-            }
+            if (barConf) { barConf.style.width = '0'; barConf.style.left = '0'; }
+            if (barRes)  { barRes.style.width  = '0'; barRes.style.left  = (foundingMembers / total * 100) + '%'; }
 
-            // Trigger animation after a short delay (allows CSS transition to fire)
             setTimeout(function() {
-                if (barConf) barConf.style.width = (confirmed / total * 100) + '%';
-                if (barRes)  barRes.style.width  = (reserved  / total * 100) + '%';
+                if (barConf) barConf.style.width = (foundingMembers / total * 100) + '%';
+                if (barRes)  barRes.style.width  = (candidates      / total * 100) + '%';
             }, 350);
 
-            // Aggiorna nota slot temporanei con il numero corretto
-            // (la traduzione usa "X posizioni riservate" — rimpiazziamo il numero)
+            // Aggiorna nota slot temporanei con {reserved} → numero reale
             var noteEl = document.querySelector('.comm-counter-reserved-note p');
             if (noteEl) {
-                var T = window.COMM_TRANSLATIONS;
+                var T    = window.COMM_TRANSLATIONS;
                 var lang = document.documentElement.lang || 'it';
                 if (T && T[lang] && T[lang].counter_note_reserved) {
-                    var noteHtml = T[lang].counter_note_reserved;
-                    // Sostituisce il placeholder {reserved} con il numero reale
-                    noteHtml = noteHtml.replace('{reserved}', reserved);
-                    noteEl.innerHTML = noteHtml;
+                    noteEl.innerHTML = T[lang].counter_note_reserved.replace('{reserved}', candidates);
                 }
             }
+        }
+
+        /**
+         * Recupera i contatori live dal GAS, aggiorna il counter e
+         * salva i valori in localStorage come fallback per i prossimi carichi.
+         * In caso di errore usa i valori statici degli attributi data-*.
+         */
+        function fetchAndUpdateCounter() {
+            var section  = document.querySelector('[data-counter]');
+            var total    = section ? (parseInt(section.getAttribute('data-total'), 10) || 200) : 200;
+
+            // Valori di fallback dagli attributi statici
+            var fallbackMembers    = section ? (parseInt(section.getAttribute('data-confirmed'), 10) || 0) : 0;
+            var fallbackCandidates = section ? (parseInt(section.getAttribute('data-reserved'),  10) || 0) : 0;
+
+            // Prova prima il cache localStorage (max 5 minuti)
+            try {
+                var cached = JSON.parse(localStorage.getItem('lh360_stats_cache') || 'null');
+                if (cached && cached.ts && (Date.now() - cached.ts) < 5 * 60 * 1000) {
+                    renderFounderCounter(cached.founding_member_count, cached.candidate_count, total);
+                }
+            } catch(e) {}
+
+            // Fetch live dal GAS
+            var url = GAS_STATS_URL + '?action=get_stats&t=' + Date.now();
+            fetch(url, { method: 'GET', mode: 'cors', cache: 'no-store' })
+                .then(function(res) { return res.json(); })
+                .then(function(data) {
+                    if (!data || !data.success) throw new Error('GAS error');
+                    var members    = typeof data.founding_member_count !== 'undefined' ? data.founding_member_count : 0;
+                    var candidates = typeof data.candidate_count       !== 'undefined' ? data.candidate_count       : (data.founder_count || 0);
+                    renderFounderCounter(members, candidates, total);
+                    // Aggiorna cache
+                    try {
+                        localStorage.setItem('lh360_stats_cache', JSON.stringify({
+                            founding_member_count: members,
+                            candidate_count:       candidates,
+                            ts:                    Date.now()
+                        }));
+                    } catch(e) {}
+                })
+                .catch(function() {
+                    // Fallback ai valori statici se la rete fallisce
+                    renderFounderCounter(fallbackMembers, fallbackCandidates, total);
+                });
+        }
+
+        function initFounderCounter() {
+            // Prima passata con i valori statici (nessun flickering)
+            var section    = document.querySelector('[data-counter]');
+            var total      = section ? (parseInt(section.getAttribute('data-total'),     10) || 200) : 200;
+            var confirmed  = section ? (parseInt(section.getAttribute('data-confirmed'), 10) || 0)   : 0;
+            var reserved   = section ? (parseInt(section.getAttribute('data-reserved'),  10) || 0)   : 0;
+            renderFounderCounter(confirmed, reserved, total);
+
+            // Poi fetch live per aggiornare con i dati reali
+            fetchAndUpdateCounter();
         }
 
         /* ────────────────────────────────────────
