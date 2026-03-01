@@ -1216,6 +1216,35 @@ body {
 .ndi-time { font-size: 0.62rem; color: var(--muted2); margin-top: 0.2rem; }
 .ndi-unread { width: 7px; height: 7px; border-radius: 50%; background: var(--gold); flex-shrink: 0; margin-top: 5px; }
 
+/* Notif empty states */
+.notif-dropdown-empty {
+  display: flex; align-items: center; gap: 0.6rem;
+  padding: 1.2rem 1.1rem;
+  color: var(--muted2); font-size: 0.75rem;
+}
+.notif-dropdown-empty svg { flex-shrink: 0; opacity: 0.5; }
+
+.notif-empty-state {
+  display: flex; flex-direction: column; align-items: center;
+  padding: 3rem 2rem; text-align: center;
+}
+.notif-empty-icon {
+  width: 56px; height: 56px;
+  border-radius: 50%;
+  background: var(--dark4);
+  border: 1px solid var(--border);
+  display: flex; align-items: center; justify-content: center;
+  color: var(--muted2); margin-bottom: 1rem;
+}
+.notif-empty-title {
+  font-family: var(--ff-display); font-size: 1rem; font-weight: 400;
+  color: var(--light); margin-bottom: 0.5rem;
+}
+.notif-empty-desc {
+  font-size: 0.75rem; color: var(--muted);
+  line-height: 1.7; max-width: 340px;
+}
+
 /* Tabs */
 .tab-row { display: flex; gap: 0.2rem; margin-bottom: 1.2rem; border-bottom: 1px solid var(--border2); }
 .tab-btn {
@@ -1893,7 +1922,7 @@ body {
           <div>
             <div class="section-title">Centro Notifiche</div>
           </div>
-          <button class="btn-secondary" style="font-size:0.7rem; padding:0.45rem 1rem;" onclick="markAllRead()">Segna tutte come lette</button>
+          <button class="btn-secondary" id="markAllReadBtn" style="font-size:0.7rem; padding:0.45rem 1rem; display:none;" onclick="markAllRead()">Segna tutte come lette</button>
         </div>
         <div id="notifsContainer"></div>
       </div>
@@ -2347,7 +2376,12 @@ function logout() {
     // Precarica le statistiche dalla cache PRIMA che initApp esegua il rendering
     // così le stat card mostrano valori reali immediatamente (zero latenza percepita)
     const _cachedStats = loadStatsCache();
-    if (_cachedStats) applyDashboardStats(_cachedStats);
+    if (_cachedStats) {
+      applyDashboardStats(_cachedStats);
+    } else {
+      // Nessuna cache: applica stima client-side per evitare —
+      applyClientSideStats();
+    }
 
     // initApp verrà chiamato da DOMContentLoaded / window.onload
     // Lo chiamiamo dopo che il DOM è completamente pronto
@@ -2439,10 +2473,10 @@ function initApp() {
   // Simulate real-time activity
   startRealTimeSimulation();
 
-  // Carica statistiche dinamiche ogni 60 secondi
+  // Carica statistiche dinamiche ogni 10 secondi (aggiornamento in tempo reale)
   loadDashboardStats();
   if (_dashStatsTimer) clearInterval(_dashStatsTimer);
-  _dashStatsTimer = setInterval(loadDashboardStats, 15 * 1000);
+  _dashStatsTimer = setInterval(loadDashboardStats, 10 * 1000);
 
   // Carica dati community (post, discussioni, sondaggi) da GAS con cache locale
   initCommunityData();
@@ -2669,7 +2703,21 @@ async function pollCommunityUpdates() {
   if (!GAS_URL || !currentUser) return;
   try {
     const data = await fetch(`${GAS_URL}?action=get_community_data`).then(r => r.json());
-    if (data.success) applyRemoteData(data);
+    if (data.success) {
+      applyRemoteData(data);
+      // Aggiorna notifiche in tempo reale se presenti nel payload
+      if (Array.isArray(data.notifications)) {
+        const prevCount = NOTIFICATIONS.length;
+        NOTIFICATIONS.length = 0;
+        data.notifications.forEach(n => NOTIFICATIONS.push(n));
+        notifCount = NOTIFICATIONS.filter(n => n.unread).length;
+        updateNotifBadge();
+        renderNotifDropdown();
+        // Se il pannello notifiche è aperto, aggiornalo subito
+        const notifPanel = document.getElementById('panel-notifications');
+        if (notifPanel && notifPanel.classList.contains('active')) renderNotifications();
+      }
+    }
   } catch(e) {}
   // Aggiorna anche le statistiche dashboard in tempo reale
   try {
@@ -2773,8 +2821,11 @@ async function loadDashboardStats() {
   const cached = loadStatsCache();
   if (cached) {
     applyDashboardStats(cached);
+  } else {
+    // Prima visita assoluta (nessuna cache): usa stima client-side immediata
+    // così le stat card mostrano valori reali sin dal primo frame, senza —
+    applyClientSideStats();
   }
-  // Senza cache: valori restano — fino a risposta GAS (nessun numero fittizio)
 
   if (!GAS_URL) return;
 
@@ -2796,13 +2847,15 @@ async function loadDashboardStats() {
 /* Stima client-side da dati in-memoria (primo accesso assoluto o GAS offline) */
 function applyClientSideStats() {
   const teamPosts = FEED_POSTS.filter(p => p.role && p.role.toLowerCase().includes('team'));
+  const foundingCount = MEMBERS_DATA.filter(m => m.level === 'founding').length;
+  const totalMembers  = MEMBERS_DATA.length;
   applyDashboardStats({
-    active_members:        MEMBERS_DATA.length,
+    active_members:        totalMembers,
     weekly_new:            0,
     weekly_lost:           0,
     feed_updates_30d:      teamPosts.length,
-    founding_member_count: 0,
-    remaining_spots:       200,
+    founding_member_count: foundingCount,
+    remaining_spots:       200 - foundingCount,
     max_founders:          200
   });
 }
@@ -3605,6 +3658,22 @@ async function voteSurvey(surveyId, optionIndex) {
 function renderNotifications() {
   const colorMap = { message:'blue', update:'gold', like:'red', reply:'green', listing:'gold', system:'gold', event:'blue' };
   const container = document.getElementById('notifsContainer');
+  const markAllBtn = document.getElementById('markAllReadBtn');
+
+  if (NOTIFICATIONS.length === 0) {
+    if (markAllBtn) markAllBtn.style.display = 'none';
+    container.innerHTML = `
+      <div class="notif-empty-state">
+        <div class="notif-empty-icon">
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg>
+        </div>
+        <div class="notif-empty-title">Nessuna notifica al momento</div>
+        <div class="notif-empty-desc">Le notifiche appariranno qui in tempo reale non appena verranno generate da eventi della Community.</div>
+      </div>`;
+    return;
+  }
+
+  if (markAllBtn) markAllBtn.style.display = '';
   container.innerHTML = NOTIFICATIONS.map(n => `
     <div class="notif-item ${n.unread ? 'unread' : ''}" onclick="markNotifRead(${n.id})">
       <div class="notif-icon ${colorMap[n.type] || 'gold'}">${n.icon}</div>
@@ -3619,6 +3688,16 @@ function renderNotifications() {
 
 function renderNotifDropdown() {
   const list = document.getElementById('notifDropdownList');
+
+  if (NOTIFICATIONS.length === 0) {
+    list.innerHTML = `
+      <div class="notif-dropdown-empty">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg>
+        <span>Nessuna notifica al momento</span>
+      </div>`;
+    return;
+  }
+
   list.innerHTML = NOTIFICATIONS.slice(0,5).map(n => `
     <div class="notif-dropdown-item ${n.unread ? 'unread' : ''}" onclick="markNotifRead(${n.id}); toggleNotifDropdown();">
       <div class="ndi-icon">${n.icon}</div>
@@ -3659,12 +3738,15 @@ function markAllRead() {
 function updateNotifBadge() {
   const badge = document.getElementById('headerNotifCount');
   const navBadge = document.getElementById('notifNavBadge');
-  if (notifCount > 0) {
-    badge.textContent = notifCount;
+  // Forza contatore a 0 se non ci sono notifiche reali
+  const realCount = Math.min(notifCount, NOTIFICATIONS.filter(n => n.unread).length);
+  if (realCount > 0) {
+    badge.textContent = realCount;
     badge.classList.remove('hidden');
-    navBadge.textContent = notifCount;
+    navBadge.textContent = realCount;
     navBadge.style.display = '';
   } else {
+    notifCount = 0;
     badge.classList.add('hidden');
     navBadge.style.display = 'none';
     navBadge.classList.add('hidden');
