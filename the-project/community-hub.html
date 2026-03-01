@@ -1572,7 +1572,7 @@ body {
     </div>
     <div style="margin-top:0.8rem; padding:0.55rem 0.8rem; border-radius:var(--radius); background:rgba(212,175,55,0.05); border:1px solid rgba(212,175,55,0.18); text-align:center; font-size:0.63rem; color:var(--muted2); line-height:1.7;">
       🔐 <strong style="color:var(--gold);">Accesso Fondatore</strong><br>
-      <span style="font-family:monospace; letter-spacing:0.03em; font-size:0.65rem; color:var(--light);"><a href="/cdn-cgi/l/email-protection" class="__cf_email__" data-cfemail="30565f5e5451445f4255705c4548585146555e0306001e535f5d">[email&#160;protected]</a></span><br>
+      <span style="font-family:monospace; letter-spacing:0.03em; font-size:0.65rem; color:var(--light);"><a href="/cdn-cgi/l/email-protection" class="__cf_email__" data-cfemail="a5c3cacbc1c4d1cad7c0e5c9d0ddcdc4d3c0cb9693958bc6cac8">[email&#160;protected]</a></span><br>
       <span style="font-family:monospace; letter-spacing:0.03em; font-size:0.65rem; color:var(--light);">LuxFounder2025!</span>
     </div>
   </div>
@@ -2138,7 +2138,7 @@ body {
 <div id="toastContainer"></div>
 
 <!-- ═══════════════ JAVASCRIPT ═══════════════ -->
-<script data-cfasync="false" src="/cdn-cgi/scripts/5c5dd728/cloudflare-static/email-decode.min.js"></script><script data-cfasync="false" src="/cdn-cgi/scripts/5c5dd728/cloudflare-static/email-decode.min.js"></script><script data-cfasync="false" src="/cdn-cgi/scripts/5c5dd728/cloudflare-static/email-decode.min.js"></script><script>
+<script>
 /* ═══════════════════════════════════════════
    CONFIGURAZIONE
    ⚠ Sostituisci GAS_URL con l'URL del tuo deployment Google Apps Script
@@ -2166,40 +2166,11 @@ const MEMBERS_DATA = [
   { name:'Roberto Costa',   initial:'R', level:'candidate', joined:'12 Dic 2024', last:'2 gg fa',   status:'offline'},
 ];
 
-let FEED_POSTS = [
-  {
-    id:1, author:'Lorenzo Ferretti', initial:'L', role:'Team LuxHaven360', type:'update',
-    time:'2 ore fa',
-    title:'Aggiornamento Struttura Operativa — Gennaio 2025',
-    text:'Siamo lieti di condividere i progressi significativi raggiunti nella definizione della struttura operativa. Il framework legale è ora completamente formalizzato e siamo in fase di finalizzazione dei primi accordi con i partner immobiliari selezionati.',
-    likes:0, comments:0, liked:false,
-    commentsData:[]
-  },
-  {
-    id:2, author:'Valentina Greco', initial:'V', role:'Community Manager', type:'exclusive',
-    time:'5 ore fa',
-    title:'Preview Esclusiva — Prima Location Confermata',
-    text:'Per i Founding Members: siamo pronti a condividere in anteprima assoluta la prima location confermata nel portfolio. Una proprietà di straordinario livello in una delle destinazioni più esclusive d\'Europa.',
-    locked:'candidate',
-    likes:0, comments:0, liked:false,
-    commentsData:[]
-  },
-  {
-    id:3, author:'Lorenzo Ferretti', initial:'L', role:'Team LuxHaven360', type:'news',
-    time:'2 giorni fa',
-    title:'Partnership Strategica Confermata',
-    text:'Siamo entusiasti di annunciare la partnership con un primario operatore di gestione immobiliare nel segmento luxury. Questo accordo rafforza significativamente la nostra capacità operativa.',
-    likes:0, comments:0, liked:false,
-    commentsData:[]
-  },
-];
+let FEED_POSTS = [];
+// I post vengono caricati esclusivamente da GAS (get_community_data)
 
-let DISCUSSIONS = [
-  { id:1, category:'feedback', title:'Feedback sul processo di onboarding — cosa miglioreresti?', author:'Sofia R.', time:'3 ore fa', replies:0, views:0, pinned:true, lastReply:'Nessuna risposta ancora' },
-  { id:2, category:'question', title:'Quando viene ufficializzato il primo calendario listing?', author:'Marco B.', time:'6 ore fa', replies:0, views:0, pinned:false, lastReply:'Nessuna risposta ancora' },
-  { id:3, category:'idea', title:'Proposta: sessioni live mensili con il team', author:'Chiara V.', time:'1 giorno fa', replies:0, views:0, pinned:false, lastReply:'Nessuna risposta ancora' },
-  { id:4, category:'general', title:'Presentazioni — Chi siamo e cosa ci aspettiamo', author:'Lorenzo F.', time:'3 giorni fa', replies:0, views:0, pinned:true, lastReply:'Nessuna risposta ancora' },
-];
+let DISCUSSIONS = [];
+// Le discussioni vengono caricate esclusivamente da GAS (get_community_data)
 
 const CONVS = [
   { id:1, name:'Team LuxHaven360', initial:'T', type:'team', status:'online', last:'Grazie per il feedback!', time:'10:24', unread:1,
@@ -2227,7 +2198,7 @@ const CONVS = [
 ];
 
 const NOTIFICATIONS = [];
-// Le notifiche vengono generate dinamicamente da eventi reali (messaggi, like, risposte, ecc.)
+// Le notifiche vengono generate dinamicamente da eventi reali
 
 const SURVEYS = [
   {
@@ -2677,21 +2648,15 @@ async function initCommunityData() {
     });
   }
 
-  // 2. Aggiorna da GAS in background
+  // 2. Aggiorna da GAS in background — unica fonte di verità
   if (!GAS_URL) return;
   try {
     const data = await fetch(`${GAS_URL}?action=get_community_data`).then(r => r.json());
     if (data.success) {
-      // Se GAS ha dati reali (post pubblicati), usa quelli; altrimenti mantieni seed locale
-      if (Array.isArray(data.posts) && data.posts.length > 0) {
-        applyRemoteData(data);
-      } else if (!cache) {
-        // GAS vuoto + nessuna cache = prima installazione, salva seed locale su GAS
-        seedInitialData();
-      }
+      applyRemoteData(data);
     }
   } catch(e) {
-    console.warn('[CommunityData] GAS non raggiungibile, uso dati locali:', e.message);
+    console.warn('[CommunityData] GAS non raggiungibile:', e.message);
   }
 
   // 3. Avvia polling per aggiornamenti in tempo reale (ogni 30 secondi)
@@ -2706,7 +2671,7 @@ async function pollCommunityUpdates() {
     const data = await fetch(`${GAS_URL}?action=get_community_data`).then(r => r.json());
     if (data.success) applyRemoteData(data);
   } catch(e) {}
-  // Aggiorna anche le statistiche (Membri Attivi, variazione settimanale) in tempo reale
+  // Aggiorna anche le statistiche in tempo reale (Membri Attivi, variazione settimanale)
   try {
     const resp = await fetch(`${GAS_URL}?action=get_dashboard_stats`);
     if (resp.ok) {
@@ -2716,32 +2681,9 @@ async function pollCommunityUpdates() {
   } catch(e) {}
 }
 
-/* Primo avvio: pubblica i post seed su GAS così sono persistenti */
+/* Seed disabilitato — i contenuti sono pubblicati esclusivamente dal Team tramite il pannello Comunicazioni */
 async function seedInitialData() {
-  if (!GAS_URL || !currentUser || currentUser.role !== 'team') return;
-  console.info('[Seed] Primo avvio: pubblico post iniziali su GAS...');
-  for (const post of [...FEED_POSTS].reverse()) {
-    try {
-      await fetch(`${GAS_URL}?action=publish_post` +
-        `&author=${encodeURIComponent(post.author)}&initial=${encodeURIComponent(post.initial)}` +
-        `&role=${encodeURIComponent(post.role)}&type=${encodeURIComponent(post.type)}` +
-        `&title=${encodeURIComponent(post.title)}&text=${encodeURIComponent(post.text)}` +
-        `&locked=${encodeURIComponent(post.locked||'')}`);
-    } catch(e) {}
-  }
-  for (const disc of [...DISCUSSIONS].reverse()) {
-    const replies = THREAD_MESSAGES[disc.id] || [];
-    const op = replies[0];
-    if (!op) continue;
-    try {
-      await fetch(`${GAS_URL}?action=save_discussion` +
-        `&category=${encodeURIComponent(disc.category)}&title=${encodeURIComponent(disc.title)}` +
-        `&body=${encodeURIComponent(op.text)}&author=${encodeURIComponent(disc.author)}` +
-        `&initial=${encodeURIComponent(op.initial||'?')}&role=${encodeURIComponent(op.role||'')}` +
-        `&isTeam=${!!op.isTeam}`);
-    } catch(e) {}
-  }
-  console.info('[Seed] Completato.');
+  console.info('[Seed] Disabilitato: usa il pannello Comunicazioni per pubblicare contenuti reali.');
 }
 
 /* ── sharePost: crea link diretto al post ───────────────────────── */
@@ -2809,7 +2751,7 @@ async function loadDashboardStats() {
   if (cached) {
     applyDashboardStats(cached);
   }
-  // Se non c'è cache, i valori restano — finché GAS non risponde (nessun numero fittizio)
+  // Senza cache: i valori rimangono — fino a risposta GAS (nessun numero fittizio)
 
   if (!GAS_URL) return;
 
@@ -3028,6 +2970,10 @@ function renderFeedPreview() {
 ═══════════════════════════════════════════ */
 function renderFeed() {
   const container = document.getElementById('feedContainer');
+  if (FEED_POSTS.length === 0) {
+    container.innerHTML = '<div style="text-align:center;padding:3rem 1rem;color:var(--muted2);font-size:0.82rem;">Nessun aggiornamento disponibile.<br>Il team pubblicherà presto il primo contenuto.</div>';
+    return;
+  }
   container.innerHTML = FEED_POSTS.map(post => {
     const isLocked = post.locked === 'candidate' && currentUser.role === 'candidate';
     return `
@@ -3200,6 +3146,10 @@ function renderPostComments(post, container) {
 function renderDiscussions(filter) {
   const threads = filter && filter !== 'all' ? DISCUSSIONS.filter(d => d.category === filter) : DISCUSSIONS;
   const container = document.getElementById('discussionsContainer');
+  if (threads.length === 0) {
+    container.innerHTML = '<div style="text-align:center;padding:3rem 1rem;color:var(--muted2);font-size:0.82rem;">Nessuna discussione ancora.<br>Sii il primo a creare un thread!</div>';
+    return;
+  }
   container.innerHTML = threads.map(d => `
     <div class="discussion-thread" onclick="openThread(${d.id})">
       <div class="thread-header">
@@ -3222,25 +3172,8 @@ function renderDiscussions(filter) {
 /* ═══════════════════════════════════════════
    THREAD DETAIL VIEW
 ═══════════════════════════════════════════ */
-const THREAD_MESSAGES = {
-  1: [
-    { author:'Sofia R.', initial:'S', role:'Founding Member', isTeam:false, time:'3 ore fa', text:'Penso che il processo di onboarding possa essere reso più snello. Propongo di aggiungere una checklist guidata per i nuovi membri, così ognuno sa esattamente cosa fare nei primi giorni di accesso.', isOp:true, reactions:['👍 8', '❤️ 3'] },
-    { author:'Alessandro M.', initial:'A', role:'Founding Member', isTeam:false, time:'2 ore fa', text:'Concordo con Sofia. Anche una breve video-presentazione del team e del progetto potrebbe aiutare molto. Quando sono entrato non avevo chiarissimo il funzionamento della Community.', isOp:false, reactions:['👍 5'] },
-    { author:'Team LuxHaven360', initial:'T', role:'Team · LuxHaven360', isTeam:true, time:'1 ora fa', text:'Grazie per il feedback prezioso! Stiamo già lavorando su una nuova versione dell\'onboarding. La checklist è un\'ottima idea — la includeremo nel prossimo aggiornamento. Continueremo a tenervi aggiornati nel feed.', isOp:false, reactions:['⭐ 12', '❤️ 7'] },
-  ],
-  2: [
-    { author:'Marco B.', initial:'M', role:'Founder Candidate', isTeam:false, time:'6 ore fa', text:'Sarebbe molto utile avere una roadmap chiara con le date previste per il primo calendario dei listing. Capisco che ci possano essere variabili, ma anche una finestra temporale indicativa aiuterebbe.', isOp:true, reactions:['👍 6', '💬 2'] },
-    { author:'Team LuxHaven360', initial:'T', role:'Team · LuxHaven360', isTeam:true, time:'1 ora fa', text:'Ciao Marco, ottima domanda! Possiamo anticiparvi che stiamo finalizzando i dettagli delle prime 3 location. Il calendario ufficiale sarà comunicato ai Founding Members in anteprima entro le prossime 2-3 settimane attraverso il Feed e con una sessione live dedicata.', isOp:false, reactions:['⭐ 9', '👍 4'] },
-  ],
-  3: [
-    { author:'Chiara V.', initial:'C', role:'Founder Candidate', isTeam:false, time:'1 giorno fa', text:'Proposta: organizzare sessioni live mensili con il team — una sorta di "town hall" della Community. Potremmo usarle per aggiornamenti sul progetto, Q&A dirette, e magari anche per presentare i nuovi listing prima della pubblicazione ufficiale.', isOp:true, reactions:['❤️ 11', '⭐ 4'] },
-    { author:'Giulia M.', initial:'G', role:'Founding Member', isTeam:false, time:'4 ore fa', text:'Idea fantastica Chiara! Sarebbe molto coinvolgente. Suggerirei di tenerle in orari serali infrasettimanali per favorire la partecipazione di chi lavora. Anche il sabato mattina potrebbe andare.', isOp:false, reactions:['👍 7'] },
-  ],
-  4: [
-    { author:'Lorenzo F.', initial:'L', role:'Team · LuxHaven360', isTeam:true, time:'3 giorni fa', text:'Benvenuti a tutti nella Community Hub di LuxHaven360! Questo è il vostro spazio dedicato. Vi invitiamo a presentarvi brevemente qui: chi siete, da dove venite, e cosa vi ha spinto a unirvi al progetto. Siamo felici di costruire questa Community insieme a voi.', isOp:true, reactions:['⭐ 22', '❤️ 18'] },
-    { author:'Roberto C.', initial:'R', role:'Founder Candidate', isTeam:false, time:'2 ore fa', text:'Ciao a tutti! Sono Roberto, imprenditore nel settore hospitality da Firenze. Ho scoperto LuxHaven360 attraverso un collega e sono rimasto subito colpito dalla visione del progetto. Non vedo l\'ora di vedere i primi listing!', isOp:false, reactions:['👋 5'] },
-  ],
-};
+const THREAD_MESSAGES = {};
+// Le risposte ai thread vengono caricate esclusivamente da GAS (get_community_data → replies)
 
 let currentThreadId = null;
 
@@ -4064,7 +3997,7 @@ function showToast(color, icon, text) {
    REAL-TIME SIMULATION
 ═══════════════════════════════════════════ */
 function startRealTimeSimulation() {
-  // Aggiorna periodicamente la presenza online (visuale — pannello destro)
+  // Aggiorna periodicamente la presenza online (pannello destro — visuale)
   setInterval(() => {
     const statuses = ['online','online','online','away','offline'];
     ONLINE_MEMBERS.forEach(m => {
