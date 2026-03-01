@@ -2014,6 +2014,44 @@ body {
             <button class="btn-primary" onclick="publishBroadcast()">Pubblica Ora</button>
           </div>
         </div>
+
+        <!-- ── Gestione Eventi ── -->
+        <div class="card" style="margin-top:1.5rem;">
+          <div class="section-header" style="margin-bottom:1rem; padding:0;">
+            <div>
+              <div class="section-title" style="font-size:0.9rem;">Gestione Eventi</div>
+              <div class="section-desc" style="font-size:0.72rem;">Crea e gestisci gli eventi nella sezione "Prossimi Eventi" del pannello laterale.</div>
+            </div>
+          </div>
+
+          <!-- Form nuovo evento -->
+          <div style="display:flex; flex-direction:column; gap:0.8rem; margin-bottom:1.2rem;">
+            <div class="form-group" style="margin:0;">
+              <label class="form-label">Titolo Evento *</label>
+              <input class="form-input" id="eventTitleInput" placeholder="es. Q&A Esclusiva — Founding Members"/>
+            </div>
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:0.8rem;">
+              <div class="form-group" style="margin:0;">
+                <label class="form-label">Data e Ora *</label>
+                <input class="form-input" id="eventDateInput" type="datetime-local"/>
+              </div>
+              <div class="form-group" style="margin:0;">
+                <label class="form-label">Orario (testo)</label>
+                <input class="form-input" id="eventTimeStrInput" placeholder="es. Ore 18:00"/>
+              </div>
+            </div>
+            <div class="form-group" style="margin:0;">
+              <label class="form-label">Nota / Accesso</label>
+              <input class="form-input" id="eventMetaInput" placeholder="es. Solo Founding Members · Accesso prioritario"/>
+            </div>
+          </div>
+          <button class="btn-primary" onclick="createEventUI()" style="width:100%;">
+            ＋ Crea Evento
+          </button>
+
+          <!-- Lista eventi esistenti -->
+          <div id="eventsAdminList" style="margin-top:1rem;"></div>
+        </div>
       </div>
     </div>
 
@@ -2083,7 +2121,7 @@ body {
   <!-- RIGHT PANEL -->
   <aside id="rightPanel">
     <div class="rp-section">
-      <div class="live-indicator"><div class="live-dot"></div> In diretta</div>
+      <div id="liveIndicatorRp" style="display:none;"><div class="live-indicator"><div class="live-dot"></div> In diretta</div></div>
       <div class="rp-title">Membri Online</div>
       <div id="onlineMembersList"></div>
     </div>
@@ -2239,20 +2277,11 @@ const REPORTS = [
   { id:2, type:'Spam', reporter:'Sofia R.', target:'Messaggio privato', content:'Messaggio promozionale non autorizzato inviato ad altri membri della community.', time:'3 ore fa' },
 ];
 
-const ONLINE_MEMBERS = [
-  { name:'Sofia Romano', initial:'S', role:'Founding Member', status:'online', color:'var(--dark4)' },
-  { name:'Alessandro Mori', initial:'A', role:'Founding Member', status:'online', color:'var(--dark4)' },
-  { name:'Luca Fontana', initial:'L', role:'Founding Member', status:'online', color:'var(--dark4)' },
-  { name:'Elena De Luca', initial:'E', role:'Founding Member', status:'away', color:'var(--dark4)' },
-  { name:'Giulia Marini', initial:'G', role:'Founding Member', status:'away', color:'var(--dark4)' },
-  { name:'Team LH360', initial:'T', role:'Team', status:'online', color:'var(--dark4)' },
-];
+// Presenza real-time — popolata da GAS tramite heartbeat/polling (nessun dato statico)
+let ONLINE_MEMBERS = [];
 
-const EVENTS = [
-  { date:'15 Gen 2025', title:'Call Live Team — Q&A Esclusiva', meta:'Ore 18:00 · Solo Founding Members', live:false },
-  { date:'22 Gen 2025', title:'Preview Location: Toscana', meta:'Ore 17:30 · Accesso prioritario', live:false },
-  { date:'LIVE ORA', title:'Aggiornamento in Diretta', meta:'Partecipa alla sessione live', live:true },
-];
+// Eventi community — popolati da GAS (nessun dato statico)
+let EVENTS = [];
 
 /* ═══════════════════════════════════════════
    SESSION MANAGEMENT
@@ -2364,6 +2393,9 @@ async function doLogin() {
 }
 
 function logout() {
+  // Rimuovi presenza e ferma heartbeat prima di fare logout
+  if (_heartbeatTimer) { clearInterval(_heartbeatTimer); _heartbeatTimer = null; }
+  removePresence(); // async ma non blocchiamo — fire and forget
   currentUser = null;
   clearSession();
   // Redirect alla pagina community pubblica
@@ -2501,14 +2533,15 @@ function initApp() {
   updateNotifBadge();
 
   // Simulate real-time activity
-  startRealTimeSimulation();
+  // Avvia presenza real-time: heartbeat immediato + timer ogni 2 minuti
+  startPresenceSystem();
 
   // Carica statistiche dinamiche ogni 10 secondi (aggiornamento in tempo reale)
   loadDashboardStats();
   if (_dashStatsTimer) clearInterval(_dashStatsTimer);
   _dashStatsTimer = setInterval(loadDashboardStats, 10 * 1000);
 
-  // Carica dati community (post, discussioni, sondaggi) da GAS con cache locale
+  // Carica dati community (post, discussioni, sondaggi, presenza, eventi) da GAS
   initCommunityData();
 
   // Gestisci link diretto a un post (#post-ID nella URL)
@@ -2720,15 +2753,21 @@ async function initCommunityData() {
     });
   }
 
-  // 2. Aggiorna da GAS in background — unica fonte di verità
+  // 2. Fetch completo da GAS — include posts, discussions, presenza, eventi
   if (!GAS_URL) return;
   try {
     const data = await fetch(`${GAS_URL}?action=get_community_data`).then(r => r.json());
     if (data.success) {
       applyRemoteData(data);
+      // Presenza: aggiorna lista membri online immediatamente
+      if (Array.isArray(data.online)) applyPresenceData(data.online);
+      // Eventi: aggiorna prossimi eventi e label Live immediatamente
+      if (Array.isArray(data.events)) applyEventsData(data.events);
     }
   } catch(e) {
     console.warn('[CommunityData] GAS non raggiungibile:', e.message);
+    // Mostra il pannello con stato vuoto (non dati simulati)
+    renderRightPanel();
   }
 
   // 3. Avvia polling per aggiornamenti in tempo reale (ogni 30 secondi)
@@ -2743,7 +2782,15 @@ async function pollCommunityUpdates() {
     const data = await fetch(`${GAS_URL}?action=get_community_data`).then(r => r.json());
     if (data.success) {
       applyRemoteData(data);
-      // Aggiorna notifiche in tempo reale se presenti nel payload
+      // Presenza real-time: aggiorna lista membri online
+      if (Array.isArray(data.online)) {
+        applyPresenceData(data.online);
+      }
+      // Eventi: aggiorna prossimi eventi e label Live
+      if (Array.isArray(data.events)) {
+        applyEventsData(data.events);
+      }
+      // Notifiche in tempo reale
       if (Array.isArray(data.notifications)) {
         const prevCount = NOTIFICATIONS.length;
         NOTIFICATIONS.length = 0;
@@ -2751,13 +2798,12 @@ async function pollCommunityUpdates() {
         notifCount = NOTIFICATIONS.filter(n => n.unread).length;
         updateNotifBadge();
         renderNotifDropdown();
-        // Se il pannello notifiche è aperto, aggiornalo subito
         const notifPanel = document.getElementById('panel-notifications');
         if (notifPanel && notifPanel.classList.contains('active')) renderNotifications();
       }
     }
   } catch(e) {}
-  // Aggiorna anche le statistiche dashboard in tempo reale
+  // Aggiorna statistiche dashboard in tempo reale
   try {
     const resp = await fetch(`${GAS_URL}?action=get_dashboard_stats`);
     if (resp.ok) {
@@ -4139,29 +4185,92 @@ function resolveReport(id, action) {
    RENDER RIGHT PANEL
 ═══════════════════════════════════════════ */
 function renderRightPanel() {
+  // ── Membri Online ─────────────────────────────────────────────────────
   const list = document.getElementById('onlineMembersList');
-  list.innerHTML = ONLINE_MEMBERS.map(m => `
-    <div class="online-member">
-      <div class="om-avatar" style="background:var(--dark4); border:1px solid var(--border2); color:${m.role==='Team'?'var(--gold)':'var(--muted)'};">
-        ${m.initial}
-        <div class="om-status ${m.status}"></div>
-      </div>
-      <div style="min-width:0;">
-        <div class="om-name">${m.name}</div>
-        <div class="om-role-tag ${m.role==='Team'?'gold':''}">${m.role}</div>
-      </div>
-    </div>
-  `).join('');
+  const liveRpIndicator = document.getElementById('liveIndicatorRp');
 
-  const events = document.getElementById('upcomingEvents');
-  events.innerHTML = EVENTS.map(e => `
-    <div class="event-card-sm">
-      ${e.live ? '<div class="live-indicator"><div class="live-dot"></div> Live ora</div>' : ''}
-      <div class="event-date-sm">${e.date}</div>
+  if (!list) return;
+
+  if (ONLINE_MEMBERS.length === 0) {
+    list.innerHTML = `
+      <div style="padding:1rem 0 0.5rem; color:var(--muted2); font-size:0.72rem; text-align:center;">
+        Nessun membro online al momento
+      </div>`;
+  } else {
+    list.innerHTML = ONLINE_MEMBERS.map(m => {
+      const isTeam     = m.role === 'team';
+      const roleLabel  = isTeam ? 'Team' : m.role === 'founding' ? 'Founding Member' : 'Founder Candidate';
+      const nameColor  = isTeam ? 'var(--gold)' : 'var(--light)';
+      return `
+      <div class="online-member">
+        <div class="om-avatar" style="background:var(--dark4); border:1px solid var(--border2); color:${isTeam ? 'var(--gold)' : 'var(--muted)'};">
+          ${m.initial}
+          <div class="om-status online"></div>
+        </div>
+        <div style="min-width:0;">
+          <div class="om-name" style="color:${nameColor};">${m.name}</div>
+          <div class="om-role-tag ${isTeam ? 'gold' : ''}">${roleLabel}</div>
+        </div>
+      </div>`;
+    }).join('');
+  }
+
+  // ── Prossimi Eventi ────────────────────────────────────────────────────
+  const eventsEl = document.getElementById('upcomingEvents');
+  if (!eventsEl) return;
+
+  // Controlla se c'è un evento live attivo
+  const hasLive = EVENTS.some(e => e.isLive);
+  if (liveRpIndicator) liveRpIndicator.style.display = hasLive ? 'block' : 'none';
+
+  // Filtra: mostra eventi live + futuri (mai eventi passati)
+  const now    = Date.now();
+  const visible = EVENTS.filter(e => {
+    if (e.isLive) return true;
+    try { return new Date(e.dateIso).getTime() >= now; }
+    catch(_e) { return false; }
+  });
+
+  if (visible.length === 0) {
+    eventsEl.innerHTML = `
+      <div style="padding:0.8rem 0; color:var(--muted2); font-size:0.72rem; text-align:center; line-height:1.6;">
+        Non sono presenti eventi al momento
+      </div>`;
+    return;
+  }
+
+  eventsEl.innerHTML = visible.map(e => {
+    const dateLabel = e.isLive ? 'LIVE ORA' : formatEventDate(e.dateIso);
+    const metaParts = [];
+    if (e.timeStr) metaParts.push(e.timeStr);
+    if (e.meta)    metaParts.push(e.meta);
+    const metaStr   = metaParts.join(' · ');
+    return `
+    <div class="event-card-sm" data-event-id="${e.id}">
+      ${e.isLive ? '<div class="live-indicator" style="margin-bottom:0.3rem;"><div class="live-dot"></div> Live ora</div>' : ''}
+      <div class="event-date-sm ${e.isLive ? 'text-gold' : ''}">${dateLabel}</div>
       <div class="event-title-sm">${e.title}</div>
-      <div class="event-meta-sm">${e.meta}</div>
-    </div>
-  `).join('');
+      ${metaStr ? `<div class="event-meta-sm">${metaStr}</div>` : ''}
+      ${currentUser && currentUser.role === 'team' ? `
+        <div style="display:flex; gap:0.4rem; margin-top:0.4rem; flex-wrap:wrap;">
+          <button onclick="toggleEventLive(${e.id}, ${!e.isLive})" style="font-size:0.62rem; padding:2px 7px; border-radius:4px; border:1px solid ${e.isLive?'var(--amber)':'var(--green)'}; background:transparent; color:${e.isLive?'var(--amber)':'var(--green)'}; cursor:pointer;">
+            ${e.isLive ? '⏹ Stop Live' : '▶ Vai Live'}
+          </button>
+          <button onclick="deleteEventUI(${e.id})" style="font-size:0.62rem; padding:2px 7px; border-radius:4px; border:1px solid var(--border2); background:transparent; color:var(--muted2); cursor:pointer;">✕</button>
+        </div>` : ''}
+    </div>`;
+  }).join('');
+}
+
+/* Formatta una data ISO in "15 Mar 2025" */
+function formatEventDate(iso) {
+  if (!iso) return '';
+  const months = ['Gen','Feb','Mar','Apr','Mag','Giu','Lug','Ago','Set','Ott','Nov','Dic'];
+  try {
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return iso;
+    return `${d.getDate()} ${months[d.getMonth()]} ${d.getFullYear()}`;
+  } catch(_e) { return iso; }
 }
 
 /* ═══════════════════════════════════════════
@@ -4266,19 +4375,195 @@ function showToast(color, icon, text) {
 /* ═══════════════════════════════════════════
    REAL-TIME SIMULATION
 ═══════════════════════════════════════════ */
-function startRealTimeSimulation() {
-  // Aggiorna solo la presenza online (pannello destro — visuale, nessun dato reale)
-  setInterval(() => {
-    const statuses = ['online','online','online','away','offline'];
-    ONLINE_MEMBERS.forEach(m => {
-      if (Math.random() > 0.85) {
-        m.status = statuses[Math.floor(Math.random() * statuses.length)];
-      }
-    });
-    renderRightPanel();
-  }, 8000);
+/* ═══════════════════════════════════════════
+   PRESENZA REAL-TIME
+═══════════════════════════════════════════ */
+const HEARTBEAT_INTERVAL = 2 * 60 * 1000; // ogni 2 minuti
+let _heartbeatTimer = null;
+let _presencePollTimer = null;
+
+/* Invia heartbeat a GAS — segnala che l'utente è online */
+async function sendHeartbeat() {
+  if (!GAS_URL || !currentUser) return;
+  try {
+    await fetch(`${GAS_URL}?action=heartbeat` +
+      `&email=${encodeURIComponent(currentUser.email)}` +
+      `&name=${encodeURIComponent(currentUser.name)}` +
+      `&initial=${encodeURIComponent(currentUser.initial)}` +
+      `&role=${encodeURIComponent(currentUser.role)}`);
+  } catch(_e) {}
 }
 
+/* Rimuove la presenza quando l'utente si disconnette/chiude */
+async function removePresence() {
+  if (!GAS_URL || !currentUser) return;
+  try {
+    await fetch(`${GAS_URL}?action=remove_presence&email=${encodeURIComponent(currentUser.email)}`);
+  } catch(_e) {}
+}
+
+/* Aggiorna la lista membri online dal payload GAS */
+function applyPresenceData(onlineList) {
+  if (!Array.isArray(onlineList)) return;
+  ONLINE_MEMBERS.length = 0;
+  onlineList.forEach(u => ONLINE_MEMBERS.push(u));
+  renderRightPanel();
+
+  // Aggiorna anche il contatore nella dashboard
+  const countEl = document.getElementById('dashOnlineCount');
+  if (countEl) countEl.textContent = ONLINE_MEMBERS.length;
+}
+
+/* Aggiorna la lista eventi dal payload GAS */
+function applyEventsData(eventsList) {
+  if (!Array.isArray(eventsList)) return;
+  EVENTS.length = 0;
+  eventsList.forEach(e => EVENTS.push(e));
+  renderRightPanel();
+
+  // Aggiorna anche la label "In Diretta" nell'header
+  const hasLive = EVENTS.some(e => e.isLive);
+  const headerLive = document.getElementById('headerLiveIndicator');
+  if (headerLive) headerLive.style.display = hasLive ? 'flex' : 'none';
+}
+
+/* Inizia la presenza: heartbeat immediato + timer */
+function startPresenceSystem() {
+  sendHeartbeat(); // immediato
+  if (_heartbeatTimer) clearInterval(_heartbeatTimer);
+  _heartbeatTimer = setInterval(sendHeartbeat, HEARTBEAT_INTERVAL);
+
+  // Segnala presenza come "offline" quando l'utente chiude/lascia la pagina
+  window.addEventListener('beforeunload', removePresence);
+  window.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') {
+      sendHeartbeat(); // ritorna dalla tab → heartbeat immediato
+    }
+  });
+}
+
+/* Funzione placeholder — sostituta dalla simulazione fake */
+function startRealTimeSimulation() {
+  // Rimpiazzata da startPresenceSystem() — nessuna simulazione
+}
+
+/* ─── Toggle evento live (solo team) ─── */
+async function toggleEventLive(eventId, goLive) {
+  if (!GAS_URL) return;
+  try {
+    const r = await fetch(`${GAS_URL}?action=set_event_live&eventId=${eventId}&live=${goLive}`);
+    const d = await r.json();
+    if (d.success) {
+      const ev = EVENTS.find(e => e.id === eventId);
+      if (ev) ev.isLive = goLive;
+      applyEventsData(EVENTS);
+      showToast(goLive ? 'gold' : 'blue', goLive ? '🔴' : '⏹',
+        goLive ? 'Evento impostato come LIVE!' : 'Live terminato.');
+    }
+  } catch(_e) { showToast('red','⚠️','Errore aggiornamento evento.'); }
+}
+
+/* ─── Elimina evento (solo team) ─── */
+async function deleteEventUI(eventId) {
+  if (!GAS_URL) return;
+  try {
+    const r = await fetch(`${GAS_URL}?action=delete_event&eventId=${eventId}`);
+    const d = await r.json();
+    if (d.success) {
+      const idx = EVENTS.findIndex(e => e.id === eventId);
+      if (idx !== -1) EVENTS.splice(idx, 1);
+      applyEventsData(EVENTS);
+      showToast('green','✓','Evento eliminato.');
+    }
+  } catch(_e) { showToast('red','⚠️','Errore eliminazione evento.'); }
+}
+
+
+/* ═══════════════════════════════════════════
+   GESTIONE EVENTI (Admin)
+═══════════════════════════════════════════ */
+async function createEventUI() {
+  const title   = (document.getElementById('eventTitleInput')?.value   || '').trim();
+  const dateVal = (document.getElementById('eventDateInput')?.value    || '').trim();
+  const timeStr = (document.getElementById('eventTimeStrInput')?.value || '').trim();
+  const meta    = (document.getElementById('eventMetaInput')?.value    || '').trim();
+
+  if (!title)   { showToast('red','⚠️','Il titolo è obbligatorio.'); return; }
+  if (!dateVal) { showToast('red','⚠️','La data è obbligatoria.'); return; }
+  const dateIso = new Date(dateVal).toISOString();
+
+  if (GAS_URL) {
+    try {
+      const r = await fetch(`${GAS_URL}?action=save_event` +
+        `&title=${encodeURIComponent(title)}&dateIso=${encodeURIComponent(dateIso)}` +
+        `&timeStr=${encodeURIComponent(timeStr)}&meta=${encodeURIComponent(meta)}`);
+      const d = await r.json();
+      if (d.success && d.event) {
+        EVENTS.push(d.event);
+        EVENTS.sort((a,b) => new Date(a.dateIso) - new Date(b.dateIso));
+        applyEventsData(EVENTS);
+        renderEventsAdminList();
+        ['eventTitleInput','eventDateInput','eventTimeStrInput','eventMetaInput']
+          .forEach(id => { const el=document.getElementById(id); if(el) el.value=''; });
+        showToast('gold','📅','Evento creato con successo!');
+        return;
+      }
+    } catch(_e) {}
+  }
+  // Fallback locale
+  const newEvt = { id: Date.now(), title, dateIso, timeStr, meta, accessLevel:'all', isLive:false, createdAt:new Date().toISOString() };
+  EVENTS.push(newEvt);
+  EVENTS.sort((a,b) => new Date(a.dateIso) - new Date(b.dateIso));
+  applyEventsData(EVENTS);
+  renderEventsAdminList();
+  ['eventTitleInput','eventDateInput','eventTimeStrInput','eventMetaInput']
+    .forEach(id => { const el=document.getElementById(id); if(el) el.value=''; });
+  showToast('amber','📅','Evento creato localmente.');
+}
+
+function renderEventsAdminList() {
+  const container = document.getElementById('eventsAdminList');
+  if (!container) return;
+  if (EVENTS.length === 0) {
+    container.innerHTML = '<div style="font-size:0.72rem;color:var(--muted2);padding:0.5rem 0;">Nessun evento creato.</div>';
+    return;
+  }
+  container.innerHTML = EVENTS.map(e => `
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:0.5rem 0;border-bottom:1px solid var(--border2);gap:0.5rem;">
+      <div style="min-width:0;flex:1;">
+        <div style="font-size:0.75rem;color:var(--light);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${e.title}</div>
+        <div style="font-size:0.65rem;color:var(--muted2);">${formatEventDate(e.dateIso)}${e.timeStr?' · '+e.timeStr:''}</div>
+        ${e.isLive ? '<span style="font-size:0.6rem;color:var(--amber);letter-spacing:0.1em;">● LIVE</span>' : ''}
+      </div>
+      <div style="display:flex;gap:0.3rem;flex-shrink:0;">
+        <button onclick="toggleEventLiveAdmin(${e.id},${!e.isLive})"
+          style="font-size:0.62rem;padding:2px 8px;border-radius:4px;border:1px solid ${e.isLive?'var(--amber)':'var(--green)'};background:transparent;color:${e.isLive?'var(--amber)':'var(--green)'};cursor:pointer;">
+          ${e.isLive?'⏹ Stop':'▶ Live'}
+        </button>
+        <button onclick="deleteEventAdmin(${e.id})"
+          style="font-size:0.62rem;padding:2px 7px;border-radius:4px;border:1px solid var(--border2);background:transparent;color:var(--muted2);cursor:pointer;">✕</button>
+      </div>
+    </div>`).join('');
+}
+
+async function toggleEventLiveAdmin(eventId, goLive) {
+  await toggleEventLive(eventId, goLive);
+  renderEventsAdminList();
+}
+
+async function deleteEventAdmin(eventId) {
+  await deleteEventUI(eventId);
+  renderEventsAdminList();
+}
+
+/* Apri il pannello broadcast e aggiorna la lista eventi admin */
+const _origShowPanel = showPanel;
+function showPanel(id, navEl) {
+  _origShowPanel(id, navEl);
+  if (id === 'broadcast' && currentUser && currentUser.role === 'team') {
+    renderEventsAdminList();
+  }
+}
 
 function initGlobalSearch() {
   const input = document.getElementById('globalSearch');
