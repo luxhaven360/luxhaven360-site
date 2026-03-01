@@ -5349,6 +5349,56 @@ document.addEventListener('languageChanged', () => {
     try { localStorage.setItem(RESERVATION_KEY, JSON.stringify(data)); } catch(e) {}
   }
 
+  function clearReservationState() {
+    try { localStorage.removeItem(RESERVATION_KEY); } catch(e) {}
+  }
+
+  /**
+   * Verifica lo stato della prenotazione con il server GAS.
+   * Se l'email locale non risulta più nei fogli, cancella lo stato locale
+   * e ripristina l'UI. In caso di errore di rete, mantiene lo stato locale
+   * (fail-safe: non si resetta per un timeout).
+   * @param {string|null} currentSku  SKU del prodotto corrente
+   * @param {string}      context     'pdp' | 'cart'
+   */
+  async function verifyReservationState(currentSku, context) {
+    const state = getReservationState();
+    if (!state || !state.email) return; // nulla da verificare
+
+    try {
+      const res = await fetch(
+        RESERVATION_GAS_URL + '?action=check_reservation&email=' + encodeURIComponent(state.email),
+        { method: 'GET' }
+      );
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const result = await res.json();
+
+      if (!result.success) return; // risposta inattesa → non toccare stato locale
+
+      if (!result.found) {
+        // ── Utente NON trovato nei fogli → reset completo ──────────
+        console.info('[LH] Prenotazione non trovata nei fogli. Reset stato locale.');
+        clearReservationState();
+        applyReservationUI(currentSku, context);
+      } else {
+        // ── Utente trovato → aggiorna stato locale con dati server ─
+        const updated = Object.assign({}, state, {
+          waitlist:         !!result.waitlist,
+          founderPosition:  result.founder_position  || state.founderPosition  || null,
+          waitlistPosition: result.waitlist_position || state.waitlistPosition || null,
+          sku:     result.sku     || state.sku,
+          product: result.product || state.product,
+          serverVerifiedAt: new Date().toISOString()
+        });
+        setReservationState(updated);
+        applyReservationUI(currentSku, context);
+      }
+    } catch(e) {
+      // Errore di rete / timeout → si mantiene lo stato locale senza toccare nulla
+      console.warn('[LH] Verifica prenotazione fallita, stato locale mantenuto:', e.message);
+    }
+  }
+
   /**
    * Applica lo stato UI corretto al/ai pulsante/i di prenotazione.
    * @param {string|null} currentSku  SKU del prodotto corrente
@@ -5499,10 +5549,12 @@ document.addEventListener('languageChanged', () => {
   }
 
   /* Esponi globalmente per uso da altri script */
-  window.lhApplyReservationUI  = applyReservationUI;
-  window.lhGetReservationState = getReservationState;
-  window.lhSetReservationState = setReservationState;
-  window.openChangeProductModal = openChangeProductModal;
+  window.lhApplyReservationUI    = applyReservationUI;
+  window.lhGetReservationState   = getReservationState;
+  window.lhSetReservationState   = setReservationState;
+  window.lhClearReservationState = clearReservationState;
+  window.lhVerifyReservationState = verifyReservationState;
+  window.openChangeProductModal  = openChangeProductModal;
 
   window.openFounderModal = function(prodName, sku, page) {
     _rProd = prodName||'—'; _rSku = sku||''; _rPage = page||window.location.pathname;
@@ -5597,6 +5649,12 @@ document.addEventListener('languageChanged', () => {
       applyPaymentUI(enabled);
     });
 
+    // ── Verifica prenotazione contro i fogli Google ────────────────
+    // Applica subito l'UI dalla cache locale (risposta istantanea),
+    // poi interroga il server: se l'email non è più nei fogli, resetta.
+    applyReservationUI(null, 'pdp');
+    verifyReservationState(null, 'pdp');
+
     // Reservation modal events
     document.getElementById('lhRmClose')   ?.addEventListener('click', window.closeFounderModal);
     document.getElementById('lhRmBackdrop')?.addEventListener('click', window.closeFounderModal);
@@ -5654,6 +5712,12 @@ document.addEventListener('DOMContentLoaded', function () {
   // chiamato window.lhApplyReservationUI(sku, 'pdp') dalla logica di loadProduct.
   if (typeof window.lhApplyReservationUI === 'function') {
     window.lhApplyReservationUI(null, 'pdp');
+  }
+  // Verifica in background: se l'email non è più nei fogli, resetta UI.
+  // (Se il prodotto è già carico, passiamo lo SKU reale per un aggiornamento preciso.)
+  if (typeof window.lhVerifyReservationState === 'function') {
+    const _initSku = window.currentProduct ? (window.currentProduct.sku || null) : null;
+    window.lhVerifyReservationState(_initSku, 'pdp');
   }
 });
 </script>
