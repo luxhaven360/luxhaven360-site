@@ -1725,7 +1725,7 @@ body {
       <div style="position:relative">
         <button class="header-btn" id="notifBell" onclick="toggleNotifDropdown()">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg>
-          <span class="notif-count" id="headerNotifCount">5</span>
+          <span class="notif-count hidden" id="headerNotifCount"></span>
         </button>
         <div class="notif-dropdown" id="notifDropdown">
           <div class="notif-dropdown-header">
@@ -2374,14 +2374,14 @@ function logout() {
     mainAppEl.classList.add('active');
 
     // Precarica le statistiche dalla cache PRIMA che initApp esegua il rendering
-    // così le stat card mostrano valori reali immediatamente (zero latenza percepita)
+    // Se esiste cache (da sessioni precedenti reali), i valori corretti appaiono immediatamente.
+    // Se non esiste cache (primo accesso assoluto), le card mostrano — in attesa di GAS:
+    // questo è preferibile a mostrare numeri falsi da dati mock.
     const _cachedStats = loadStatsCache();
     if (_cachedStats) {
       applyDashboardStats(_cachedStats);
-    } else {
-      // Nessuna cache: applica stima client-side per evitare —
-      applyClientSideStats();
     }
+    // Nessun fallback con dati mock: meglio — che un numero sbagliato
 
     // initApp verrà chiamato da DOMContentLoaded / window.onload
     // Lo chiamiamo dopo che il DOM è completamente pronto
@@ -2469,6 +2469,10 @@ function initApp() {
   renderRightPanel();
   renderNotifDropdown();
   renderWeeklyChart();
+
+  // Forza lo stato corretto del badge notifiche al primo render:
+  // notifCount è 0 e NOTIFICATIONS è vuoto → campanella priva di badge
+  updateNotifBadge();
 
   // Simulate real-time activity
   startRealTimeSimulation();
@@ -2817,14 +2821,12 @@ let _dashStatsTimer = null;
 async function loadDashboardStats() {
   if (!currentUser) return;
 
-  // 1. Mostra subito i valori dalla cache (nessun tempo di attesa visibile)
+  // 1. Mostra subito i valori dalla cache reale (da sessioni precedenti via GAS)
+  // Se la cache non esiste (primo accesso assoluto), le card restano con — fino a GAS.
+  // Non usiamo mai dati mock: un — neutro è preferibile a un numero sbagliato.
   const cached = loadStatsCache();
   if (cached) {
     applyDashboardStats(cached);
-  } else {
-    // Prima visita assoluta (nessuna cache): usa stima client-side immediata
-    // così le stat card mostrano valori reali sin dal primo frame, senza —
-    applyClientSideStats();
   }
 
   if (!GAS_URL) return;
@@ -2840,25 +2842,11 @@ async function loadDashboardStats() {
     applyDashboardStats(data);
   } catch (err) {
     console.warn('[Stats] GAS non raggiungibile:', err.message);
-    // Cache ancora valida o stima client-side già mostrata — nessun errore visivo
   }
 }
 
-/* Stima client-side da dati in-memoria (primo accesso assoluto o GAS offline) */
-function applyClientSideStats() {
-  const teamPosts = FEED_POSTS.filter(p => p.role && p.role.toLowerCase().includes('team'));
-  const foundingCount = MEMBERS_DATA.filter(m => m.level === 'founding').length;
-  const totalMembers  = MEMBERS_DATA.length;
-  applyDashboardStats({
-    active_members:        totalMembers,
-    weekly_new:            0,
-    weekly_lost:           0,
-    feed_updates_30d:      teamPosts.length,
-    founding_member_count: foundingCount,
-    remaining_spots:       200 - foundingCount,
-    max_founders:          200
-  });
-}
+/* applyClientSideStats rimossa: usava MEMBERS_DATA mock causando valori falsi visibili.
+   I dati reali provengono esclusivamente da GAS (con cache per accessi successivi). */
 
 function applyDashboardStats(data) {
   // ── Membri Attivi ────────────────────────────────────────
@@ -3736,20 +3724,27 @@ function markAllRead() {
 }
 
 function updateNotifBadge() {
-  const badge = document.getElementById('headerNotifCount');
+  const badge    = document.getElementById('headerNotifCount');
   const navBadge = document.getElementById('notifNavBadge');
-  // Forza contatore a 0 se non ci sono notifiche reali
-  const realCount = Math.min(notifCount, NOTIFICATIONS.filter(n => n.unread).length);
-  if (realCount > 0) {
-    badge.textContent = realCount;
+  if (!badge || !navBadge) return;
+
+  // Unica fonte di verità: il numero di notifiche REALI non lette nell'array
+  const realUnread = NOTIFICATIONS.filter(n => n.unread).length;
+  notifCount = realUnread; // sincronizza sempre la variabile
+
+  if (realUnread > 0) {
+    badge.textContent = realUnread;
     badge.classList.remove('hidden');
-    navBadge.textContent = realCount;
+    navBadge.textContent = realUnread;
+    navBadge.classList.remove('hidden');
     navBadge.style.display = '';
   } else {
-    notifCount = 0;
+    // Azzera e nascondi — nessun badge residuo o hardcoded
+    badge.textContent = '';
     badge.classList.add('hidden');
-    navBadge.style.display = 'none';
+    navBadge.textContent = '';
     navBadge.classList.add('hidden');
+    navBadge.style.display = 'none';
   }
 }
 
