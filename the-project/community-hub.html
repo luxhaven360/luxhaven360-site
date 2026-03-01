@@ -9,14 +9,15 @@
 
 <script>
 // Anti-bypass: nasconde il contenuto principale finché l'autenticazione non è verificata
-// Questo script viene eseguito prima del rendering della pagina
+// NOTA: non usare document.write — #mainApp è già display:none nel CSS,
+//       e viene mostrato solo quando si aggiunge la classe .active via JS.
 (function() {
-  // Se non c'è sessione valida, assicura che mainApp sia nascosto
   try {
     var session = localStorage.getItem('lh360_community_session');
     if (!session) {
-      // Inietta stile di blocco immediato
-      document.write('<style>#mainApp{display:none!important}</style>');
+      // Senza sessione: nessuna azione necessaria, #mainApp è già hidden via CSS
+      // Aggiungiamo solo un marker sul body per eventuali stili condizionali
+      document.documentElement.classList.add('no-session');
     }
   } catch(e) {}
 })();
@@ -587,6 +588,11 @@ body {
 }
 .stat-change.up { color: var(--green); }
 .stat-change.neutral { color: var(--muted); }
+
+@keyframes statPulse {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 0.8; }
+}
 
 /* ═══════════════════════════════════════════════
    FEED
@@ -1561,7 +1567,7 @@ body {
       <div class="login-demo-title">Hai perso le credenziali?</div>
       <div style="text-align:center; font-size:0.72rem; color:var(--muted2); line-height:1.6;">
         Le credenziali ti sono state inviate via email al momento della prenotazione.<br>
-        Per assistenza: <a href="mailto:support@luxhaven360.com" style="color:var(--gold); text-decoration:none;">support@luxhaven360.com</a>
+        Per assistenza: <a href="/cdn-cgi/l/email-protection#fa898f8a8a95888eba968f82929b8c9f94c9cccad4999597" style="color:var(--gold); text-decoration:none;"><span class="__cf_email__" data-cfemail="84f7f1f4f4ebf6f0c4e8f1fcece5f2e1eab7b2b4aae7ebe9">[email&#160;protected]</span></a>
       </div>
     </div>
   </div>
@@ -1721,29 +1727,36 @@ body {
         <div class="grid-3 mb-2" id="dashStatsGrid">
           <div class="stat-card">
             <div class="stat-label">Membri Attivi</div>
-            <div class="stat-value">47</div>
-            <div class="stat-change up">
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23,6 13.5,15.5 8.5,10.5 1,18"/><polyline points="17,6 23,6 23,12"/></svg>
-              +3 questa settimana
+            <div class="stat-value" id="dashStatActiveMembers">
+              <span style="display:inline-block;width:2ch;height:1em;background:var(--dark5);border-radius:4px;animation:statPulse 1.2s ease infinite;"></span>
+            </div>
+            <div class="stat-change" id="dashStatMembersChange">
+              <span style="color:var(--muted2); font-size:0.65rem;">Caricamento…</span>
             </div>
           </div>
           <div class="stat-card">
             <div class="stat-label">Aggiornamenti del Progetto</div>
-            <div class="stat-value">12</div>
+            <div class="stat-value" id="dashStatFeedUpdates">
+              <span style="display:inline-block;width:2ch;height:1em;background:var(--dark5);border-radius:4px;animation:statPulse 1.2s ease infinite;"></span>
+            </div>
             <div class="stat-change neutral">Ultimi 30 giorni</div>
           </div>
           <div class="stat-card admin-only">
             <div class="stat-label">Founding Members</div>
-            <div class="stat-value">19</div>
-            <div class="stat-change up">
+            <div class="stat-value" id="dashStatFoundingCount">
+              <span style="display:inline-block;width:2ch;height:1em;background:var(--dark5);border-radius:4px;animation:statPulse 1.2s ease infinite;"></span>
+            </div>
+            <div class="stat-change up" id="dashStatFoundingChange">
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23,6 13.5,15.5 8.5,10.5 1,18"/><polyline points="17,6 23,6 23,12"/></svg>
-              +2 questo mese
+              In aggiornamento…
             </div>
           </div>
           <div class="stat-card" id="candidateStatCard">
             <div class="stat-label">Posti Founding Member</div>
-            <div class="stat-value">31 <span class="stat-unit">/ 200</span></div>
-            <div class="stat-change neutral">Slot disponibili</div>
+            <div class="stat-value" id="dashStatRemainingSpots">
+              <span style="display:inline-block;width:2ch;height:1em;background:var(--dark5);border-radius:4px;animation:statPulse 1.2s ease infinite;"></span>
+            </div>
+            <div class="stat-change neutral" id="dashStatRemainingLabel">Slot disponibili</div>
           </div>
         </div>
 
@@ -2056,9 +2069,9 @@ body {
     <div class="rp-section">
       <div class="rp-title">Stato Progetto</div>
       <div style="margin-top:0.3rem;">
-        <div style="display:flex; justify-content:space-between; font-size:0.72rem; margin-bottom:0.35rem;"><span>Posti confermati</span><span class="text-gold">169 / 200</span></div>
-        <div class="progress-bar-wrap"><div class="progress-bar-fill" style="width:84.5%;"></div></div>
-        <div style="font-size:0.65rem; color:var(--muted2); margin-top:0.4rem; line-height:1.5;">31 posti ancora disponibili</div>
+        <div style="display:flex; justify-content:space-between; font-size:0.72rem; margin-bottom:0.35rem;"><span>Posti confermati</span><span class="text-gold" id="rpStatusBooked">— / 200</span></div>
+        <div class="progress-bar-wrap"><div class="progress-bar-fill" id="rpStatusBar" style="width:0%;"></div></div>
+        <div style="font-size:0.65rem; color:var(--muted2); margin-top:0.4rem; line-height:1.5;" id="rpStatusRemaining">Caricamento…</div>
       </div>
     </div>
   </aside>
@@ -2130,7 +2143,7 @@ body {
 <div id="toastContainer"></div>
 
 <!-- ═══════════════ JAVASCRIPT ═══════════════ -->
-<script data-cfasync="false" src="/cdn-cgi/scripts/5c5dd728/cloudflare-static/email-decode.min.js"></script><script>
+<script data-cfasync="false" src="/cdn-cgi/scripts/5c5dd728/cloudflare-static/email-decode.min.js"></script><script data-cfasync="false" src="/cdn-cgi/scripts/5c5dd728/cloudflare-static/email-decode.min.js"></script><script>
 /* ═══════════════════════════════════════════
    CONFIGURAZIONE
    ⚠ Sostituisci GAS_URL con l'URL del tuo deployment Google Apps Script
@@ -2353,8 +2366,12 @@ async function doLogin() {
     if (data.success && data.authorized && data.user) {
       currentUser = data.user;
       saveSession(currentUser);
+      // Rimuovi qualsiasi stile iniettato che potrebbe bloccare mainApp
+      document.documentElement.classList.remove('no-session');
+      const mainAppEl = document.getElementById('mainApp');
+      mainAppEl.style.cssText = '';
       document.getElementById('loginGate').style.display = 'none';
-      document.getElementById('mainApp').classList.add('active');
+      mainAppEl.classList.add('active');
       initApp();
     } else {
       const msg = data.error || 'Credenziali non valide. Riprova.';
@@ -2388,8 +2405,11 @@ function logout() {
   if (saved) {
     // Sessione valida trovata — accesso diretto
     currentUser = saved;
+    document.documentElement.classList.remove('no-session');
+    const mainAppEl = document.getElementById('mainApp');
+    mainAppEl.style.cssText = '';
     document.getElementById('loginGate').style.display = 'none';
-    document.getElementById('mainApp').classList.add('active');
+    mainAppEl.classList.add('active');
     // initApp verrà chiamato da DOMContentLoaded / window.onload
     // Lo chiamiamo dopo che il DOM è completamente pronto
     if (document.readyState === 'complete' || document.readyState === 'interactive') {
@@ -2400,7 +2420,6 @@ function logout() {
   } else {
     // Nessuna sessione — mostra login gate (già visibile di default)
     // Non è necessario un redirect immediato; il content è già nascosto
-    // Se l'utente tenta di aggirare il login gate via CSS/JS, il mainApp non si attiva
   }
 })();
 
@@ -2473,6 +2492,11 @@ function initApp() {
 
   // Simulate real-time activity
   startRealTimeSimulation();
+
+  // Carica statistiche dinamiche e imposta aggiornamento automatico ogni 5 minuti
+  loadDashboardStats();
+  if (_dashStatsTimer) clearInterval(_dashStatsTimer);
+  _dashStatsTimer = setInterval(loadDashboardStats, 5 * 60 * 1000);
 }
 
 /* ═══════════════════════════════════════════
@@ -2563,11 +2587,16 @@ function renderDashboard() {
         ${['Accesso prioritario listing','Canale diretto team','Prenotazioni anticipate','Area Founder dedicata','Status permanente'].map(b => `<div class="profile-badge gold-badge">✓ ${b}</div>`).join('')}
       </div>`;
   } else {
+    // Legge posti rimasti dall'elemento già aggiornato da loadDashboardStats
+    const spotsEl = document.getElementById('dashStatRemainingSpots');
+    const hasRealData = spotsEl && !spotsEl.querySelector('[style*="animation"]');
+    const remainingText = hasRealData ? ((spotsEl.textContent.split('/')[0] || '').trim() + ' rimasti') : '… rimasti';
+
     fc.innerHTML = `
       <div style="display:flex; gap:1.5rem; flex-wrap:wrap; margin-bottom:0.8rem;">
         <div><div class="stat-label">Livello Attuale</div><div style="font-family:var(--ff-display); font-size:1.1rem; color:var(--amber);">Founder Candidate</div></div>
         <div><div class="stat-label">Prossimo Livello</div><div style="font-size:0.82rem; color:var(--gold);">Founding Member</div></div>
-        <div><div class="stat-label">Posti Disponibili</div><div style="font-size:0.82rem; color:var(--light);">31 rimasti</div></div>
+        <div><div class="stat-label">Posti Disponibili</div><div style="font-size:0.82rem; color:var(--light);" id="founderStatusRemainingSpots">${remainingText}</div></div>
       </div>
       <div style="margin-bottom:0.5rem; font-size:0.72rem; color:var(--muted);">Progressione verso Founding Member</div>
       <div class="progress-bar-wrap" style="height:8px;"><div class="progress-bar-fill" style="width:45%;"></div></div>
@@ -2575,6 +2604,95 @@ function renderDashboard() {
       <button class="upgrade-btn" style="margin-top:0.8rem;" onclick="showToast('gold', '⭐', 'Richiesta inviata al team. Sarai contattato a breve!')">
         Richiedi Upgrade a Founding Member
       </button>`;
+  }
+}
+
+/* ═══════════════════════════════════════════
+   LOAD DASHBOARD STATS (dinamici da GAS)
+═══════════════════════════════════════════ */
+let _dashStatsTimer = null;
+
+async function loadDashboardStats() {
+  if (!GAS_URL || !currentUser) return;
+  try {
+    const url = `${GAS_URL}?action=get_dashboard_stats`;
+    const resp = await fetch(url);
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    const data = await resp.json();
+    if (!data.success) throw new Error(data.error || 'Errore sconosciuto');
+    applyDashboardStats(data);
+  } catch (err) {
+    console.warn('[Dashboard] Impossibile caricare le statistiche:', err.message);
+    // Fallback UI in caso di errore GAS
+    const setFallback = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
+    setFallback('dashStatActiveMembers', '—');
+    setFallback('dashStatFeedUpdates', '—');
+    setFallback('dashStatRemainingSpots', '—');
+    setFallback('dashStatFoundingCount', '—');
+  }
+}
+
+function applyDashboardStats(data) {
+  // ── Membri Attivi ────────────────────────────────────────
+  const activeEl = document.getElementById('dashStatActiveMembers');
+  if (activeEl) activeEl.textContent = data.active_members ?? '—';
+
+  const changeEl = document.getElementById('dashStatMembersChange');
+  if (changeEl) {
+    const newW  = data.weekly_new  ?? 0;
+    const lostW = data.weekly_lost ?? 0;
+    if (newW > 0 || lostW > 0) {
+      const sign = newW >= lostW ? '+' : '-';
+      const diff = Math.abs(newW - lostW);
+      const cls  = newW >= lostW ? 'up' : 'neutral';
+      changeEl.className = `stat-change ${cls}`;
+      changeEl.innerHTML = newW >= lostW
+        ? `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23,6 13.5,15.5 8.5,10.5 1,18"/><polyline points="17,6 23,6 23,12"/></svg> +${newW} questa settimana`
+        : `<span>-${lostW} usciti, +${newW} nuovi questa settimana</span>`;
+    } else {
+      changeEl.className = 'stat-change neutral';
+      changeEl.textContent = 'Nessuna variazione questa settimana';
+    }
+  }
+
+  // ── Aggiornamenti Feed ───────────────────────────────────
+  const feedEl = document.getElementById('dashStatFeedUpdates');
+  if (feedEl) feedEl.textContent = data.feed_updates_30d ?? '—';
+
+  // ── Founding Members ─────────────────────────────────────
+  const foundingEl = document.getElementById('dashStatFoundingCount');
+  if (foundingEl) foundingEl.textContent = data.founding_member_count ?? '—';
+  const foundingChangeEl = document.getElementById('dashStatFoundingChange');
+  if (foundingChangeEl) {
+    foundingChangeEl.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23,6 13.5,15.5 8.5,10.5 1,18"/><polyline points="17,6 23,6 23,12"/></svg> su ${data.max_founders ?? 200} posti totali`;
+  }
+
+  // ── Posti Disponibili ─────────────────────────────────────
+  const remaining  = data.remaining_spots ?? 0;
+  const maxF       = data.max_founders    ?? 200;
+  const totalBooked = maxF - remaining;
+  const pct         = Math.min(100, Math.round((totalBooked / maxF) * 100));
+
+  const spotsEl = document.getElementById('dashStatRemainingSpots');
+  if (spotsEl) spotsEl.innerHTML = `${remaining} <span class="stat-unit">/ ${maxF}</span>`;
+
+  const spotsLabelEl = document.getElementById('dashStatRemainingLabel');
+  if (spotsLabelEl) {
+    spotsLabelEl.textContent = remaining === 0 ? 'Tutti i posti esauriti' : 'Slot disponibili';
+    spotsLabelEl.className = `stat-change ${remaining < 20 ? 'up' : 'neutral'}`;
+  }
+
+  // ── Right Panel Stato Progetto ────────────────────────────
+  const rpBooked    = document.getElementById('rpStatusBooked');
+  const rpBar       = document.getElementById('rpStatusBar');
+  const rpRemaining = document.getElementById('rpStatusRemaining');
+  if (rpBooked)    rpBooked.textContent = `${totalBooked} / ${maxF}`;
+  if (rpBar)       rpBar.style.width    = `${pct}%`;
+  if (rpRemaining) rpRemaining.textContent = `${remaining} posti ancora disponibili`;
+
+  // ── Aggiorna Founder Status Card (per candidati) ──────────
+  if (currentUser && currentUser.role === 'candidate') {
+    renderDashboard(); // re-renders the founder status section with live remaining
   }
 }
 
@@ -3437,6 +3555,13 @@ function publishBroadcast() {
   showPanel('feed', document.querySelector('.nav-item'));
   document.getElementById('broadcastTitle').value = '';
   document.getElementById('broadcastContent').value = '';
+
+  // Registra il post nel GAS per il conteggio dinamico degli aggiornamenti
+  if (GAS_URL) {
+    fetch(`${GAS_URL}?action=record_feed_post`)
+      .then(() => loadDashboardStats()) // aggiorna i contatori
+      .catch(err => console.warn('[Broadcast] Impossibile registrare il post:', err.message));
+  }
 }
 
 /* ═══════════════════════════════════════════
@@ -3550,7 +3675,6 @@ function initGlobalSearch() {
     });
   });
 }
-
 </script>
 </body>
 </html>
