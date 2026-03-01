@@ -2202,31 +2202,8 @@ const CONVS = [
 
 const NOTIFICATIONS = [];
 // Le notifiche vengono generate da eventi reali
-let SURVEYS = [
-  {
-    id:1,
-    title:'Quale tipologia di property preferisci come prima esperienza?',
-    desc:'Il tuo feedback è fondamentale per orientare la selezione delle prime location nel portfolio.',
-    options:[
-      { text:'Villa privata con piscina', votes:0 },
-      { text:'Appartamento di lusso in centro città', votes:0 },
-      { text:'Resort boutique esclusivo', votes:0 },
-      { text:'Tenuta di campagna / agriturismo premium', votes:0 },
-    ],
-    total:0, voted:false, myVote:null,
-  },
-  {
-    id:2,
-    title:'Qual è la tua disponibilità per le prime sessioni informative live?',
-    desc:'Stiamo pianificando call esclusive con il team. Indicaci la fascia oraria più comoda.',
-    options:[
-      { text:'Martedì / Giovedì sera (18:00-20:00)', votes:0 },
-      { text:'Sabato mattina (10:00-12:00)', votes:0 },
-      { text:'Weekend pomeriggio (15:00-17:00)', votes:0 },
-    ],
-    total:0, voted:false, myVote:null,
-  },
-];
+let SURVEYS = [];
+// I sondaggi vengono caricati esclusivamente da GAS (get_community_data → surveys)
 
 const REPORTS = [
   { id:1, type:'Contenuto inappropriato', reporter:'Marco B.', target:'Commento di utente anonimo', content:'Il commento segnalato contiene linguaggio non appropriato rispetto al tono della Community.', time:'1 ora fa' },
@@ -2389,6 +2366,13 @@ function logout() {
    INIT APP
 ═══════════════════════════════════════════ */
 function initApp() {
+  // ── Cache bust: rimuovi tutte le versioni precedenti della cache community ──
+  // Questo garantisce che dati statici vecchi non vengano mai caricati dal browser
+  // Rimuovi tutte le versioni precedenti di cache (community + stats)
+  ['lh360_community_v1', 'lh360_community_v2', 'lh360_stats_cache'].forEach(k => {
+    try { localStorage.removeItem(k); } catch(e) {}
+  });
+
   const role = currentUser.role;
   
   // Apply role class to sidebar
@@ -2551,7 +2535,7 @@ function renderDashboard() {
 /* ═══════════════════════════════════════════
    COMMUNITY DATA — CACHE + GAS SYNC
 ═══════════════════════════════════════════ */
-const COMMUNITY_CACHE_KEY = 'lh360_community_v2';
+const COMMUNITY_CACHE_KEY = 'lh360_community_v3';
 const COMMUNITY_CACHE_TTL = 5 * 60 * 1000; // 5 minuti
 let _communityPollTimer   = null;
 
@@ -2583,8 +2567,8 @@ function applyRemoteData(data) {
   if (!data) return;
 
   // ── Post del feed ───────────────────────────────────────────────
-  if (Array.isArray(data.posts)) {
-    // Mantieni stato liked locale
+  // Sempre sovrascrive — nessun fallback su dati statici
+  if (data.hasOwnProperty('posts') && Array.isArray(data.posts)) {
     const likedSet = new Set(FEED_POSTS.filter(p => p.liked).map(p => p.id));
     FEED_POSTS = data.posts.map(p => ({
       ...p,
@@ -2594,7 +2578,8 @@ function applyRemoteData(data) {
   }
 
   // ── Discussioni ──────────────────────────────────────────────────
-  if (Array.isArray(data.discussions)) {
+  // Sempre sovrascrive — se GAS risponde con array vuoto, DISCUSSIONS è [] (nessun fallback statico)
+  if (data.hasOwnProperty('discussions') && Array.isArray(data.discussions)) {
     DISCUSSIONS = data.discussions;
   }
 
@@ -2611,8 +2596,8 @@ function applyRemoteData(data) {
     });
   }
 
-  // ── Sondaggi da GAS (se presenti, sovrascrive la struttura locale) ─
-  if (Array.isArray(data.surveys) && data.surveys.length > 0) {
+  // ── Sondaggi da GAS (sovrascrive sempre — nessun fallback statico) ─
+  if (Array.isArray(data.surveys)) {
     SURVEYS = data.surveys;
   }
 
