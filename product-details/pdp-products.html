@@ -5365,6 +5365,22 @@ document.addEventListener('languageChanged', () => {
     const state = getReservationState();
     if (!state || !state.email) return; // nulla da verificare
 
+    // ── FIX MOBILE: salva il timestamp prima della chiamata asincrona.
+    // Su mobile, la connessione lenta può far completare questa verifica
+    // DOPO che l'utente ha già prenotato. Se lo stato è cambiato durante
+    // l'attesa, usiamo il nuovo SKU invece di quello (null) passato all'avvio.
+    const stateTsBefore = state.ts || null;
+
+    // Helper: restituisce lo SKU più aggiornato disponibile per il contesto
+    function _effectiveSku(fallbackSku) {
+      const fresh = getReservationState();
+      if (context === 'pdp' && window.currentProduct && window.currentProduct.sku) {
+        return window.currentProduct.sku;
+      }
+      if (fresh && fresh.sku) return fresh.sku;
+      return fallbackSku;
+    }
+
     try {
       const res = await fetch(
         RESERVATION_GAS_URL + '?action=check_reservation&email=' + encodeURIComponent(state.email),
@@ -5373,13 +5389,23 @@ document.addEventListener('languageChanged', () => {
       if (!res.ok) throw new Error('HTTP ' + res.status);
       const result = await res.json();
 
+      // ── FIX MOBILE: se la prenotazione è cambiata durante la chiamata
+      // (l'utente ha prenotato mentre aspettavamo la risposta del server),
+      // aggiorniamo l'UI con il nuovo stato senza sovrascriverlo.
+      const stateNow = getReservationState();
+      if (stateNow && stateNow.ts && stateNow.ts !== stateTsBefore) {
+        console.info('[LH] Stato prenotazione aggiornato durante la verifica. Applico nuovo stato.');
+        applyReservationUI(_effectiveSku(currentSku), context);
+        return;
+      }
+
       if (!result.success) return; // risposta inattesa → non toccare stato locale
 
       if (!result.found) {
         // ── Utente NON trovato nei fogli → reset completo ──────────
         console.info('[LH] Prenotazione non trovata nei fogli. Reset stato locale.');
         clearReservationState();
-        applyReservationUI(currentSku, context);
+        applyReservationUI(_effectiveSku(currentSku), context);
       } else {
         // ── Utente trovato → aggiorna stato locale con dati server ─
         const updated = Object.assign({}, state, {
@@ -5391,7 +5417,7 @@ document.addEventListener('languageChanged', () => {
           serverVerifiedAt: new Date().toISOString()
         });
         setReservationState(updated);
-        applyReservationUI(currentSku, context);
+        applyReservationUI(_effectiveSku(currentSku), context);
       }
     } catch(e) {
       // Errore di rete / timeout → si mantiene lo stato locale senza toccare nulla
