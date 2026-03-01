@@ -1640,7 +1640,7 @@ body {
         Discussioni
         <span class="nav-badge hidden" id="discBadge">0</span>
       </div>
-      <div class="nav-item member-plus" onclick="showPanel('messages', this)">
+      <div class="nav-item" onclick="showPanel('messages', this)">
         <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
         Messaggi
         <span class="nav-badge hidden" id="msgBadge">0</span>
@@ -2328,7 +2328,18 @@ async function doLogin() {
     if (data.success && data.authorized && data.user) {
       currentUser = data.user;
       saveSession(currentUser);
-      // Rimuovi qualsiasi stile iniettato che potrebbe bloccare mainApp
+
+      // ── Pre-carica le statistiche durante il login ─────────────────────────
+      // Aggiorna il testo del pulsante per dare feedback visivo
+      loginBtn.textContent = 'Connessione in corso…';
+      try {
+        const statsResp = await fetch(`${GAS_URL}?action=get_dashboard_stats`);
+        if (statsResp.ok) {
+          const statsData = await statsResp.json();
+          if (statsData && statsData.success) saveStatsCache(statsData);
+        }
+      } catch (_e) { /* silenzioso */ }
+
       document.documentElement.classList.remove('no-session');
       const mainAppEl = document.getElementById('mainApp');
       mainAppEl.style.cssText = '';
@@ -2362,37 +2373,52 @@ function logout() {
 /* ═══════════════════════════════════════════
    AUTO-AUTH CHECK (eseguito al caricamento)
 ═══════════════════════════════════════════ */
-(function checkSessionOnLoad() {
+(async function checkSessionOnLoad() {
   const saved = loadSession();
-  if (saved) {
-    // Sessione valida trovata — accesso diretto
-    currentUser = saved;
-    document.documentElement.classList.remove('no-session');
-    const mainAppEl = document.getElementById('mainApp');
-    mainAppEl.style.cssText = '';
-    document.getElementById('loginGate').style.display = 'none';
-    mainAppEl.classList.add('active');
+  if (!saved) return; // nessuna sessione: login gate già visibile
 
-    // Precarica le statistiche dalla cache PRIMA che initApp esegua il rendering
-    // Se esiste cache (da sessioni precedenti reali), i valori corretti appaiono immediatamente.
-    // Se non esiste cache (primo accesso assoluto), le card mostrano — in attesa di GAS:
-    // questo è preferibile a mostrare numeri falsi da dati mock.
-    const _cachedStats = loadStatsCache();
-    if (_cachedStats) {
-      applyDashboardStats(_cachedStats);
-    }
-    // Nessun fallback con dati mock: meglio — che un numero sbagliato
+  currentUser = saved;
+  document.documentElement.classList.remove('no-session');
+  const mainAppEl = document.getElementById('mainApp');
+  mainAppEl.style.cssText = '';
+  document.getElementById('loginGate').style.display = 'none';
+  mainAppEl.classList.add('active');
 
-    // initApp verrà chiamato da DOMContentLoaded / window.onload
-    // Lo chiamiamo dopo che il DOM è completamente pronto
+  // ── Strategia stats zero-latency ────────────────────────────────────────
+  // CASO A: Cache presente (utente di ritorno) → applica subito, zero latenza.
+  // CASO B: Cache assente (localStorage svuotato / primo accesso) →
+  //         fetch sincrono GAS PRIMA di chiamare initApp, così le card
+  //         mostrano i valori reali al primo render. Mai "—".
+  const cachedStats = loadStatsCache();
+  if (cachedStats) {
+    // Applica immediatamente: valori reali visibili dal primo frame
+    applyDashboardStats(cachedStats);
+    // initApp NON aspetta — può partire subito
     if (document.readyState === 'complete' || document.readyState === 'interactive') {
       initApp();
     } else {
       document.addEventListener('DOMContentLoaded', initApp);
     }
   } else {
-    // Nessuna sessione — mostra login gate (già visibile di default)
-    // Non è necessario un redirect immediato; il content è già nascosto
+    // Nessuna cache: fetch real-time PRIMA di mostrare la dashboard
+    if (typeof GAS_URL !== 'undefined' && GAS_URL && !GAS_URL.includes('YOUR_GAS')) {
+      try {
+        const r = await fetch(`${GAS_URL}?action=get_dashboard_stats`);
+        if (r.ok) {
+          const d = await r.json();
+          if (d && d.success) {
+            saveStatsCache(d);
+            applyDashboardStats(d);
+          }
+        }
+      } catch (_e) { /* GAS non raggiungibile: le card rimarranno con —, ma è raro */ }
+    }
+    // Avvia l'app dopo il fetch (o subito se GAS non configurato)
+    if (document.readyState === 'complete' || document.readyState === 'interactive') {
+      initApp();
+    } else {
+      document.addEventListener('DOMContentLoaded', initApp);
+    }
   }
 })();
 
@@ -2403,7 +2429,7 @@ function initApp() {
   // ── Cache bust: rimuovi tutte le versioni precedenti della cache community ──
   // Questo garantisce che dati statici vecchi non vengano mai caricati dal browser
   // Rimuovi tutte le versioni precedenti di cache (community + stats)
-  ['lh360_community_v1', 'lh360_community_v2', 'lh360_stats_cache'].forEach(k => {
+  ['lh360_community_v1', 'lh360_community_v2'].forEach(k => {
     try { localStorage.removeItem(k); } catch(e) {}
   });
 
@@ -2517,8 +2543,16 @@ function showPanel(id, navEl) {
   // Clear badges when viewing
   if (id === 'notifications') { notifCount = 0; updateNotifBadge(); }
   if (id === 'messages') { unreadMsgs = 0; updateMsgBadge(); }
-  if (id === 'feed') { document.getElementById('feedBadge').classList.add('hidden'); }
+  if (id === 'feed') {
+    document.getElementById('feedBadge').classList.add('hidden');
+    // Avvia/riavvia il tracking lettura post quando il feed diventa visibile
+    requestAnimationFrame(() => initFeedReadTracking());
+  }
   if (id === 'dashboard') { renderActivityFeed(); renderFeedPreview(); loadDashboardStats(); }
+  if (id === 'profile') {
+    // Rirenderi il profilo con statistiche aggiornate in tempo reale
+    renderProfile();
+  }
 }
 
 /* ═══════════════════════════════════════════
@@ -2797,7 +2831,8 @@ function handlePostAnchor() {
    STATS CACHE (localStorage — mostra valori immediati)
 ═══════════════════════════════════════════ */
 const STATS_CACHE_KEY = 'lh360_stats_cache';
-const STATS_CACHE_TTL = 10 * 60 * 1000; // 10 minuti
+// Nessun TTL: la cache persiste tra sessioni (stale-while-revalidate).
+// I valori vengono aggiornati in background dal polling ogni 10s.
 
 function saveStatsCache(data) {
   try { localStorage.setItem(STATS_CACHE_KEY, JSON.stringify({ data, ts: Date.now() })); } catch(e) {}
@@ -2808,8 +2843,8 @@ function loadStatsCache() {
     const raw = localStorage.getItem(STATS_CACHE_KEY);
     if (!raw) return null;
     const obj = JSON.parse(raw);
-    if (Date.now() - obj.ts > STATS_CACHE_TTL) return null;
-    return obj.data;
+    return (obj && obj.data) ? obj.data : null;
+    // Nessun controllo TTL: usiamo sempre il valore in cache (sarà aggiornato dal polling)
   } catch(e) { return null; }
 }
 
@@ -3099,6 +3134,8 @@ function renderFeed() {
       ` : ''}
     </div>`;
   }).join('');
+  // Avvia tracking lettura post tramite IntersectionObserver
+  requestAnimationFrame(() => initFeedReadTracking());
 }
 
 function toggleLike(postId, btn) {
@@ -3168,6 +3205,10 @@ function submitCommentBtn(postId, inputEl) {
   }
   showToast('green', '💬', 'Commento pubblicato!');
   logActivity('green', `<strong>${currentUser.name.split(' ')[0]}</strong> ha commentato nel feed`);
+
+  // Aggiorna contatore commenti nel profilo in tempo reale
+  const profComments = document.getElementById('profileStatComments');
+  if (profComments) profComments.textContent = countUserComments();
 
   // Persisti su GAS in background
   if (GAS_URL && currentUser) {
@@ -3405,6 +3446,10 @@ async function submitNewThread() {
   renderDiscussions();
   showToast('gold', '✏️', 'Thread pubblicato con successo!');
   logActivity('blue', `<strong>${currentUser.name.split(' ')[0]}</strong> ha avviato una nuova discussione`);
+
+  // Aggiorna contatore discussioni nel profilo in tempo reale
+  const profDisc = document.getElementById('profileStatDiscussions');
+  if (profDisc) profDisc.textContent = countUserDiscussions();
 
   // Persisti su GAS
   if (GAS_URL && currentUser) {
@@ -3760,15 +3805,173 @@ function updateMsgBadge() {
 }
 
 /* ═══════════════════════════════════════════
+   PROFILO: HELPER FUNCTIONS
+═══════════════════════════════════════════ */
+
+/* Converte data ISO o "GG/MM/AAAA - HH:MM" → "15 Novembre 2024" */
+function formatJoinDate(raw) {
+  if (!raw) return '—';
+  const months = ['Gennaio','Febbraio','Marzo','Aprile','Maggio','Giugno',
+                  'Luglio','Agosto','Settembre','Ottobre','Novembre','Dicembre'];
+  try {
+    // Formato ISO
+    const d = new Date(raw);
+    if (!isNaN(d.getTime())) return `${d.getDate()} ${months[d.getMonth()]} ${d.getFullYear()}`;
+    // Formato GG/MM/AAAA
+    const m = String(raw).match(/(\d{1,2})[\/\.](\d{2})[\/\.](\d{4})/);
+    if (m) return `${parseInt(m[1])} ${months[parseInt(m[2])-1]} ${m[3]}`;
+  } catch(_e) {}
+  return String(raw);
+}
+
+/* Converte codice lingua → nome esteso */
+function langCodeToName(code) {
+  const map = { IT:'Italiano', EN:'English', FR:'Français', DE:'Deutsch', ES:'Español' };
+  return map[(code||'IT').toUpperCase()] || 'Italiano';
+}
+
+/* ── Lettura/salvataggio preferenze notifiche ── */
+const NOTIF_PREF_DEFAULTS = { project_updates:true, direct_messages:true, new_listings:true, post_replies:false };
+
+function _notifPrefKey() {
+  return currentUser ? `lh360_np_${currentUser.email.replace(/[^a-z0-9]/gi,'_')}` : null;
+}
+function loadNotifPrefs() {
+  const k = _notifPrefKey();
+  if (!k) return { ...NOTIF_PREF_DEFAULTS };
+  try {
+    const raw = localStorage.getItem(k);
+    return raw ? { ...NOTIF_PREF_DEFAULTS, ...JSON.parse(raw) } : { ...NOTIF_PREF_DEFAULTS };
+  } catch(_e) { return { ...NOTIF_PREF_DEFAULTS }; }
+}
+function saveNotifPrefsLocal(prefs) {
+  const k = _notifPrefKey();
+  if (!k) return;
+  try { localStorage.setItem(k, JSON.stringify(prefs)); } catch(_e) {}
+  // Sync background GAS
+  if (typeof GAS_URL !== 'undefined' && GAS_URL && currentUser) {
+    fetch(`${GAS_URL}?action=save_notif_prefs&email=${encodeURIComponent(currentUser.email)}&prefs=${encodeURIComponent(JSON.stringify(prefs))}`).catch(()=>{});
+  }
+}
+function isNotifEnabled(prefKey) {
+  const p = loadNotifPrefs();
+  return p[prefKey] !== false;
+}
+
+/* Aggiunge una notifica reale rispettando le preferenze */
+function addRealNotification(prefKey, icon, text) {
+  if (!isNotifEnabled(prefKey)) return; // preferenza disabilitata → nessuna notifica
+  const n = { id: Date.now() + Math.random(), icon, text, time: 'Ora', unread: true };
+  NOTIFICATIONS.unshift(n);
+  updateNotifBadge();
+  renderNotifDropdown();
+  const np = document.getElementById('panel-notifications');
+  if (np && np.classList.contains('active')) renderNotifications();
+}
+
+/* ── Statistiche attività utente ── */
+function _uStatsKey() {
+  return currentUser ? `lh360_us_${currentUser.email.replace(/[^a-z0-9]/gi,'_')}` : null;
+}
+function loadUserStats() {
+  const k = _uStatsKey();
+  if (!k) return { readPosts: [] };
+  try { const r = localStorage.getItem(k); return r ? JSON.parse(r) : { readPosts: [] }; }
+  catch(_e) { return { readPosts: [] }; }
+}
+function saveUserStats(s) {
+  const k = _uStatsKey(); if (!k) return;
+  try { localStorage.setItem(k, JSON.stringify(s)); } catch(_e) {}
+}
+function markPostRead(postId) {
+  if (!postId) return;
+  const s = loadUserStats();
+  if (s.readPosts.includes(postId)) return;
+  s.readPosts.push(postId); saveUserStats(s);
+  // Aggiorna il contatore nel profilo se visibile
+  const el = document.getElementById('profileStatPostsRead');
+  if (el) el.textContent = s.readPosts.length;
+}
+function countUserComments() {
+  if (!currentUser) return 0;
+  const name = currentUser.name;
+  let n = 0;
+  FEED_POSTS.forEach(p => {
+    if (p.commentsData) n += p.commentsData.filter(c => c.author === name).length;
+  });
+  return n;
+}
+function countUserDiscussions() {
+  if (!currentUser) return 0;
+  return DISCUSSIONS.filter(d => d.author === currentUser.name).length;
+}
+
+/* IntersectionObserver: marca i post come letti quando scorrono nella viewport */
+let _feedReadObserver = null;
+function initFeedReadTracking() {
+  if (_feedReadObserver) _feedReadObserver.disconnect();
+  _feedReadObserver = new IntersectionObserver(entries => {
+    entries.forEach(e => {
+      if (e.isIntersecting) {
+        const id = parseInt((e.target.id||'').replace('post-',''), 10);
+        if (id) markPostRead(id);
+      }
+    });
+  }, { threshold: 0.4 });
+  document.querySelectorAll('.feed-post[id^="post-"]').forEach(el => _feedReadObserver.observe(el));
+}
+
+/* Toggle notifica dall'UI */
+function toggleNotifPref(el) {
+  const prefKey = el.dataset.pref;
+  const nowOn = !el.classList.contains('off'); // stato attuale
+  const newState = !nowOn;
+  const inner = el.querySelector('div');
+  if (newState) {
+    el.classList.remove('off'); el.style.background='var(--gold)'; el.style.borderColor='var(--gold)';
+    if (inner) { inner.style.left='calc(100% - 16px)'; inner.style.background='var(--darker)'; }
+  } else {
+    el.classList.add('off'); el.style.background='var(--dark5)'; el.style.borderColor='var(--border2)';
+    if (inner) { inner.style.left='1px'; inner.style.background='var(--muted2)'; }
+  }
+  const prefs = loadNotifPrefs();
+  prefs[prefKey] = newState;
+  saveNotifPrefsLocal(prefs);
+  const labels = { project_updates:'aggiornamenti progetto', direct_messages:'messaggi diretti',
+                   new_listings:'nuovi listing', post_replies:'risposte ai post' };
+  showToast(newState ? 'green' : 'blue', newState ? '🔔' : '🔕',
+    `Notifiche ${labels[prefKey]||prefKey} ${newState ? 'abilitate' : 'disabilitate'}.`);
+}
+
+/* ═══════════════════════════════════════════
    RENDER PROFILE
 ═══════════════════════════════════════════ */
 function renderProfile() {
-  const role = currentUser.role;
+  const role      = currentUser.role;
   const container = document.getElementById('profileContainer');
-  const joinDate = '15 Novembre 2024';
+
+  // ── Dati reali dal profilo GAS ────────────────────────────────────────
+  const joinDate  = formatJoinDate(currentUser.joinDate);
+  const userLang  = langCodeToName(currentUser.lang);
+
+  // ── Statistiche attività dinamiche ────────────────────────────────────
+  const uStats     = loadUserStats();
+  const readCount  = uStats.readPosts.length;
+  const commCount  = countUserComments();
+  const discCount  = countUserDiscussions();
+
+  // ── Preferenze notifiche reali ────────────────────────────────────────
+  const nprefs = loadNotifPrefs();
 
   const roleLabel = role === 'team' ? 'Team LuxHaven360' : role === 'founding' ? 'Founding Member' : 'Founder Candidate';
   const roleColor = role === 'team' ? 'var(--gold)' : role === 'founding' ? 'var(--green)' : 'var(--amber)';
+
+  const notifToggles = [
+    ['Aggiornamenti progetto','Ricevi notifiche per i nuovi aggiornamenti','project_updates'],
+    ['Messaggi diretti','Notifiche per i tuoi messaggi','direct_messages'],
+    ['Nuovi listing','Avvisi per i nuovi listing disponibili','new_listings'],
+    ['Risposte ai tuoi post','Notifiche per le risposte','post_replies'],
+  ];
 
   container.innerHTML = `
     <div class="profile-hero">
@@ -3786,9 +3989,9 @@ function renderProfile() {
           ${role === 'team' ? '<div class="profile-badge gold-badge">🛡 Amministratore</div>' : ''}
         </div>
         <div class="profile-stats-row">
-          <div class="profile-stat-item"><div class="ps-value">47</div><div class="ps-label">Post letti</div></div>
-          <div class="profile-stat-item"><div class="ps-value">12</div><div class="ps-label">Commenti</div></div>
-          <div class="profile-stat-item"><div class="ps-value">5</div><div class="ps-label">Discussioni</div></div>
+          <div class="profile-stat-item"><div class="ps-value" id="profileStatPostsRead">${readCount}</div><div class="ps-label">Post letti</div></div>
+          <div class="profile-stat-item"><div class="ps-value" id="profileStatComments">${commCount}</div><div class="ps-label">Commenti</div></div>
+          <div class="profile-stat-item"><div class="ps-value" id="profileStatDiscussions">${discCount}</div><div class="ps-label">Discussioni</div></div>
           <div class="profile-stat-item"><div class="ps-value" style="color:${roleColor}">#${currentUser.position || (role === 'team' ? '1' : '—')}</div><div class="ps-label">Posizione</div></div>
         </div>
       </div>
@@ -3797,12 +4000,10 @@ function renderProfile() {
       <div class="card">
         <div style="font-size:0.65rem; letter-spacing:0.15em; text-transform:uppercase; color:var(--muted2); margin-bottom:0.8rem;">Informazioni Account</div>
         <div style="display:flex; flex-direction:column; gap:0.7rem;">
-          ${[['Email', currentUser.email], ['Livello', roleLabel], ['Stato', 'Attivo · Online'], ['Lingua', 'Italiano']].map(([k,v]) => `
+          ${[['Email', currentUser.email], ['Livello', roleLabel], ['Stato', 'Attivo · Online'], ['Lingua', userLang]].map(([k,v]) => `
             <div style="display:flex; justify-content:space-between; font-size:0.78rem; border-bottom:1px solid var(--border2); padding-bottom:0.5rem;">
-              <span style="color:var(--muted)">${k}</span>
-              <span>${v}</span>
-            </div>
-          `).join('')}
+              <span style="color:var(--muted)">${k}</span><span>${v}</span>
+            </div>`).join('')}
         </div>
       </div>
       <div class="card">
@@ -3810,50 +4011,40 @@ function renderProfile() {
         ${role === 'founding' || role === 'team' ? `
           <div style="display:flex; flex-direction:column; gap:0.5rem;">
             ${['Accesso anticipato ai listing esclusivi','Canale diretto con il team','Prenotazioni prioritarie','Status permanente Founding Member','Notifiche esclusive in tempo reale'].map(b => `
-              <div style="display:flex; align-items:center; gap:0.5rem; font-size:0.78rem; padding:0.4rem 0; border-bottom:1px solid var(--border2);">
-                <span style="color:var(--green); font-size:0.9rem;">✓</span> ${b}
-              </div>
-            `).join('')}
-          </div>
-        ` : `
+              <div style="display:flex;align-items:center;gap:0.5rem;font-size:0.78rem;padding:0.4rem 0;border-bottom:1px solid var(--border2);">
+                <span style="color:var(--green);font-size:0.9rem;">✓</span> ${b}</div>`).join('')}
+          </div>` : `
           <div style="display:flex; flex-direction:column; gap:0.5rem; margin-bottom:1rem;">
             ${['Aggiornamenti esclusivi','Anteprime contenuti','Accesso alla Community','Interazione e feedback'].map(b => `
-              <div style="display:flex; align-items:center; gap:0.5rem; font-size:0.78rem; padding:0.4rem 0; border-bottom:1px solid var(--border2);">
-                <span style="color:var(--green);">✓</span> ${b}
-              </div>
-            `).join('')}
+              <div style="display:flex;align-items:center;gap:0.5rem;font-size:0.78rem;padding:0.4rem 0;border-bottom:1px solid var(--border2);">
+                <span style="color:var(--green);">✓</span> ${b}</div>`).join('')}
           </div>
-          <div style="padding-top:0.5rem; border-top:1px solid var(--border2);">
-            <div style="font-size:0.7rem; color:var(--muted); margin-bottom:0.5rem;">Sblocca con Founding Member:</div>
+          <div style="padding-top:0.5rem;border-top:1px solid var(--border2);">
+            <div style="font-size:0.7rem;color:var(--muted);margin-bottom:0.5rem;">Sblocca con Founding Member:</div>
             ${['Listing esclusivi','Prenotazioni anticipate','Canale diretto team','Status permanente'].map(b => `
-              <div style="display:flex; align-items:center; gap:0.5rem; font-size:0.78rem; padding:0.3rem 0; color:var(--muted2);">
-                <span style="color:var(--muted2);">🔒</span> ${b}
-              </div>
-            `).join('')}
+              <div style="display:flex;align-items:center;gap:0.5rem;font-size:0.78rem;padding:0.3rem 0;color:var(--muted2);">
+                <span style="color:var(--muted2);">🔒</span> ${b}</div>`).join('')}
           </div>
-          <button class="upgrade-btn" style="margin-top:0.8rem; width:100%;" onclick="showToast('gold','⭐','Richiesta inviata! Il team ti contatterà.')">
-            Richiedi Upgrade
-          </button>
-        `}
+          <button class="upgrade-btn" style="margin-top:0.8rem;width:100%;" onclick="showToast('gold','⭐','Richiesta inviata! Il team ti contatterà.')">
+            Richiedi Upgrade</button>`}
       </div>
     </div>
     <div class="card" style="margin-top:1rem;">
-      <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:1rem;">
-        <div style="font-size:0.65rem; letter-spacing:0.15em; text-transform:uppercase; color:var(--muted2);">Impostazioni Notifiche</div>
-      </div>
-      <div style="display:flex; flex-direction:column; gap:0.5rem;">
-        ${[['Aggiornamenti progetto','Ricevi notifiche per i nuovi aggiornamenti',true],['Messaggi diretti','Notifiche per i tuoi messaggi',true],['Nuovi listing','Avvisi per i nuovi listing disponibili',true],['Risposte ai tuoi post','Notifiche per le risposte',false]].map(([title, desc, active]) => `
-          <div style="display:flex; align-items:center; justify-content:space-between; padding:0.6rem 0; border-bottom:1px solid var(--border2);">
+      <div style="font-size:0.65rem;letter-spacing:0.15em;text-transform:uppercase;color:var(--muted2);margin-bottom:1rem;">Impostazioni Notifiche</div>
+      <div style="display:flex;flex-direction:column;gap:0.5rem;">
+        ${notifToggles.map(([title, desc, prefKey]) => {
+          const isOn = nprefs[prefKey] !== false;
+          return `<div style="display:flex;align-items:center;justify-content:space-between;padding:0.6rem 0;border-bottom:1px solid var(--border2);">
             <div>
-              <div style="font-size:0.78rem; color:var(--light);">${title}</div>
-              <div style="font-size:0.68rem; color:var(--muted); margin-top:2px;">${desc}</div>
+              <div style="font-size:0.78rem;color:var(--light);">${title}</div>
+              <div style="font-size:0.68rem;color:var(--muted);margin-top:2px;">${desc}</div>
             </div>
-            <div onclick="this.classList.toggle('off'); this.style.background = this.classList.contains('off') ? 'var(--dark5)' : 'var(--gold)'; this.style.borderColor = this.classList.contains('off') ? 'var(--border2)' : 'var(--gold)'; this.querySelector('div').style.left = this.classList.contains('off') ? '3px' : 'calc(100% - 19px)';"
-              style="width:36px; height:20px; border-radius:10px; background:${active ? 'var(--gold)' : 'var(--dark5)'}; border:1.5px solid ${active ? 'var(--gold)' : 'var(--border2)'}; position:relative; cursor:pointer; flex-shrink:0; transition:all 0.2s;">
-              <div style="width:14px; height:14px; background:${active ? 'var(--darker)' : 'var(--muted2)'}; border-radius:50%; position:absolute; top:2px; left:${active ? 'calc(100% - 16px)' : '1px'}; transition:all 0.2s;"></div>
+            <div data-pref="${prefKey}" onclick="toggleNotifPref(this)" class="${isOn?'':'off'}"
+              style="width:36px;height:20px;border-radius:10px;background:${isOn?'var(--gold)':'var(--dark5)'};border:1.5px solid ${isOn?'var(--gold)':'var(--border2)'};position:relative;cursor:pointer;flex-shrink:0;transition:all 0.2s;">
+              <div style="width:14px;height:14px;background:${isOn?'var(--darker)':'var(--muted2)'};border-radius:50%;position:absolute;top:2px;left:${isOn?'calc(100% - 16px)':'1px'};transition:all 0.2s;"></div>
             </div>
-          </div>
-        `).join('')}
+          </div>`;
+        }).join('')}
       </div>
     </div>`;
 }
