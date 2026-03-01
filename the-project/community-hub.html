@@ -4227,9 +4227,10 @@ function renderRightPanel() {
   const hasLive = EVENTS.some(e => e.isLive);
   if (liveRpIndicator) liveRpIndicator.style.display = hasLive ? 'block' : 'none';
 
-  // Filtra: mostra eventi live + futuri (mai eventi passati)
+  // Filtra: mostra eventi non completati e non terminati — live O futuri
   const now    = Date.now();
   const visible = EVENTS.filter(e => {
+    if (e.isCompleted || e.isEnded) return false;
     if (e.isLive) return true;
     try { return new Date(e.dateIso).getTime() >= now; }
     catch(_e) { return false; }
@@ -4260,7 +4261,9 @@ function renderRightPanel() {
           <button onclick="toggleEventLive(${e.id}, ${!e.isLive})" style="font-size:0.62rem; padding:2px 7px; border-radius:4px; border:1px solid ${e.isLive?'var(--amber)':'var(--green)'}; background:transparent; color:${e.isLive?'var(--amber)':'var(--green)'}; cursor:pointer;">
             ${e.isLive ? '⏹ Stop Live' : '▶ Vai Live'}
           </button>
-          <button onclick="deleteEventUI(${e.id})" style="font-size:0.62rem; padding:2px 7px; border-radius:4px; border:1px solid var(--border2); background:transparent; color:var(--muted2); cursor:pointer;">✕</button>
+          <button onclick="endEventUI(${e.id})" style="font-size:0.62rem; padding:2px 7px; border-radius:4px; border:1px solid var(--amber); background:transparent; color:var(--amber); cursor:pointer;">⏏ Termina</button>
+          <button onclick="completeEventUI(${e.id})" style="font-size:0.62rem; padding:2px 7px; border-radius:4px; border:1px solid var(--green); background:transparent; color:var(--green); cursor:pointer;">✔ Completa</button>
+          <button onclick="deleteEventUI(${e.id})" style="font-size:0.62rem; padding:2px 7px; border-radius:4px; border:1px solid var(--border2); background:transparent; color:var(--muted2); cursor:pointer;">✕ Elimina</button>
         </div>` : ''}
     </div>`;
   }).join('');
@@ -4565,8 +4568,12 @@ function renderEventsAdminList() {
           style="font-size:0.62rem;padding:2px 8px;border-radius:4px;border:1px solid ${e.isLive?'var(--amber)':'var(--green)'};background:transparent;color:${e.isLive?'var(--amber)':'var(--green)'};cursor:pointer;">
           ${e.isLive?'⏹ Stop':'▶ Live'}
         </button>
+        <button onclick="endEventAdmin(${e.id})"
+          style="font-size:0.62rem;padding:2px 8px;border-radius:4px;border:1px solid var(--amber);background:transparent;color:var(--amber);cursor:pointer;">⏏ Termina</button>
+        <button onclick="completeEventAdmin(${e.id})"
+          style="font-size:0.62rem;padding:2px 8px;border-radius:4px;border:1px solid var(--green);background:transparent;color:var(--green);cursor:pointer;">✔ Completa</button>
         <button onclick="deleteEventAdmin(${e.id})"
-          style="font-size:0.62rem;padding:2px 7px;border-radius:4px;border:1px solid var(--border2);background:transparent;color:var(--muted2);cursor:pointer;">✕</button>
+          style="font-size:0.62rem;padding:2px 7px;border-radius:4px;border:1px solid var(--border2);background:transparent;color:var(--muted2);cursor:pointer;">✕ Elimina</button>
       </div>
     </div>`).join('');
 }
@@ -4575,6 +4582,48 @@ async function toggleEventLiveAdmin(eventId, goLive) {
   await toggleEventLive(eventId, goLive);
   renderEventsAdminList();
 }
+
+async function endEventUI(eventId) {
+  if (!GAS_URL) return;
+  try {
+    const r = await fetch(`${GAS_URL}?action=complete_event&eventId=${eventId}&mode=end`);
+    const d = await r.json();
+    if (d.success) {
+      const idx = EVENTS.findIndex(e => e.id === eventId);
+      if (idx !== -1) EVENTS[idx].isEnded = true;
+      applyEventsData(EVENTS);
+      showToast('amber','⏏','Evento terminato.');
+    }
+  } catch(_e) {
+    // fallback locale
+    const idx = EVENTS.findIndex(e => e.id === eventId);
+    if (idx !== -1) { EVENTS[idx].isEnded = true; applyEventsData(EVENTS); }
+    showToast('amber','⏏','Evento terminato localmente.');
+  }
+  renderEventsAdminList();
+}
+
+async function completeEventUI(eventId) {
+  if (!GAS_URL) return;
+  try {
+    const r = await fetch(`${GAS_URL}?action=complete_event&eventId=${eventId}&mode=complete`);
+    const d = await r.json();
+    if (d.success) {
+      const idx = EVENTS.findIndex(e => e.id === eventId);
+      if (idx !== -1) EVENTS[idx].isCompleted = true;
+      applyEventsData(EVENTS);
+      showToast('gold','✔','Evento completato.');
+    }
+  } catch(_e) {
+    const idx = EVENTS.findIndex(e => e.id === eventId);
+    if (idx !== -1) { EVENTS[idx].isCompleted = true; applyEventsData(EVENTS); }
+    showToast('amber','✔','Evento completato localmente.');
+  }
+  renderEventsAdminList();
+}
+
+async function endEventAdmin(eventId)      { await endEventUI(eventId);      renderEventsAdminList(); }
+async function completeEventAdmin(eventId) { await completeEventUI(eventId); renderEventsAdminList(); }
 
 async function deleteEventAdmin(eventId) {
   await deleteEventUI(eventId);
