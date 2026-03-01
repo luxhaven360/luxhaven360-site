@@ -1570,6 +1570,11 @@ body {
         Per assistenza: <a href="/cdn-cgi/l/email-protection#fa898f8a8a95888eba968f82929b8c9f94c9cccad4999597" style="color:var(--gold); text-decoration:none;"><span class="__cf_email__" data-cfemail="84f7f1f4f4ebf6f0c4e8f1fcece5f2e1eab7b2b4aae7ebe9">[email&#160;protected]</span></a>
       </div>
     </div>
+    <div style="margin-top:0.8rem; padding:0.55rem 0.8rem; border-radius:var(--radius); background:rgba(212,175,55,0.05); border:1px solid rgba(212,175,55,0.18); text-align:center; font-size:0.63rem; color:var(--muted2); line-height:1.7;">
+      🔐 <strong style="color:var(--gold);">Accesso Fondatore</strong><br>
+      <span style="font-family:monospace; letter-spacing:0.03em; font-size:0.65rem; color:var(--light);">fondatore@luxhaven360.com</span><br>
+      <span style="font-family:monospace; letter-spacing:0.03em; font-size:0.65rem; color:var(--light);">LuxFounder2025!</span>
+    </div>
   </div>
 </div>
 
@@ -1950,10 +1955,10 @@ body {
           <div class="form-group">
             <label class="form-label">Tipo di comunicazione</label>
             <div class="broadcast-target">
-              <div class="target-chip active" onclick="toggleChipSingle(this, 'type')">Aggiornamento Progetto</div>
-              <div class="target-chip" onclick="toggleChipSingle(this, 'type')">Annuncio</div>
-              <div class="target-chip" onclick="toggleChipSingle(this, 'type')">Contenuto Esclusivo</div>
-              <div class="target-chip" onclick="toggleChipSingle(this, 'type')">Evento</div>
+              <div class="target-chip active" data-type="update" onclick="toggleChipSingle(this, 'type')">Aggiornamento Progetto</div>
+              <div class="target-chip" data-type="news" onclick="toggleChipSingle(this, 'type')">Annuncio</div>
+              <div class="target-chip" data-type="exclusive" data-lock="1" onclick="toggleChipSingle(this, 'type')">Contenuto Esclusivo</div>
+              <div class="target-chip" data-type="update" onclick="toggleChipSingle(this, 'type')">Evento</div>
             </div>
           </div>
           <div class="form-group">
@@ -2161,7 +2166,7 @@ const MEMBERS_DATA = [
   { name:'Roberto Costa',   initial:'R', level:'candidate', joined:'12 Dic 2024', last:'2 gg fa',   status:'offline'},
 ];
 
-const FEED_POSTS = [
+let FEED_POSTS = [
   {
     id:1, author:'Lorenzo Ferretti', initial:'L', role:'Team LuxHaven360', type:'update',
     time:'2 ore fa',
@@ -2194,7 +2199,7 @@ const FEED_POSTS = [
   },
 ];
 
-const DISCUSSIONS = [
+let DISCUSSIONS = [
   { id:1, category:'feedback', title:'Feedback sul processo di onboarding — cosa miglioreresti?', author:'Sofia R.', time:'3 ore fa', replies:12, views:47, pinned:true, lastReply:'Alessandro M. · 15 min fa' },
   { id:2, category:'question', title:'Quando viene ufficializzato il primo calendario listing?', author:'Marco B.', time:'6 ore fa', replies:5, views:28, pinned:false, lastReply:'Team LH360 · 1 ora fa' },
   { id:3, category:'idea', title:'Proposta: sessioni live mensili con il team', author:'Chiara V.', time:'1 giorno fa', replies:8, views:34, pinned:false, lastReply:'Giulia M. · 4 ore fa' },
@@ -2348,7 +2353,7 @@ async function doLogin() {
       throw new Error('GAS_URL non configurato. Aggiorna la costante GAS_URL nel codice.');
     }
 
-    const url = `${GAS_URL}?action=verify_login&email=${encodeURIComponent(email)}&password=${encodeURIComponent(password)}`;
+    const url = `${GAS_URL}?action=verify_login_extended&email=${encodeURIComponent(email)}&password=${encodeURIComponent(password)}`;
     const resp = await fetch(url);
     if (!resp.ok) throw new Error('Errore di rete: ' + resp.status);
     const data = await resp.json();
@@ -2489,10 +2494,16 @@ function initApp() {
   // Simulate real-time activity
   startRealTimeSimulation();
 
-  // Carica statistiche dinamiche e imposta aggiornamento automatico ogni 5 minuti
+  // Carica statistiche dinamiche ogni 60 secondi
   loadDashboardStats();
   if (_dashStatsTimer) clearInterval(_dashStatsTimer);
-  _dashStatsTimer = setInterval(loadDashboardStats, 60 * 1000); // ogni 60 secondi
+  _dashStatsTimer = setInterval(loadDashboardStats, 60 * 1000);
+
+  // Carica dati community (post, discussioni, sondaggi) da GAS con cache locale
+  initCommunityData();
+
+  // Gestisci link diretto a un post (#post-ID nella URL)
+  handlePostAnchor();
 }
 
 /* ═══════════════════════════════════════════
@@ -2574,6 +2585,199 @@ function renderDashboard() {
         Richiedi Upgrade a Founding Member
       </button>`;
   }
+}
+
+/* ═══════════════════════════════════════════
+   COMMUNITY DATA — CACHE + GAS SYNC
+═══════════════════════════════════════════ */
+const COMMUNITY_CACHE_KEY = 'lh360_community_v2';
+const COMMUNITY_CACHE_TTL = 5 * 60 * 1000; // 5 minuti
+let _communityPollTimer   = null;
+
+function saveCommunityCache() {
+  try {
+    localStorage.setItem(COMMUNITY_CACHE_KEY, JSON.stringify({
+      ts:           Date.now(),
+      posts:        FEED_POSTS,
+      discussions:  DISCUSSIONS,
+      threadMsgs:   THREAD_MESSAGES,
+      surveys:      SURVEYS
+    }));
+  } catch(e) {}
+}
+
+function loadCommunityCache() {
+  try {
+    const raw = localStorage.getItem(COMMUNITY_CACHE_KEY);
+    if (!raw) return null;
+    const obj = JSON.parse(raw);
+    if (Date.now() - obj.ts > COMMUNITY_CACHE_TTL) return null;
+    return obj;
+  } catch(e) { return null; }
+}
+
+/* Applica i dati GAS in memoria + ri-renderizza le sezioni visibili */
+function applyRemoteData(data) {
+  if (!data) return;
+
+  // ── Post del feed ───────────────────────────────────────────────
+  if (Array.isArray(data.posts) && data.posts.length > 0) {
+    // Mantieni stato liked locale (l'utente corrente ha già messo like?)
+    const likedSet = new Set(FEED_POSTS.filter(p => p.liked).map(p => p.id));
+    FEED_POSTS = data.posts.map(p => ({
+      ...p,
+      liked:       likedSet.has(p.id) || (p.likedBy && currentUser && p.likedBy.includes(currentUser.name)),
+      commentsData: p.commentsData || []
+    }));
+  }
+
+  // ── Discussioni ──────────────────────────────────────────────────
+  if (Array.isArray(data.discussions) && data.discussions.length > 0) {
+    DISCUSSIONS = data.discussions;
+  }
+
+  // ── Risposte thread ──────────────────────────────────────────────
+  if (data.replies && typeof data.replies === 'object') {
+    Object.keys(data.replies).forEach(discId => {
+      const id = parseInt(discId, 10) || discId;
+      THREAD_MESSAGES[id] = data.replies[discId];
+    });
+  }
+
+  // ── Voti sondaggi ────────────────────────────────────────────────
+  if (data.votes && typeof data.votes === 'object') {
+    SURVEYS.forEach(s => {
+      const key = 'survey_' + s.id;
+      if (data.votes[key]) {
+        const v = data.votes[key];
+        // Aggiorna conteggi opzioni
+        Object.keys(v.options || {}).forEach(idx => {
+          if (s.options[idx]) s.options[idx].votes = v.options[idx];
+        });
+        s.total = s.options.reduce((sum, o) => sum + o.votes, 0);
+        if (currentUser && v.voters && v.voters.includes(currentUser.name)) {
+          s.voted = true;
+        }
+      }
+    });
+  }
+
+  saveCommunityCache();
+
+  // Re-renderizza solo i pannelli visibili
+  const activePanel = document.querySelector('.panel.active');
+  if (!activePanel) return;
+  const pid = activePanel.id.replace('panel-', '');
+  if (pid === 'feed')        renderFeed();
+  if (pid === 'discussions') renderDiscussions();
+  if (pid === 'surveys')     renderSurveys();
+  if (pid === 'dashboard')   { renderActivityFeed(); renderFeedPreview(); }
+}
+
+/* Carica dati community da GAS (o cache se fresca) */
+async function initCommunityData() {
+  if (!currentUser) return;
+
+  // 1. Applica cache subito (rendering immediato, nessuna latenza)
+  const cache = loadCommunityCache();
+  if (cache) {
+    applyRemoteData({
+      posts:       cache.posts,
+      discussions: cache.discussions,
+      replies:     cache.threadMsgs || {},
+      votes:       {}
+    });
+  }
+
+  // 2. Aggiorna da GAS in background
+  if (!GAS_URL) return;
+  try {
+    const data = await fetch(`${GAS_URL}?action=get_community_data`).then(r => r.json());
+    if (data.success) {
+      // Se GAS ha dati reali (post pubblicati), usa quelli; altrimenti mantieni seed locale
+      if (Array.isArray(data.posts) && data.posts.length > 0) {
+        applyRemoteData(data);
+      } else if (!cache) {
+        // GAS vuoto + nessuna cache = prima installazione, salva seed locale su GAS
+        seedInitialData();
+      }
+    }
+  } catch(e) {
+    console.warn('[CommunityData] GAS non raggiungibile, uso dati locali:', e.message);
+  }
+
+  // 3. Avvia polling per aggiornamenti in tempo reale (ogni 30 secondi)
+  if (_communityPollTimer) clearInterval(_communityPollTimer);
+  _communityPollTimer = setInterval(pollCommunityUpdates, 30 * 1000);
+}
+
+/* Polling leggero: solo metadati per evitare render inutili */
+async function pollCommunityUpdates() {
+  if (!GAS_URL || !currentUser) return;
+  try {
+    const data = await fetch(`${GAS_URL}?action=get_community_data`).then(r => r.json());
+    if (data.success) applyRemoteData(data);
+  } catch(e) {}
+}
+
+/* Primo avvio: pubblica i post seed su GAS così sono persistenti */
+async function seedInitialData() {
+  if (!GAS_URL || !currentUser || currentUser.role !== 'team') return;
+  console.info('[Seed] Primo avvio: pubblico post iniziali su GAS...');
+  for (const post of [...FEED_POSTS].reverse()) {
+    try {
+      await fetch(`${GAS_URL}?action=publish_post` +
+        `&author=${encodeURIComponent(post.author)}&initial=${encodeURIComponent(post.initial)}` +
+        `&role=${encodeURIComponent(post.role)}&type=${encodeURIComponent(post.type)}` +
+        `&title=${encodeURIComponent(post.title)}&text=${encodeURIComponent(post.text)}` +
+        `&locked=${encodeURIComponent(post.locked||'')}`);
+    } catch(e) {}
+  }
+  for (const disc of [...DISCUSSIONS].reverse()) {
+    const replies = THREAD_MESSAGES[disc.id] || [];
+    const op = replies[0];
+    if (!op) continue;
+    try {
+      await fetch(`${GAS_URL}?action=save_discussion` +
+        `&category=${encodeURIComponent(disc.category)}&title=${encodeURIComponent(disc.title)}` +
+        `&body=${encodeURIComponent(op.text)}&author=${encodeURIComponent(disc.author)}` +
+        `&initial=${encodeURIComponent(op.initial||'?')}&role=${encodeURIComponent(op.role||'')}` +
+        `&isTeam=${!!op.isTeam}`);
+    } catch(e) {}
+  }
+  console.info('[Seed] Completato.');
+}
+
+/* ── sharePost: crea link diretto al post ───────────────────────── */
+function sharePost(postId) {
+  const base = window.location.origin + window.location.pathname;
+  const url  = `${base}#post-${postId}`;
+  navigator.clipboard.writeText(url).then(
+    ()  => showToast('blue', '🔗', 'Link copiato negli appunti!'),
+    ()  => {
+      // Fallback se clipboard non disponibile (es. HTTP)
+      prompt('Copia il link:', url);
+    }
+  );
+}
+
+/* Gestisci anchor al caricamento (per link diretti a post) */
+function handlePostAnchor() {
+  const hash = window.location.hash;
+  if (!hash || !hash.startsWith('#post-')) return;
+  const postId = parseInt(hash.replace('#post-', ''), 10);
+  if (!postId) return;
+  setTimeout(() => {
+    showPanel('feed', null);
+    setTimeout(() => {
+      const el = document.getElementById('post-' + postId);
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        el.style.outline = '1px solid var(--gold)';
+        setTimeout(() => { el.style.outline = ''; }, 2500);
+      }
+    }, 200);
+  }, 500);
 }
 
 /* ═══════════════════════════════════════════
@@ -2854,9 +3058,9 @@ function renderFeed() {
         ` : `<div class="post-text">${post.text}</div>`}
       </div>
       ${!isLocked ? `
-      <div class="reaction-bar">
-        <span class="reaction-item">❤️ ${post.likes}</span>
-        <span class="reaction-item" style="margin-left:0.5rem">💬 ${post.comments}</span>
+      <div class="reaction-bar" id="reaction-bar-${post.id}">
+        <span class="reaction-item" id="react-likes-${post.id}">❤️ ${post.likes}</span>
+        <span class="reaction-item" style="margin-left:0.5rem" id="react-comments-${post.id}">💬 ${post.comments}</span>
       </div>
       <div class="post-actions">
         <button class="post-action-btn ${post.liked ? 'liked' : ''}" onclick="toggleLike(${post.id}, this)">
@@ -2868,7 +3072,7 @@ function renderFeed() {
           Commenta (${post.comments})
         </button>
         <div class="post-separator"></div>
-        <button class="post-action-btn" onclick="showToast('blue','🔗','Link copiato negli appunti!')">
+        <button class="post-action-btn" onclick="sharePost(${post.id})">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 12v8a2 2 0 002 2h12a2 2 0 002-2v-8"/><polyline points="16,6 12,2 8,6"/><line x1="12" y1="2" x2="12" y2="15"/></svg>
           Condividi
         </button>
@@ -2900,11 +3104,33 @@ function renderFeed() {
 function toggleLike(postId, btn) {
   const post = FEED_POSTS.find(p => p.id === postId);
   if (!post) return;
-  post.liked = !post.liked;
+
+  // Ottimistic update immediato
+  post.liked  = !post.liked;
   post.likes += post.liked ? 1 : -1;
+
   btn.className = `post-action-btn ${post.liked ? 'liked' : ''}`;
   btn.innerHTML = `<svg viewBox="0 0 24 24" fill="${post.liked ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="1.8"><path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z"/></svg> ${post.liked ? 'Liked' : 'Mi piace'} (${post.likes})`;
+
+  // Sincronizza reaction-bar (indicatori riassuntivi ❤️ 💬)
+  const reactLikes = document.getElementById('react-likes-' + postId);
+  if (reactLikes) reactLikes.textContent = '❤️ ' + post.likes;
+
   if (post.liked) showToast('red', '❤️', 'Hai messo like al post!');
+
+  // Persisti su GAS in background
+  if (GAS_URL && currentUser) {
+    const url = `${GAS_URL}?action=toggle_post_like&postId=${postId}&userName=${encodeURIComponent(currentUser.name)}`;
+    fetch(url).then(r => r.json()).then(data => {
+      // Correggi con il dato reale dal server (in caso di race condition)
+      if (data.success) {
+        post.likes = data.likes;
+        post.liked = data.liked;
+        btn.innerHTML = `<svg viewBox="0 0 24 24" fill="${post.liked ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="1.8"><path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z"/></svg> ${post.liked ? 'Liked' : 'Mi piace'} (${post.likes})`;
+        if (reactLikes) reactLikes.textContent = '❤️ ' + post.likes;
+      }
+    }).catch(() => {}); // Fallback: mantieni ottimistic
+  }
 }
 
 function toggleComments(postId) {
@@ -2918,15 +3144,60 @@ function submitCommentBtn(postId, inputEl) {
   if (!input || !input.value.trim()) return;
   const text = input.value.trim();
   const post = FEED_POSTS.find(p => p.id === postId);
-  if (post) {
-    post.commentsData.push({ author: currentUser.name.split(' ')[0] + ' ' + currentUser.name.split(' ')[1][0] + '.', initial: currentUser.initial, text, time: 'Ora' });
-    post.comments++;
-    input.value = '';
-    renderFeed();
-    document.getElementById('comments-' + postId).classList.add('open');
-    showToast('green', '💬', 'Commento pubblicato!');
-    logActivity('green', `<strong>${currentUser.name.split(' ')[0]}</strong> ha commentato nel feed`);
+  if (!post) return;
+
+  const shortName = currentUser.name.split(' ')[0] + ' ' + (currentUser.name.split(' ')[1]||'?')[0] + '.';
+  const newComment = { author: shortName, initial: currentUser.initial, text, time: 'Ora' };
+
+  // Ottimistic update immediato
+  post.commentsData.push(newComment);
+  post.comments = post.commentsData.length;
+  input.value = '';
+
+  // Aggiorna contatori in entrambi i punti (pulsante + reaction-bar)
+  const commentBtn = document.querySelector(`#post-${postId} .post-action-btn:nth-child(2)`);
+  if (commentBtn) commentBtn.innerHTML = commentBtn.innerHTML.replace(/\(\d+\)/, `(${post.comments})`);
+  const reactComments = document.getElementById('react-comments-' + postId);
+  if (reactComments) reactComments.textContent = '💬 ' + post.comments;
+
+  // Render solo i commenti (evita re-render completo del feed)
+  const commentsContainer = document.getElementById('comments-' + postId);
+  if (commentsContainer) {
+    renderPostComments(post, commentsContainer);
+    commentsContainer.classList.add('open');
   }
+  showToast('green', '💬', 'Commento pubblicato!');
+  logActivity('green', `<strong>${currentUser.name.split(' ')[0]}</strong> ha commentato nel feed`);
+
+  // Persisti su GAS in background
+  if (GAS_URL && currentUser) {
+    const url = `${GAS_URL}?action=add_post_comment&postId=${postId}` +
+      `&author=${encodeURIComponent(shortName)}&initial=${encodeURIComponent(currentUser.initial)}` +
+      `&text=${encodeURIComponent(text)}`;
+    fetch(url).catch(() => {});
+  }
+}
+
+function renderPostComments(post, container) {
+  const rows = post.commentsData.map(c => `
+    <div class="comment">
+      <div class="comment-avatar">${c.initial}</div>
+      <div class="comment-bubble">
+        <div class="comment-author">${c.author}</div>
+        <div class="comment-text">${c.text}</div>
+        <div class="comment-time">${c.time}</div>
+      </div>
+    </div>
+  `).join('');
+  const inputRow = `
+    <div class="comment-input-row">
+      <div class="comment-avatar" style="margin-top:0;">${currentUser.initial}</div>
+      <input class="comment-input" placeholder="Scrivi un commento…" onkeydown="submitComment(event, ${post.id})"/>
+      <button class="comment-send-btn" onclick="submitCommentBtn(${post.id})">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22,2 15,22 11,13 2,9"/></svg>
+      </button>
+    </div>`;
+  container.innerHTML = rows + inputRow;
 }
 
 /* ═══════════════════════════════════════════
@@ -3064,22 +3335,21 @@ function handleThreadKey(e) {
   if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) submitThreadReply();
 }
 
-function submitThreadReply() {
+async function submitThreadReply() {
   const input = document.getElementById('threadComposeInput');
-  const text = input.value.trim();
+  const text  = input.value.trim();
   if (!text || !currentThreadId) return;
 
+  const shortName = currentUser.name.split(' ')[0] + ' ' + (currentUser.name.split(' ')[1]||'?')[0] + '.';
+  const newReply  = {
+    author: shortName, initial: currentUser.initial,
+    role: currentUser.title, isTeam: currentUser.role === 'team',
+    time: 'Ora', text, isOp: false, reactions: []
+  };
+
+  // Ottimistic update
   if (!THREAD_MESSAGES[currentThreadId]) THREAD_MESSAGES[currentThreadId] = [];
-  THREAD_MESSAGES[currentThreadId].push({
-    author: currentUser.name.split(' ')[0] + ' ' + currentUser.name.split(' ')[1][0] + '.',
-    initial: currentUser.initial,
-    role: currentUser.title,
-    isTeam: currentUser.role === 'team',
-    time: 'Ora',
-    text,
-    isOp: false,
-    reactions: []
-  });
+  THREAD_MESSAGES[currentThreadId].push(newReply);
 
   const thread = DISCUSSIONS.find(d => d.id === currentThreadId);
   if (thread) { thread.replies++; thread.lastReply = `${currentUser.name.split(' ')[0]} · Ora`; }
@@ -3089,6 +3359,18 @@ function submitThreadReply() {
   renderDiscussions();
   showToast('green', '💬', 'Risposta pubblicata con successo!');
   logActivity('blue', `<strong>${currentUser.name.split(' ')[0]}</strong> ha risposto in una discussione`);
+
+  // Persisti su GAS
+  if (GAS_URL && currentUser) {
+    try {
+      const url = `${GAS_URL}?action=add_reply` +
+        `&discId=${currentThreadId}&author=${encodeURIComponent(shortName)}` +
+        `&initial=${encodeURIComponent(currentUser.initial)}&role=${encodeURIComponent(currentUser.title)}` +
+        `&text=${encodeURIComponent(text)}&isTeam=${currentUser.role === 'team'}`;
+      await fetch(url);
+      saveCommunityCache();
+    } catch(e) { console.warn('[Reply] GAS error:', e.message); }
+  }
 }
 
 /* New Thread Modal */
@@ -3111,25 +3393,25 @@ function closeNewThreadModal() {
   document.getElementById('newThreadBodyInput').value = '';
 }
 
-function submitNewThread() {
+async function submitNewThread() {
   const title = document.getElementById('newThreadTitleInput').value.trim();
-  const body = document.getElementById('newThreadBodyInput').value.trim();
+  const body  = document.getElementById('newThreadBodyInput').value.trim();
   if (!title) { showToast('red', '⚠️', 'Inserisci un titolo per il thread.'); return; }
-  if (!body) { showToast('red', '⚠️', 'Inserisci il messaggio iniziale.'); return; }
+  if (!body)  { showToast('red', '⚠️', 'Inserisci il messaggio iniziale.'); return; }
 
   const activeChip = document.querySelector('#newThreadCategories .target-chip.active');
-  const cat = activeChip ? activeChip.dataset.cat : 'general';
+  const cat        = activeChip ? activeChip.dataset.cat : 'general';
+  const shortName  = currentUser.name.split(' ')[0] + ' ' + (currentUser.name.split(' ')[1]||'?')[0] + '.';
 
-  const newId = Date.now();
+  // Ottimistic: aggiungi subito in locale
+  const tempId = Date.now();
   DISCUSSIONS.unshift({
-    id: newId, category: cat, title,
-    author: currentUser.name.split(' ')[0] + ' ' + currentUser.name.split(' ')[1][0] + '.',
-    time: 'Ora', replies: 0, views: 1, pinned: false,
+    id: tempId, category: cat, title,
+    author: shortName, time: 'Ora', replies: 0, views: 1, pinned: false,
     lastReply: 'Nessuna risposta ancora'
   });
-  THREAD_MESSAGES[newId] = [{
-    author: currentUser.name.split(' ')[0] + ' ' + currentUser.name.split(' ')[1][0] + '.',
-    initial: currentUser.initial, role: currentUser.title,
+  THREAD_MESSAGES[tempId] = [{
+    author: shortName, initial: currentUser.initial, role: currentUser.title,
     isTeam: currentUser.role === 'team', time: 'Ora', text: body, isOp: true, reactions: []
   }];
 
@@ -3137,6 +3419,29 @@ function submitNewThread() {
   renderDiscussions();
   showToast('gold', '✏️', 'Thread pubblicato con successo!');
   logActivity('blue', `<strong>${currentUser.name.split(' ')[0]}</strong> ha avviato una nuova discussione`);
+
+  // Persisti su GAS
+  if (GAS_URL && currentUser) {
+    try {
+      const url = `${GAS_URL}?action=save_discussion` +
+        `&category=${encodeURIComponent(cat)}&title=${encodeURIComponent(title)}` +
+        `&body=${encodeURIComponent(body)}&author=${encodeURIComponent(shortName)}` +
+        `&initial=${encodeURIComponent(currentUser.initial)}&role=${encodeURIComponent(currentUser.title)}` +
+        `&isTeam=${currentUser.role === 'team'}`;
+      const data = await fetch(url).then(r => r.json());
+      if (data.success && data.discussion) {
+        // Sostituisci tempId con ID reale del server
+        const idx = DISCUSSIONS.findIndex(d => d.id === tempId);
+        if (idx !== -1) DISCUSSIONS[idx].id = data.discussion.id;
+        const msgs = THREAD_MESSAGES[tempId];
+        if (msgs) {
+          THREAD_MESSAGES[data.discussion.id] = msgs;
+          delete THREAD_MESSAGES[tempId];
+        }
+        saveCommunityCache();
+      }
+    } catch(e) { console.warn('[NewThread] GAS error:', e.message); }
+  }
 
   // Auto-open the new thread
   setTimeout(() => openThread(newId), 200);
@@ -3351,15 +3656,25 @@ function renderSurveys() {
   `).join('');
 }
 
-function voteSurvey(surveyId, optionIndex) {
+async function voteSurvey(surveyId, optionIndex) {
   const s = SURVEYS.find(s => s.id === surveyId);
   if (!s || s.voted) return;
-  s.voted = true;
+  // Ottimistic update
+  s.voted  = true;
   s.myVote = optionIndex;
   s.options[optionIndex].votes++;
   s.total++;
   renderSurveys();
   showToast('green', '✓', 'Voto registrato! Grazie per il tuo feedback.');
+  saveCommunityCache();
+
+  // Persisti su GAS
+  if (GAS_URL && currentUser) {
+    try {
+      const url = `${GAS_URL}?action=save_vote&surveyId=${surveyId}&optionIdx=${optionIndex}&userName=${encodeURIComponent(currentUser.name)}`;
+      await fetch(url);
+    } catch(e) { console.warn('[Vote] GAS error:', e.message); }
+  }
 }
 
 /* ═══════════════════════════════════════════
@@ -3673,28 +3988,61 @@ function toggleChipSingle(el, group) {
   el.closest('.broadcast-target').querySelectorAll('.target-chip').forEach(c => c.classList.remove('active'));
   el.classList.add('active');
 }
-function publishBroadcast() {
-  const title = document.getElementById('broadcastTitle').value.trim();
-  const content = document.getElementById('broadcastContent').value.trim();
+async function publishBroadcast() {
+  const titleEl   = document.getElementById('broadcastTitle');
+  const contentEl = document.getElementById('broadcastContent');
+  const title   = titleEl.value.trim();
+  const content = contentEl.value.trim();
   if (!title || !content) { showToast('red','⚠️','Compila tutti i campi obbligatori.'); return; }
-  
-  FEED_POSTS.unshift({
-    id: Date.now(), author: currentUser.name, initial: currentUser.initial,
-    role: currentUser.title, type: 'update', time: 'Ora',
-    title, text: content, likes: 0, comments: 0, liked: false, commentsData: []
-  });
+
+  // Determina tipo dal chip selezionato
+  const typeChip = document.querySelector('.broadcast-target .target-chip.active');
+  const typeMap  = { 'update':'update', 'exclusive':'exclusive', 'news':'news' };
+  const postType = typeChip ? (typeMap[typeChip.dataset.type] || 'update') : 'update';
+
+  const lockedChip = document.querySelector('.broadcast-target .target-chip[data-lock].active');
+  const locked     = lockedChip ? 'candidate' : '';
+
+  // Ottimistic: aggiungi subito in locale
+  const tempId = Date.now();
+  const newPost = {
+    id: tempId, author: currentUser.name, initial: currentUser.initial,
+    role: currentUser.title, type: postType, time: 'Ora',
+    title, text: content, locked, likes: 0, comments: 0, liked: false,
+    commentsData: [], likedBy: [], ts: new Date().toISOString()
+  };
+  FEED_POSTS.unshift(newPost);
   renderFeed();
+  renderFeedPreview();
+
   showToast('gold','📢','Comunicazione pubblicata con successo!');
   logActivity('gold', `<strong>${currentUser.name}</strong> ha pubblicato un aggiornamento`);
   showPanel('feed', document.querySelector('.nav-item'));
-  document.getElementById('broadcastTitle').value = '';
-  document.getElementById('broadcastContent').value = '';
+  titleEl.value   = '';
+  contentEl.value = '';
 
-  // Registra il post nel GAS per il conteggio dinamico degli aggiornamenti
+  // Persisti su GAS
   if (GAS_URL) {
-    fetch(`${GAS_URL}?action=record_feed_post`)
-      .then(() => loadDashboardStats()) // aggiorna i contatori
-      .catch(err => console.warn('[Broadcast] Impossibile registrare il post:', err.message));
+    try {
+      const url = `${GAS_URL}?action=publish_post` +
+        `&author=${encodeURIComponent(currentUser.name)}` +
+        `&initial=${encodeURIComponent(currentUser.initial)}` +
+        `&role=${encodeURIComponent(currentUser.title)}` +
+        `&type=${encodeURIComponent(postType)}` +
+        `&title=${encodeURIComponent(title)}` +
+        `&text=${encodeURIComponent(content)}` +
+        `&locked=${encodeURIComponent(locked)}`;
+      const data = await fetch(url).then(r => r.json());
+      if (data.success && data.post) {
+        // Aggiorna ID locale con quello reale dal server
+        const idx = FEED_POSTS.findIndex(p => p.id === tempId);
+        if (idx !== -1) FEED_POSTS[idx].id = data.post.id;
+        saveCommunityCache();
+        loadDashboardStats();
+      }
+    } catch(e) {
+      console.warn('[Broadcast] GAS error:', e.message);
+    }
   }
 }
 
