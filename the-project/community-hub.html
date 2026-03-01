@@ -2800,9 +2800,10 @@ async function initCommunityData() {
     });
   }
 
-  // 2. Fetch completo da GAS — include posts, discussions, presenza, eventi
+  // 2. Fetch completo da GAS — aspetta prima che il heartbeat sia registrato
   if (!GAS_URL) return;
   try {
+    await sendHeartbeat(); // assicura che il server ci conosca prima di chiedere chi è online
     const data = await fetch(`${GAS_URL}?action=get_community_data`).then(r => r.json());
     if (data.success) {
       applyRemoteData(data);
@@ -4452,6 +4453,21 @@ function applyPresenceData(onlineList) {
   if (!Array.isArray(onlineList)) return;
   ONLINE_MEMBERS.length = 0;
   onlineList.forEach(u => ONLINE_MEMBERS.push(u));
+
+  // Garanzia: l'utente corrente è sempre visibile nella propria lista
+  // (evita il flash quando GAS non ha ancora processato il heartbeat)
+  if (currentUser) {
+    const alreadyIn = ONLINE_MEMBERS.some(m => m.email === currentUser.email || m.name === currentUser.name);
+    if (!alreadyIn) {
+      ONLINE_MEMBERS.unshift({
+        name:    currentUser.name,
+        initial: currentUser.initial,
+        role:    currentUser.role,
+        email:   currentUser.email
+      });
+    }
+  }
+
   saveOnlineCache();
   renderRightPanel();
 
