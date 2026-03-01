@@ -1727,35 +1727,25 @@ body {
         <div class="grid-3 mb-2" id="dashStatsGrid">
           <div class="stat-card">
             <div class="stat-label">Membri Attivi</div>
-            <div class="stat-value" id="dashStatActiveMembers">
-              <span style="display:inline-block;width:2ch;height:1em;background:var(--dark5);border-radius:4px;animation:statPulse 1.2s ease infinite;"></span>
-            </div>
-            <div class="stat-change" id="dashStatMembersChange">
-              <span style="color:var(--muted2); font-size:0.65rem;">Caricamento…</span>
-            </div>
+            <div class="stat-value" id="dashStatActiveMembers">—</div>
+            <div class="stat-change neutral" id="dashStatMembersChange">Ultimi 30 giorni</div>
           </div>
           <div class="stat-card">
             <div class="stat-label">Aggiornamenti del Progetto</div>
-            <div class="stat-value" id="dashStatFeedUpdates">
-              <span style="display:inline-block;width:2ch;height:1em;background:var(--dark5);border-radius:4px;animation:statPulse 1.2s ease infinite;"></span>
-            </div>
+            <div class="stat-value" id="dashStatFeedUpdates">—</div>
             <div class="stat-change neutral">Ultimi 30 giorni</div>
           </div>
           <div class="stat-card admin-only">
             <div class="stat-label">Founding Members</div>
-            <div class="stat-value" id="dashStatFoundingCount">
-              <span style="display:inline-block;width:2ch;height:1em;background:var(--dark5);border-radius:4px;animation:statPulse 1.2s ease infinite;"></span>
-            </div>
+            <div class="stat-value" id="dashStatFoundingCount">—</div>
             <div class="stat-change up" id="dashStatFoundingChange">
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23,6 13.5,15.5 8.5,10.5 1,18"/><polyline points="17,6 23,6 23,12"/></svg>
-              In aggiornamento…
+              su 200 posti totali
             </div>
           </div>
           <div class="stat-card" id="candidateStatCard">
             <div class="stat-label">Posti Founding Member</div>
-            <div class="stat-value" id="dashStatRemainingSpots">
-              <span style="display:inline-block;width:2ch;height:1em;background:var(--dark5);border-radius:4px;animation:statPulse 1.2s ease infinite;"></span>
-            </div>
+            <div class="stat-value" id="dashStatRemainingSpots">—</div>
             <div class="stat-change neutral" id="dashStatRemainingLabel">Slot disponibili</div>
           </div>
         </div>
@@ -2071,7 +2061,7 @@ body {
       <div style="margin-top:0.3rem;">
         <div style="display:flex; justify-content:space-between; font-size:0.72rem; margin-bottom:0.35rem;"><span>Posti confermati</span><span class="text-gold" id="rpStatusBooked">— / 200</span></div>
         <div class="progress-bar-wrap"><div class="progress-bar-fill" id="rpStatusBar" style="width:0%;"></div></div>
-        <div style="font-size:0.65rem; color:var(--muted2); margin-top:0.4rem; line-height:1.5;" id="rpStatusRemaining">Caricamento…</div>
+        <div style="font-size:0.65rem; color:var(--muted2); margin-top:0.4rem; line-height:1.5;" id="rpStatusRemaining">—</div>
       </div>
     </div>
   </aside>
@@ -2410,6 +2400,12 @@ function logout() {
     mainAppEl.style.cssText = '';
     document.getElementById('loginGate').style.display = 'none';
     mainAppEl.classList.add('active');
+
+    // Precarica le statistiche dalla cache PRIMA che initApp esegua il rendering
+    // così le stat card mostrano valori reali immediatamente (zero latenza percepita)
+    const _cachedStats = loadStatsCache();
+    if (_cachedStats) applyDashboardStats(_cachedStats);
+
     // initApp verrà chiamato da DOMContentLoaded / window.onload
     // Lo chiamiamo dopo che il DOM è completamente pronto
     if (document.readyState === 'complete' || document.readyState === 'interactive') {
@@ -2496,7 +2492,7 @@ function initApp() {
   // Carica statistiche dinamiche e imposta aggiornamento automatico ogni 5 minuti
   loadDashboardStats();
   if (_dashStatsTimer) clearInterval(_dashStatsTimer);
-  _dashStatsTimer = setInterval(loadDashboardStats, 5 * 60 * 1000);
+  _dashStatsTimer = setInterval(loadDashboardStats, 60 * 1000); // ogni 60 secondi
 }
 
 /* ═══════════════════════════════════════════
@@ -2528,43 +2524,16 @@ function showPanel(id, navEl) {
   if (id === 'notifications') { notifCount = 0; updateNotifBadge(); }
   if (id === 'messages') { unreadMsgs = 0; updateMsgBadge(); }
   if (id === 'feed') { document.getElementById('feedBadge').classList.add('hidden'); }
+  if (id === 'dashboard') { renderActivityFeed(); renderFeedPreview(); loadDashboardStats(); }
 }
 
 /* ═══════════════════════════════════════════
    RENDER DASHBOARD
 ═══════════════════════════════════════════ */
 function renderDashboard() {
-  // Activity
-  const activities = [
-    { dot:'gold', text:'<strong>Lorenzo Ferretti</strong> ha pubblicato un aggiornamento', time:'2h' },
-    { dot:'green', text:'<strong>Sofia Romano</strong> ha commentato nel feed', time:'3h' },
-    { dot:'blue', text:'<strong>Alessandro Mori</strong> ha avviato una nuova discussione', time:'6h' },
-    { dot:'gold', text:'<strong>Nuovo listing</strong> aggiunto al portfolio Founding Members', time:'1g' },
-    { dot:'green', text:'<strong>Luca Fontana</strong> ha risposto al tuo commento', time:'1g' },
-  ];
-  const act = document.getElementById('dashActivity');
-  act.innerHTML = activities.map(a => `
-    <div class="activity-item">
-      <div class="activity-dot ${a.dot}"></div>
-      <div class="activity-text">${a.text}</div>
-      <div class="activity-time">${a.time}</div>
-    </div>
-  `).join('');
-
-  // Feed preview
-  const feedList = document.getElementById('dashFeedList');
-  feedList.innerHTML = FEED_POSTS.slice(0,3).map(p => `
-    <div style="display:flex; gap:0.6rem; padding:0.5rem 0; border-bottom:1px solid var(--border2); cursor:pointer;" onclick="showPanel('feed', null)">
-      <div style="font-size:0.7rem; letter-spacing:0.08em; text-transform:uppercase; padding:0.2rem 0.5rem; border-radius:10px; height:fit-content; flex-shrink:0;
-        ${p.type==='update' ? 'background:rgba(212,175,55,0.1);color:var(--gold)' : p.type==='exclusive' ? 'background:rgba(76,175,120,0.1);color:var(--green)' : 'background:rgba(91,142,212,0.1);color:var(--blue)'}">
-        ${p.type==='update'?'upd':p.type==='exclusive'?'excl':'news'}
-      </div>
-      <div style="min-width:0;">
-        <div style="font-size:0.78rem; color:var(--light); font-weight:500; line-height:1.4; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${p.title}</div>
-        <div style="font-size:0.65rem; color:var(--muted2); margin-top:2px;">${p.time}</div>
-      </div>
-    </div>
-  `).join('');
+  // Attività recente e feed preview — delegati a funzioni dinamiche
+  renderActivityFeed();
+  renderFeedPreview();
 
   // Founder status
   const fc = document.getElementById('founderStatusContent');
@@ -2608,28 +2577,71 @@ function renderDashboard() {
 }
 
 /* ═══════════════════════════════════════════
-   LOAD DASHBOARD STATS (dinamici da GAS)
+   STATS CACHE (localStorage — mostra valori immediati)
+═══════════════════════════════════════════ */
+const STATS_CACHE_KEY = 'lh360_stats_cache';
+const STATS_CACHE_TTL = 10 * 60 * 1000; // 10 minuti
+
+function saveStatsCache(data) {
+  try { localStorage.setItem(STATS_CACHE_KEY, JSON.stringify({ data, ts: Date.now() })); } catch(e) {}
+}
+
+function loadStatsCache() {
+  try {
+    const raw = localStorage.getItem(STATS_CACHE_KEY);
+    if (!raw) return null;
+    const obj = JSON.parse(raw);
+    if (Date.now() - obj.ts > STATS_CACHE_TTL) return null;
+    return obj.data;
+  } catch(e) { return null; }
+}
+
+/* ═══════════════════════════════════════════
+   LOAD DASHBOARD STATS (cache-first, GAS in background)
 ═══════════════════════════════════════════ */
 let _dashStatsTimer = null;
 
 async function loadDashboardStats() {
-  if (!GAS_URL || !currentUser) return;
+  if (!currentUser) return;
+
+  // 1. Mostra subito i valori dalla cache (nessun tempo di attesa visibile)
+  const cached = loadStatsCache();
+  if (cached) {
+    applyDashboardStats(cached);
+  } else {
+    // Prima visita assoluta: mostra stima client-side immediata
+    applyClientSideStats();
+  }
+
+  if (!GAS_URL) return;
+
+  // 2. Aggiorna in background da GAS — l'utente non vede il loading
   try {
     const url = `${GAS_URL}?action=get_dashboard_stats`;
     const resp = await fetch(url);
     if (!resp.ok) throw new Error('HTTP ' + resp.status);
     const data = await resp.json();
-    if (!data.success) throw new Error(data.error || 'Errore sconosciuto');
+    if (!data.success) throw new Error(data.error || 'Errore');
+    saveStatsCache(data);
     applyDashboardStats(data);
   } catch (err) {
-    console.warn('[Dashboard] Impossibile caricare le statistiche:', err.message);
-    // Fallback UI in caso di errore GAS
-    const setFallback = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
-    setFallback('dashStatActiveMembers', '—');
-    setFallback('dashStatFeedUpdates', '—');
-    setFallback('dashStatRemainingSpots', '—');
-    setFallback('dashStatFoundingCount', '—');
+    console.warn('[Stats] GAS non raggiungibile:', err.message);
+    // Cache ancora valida o stima client-side già mostrata — nessun errore visivo
   }
+}
+
+/* Stima client-side da dati in-memoria (primo accesso assoluto o GAS offline) */
+function applyClientSideStats() {
+  const teamPosts = FEED_POSTS.filter(p => p.role && p.role.toLowerCase().includes('team'));
+  applyDashboardStats({
+    active_members:        MEMBERS_DATA.length,
+    weekly_new:            0,
+    weekly_lost:           0,
+    feed_updates_30d:      teamPosts.length,
+    founding_member_count: 0,
+    remaining_spots:       200,
+    max_founders:          200
+  });
 }
 
 function applyDashboardStats(data) {
@@ -2691,9 +2703,126 @@ function applyDashboardStats(data) {
   if (rpRemaining) rpRemaining.textContent = `${remaining} posti ancora disponibili`;
 
   // ── Aggiorna Founder Status Card (per candidati) ──────────
-  if (currentUser && currentUser.role === 'candidate') {
-    renderDashboard(); // re-renders the founder status section with live remaining
+  // Aggiorna il campo "Posti Disponibili" nella founder status card senza re-render completo
+  const fsrEl = document.getElementById('founderStatusRemainingSpots');
+  if (fsrEl) fsrEl.textContent = `${remaining} rimasti`;
+}
+
+/* ═══════════════════════════════════════════
+   ACTIVITY LOG (localStorage-based)
+═══════════════════════════════════════════ */
+const ACTIVITY_LOG_KEY = 'lh360_activity_log';
+const ACTIVITY_MAX     = 100;
+const ACTIVITY_DAYS    = 14;
+
+function logActivity(dotColor, text) {
+  const entry = { dotColor, text, ts: Date.now() };
+  try {
+    const raw = localStorage.getItem(ACTIVITY_LOG_KEY);
+    let log = raw ? JSON.parse(raw) : [];
+    log.unshift(entry);
+    if (log.length > ACTIVITY_MAX) log = log.slice(0, ACTIVITY_MAX);
+    localStorage.setItem(ACTIVITY_LOG_KEY, JSON.stringify(log));
+  } catch(e) {}
+  // Aggiorna il feed se la dashboard è visibile
+  const dashPanel = document.getElementById('panel-dashboard');
+  if (dashPanel && dashPanel.classList.contains('active')) renderActivityFeed();
+}
+
+function formatTimeAgo(ts) {
+  const diff = Date.now() - ts;
+  const m = Math.floor(diff / 60000);
+  const h = Math.floor(diff / 3600000);
+  const d = Math.floor(diff / 86400000);
+  if (m < 1)  return 'Ora';
+  if (m < 60) return m + 'm';
+  if (h < 24) return h + 'h';
+  return d + 'g';
+}
+
+/* ═══════════════════════════════════════════
+   RENDER ATTIVITÀ RECENTE (dinamico)
+═══════════════════════════════════════════ */
+function renderActivityFeed() {
+  const act = document.getElementById('dashActivity');
+  if (!act) return;
+
+  const cutoff = Date.now() - ACTIVITY_DAYS * 24 * 60 * 60 * 1000;
+  let activities = [];
+
+  // Leggi dal log persistente
+  try {
+    const raw = localStorage.getItem(ACTIVITY_LOG_KEY);
+    if (raw) {
+      activities = JSON.parse(raw)
+        .filter(e => e.ts >= cutoff)
+        .slice(0, 5)
+        .map(e => ({ dot: e.dotColor, text: e.text, time: formatTimeAgo(e.ts) }));
+    }
+  } catch(e) {}
+
+  // Seed iniziale dai dati in-memoria se il log è vuoto (primo accesso)
+  if (activities.length === 0) {
+    const seeds = [];
+    // Team posts → attività "pubblicato aggiornamento"
+    FEED_POSTS
+      .filter(p => p.role && p.role.toLowerCase().includes('team'))
+      .slice(0, 3)
+      .forEach(p => seeds.push({ dot: 'gold', text: `<strong>${p.author}</strong> ha pubblicato un aggiornamento`, time: p.time }));
+    // Discussioni recenti
+    DISCUSSIONS.slice(0, 2).forEach(d =>
+      seeds.push({ dot: 'blue', text: `<strong>${d.author}</strong> ha avviato una discussione`, time: d.time })
+    );
+    activities = seeds.slice(0, 5);
   }
+
+  if (activities.length === 0) {
+    act.innerHTML = '<div style="font-size:0.75rem;color:var(--muted2);text-align:center;padding:1rem 0;">Nessuna attività recente.</div>';
+    return;
+  }
+
+  act.innerHTML = activities.map(a => `
+    <div class="activity-item">
+      <div class="activity-dot ${a.dot}"></div>
+      <div class="activity-text">${a.text}</div>
+      <div class="activity-time">${a.time}</div>
+    </div>
+  `).join('');
+}
+
+/* ═══════════════════════════════════════════
+   RENDER ULTIMI AGGIORNAMENTI (feed team-only, max 4)
+═══════════════════════════════════════════ */
+function renderFeedPreview() {
+  const feedList = document.getElementById('dashFeedList');
+  if (!feedList) return;
+
+  // Solo post del Team/Admin/Community Manager, max 4, ordine di inserimento (più recente = indice 0)
+  const teamPosts = FEED_POSTS
+    .filter(p => p.role && (
+      p.role.toLowerCase().includes('team') ||
+      p.role.toLowerCase().includes('admin') ||
+      p.role.toLowerCase().includes('community')
+    ))
+    .slice(0, 4);
+
+  if (teamPosts.length === 0) {
+    feedList.innerHTML = '<div style="font-size:0.75rem;color:var(--muted2);text-align:center;padding:1rem 0;">Nessun aggiornamento recente.</div>';
+    return;
+  }
+
+  feedList.innerHTML = teamPosts.map(p => `
+    <div style="display:flex; gap:0.6rem; padding:0.5rem 0; border-bottom:1px solid var(--border2); cursor:pointer;" onclick="showPanel('feed', null)">
+      <div style="font-size:0.7rem; letter-spacing:0.08em; text-transform:uppercase; padding:0.2rem 0.5rem; border-radius:10px; height:fit-content; flex-shrink:0;
+        ${p.type==='update' ? 'background:rgba(212,175,55,0.1);color:var(--gold)' : p.type==='exclusive' ? 'background:rgba(76,175,120,0.1);color:var(--green)' : 'background:rgba(91,142,212,0.1);color:var(--blue)'}">
+        ${p.type==='update'?'upd':p.type==='exclusive'?'excl':'news'}
+      </div>
+      <div style="min-width:0;">
+        <div style="font-size:0.78rem; color:var(--light); font-weight:500; line-height:1.4; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${p.title}</div>
+        <div style="font-size:0.65rem; color:var(--muted2); margin-top:2px;">${p.time}</div>
+      </div>
+    </div>
+  `).join('');
 }
 
 /* ═══════════════════════════════════════════
@@ -2796,6 +2925,7 @@ function submitCommentBtn(postId, inputEl) {
     renderFeed();
     document.getElementById('comments-' + postId).classList.add('open');
     showToast('green', '💬', 'Commento pubblicato!');
+    logActivity('green', `<strong>${currentUser.name.split(' ')[0]}</strong> ha commentato nel feed`);
   }
 }
 
@@ -2958,6 +3088,7 @@ function submitThreadReply() {
   renderThreadMessages(currentThreadId);
   renderDiscussions();
   showToast('green', '💬', 'Risposta pubblicata con successo!');
+  logActivity('blue', `<strong>${currentUser.name.split(' ')[0]}</strong> ha risposto in una discussione`);
 }
 
 /* New Thread Modal */
@@ -3005,6 +3136,7 @@ function submitNewThread() {
   closeNewThreadModal();
   renderDiscussions();
   showToast('gold', '✏️', 'Thread pubblicato con successo!');
+  logActivity('blue', `<strong>${currentUser.name.split(' ')[0]}</strong> ha avviato una nuova discussione`);
 
   // Auto-open the new thread
   setTimeout(() => openThread(newId), 200);
@@ -3443,6 +3575,7 @@ function promoteMember(name) {
     m.level = 'founding';
     renderMembersTable();
     showToast('gold', '⭐', `${name} promosso a Founding Member!`);
+    logActivity('gold', `<strong>${name}</strong> è diventato Founding Member`);
   }
 }
 
@@ -3552,6 +3685,7 @@ function publishBroadcast() {
   });
   renderFeed();
   showToast('gold','📢','Comunicazione pubblicata con successo!');
+  logActivity('gold', `<strong>${currentUser.name}</strong> ha pubblicato un aggiornamento`);
   showPanel('feed', document.querySelector('.nav-item'));
   document.getElementById('broadcastTitle').value = '';
   document.getElementById('broadcastContent').value = '';
