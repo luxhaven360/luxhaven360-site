@@ -2647,6 +2647,7 @@ function renderDashboard() {
 const COMMUNITY_CACHE_KEY  = 'lh360_community_v3';
 const COMMUNITY_CACHE_TTL  = 5 * 60 * 1000; // 5 minuti (solo per posts/discussions)
 const EVENTS_CACHE_KEY     = 'lh360_events_v1'; // cache eventi separata, senza TTL
+const ONLINE_CACHE_KEY     = 'lh360_online_v1'; // cache membri online, TTL breve (60s)
 let _communityPollTimer    = null;
 
 function saveCommunityCache() {
@@ -2674,6 +2675,20 @@ function loadEventsCache() {
     const raw = localStorage.getItem(EVENTS_CACHE_KEY);
     if (!raw) return null;
     return JSON.parse(raw).events || null;
+  } catch(e) { return null; }
+}
+
+function saveOnlineCache() {
+  try { localStorage.setItem(ONLINE_CACHE_KEY, JSON.stringify({ ts: Date.now(), members: ONLINE_MEMBERS })); } catch(e) {}
+}
+
+function loadOnlineCache() {
+  try {
+    const raw = localStorage.getItem(ONLINE_CACHE_KEY);
+    if (!raw) return null;
+    const obj = JSON.parse(raw);
+    if (Date.now() - obj.ts > 60 * 1000) return null; // scade dopo 60s
+    return obj.members || null;
   } catch(e) { return null; }
 }
 
@@ -2767,7 +2782,13 @@ async function initCommunityData() {
     applyEventsData(cachedEvents);
   }
 
-  // 1b. Applica cache community (posts, discussions, ecc.)
+  // 1b. Carica membri online dalla cache SUBITO (TTL 60s)
+  const cachedOnline = loadOnlineCache();
+  if (cachedOnline && cachedOnline.length > 0) {
+    applyPresenceData(cachedOnline);
+  }
+
+  // 1c. Applica cache community (posts, discussions, ecc.)
   const cache = loadCommunityCache();
   if (cache) {
     applyRemoteData({
@@ -2787,6 +2808,13 @@ async function initCommunityData() {
       applyRemoteData(data);
       if (Array.isArray(data.online)) applyPresenceData(data.online);
       if (Array.isArray(data.events)) { applyEventsData(data.events); saveEventsCache(); }
+    }
+  } catch(e) {
+    console.warn('[CommunityData] GAS non raggiungibile:', e.message);
+    renderRightPanel();
+  }
+
+  // 3. Polling real-time ogni 5 secondi
   if (_communityPollTimer) clearInterval(_communityPollTimer);
   _communityPollTimer = setInterval(pollCommunityUpdates, 5 * 1000);
 }
@@ -4424,6 +4452,7 @@ function applyPresenceData(onlineList) {
   if (!Array.isArray(onlineList)) return;
   ONLINE_MEMBERS.length = 0;
   onlineList.forEach(u => ONLINE_MEMBERS.push(u));
+  saveOnlineCache();
   renderRightPanel();
 
   // Aggiorna anche il contatore nella dashboard
