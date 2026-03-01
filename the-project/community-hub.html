@@ -2282,6 +2282,7 @@ let ONLINE_MEMBERS = [];
 
 // Eventi community — popolati da GAS (nessun dato statico)
 let EVENTS = [];
+let _pendingLocalEvents = []; // eventi creati localmente non ancora confermati da GAS
 
 /* ═══════════════════════════════════════════
    SESSION MANAGEMENT
@@ -4423,6 +4424,17 @@ function applyEventsData(eventsList) {
   const _snapshot = [...eventsList]; // snapshot prima di svuotare, evita bug self-reference
   EVENTS.length = 0;
   _snapshot.forEach(e => EVENTS.push(e));
+
+  // Re-inietta gli eventi pendenti locali che il server non conosce ancora
+  if (_pendingLocalEvents.length > 0) {
+    const serverIds = new Set(_snapshot.map(e => e._localId || e.id));
+    _pendingLocalEvents = _pendingLocalEvents.filter(pe => {
+      if (serverIds.has(pe._localId)) return false; // il server lo ha già → rimuovi dal pending
+      EVENTS.push(pe); // ancora non sul server → mantienilo visibile
+      return true;
+    });
+    EVENTS.sort((a, b) => new Date(a.dateIso) - new Date(b.dateIso));
+  }
   renderRightPanel();
 
   // Aggiorna anche la label "In Diretta" nell'header
@@ -4496,6 +4508,8 @@ async function createEventUI() {
   if (!dateVal) { showToast('red','⚠️','La data è obbligatoria.'); return; }
   const dateIso = new Date(dateVal).toISOString();
 
+  const _localId = 'local_' + Date.now();
+
   if (GAS_URL) {
     try {
       const r = await fetch(`${GAS_URL}?action=save_event` +
@@ -4503,6 +4517,8 @@ async function createEventUI() {
         `&timeStr=${encodeURIComponent(timeStr)}&meta=${encodeURIComponent(meta)}`);
       const d = await r.json();
       if (d.success && d.event) {
+        // Rimuovi l'eventuale pending locale corrispondente
+        _pendingLocalEvents = _pendingLocalEvents.filter(pe => pe._localId !== _localId);
         EVENTS.push(d.event);
         EVENTS.sort((a,b) => new Date(a.dateIso) - new Date(b.dateIso));
         applyEventsData(EVENTS);
@@ -4511,18 +4527,23 @@ async function createEventUI() {
           .forEach(id => { const el=document.getElementById(id); if(el) el.value=''; });
         showToast('gold','📅','Evento creato con successo!');
         return;
+      } else {
+        showToast('red','⚠️', 'GAS error: ' + (d.error || 'risposta inattesa'));
       }
-    } catch(_e) {}
+    } catch(_e) {
+      showToast('amber','⚠️','GAS non raggiungibile: ' + _e.message);
+    }
   }
-  // Fallback locale
-  const newEvt = { id: Date.now(), title, dateIso, timeStr, meta, accessLevel:'all', isLive:false, createdAt:new Date().toISOString() };
+  // Fallback locale: l'evento viene tracciato come pending finché GAS non lo conferma
+  const newEvt = { _localId, id: Date.now(), title, dateIso, timeStr, meta, accessLevel:'all', isLive:false, createdAt:new Date().toISOString() };
+  _pendingLocalEvents.push(newEvt);
   EVENTS.push(newEvt);
   EVENTS.sort((a,b) => new Date(a.dateIso) - new Date(b.dateIso));
   applyEventsData(EVENTS);
   renderEventsAdminList();
   ['eventTitleInput','eventDateInput','eventTimeStrInput','eventMetaInput']
     .forEach(id => { const el=document.getElementById(id); if(el) el.value=''; });
-  showToast('amber','📅','Evento creato localmente.');
+  showToast('amber','📅','Evento salvato localmente (GAS non raggiungibile — non persisterà al refresh).');
 }
 
 function renderEventsAdminList() {
