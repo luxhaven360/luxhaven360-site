@@ -2644,9 +2644,10 @@ function renderDashboard() {
 /* ═══════════════════════════════════════════
    COMMUNITY DATA — CACHE + GAS SYNC
 ═══════════════════════════════════════════ */
-const COMMUNITY_CACHE_KEY = 'lh360_community_v3';
-const COMMUNITY_CACHE_TTL = 5 * 60 * 1000; // 5 minuti
-let _communityPollTimer   = null;
+const COMMUNITY_CACHE_KEY  = 'lh360_community_v3';
+const COMMUNITY_CACHE_TTL  = 5 * 60 * 1000; // 5 minuti (solo per posts/discussions)
+const EVENTS_CACHE_KEY     = 'lh360_events_v1'; // cache eventi separata, senza TTL
+let _communityPollTimer    = null;
 
 function saveCommunityCache() {
   try {
@@ -2659,6 +2660,21 @@ function saveCommunityCache() {
       listings:     LISTINGS
     }));
   } catch(e) {}
+}
+
+/* Salva gli eventi in una cache dedicata senza TTL — devono essere sempre disponibili */
+function saveEventsCache() {
+  try {
+    localStorage.setItem(EVENTS_CACHE_KEY, JSON.stringify({ events: EVENTS }));
+  } catch(e) {}
+}
+
+function loadEventsCache() {
+  try {
+    const raw = localStorage.getItem(EVENTS_CACHE_KEY);
+    if (!raw) return null;
+    return JSON.parse(raw).events || null;
+  } catch(e) { return null; }
 }
 
 function loadCommunityCache() {
@@ -2745,7 +2761,13 @@ function applyRemoteData(data) {
 async function initCommunityData() {
   if (!currentUser) return;
 
-  // 1. Applica cache subito (rendering immediato, nessuna latenza)
+  // 1a. Carica eventi dalla cache dedicata SUBITO — rendering immediato senza latenza
+  const cachedEvents = loadEventsCache();
+  if (cachedEvents && cachedEvents.length > 0) {
+    applyEventsData(cachedEvents);
+  }
+
+  // 1b. Applica cache community (posts, discussions, ecc.)
   const cache = loadCommunityCache();
   if (cache) {
     applyRemoteData({
@@ -2763,40 +2785,26 @@ async function initCommunityData() {
     const data = await fetch(`${GAS_URL}?action=get_community_data`).then(r => r.json());
     if (data.success) {
       applyRemoteData(data);
-      // Presenza: aggiorna lista membri online immediatamente
       if (Array.isArray(data.online)) applyPresenceData(data.online);
-      // Eventi: aggiorna prossimi eventi e label Live immediatamente
-      if (Array.isArray(data.events)) applyEventsData(data.events);
-    }
-  } catch(e) {
-    console.warn('[CommunityData] GAS non raggiungibile:', e.message);
-    // Mostra il pannello con stato vuoto (non dati simulati)
-    renderRightPanel();
-  }
-
-  // 3. Avvia polling per aggiornamenti in tempo reale (ogni 30 secondi)
+      if (Array.isArray(data.events)) { applyEventsData(data.events); saveEventsCache(); }
   if (_communityPollTimer) clearInterval(_communityPollTimer);
-  _communityPollTimer = setInterval(pollCommunityUpdates, 30 * 1000);
+  _communityPollTimer = setInterval(pollCommunityUpdates, 5 * 1000);
 }
 
 /* Polling leggero: solo metadati per evitare render inutili */
+let _pollCycle = 0;
 async function pollCommunityUpdates() {
   if (!GAS_URL || !currentUser) return;
+  _pollCycle++;
   try {
     const data = await fetch(`${GAS_URL}?action=get_community_data`).then(r => r.json());
     if (data.success) {
-      applyRemoteData(data);
       // Presenza real-time: aggiorna lista membri online
-      if (Array.isArray(data.online)) {
-        applyPresenceData(data.online);
-      }
-      // Eventi: aggiorna prossimi eventi e label Live
-      if (Array.isArray(data.events)) {
-        applyEventsData(data.events);
-      }
+      if (Array.isArray(data.online)) applyPresenceData(data.online);
+      // Eventi: aggiorna e persisti in cache — ogni ciclo (5s)
+      if (Array.isArray(data.events)) applyEventsData(data.events);
       // Notifiche in tempo reale
       if (Array.isArray(data.notifications)) {
-        const prevCount = NOTIFICATIONS.length;
         NOTIFICATIONS.length = 0;
         data.notifications.forEach(n => NOTIFICATIONS.push(n));
         notifCount = NOTIFICATIONS.filter(n => n.unread).length;
@@ -2805,9 +2813,11 @@ async function pollCommunityUpdates() {
         const notifPanel = document.getElementById('panel-notifications');
         if (notifPanel && notifPanel.classList.contains('active')) renderNotifications();
       }
+      // Ogni 3 cicli (≈15s): aggiorna anche posts/discussions (più pesante)
+      if (_pollCycle % 3 === 0) applyRemoteData(data);
     }
   } catch(e) {}
-  // Aggiorna statistiche dashboard in tempo reale
+  // Statistiche dashboard
   try {
     const resp = await fetch(`${GAS_URL}?action=get_dashboard_stats`);
     if (resp.ok) {
@@ -4444,6 +4454,9 @@ function applyEventsData(eventsList) {
   const hasLive = EVENTS.some(e => e.isLive);
   const headerLive = document.getElementById('headerLiveIndicator');
   if (headerLive) headerLive.style.display = hasLive ? 'flex' : 'none';
+
+  // Persisti gli eventi in cache locale per rendering immediato al prossimo caricamento
+  saveEventsCache();
 }
 
 /* Inizia la presenza: heartbeat immediato + timer */
