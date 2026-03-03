@@ -2370,6 +2370,9 @@ Object.defineProperty(window, '_fbReady', { get: () => _sbReady });
   }
 })();
 
+/* ── Helper: converte query Supabase in Promise reale (supporta .catch) ── */
+function sbQuery(q) { return Promise.resolve(q); }
+
 /* ── Canali Supabase attivi (per cleanup) ── */
 let _sbChannels = {}; // { key: RealtimeChannel }
 
@@ -4527,7 +4530,7 @@ function sendTypingStatus(isTyping) {
         user_email: currentUser.email.toLowerCase(),
         is_typing:  true,
         updated_at: new Date().toISOString()
-      }, { onConflict: 'conv_id,user_email' }).catch(()=>{});
+      }, { onConflict: 'conv_id,user_email' }).then(null, ()=>{});
       // Auto-rimuovi dopo 5s di inattività
       if (_typingTimer) clearTimeout(_typingTimer);
       _typingTimer = setTimeout(() => {
@@ -4536,7 +4539,7 @@ function sendTypingStatus(isTyping) {
           user_email: currentUser.email.toLowerCase(),
           is_typing:  false,
           updated_at: new Date().toISOString()
-        }, { onConflict: 'conv_id,user_email' }).catch(()=>{});
+        }, { onConflict: 'conv_id,user_email' }).then(null, ()=>{});
       }, 5000);
     } else {
       _sb.from('typing').upsert({
@@ -4544,7 +4547,7 @@ function sendTypingStatus(isTyping) {
         user_email: currentUser.email.toLowerCase(),
         is_typing:  false,
         updated_at: new Date().toISOString()
-      }, { onConflict: 'conv_id,user_email' }).catch(()=>{});
+      }, { onConflict: 'conv_id,user_email' }).then(null, ()=>{});
     }
   } else {
     // Fallback GAS
@@ -4567,7 +4570,7 @@ function clearTypingStatus() {
       user_email: currentUser.email.toLowerCase(),
       is_typing:  false,
       updated_at: new Date().toISOString()
-    }, { onConflict: 'conv_id,user_email' }).catch(()=>{});
+    }, { onConflict: 'conv_id,user_email' }).then(null, ()=>{});
   } else {
     fetch(`${GAS_URL}?action=set_typing&email=${encodeURIComponent(currentUser.email)}&otherEmail=${encodeURIComponent(currentConvPartnerEmail)}&isTyping=false`).catch(()=>{});
   }
@@ -4610,16 +4613,15 @@ async function deleteMyHistory() {
       for (const m of msgs) {
         const df = m.deleted_for || [];
         if (!df.includes(currentUser.email.toLowerCase())) {
-          await _sb.from('messages').update({ deleted_for: [...df, currentUser.email.toLowerCase()] }).eq('id', m.id).catch(()=>{});
+          await Promise.resolve(_sb.from('messages').update({ deleted_for: [...df, currentUser.email.toLowerCase()] }).eq('id', m.id)).catch(()=>{});
         }
       }
     }
     // Rimuovi la conv dal proprio record
-    await _sb.from('conversations')
+    await Promise.resolve(_sb.from('conversations')
       .delete()
       .eq('conv_id', cid)
-      .eq('user_email', currentUser.email.toLowerCase())
-      .catch(()=>{});
+      .eq('user_email', currentUser.email.toLowerCase())).catch(()=>{});
   }
 
   if (!GAS_URL) {
