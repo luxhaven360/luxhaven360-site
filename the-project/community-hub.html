@@ -1720,7 +1720,7 @@ body {
         Discussioni
         <span class="nav-badge hidden" id="discBadge">0</span>
       </div>
-      <div class="nav-item" onclick="showPanel('messages', this)">
+      <div class="nav-item" data-panel="messages" onclick="showPanel('messages', this)">
         <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
         Messaggi
         <span class="nav-badge hidden" id="msgBadge">0</span>
@@ -3864,8 +3864,20 @@ function escapeHtml(str) {
 async function sendMessage() {
   const input = document.getElementById('chatInput');
   const text = (input?.value || '').trim();
-  if (!text || !currentConvPartnerEmail || !currentUser) return;
 
+  // Debug: controlla stato prima di procedere
+  if (!text) return;
+  if (!currentUser) {
+    showToast('red', '⚠️', 'Sessione scaduta. Ricarica la pagina.');
+    return;
+  }
+  if (!currentConvPartnerEmail) {
+    showToast('red', '⚠️', 'Nessuna conversazione aperta.');
+    return;
+  }
+
+  const sendBtn = document.querySelector('.chat-send-btn');
+  if (sendBtn) { sendBtn.disabled = true; sendBtn.style.opacity = '0.5'; }
   input.value = '';
   clearTypingStatus();
 
@@ -3882,7 +3894,6 @@ async function sendMessage() {
     deletedFor: []
   };
 
-  // Inserisci nell'UI immediatamente
   appendMessageToChat(tempMsg, true);
 
   // Aggiorna conv list preview
@@ -3906,7 +3917,10 @@ async function sendMessage() {
   renderConversations();
 
   // Persisti su GAS
-  if (!GAS_URL) return;
+  if (!GAS_URL) {
+    if (sendBtn) { sendBtn.disabled = false; sendBtn.style.opacity = ''; }
+    return;
+  }
   try {
     const resp = await fetch(`${GAS_URL}?action=send_message` +
       `&senderEmail=${encodeURIComponent(currentUser.email)}&recipientEmail=${encodeURIComponent(currentConvPartnerEmail)}` +
@@ -3916,10 +3930,17 @@ async function sendMessage() {
       `&recipientRole=${encodeURIComponent(partnerInfo.role||'')}`);
     const data = await resp.json();
     if (data.success && data.message) {
-      // Aggiorna id del messaggio ottimistico
       _msgLastSeen[currentConvPartnerEmail] = data.message.id;
+    } else if (!data.success) {
+      console.error('[Messages] GAS error:', data.error);
+      showToast('red', '⚠️', 'Errore invio: ' + (data.error || 'sconosciuto'));
     }
-  } catch(e) { console.warn('[Messages] send error:', e.message); }
+  } catch(e) {
+    console.error('[Messages] send error:', e.message);
+    showToast('red', '⚠️', 'Errore di rete nell'invio del messaggio.');
+  } finally {
+    if (sendBtn) { sendBtn.disabled = false; sendBtn.style.opacity = ''; }
+  }
 }
 
 /* ── Aggiungi singolo messaggio alla chat (senza re-render completo) ── */
