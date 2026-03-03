@@ -1948,8 +1948,8 @@ body {
         <div class="status-dot"></div>
       </div>
       <div class="user-info-sm">
-        <div class="user-name-sm" id="sidebarName">—</div>
-        <div class="user-role-sm" id="sidebarRole">—</div>
+        <div class="user-name-sm" id="sidebarName"></div>
+        <div class="user-role-sm" id="sidebarRole"></div>
       </div>
       <svg class="user-chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9,18 15,12 9,6"/></svg>
     </div>
@@ -1965,7 +1965,7 @@ body {
       <input type="text" placeholder="Cerca nella Community…" id="globalSearch"/>
     </div>
     <div class="header-actions">
-      <div class="level-badge" id="headerBadge">—</div>
+      <div class="level-badge" id="headerBadge"></div>
       <div style="position:relative">
         <button class="header-btn" id="notifBell" onclick="toggleNotifDropdown()">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg>
@@ -1997,7 +1997,7 @@ body {
             <div class="section-desc" id="dashSubtitle">Panoramica della tua Community LuxHaven360</div>
           </div>
           <div style="display:flex; gap:0.5rem; align-items:center;">
-            <div style="font-size:0.68rem; color:var(--muted2);" id="lastLoginTime">—</div>
+            <div style="font-size:0.68rem; color:var(--muted2);" id="lastLoginTime"></div>
           </div>
         </div>
 
@@ -2005,17 +2005,17 @@ body {
         <div class="grid-3 mb-2" id="dashStatsGrid">
           <div class="stat-card">
             <div class="stat-label">Membri Attivi</div>
-            <div class="stat-value" id="dashStatActiveMembers">—</div>
+            <div class="stat-value" id="dashStatActiveMembers"></div>
             <div class="stat-change neutral" id="dashStatMembersChange">Ultimi 30 giorni</div>
           </div>
           <div class="stat-card">
             <div class="stat-label">Aggiornamenti del Progetto</div>
-            <div class="stat-value" id="dashStatFeedUpdates">—</div>
+            <div class="stat-value" id="dashStatFeedUpdates"></div>
             <div class="stat-change neutral">Ultimi 30 giorni</div>
           </div>
           <div class="stat-card admin-only">
             <div class="stat-label">Founding Members</div>
-            <div class="stat-value" id="dashStatFoundingCount">—</div>
+            <div class="stat-value" id="dashStatFoundingCount"></div>
             <div class="stat-change up" id="dashStatFoundingChange">
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23,6 13.5,15.5 8.5,10.5 1,18"/><polyline points="17,6 23,6 23,12"/></svg>
               su 200 posti totali
@@ -2023,7 +2023,7 @@ body {
           </div>
           <div class="stat-card" id="candidateStatCard">
             <div class="stat-label">Posti Founding Member</div>
-            <div class="stat-value" id="dashStatRemainingSpots">—</div>
+            <div class="stat-value" id="dashStatRemainingSpots"></div>
             <div class="stat-change neutral" id="dashStatRemainingLabel">Slot disponibili</div>
           </div>
         </div>
@@ -2410,9 +2410,9 @@ body {
     <div class="rp-section">
       <div class="rp-title">Stato Progetto</div>
       <div style="margin-top:0.3rem;">
-        <div style="display:flex; justify-content:space-between; font-size:0.72rem; margin-bottom:0.35rem;"><span>Posti confermati</span><span class="text-gold" id="rpStatusBooked">— / 200</span></div>
+        <div style="display:flex; justify-content:space-between; font-size:0.72rem; margin-bottom:0.35rem;"><span>Posti confermati</span><span class="text-gold" id="rpStatusBooked">0 / 200</span></div>
         <div class="progress-bar-wrap"><div class="progress-bar-fill" id="rpStatusBar" style="width:0%;"></div></div>
-        <div style="font-size:0.65rem; color:var(--muted2); margin-top:0.4rem; line-height:1.5;" id="rpStatusRemaining">—</div>
+        <div style="font-size:0.65rem; color:var(--muted2); margin-top:0.4rem; line-height:1.5;" id="rpStatusRemaining">200 posti ancora disponibili</div>
       </div>
     </div>
   </aside>
@@ -2686,6 +2686,11 @@ async function doLogin() {
 
       document.documentElement.classList.remove('no-session');
       const mainAppEl = document.getElementById('mainApp');
+      // Pre-render sincrono prima di mostrare l'app
+      const freshStats = loadStatsCache();
+      if (freshStats) applyDashboardStats(freshStats);
+      _applyUserUI();
+      _preRenderAllPanels();
       mainAppEl.style.cssText = '';
       document.getElementById('loginGate').style.display = 'none';
       mainAppEl.classList.add('active');
@@ -2720,119 +2725,143 @@ function logout() {
 /* ═══════════════════════════════════════════
    AUTO-AUTH CHECK (eseguito al caricamento)
 ═══════════════════════════════════════════ */
-(async function checkSessionOnLoad() {
+/* ═══════════════════════════════════════════
+   AUTO-AUTH CHECK — ZERO LATENZA
+   Strategia: TUTTO viene pre-renderizzato in modo sincrono
+   dalla cache PRIMA che #mainApp diventi visibile.
+   L'utente non vede mai placeholder o dati mancanti.
+   NOTA: usiamo stringhe hardcoded per le chiavi localStorage
+   perché le const dei cache-key sono definite più avanti nel file.
+═══════════════════════════════════════════ */
+(function checkSessionOnLoad() {
   const saved = loadSession();
-  if (!saved) return; // nessuna sessione: login gate già visibile
+  if (!saved) return;
 
   currentUser = saved;
   document.documentElement.classList.remove('no-session');
+
+  // ══════════════════════════════════════════════════════
+  //  PRE-RENDER SINCRONO — tutto dalla cache locale
+  //  Eseguito PRIMA di rendere visibile #mainApp
+  // ══════════════════════════════════════════════════════
+
+  // Helper locale — legge direttamente localStorage con chiave hardcoded
+  function _readCache(key) {
+    try { const r = localStorage.getItem(key); return r ? JSON.parse(r) : null; } catch(e) { return null; }
+  }
+
+  // 1. Stats dashboard
+  const statsCached = _readCache('lh360_stats_cache');
+  if (statsCached && statsCached.data) applyDashboardStats(statsCached.data);
+
+  // 2. Community data (posts, discussions, listings, surveys)
+  const comCached = _readCache('lh360_community_v3');
+  if (comCached) {
+    if (Array.isArray(comCached.posts))       FEED_POSTS      = comCached.posts;
+    if (Array.isArray(comCached.discussions)) DISCUSSIONS     = comCached.discussions;
+    if (comCached.threadMsgs)                 THREAD_MESSAGES = comCached.threadMsgs;
+    if (Array.isArray(comCached.listings))    LISTINGS        = comCached.listings;
+    if (Array.isArray(comCached.surveys))     SURVEYS         = comCached.surveys;
+  }
+
+  // 3. Eventi
+  const evCached = _readCache('lh360_events_v1');
+  if (evCached && Array.isArray(evCached.events)) EVENTS = [...evCached.events];
+
+  // 4. Membri online
+  const onCached = _readCache('lh360_online_v1');
+  if (onCached && Array.isArray(onCached.members)) ONLINE_MEMBERS = [...onCached.members];
+
+  // 5. Conversazioni
+  const cvCached = _readCache('lh360_convs_v2');
+  if (cvCached && Array.isArray(cvCached.convs) && cvCached.email === currentUser.email) {
+    REAL_CONVS = [...cvCached.convs];
+  }
+
+  // 6. Applica UI utente e pre-render TUTTI i pannelli prima di mostrare l'app
+  _applyUserUI();
+  _preRenderAllPanels();
+
+  // ══════════════════════════════════════════════════════
+  //  MOSTRA L'APP — già completamente popolata, zero flash
+  // ══════════════════════════════════════════════════════
   const mainAppEl = document.getElementById('mainApp');
   mainAppEl.style.cssText = '';
   document.getElementById('loginGate').style.display = 'none';
   mainAppEl.classList.add('active');
 
-  // ── Strategia stats zero-latency ────────────────────────────────────────
-  // CASO A: Cache presente (utente di ritorno) → applica subito, zero latenza.
-  // CASO B: Cache assente (localStorage svuotato / primo accesso) →
-  //         fetch sincrono GAS PRIMA di chiamare initApp, così le card
-  //         mostrano i valori reali al primo render. Mai "—".
-  const cachedStats = loadStatsCache();
-  if (cachedStats) {
-    // Applica immediatamente: valori reali visibili dal primo frame
-    applyDashboardStats(cachedStats);
-    // initApp NON aspetta — può partire subito
-    if (document.readyState === 'complete' || document.readyState === 'interactive') {
-      initApp();
-    } else {
-      document.addEventListener('DOMContentLoaded', initApp);
-    }
+  // ══════════════════════════════════════════════════════
+  //  AVVIA BACKGROUND SYNC (GAS + Supabase)
+  //  L'utente vede già i dati — gli aggiornamenti arrivano in silenzio
+  // ══════════════════════════════════════════════════════
+  if (document.readyState === 'complete' || document.readyState === 'interactive') {
+    initApp();
   } else {
-    // Nessuna cache: fetch real-time PRIMA di mostrare la dashboard
-    if (typeof GAS_URL !== 'undefined' && GAS_URL && !GAS_URL.includes('YOUR_GAS')) {
-      try {
-        const r = await fetch(`${GAS_URL}?action=get_dashboard_stats`);
-        if (r.ok) {
-          const d = await r.json();
-          if (d && d.success) {
-            saveStatsCache(d);
-            applyDashboardStats(d);
-          }
-        }
-      } catch (_e) { /* GAS non raggiungibile: le card rimarranno con —, ma è raro */ }
-    }
-    // Avvia l'app dopo il fetch (o subito se GAS non configurato)
-    if (document.readyState === 'complete' || document.readyState === 'interactive') {
-      initApp();
-    } else {
-      document.addEventListener('DOMContentLoaded', initApp);
-    }
+    document.addEventListener('DOMContentLoaded', initApp);
   }
 })();
 
-/* ═══════════════════════════════════════════
-   INIT APP
-═══════════════════════════════════════════ */
-function initApp() {
-  // ── Cache bust: rimuovi tutte le versioni precedenti della cache community ──
-  // Questo garantisce che dati statici vecchi non vengano mai caricati dal browser
-  // Rimuovi tutte le versioni precedenti di cache (community + stats)
-  ['lh360_community_v1', 'lh360_community_v2'].forEach(k => {
-    try { localStorage.removeItem(k); } catch(e) {}
-  });
-
+/* ── Applica UI utente (sidebar, badge, welcome) ── */
+function _applyUserUI() {
+  if (!currentUser) return;
   const role = currentUser.role;
-  
-  // Apply role class to sidebar
-  const sidebar = document.getElementById('sidebar');
-  sidebar.className = `role-${role === 'team' ? 'team' : role === 'founding' ? 'founding' : 'candidate'}`;
 
-  // Update sidebar user
+  // Sidebar avatar + nome + ruolo
   const av = document.getElementById('sidebarAvatar');
-  av.textContent = currentUser.initial;
-  const statusDot = document.createElement('div');
-  statusDot.className = 'status-dot';
-  av.appendChild(statusDot);
-  document.getElementById('sidebarName').textContent = currentUser.name;
-  const roleEl = document.getElementById('sidebarRole');
-  roleEl.textContent = currentUser.title;
-  roleEl.className = 'user-role-sm ' + (role === 'team' ? 'gold' : role === 'founding' ? 'green' : 'amber');
+  if (av) {
+    av.textContent = currentUser.initial;
+    if (!av.querySelector('.status-dot')) {
+      const dot = document.createElement('div');
+      dot.className = 'status-dot';
+      av.appendChild(dot);
+    }
+  }
+  const snEl = document.getElementById('sidebarName');
+  if (snEl) snEl.textContent = currentUser.name;
+  const srEl = document.getElementById('sidebarRole');
+  if (srEl) {
+    srEl.textContent = currentUser.title;
+    srEl.className = 'user-role-sm ' + (role === 'team' ? 'gold' : role === 'founding' ? 'green' : 'amber');
+  }
 
   // Header badge
   const badge = document.getElementById('headerBadge');
-  if (role === 'team') {
-    badge.textContent = '⬡ Team LuxHaven360';
-    badge.className = 'level-badge team';
-  } else if (role === 'founding') {
-    badge.textContent = '★ Founding Member';
-    badge.className = 'level-badge founding';
-  } else {
-    badge.textContent = '◈ Founder Candidate';
-    badge.className = 'level-badge candidate';
+  if (badge) {
+    if (role === 'team')     { badge.textContent = '⬡ Team LuxHaven360'; badge.className = 'level-badge team'; }
+    else if (role === 'founding') { badge.textContent = '★ Founding Member'; badge.className = 'level-badge founding'; }
+    else                     { badge.textContent = '◈ Founder Candidate'; badge.className = 'level-badge candidate'; }
   }
 
-  // Show/hide listings nav items
+  // Welcome text
+  const wEl = document.getElementById('dashWelcome');
+  if (wEl) wEl.textContent = `Benvenuto, ${currentUser.name.split(' ')[0]}`;
+
+  // Orario accesso
+  const now = new Date();
+  const ltEl = document.getElementById('lastLoginTime');
+  if (ltEl) ltEl.textContent = `Accesso: ${now.getHours()}:${String(now.getMinutes()).padStart(2,'0')}`;
+
+  // Sidebar role class
+  const sidebar = document.getElementById('sidebar');
+  if (sidebar) sidebar.className = `role-${role === 'team' ? 'team' : role === 'founding' ? 'founding' : 'candidate'}`;
+
+  // Listings nav visibility
+  const memberListingNav = document.querySelector('.nav-item.member-plus[onclick*="listings"]');
+  const lockedNav = document.getElementById('listingsLockedNav');
   if (role === 'team' || role === 'founding') {
-    document.querySelector('.nav-item.member-plus[onclick*="listings"]') && 
-    (document.querySelector('.nav-item.member-plus[onclick*="listings"]').style.display = 'flex');
-    document.getElementById('listingsLockedNav') && 
-    (document.getElementById('listingsLockedNav').style.display = 'none');
+    if (memberListingNav) memberListingNav.style.display = 'flex';
+    if (lockedNav) lockedNav.style.display = 'none';
   } else {
-    const memberListingNav = document.querySelector('.nav-item.member-plus[onclick*="listings"]');
     if (memberListingNav) memberListingNav.style.display = 'none';
-    const lockedNav = document.getElementById('listingsLockedNav');
     if (lockedNav) lockedNav.style.display = 'flex';
   }
+}
 
-  // Last login time
-  const now = new Date();
-  document.getElementById('lastLoginTime').textContent = `Accesso: ${now.getHours()}:${String(now.getMinutes()).padStart(2,'0')}`;
-
-  // Dashboard
-  document.getElementById('dashWelcome').textContent = `Benvenuto, ${currentUser.name.split(' ')[0]}`;
+/* ── Pre-render sincrono di tutti i pannelli prima che l'app sia visibile ── */
+function _preRenderAllPanels() {
   renderDashboard();
   renderFeed();
   renderDiscussions();
-  // Le conversazioni vengono caricate da GAS (renderConversations mostrerà empty state finché non arrivano)
   renderConversations();
   renderListings();
   renderSurveys();
@@ -2843,13 +2872,36 @@ function initApp() {
   renderRightPanel();
   renderNotifDropdown();
   renderWeeklyChart();
+  renderActivityFeed();
+  renderFeedPreview();
+  updateNotifBadge();
+}
 
-  // Forza lo stato corretto del badge notifiche al primo render:
-  // notifCount è 0 e NOTIFICATIONS è vuoto → campanella priva di badge
+/* ═══════════════════════════════════════════
+   INIT APP
+═══════════════════════════════════════════ */
+function initApp() {
+  // UI utente e pre-render già eseguiti da _applyUserUI() + _preRenderAllPanels()
+  // in checkSessionOnLoad — non ripetiamo per evitare doppio render.
+  // Se initApp viene chiamato direttamente (es. dopo login fresco), eseguiamo tutto.
+  if (!document.getElementById('mainApp').classList.contains('active')) {
+    _applyUserUI();
+    _preRenderAllPanels();
+    const mainAppEl = document.getElementById('mainApp');
+    mainAppEl.style.cssText = '';
+    document.getElementById('loginGate').style.display = 'none';
+    mainAppEl.classList.add('active');
+  }
+
+  // ── Cache bust versioni legacy ──
+  ['lh360_community_v1', 'lh360_community_v2'].forEach(k => {
+    try { localStorage.removeItem(k); } catch(e) {}
+  });
+
+  // Forza stato corretto badge notifiche
   updateNotifBadge();
 
-  // Simulate real-time activity
-  // Avvia presenza real-time: heartbeat immediato + timer + Firebase
+  // Avvia presenza real-time
   startPresenceSystem();
 
   // Supabase: ascolta notifiche in tempo reale
@@ -3368,7 +3420,7 @@ async function loadDashboardStats() {
 function applyDashboardStats(data) {
   // ── Membri Attivi ────────────────────────────────────────
   const activeEl = document.getElementById('dashStatActiveMembers');
-  if (activeEl) activeEl.textContent = data.active_members ?? '—';
+  if (activeEl) activeEl.textContent = data.active_members ?? 0;
 
   const changeEl = document.getElementById('dashStatMembersChange');
   if (changeEl) {
@@ -3390,11 +3442,11 @@ function applyDashboardStats(data) {
 
   // ── Aggiornamenti Feed ───────────────────────────────────
   const feedEl = document.getElementById('dashStatFeedUpdates');
-  if (feedEl) feedEl.textContent = data.feed_updates_30d ?? '—';
+  if (feedEl) feedEl.textContent = data.feed_updates_30d ?? 0;
 
   // ── Founding Members ─────────────────────────────────────
   const foundingEl = document.getElementById('dashStatFoundingCount');
-  if (foundingEl) foundingEl.textContent = data.founding_member_count ?? '—';
+  if (foundingEl) foundingEl.textContent = data.founding_member_count ?? 0;
   const foundingChangeEl = document.getElementById('dashStatFoundingChange');
   if (foundingChangeEl) {
     foundingChangeEl.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23,6 13.5,15.5 8.5,10.5 1,18"/><polyline points="17,6 23,6 23,12"/></svg> su ${data.max_founders ?? 200} posti totali`;
