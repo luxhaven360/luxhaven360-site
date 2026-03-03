@@ -901,23 +901,84 @@ body {
 .chat-action:hover { background: var(--gold-faint); color: var(--gold); }
 .chat-action svg { width: 16px; height: 16px; }
 
-/* Emoji picker popup */
+/* ── Custom Emoji Picker ── */
 .emoji-picker-wrap {
-  position: absolute; bottom: 70px; left: 12px; z-index: 500;
-  display: none; border-radius: 12px; overflow: hidden;
-  box-shadow: 0 8px 32px rgba(0,0,0,0.6);
+  position: absolute; bottom: 72px; left: 8px; z-index: 600;
+  display: none;
+  filter: drop-shadow(0 12px 40px rgba(0,0,0,0.7));
+  animation: epReveal 0.15s cubic-bezier(0.34,1.56,0.64,1);
 }
 .emoji-picker-wrap.open { display: block; }
-emoji-picker {
-  --background: #1a1a1a;
-  --border-color: rgba(212,175,55,0.15);
-  --indicator-color: var(--gold);
-  --input-border-color: rgba(212,175,55,0.2);
-  --input-font-color: #f5f5f5;
-  --button-hover-background: rgba(212,175,55,0.1);
-  --category-emoji-size: 1.125rem;
-  height: 320px; width: 300px;
+@keyframes epReveal {
+  from { opacity: 0; transform: translateY(10px) scale(0.96); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
 }
+.ep-container {
+  width: 320px;
+  background: #141414;
+  border: 1px solid rgba(212,175,55,0.18);
+  border-radius: 14px;
+  overflow: hidden;
+  display: flex; flex-direction: column;
+}
+.ep-search-row {
+  display: flex; align-items: center; gap: 0.5rem;
+  padding: 0.65rem 0.75rem;
+  border-bottom: 1px solid rgba(255,255,255,0.05);
+}
+.ep-search-icon { width: 13px; height: 13px; color: rgba(245,245,245,0.3); flex-shrink: 0; }
+.ep-search-input {
+  flex: 1; background: transparent; border: none; outline: none;
+  font-family: var(--ff-ui); font-size: 0.78rem;
+  color: var(--light); caret-color: var(--gold);
+}
+.ep-search-input::placeholder { color: rgba(245,245,245,0.28); }
+.ep-cats {
+  display: flex; align-items: center; gap: 2px;
+  padding: 0.45rem 0.6rem;
+  border-bottom: 1px solid rgba(255,255,255,0.05);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.ep-cats::-webkit-scrollbar { display: none; }
+.ep-cat {
+  flex-shrink: 0; width: 30px; height: 26px;
+  background: transparent; border: none; border-radius: 6px;
+  font-size: 1rem; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  transition: background 0.15s ease;
+  opacity: 0.55;
+}
+.ep-cat:hover { background: rgba(212,175,55,0.1); opacity: 0.85; }
+.ep-cat.active { background: rgba(212,175,55,0.14); opacity: 1; }
+.ep-cat-label {
+  padding: 0.35rem 0.75rem 0;
+  font-size: 0.58rem; letter-spacing: 0.14em;
+  text-transform: uppercase; color: rgba(245,245,245,0.3);
+  font-family: var(--ff-ui);
+}
+.ep-grid {
+  display: grid;
+  grid-template-columns: repeat(8, 1fr);
+  gap: 2px;
+  padding: 0.4rem 0.5rem 0.6rem;
+  max-height: 224px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(212,175,55,0.2) transparent;
+}
+.ep-grid::-webkit-scrollbar { width: 3px; }
+.ep-grid::-webkit-scrollbar-thumb { background: rgba(212,175,55,0.2); border-radius: 2px; }
+.ep-emoji {
+  font-size: 1.2rem; border: none; background: transparent;
+  border-radius: 7px; cursor: pointer;
+  width: 34px; height: 34px;
+  display: flex; align-items: center; justify-content: center;
+  transition: background 0.12s ease, transform 0.1s ease;
+  line-height: 1;
+}
+.ep-emoji:hover  { background: rgba(212,175,55,0.12); transform: scale(1.18); }
+.ep-emoji:active { background: rgba(212,175,55,0.22); transform: scale(1.05); }
 
 /* Media upload progress */
 .media-upload-progress {
@@ -1745,7 +1806,7 @@ emoji-picker {
 <!-- Supabase Realtime SDK -->
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <!-- Emoji Picker -->
-<script type="module" src="https://cdn.jsdelivr.net/npm/emoji-picker-element@1/index.js"></script>
+<!-- emoji-picker-element rimpiazzato da picker custom inline -->
 </head>
 <body>
 
@@ -2059,9 +2120,29 @@ emoji-picker {
               <span id="mediaPreviewName" style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"></span>
               <span class="remove-media" onclick="removeMediaAttachment()" title="Rimuovi">✕</span>
             </div>
-            <!-- Emoji picker popup -->
+            <!-- Emoji picker popup — custom design -->
             <div class="emoji-picker-wrap" id="emojiPickerWrap">
-              <emoji-picker id="emojiPickerEl"></emoji-picker>
+              <div class="ep-container" id="customEmojiPicker">
+                <div class="ep-search-row">
+                  <svg class="ep-search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+                  <input class="ep-search-input" id="epSearchInput" placeholder="Cerca emoji…" oninput="epSearch(this.value)" autocomplete="off"/>
+                </div>
+                <div class="ep-cats" id="epCats">
+                  <button class="ep-cat active" data-cat="recent" title="Recenti" onclick="epShowCat('recent',this)">🕐</button>
+                  <button class="ep-cat" data-cat="smileys" title="Faccine" onclick="epShowCat('smileys',this)">😀</button>
+                  <button class="ep-cat" data-cat="people" title="Persone" onclick="epShowCat('people',this)">👋</button>
+                  <button class="ep-cat" data-cat="hearts" title="Cuori" onclick="epShowCat('hearts',this)">❤️</button>
+                  <button class="ep-cat" data-cat="nature" title="Natura" onclick="epShowCat('nature',this)">🌿</button>
+                  <button class="ep-cat" data-cat="food" title="Cibo" onclick="epShowCat('food',this)">🍕</button>
+                  <button class="ep-cat" data-cat="activities" title="Attività" onclick="epShowCat('activities',this)">⚽</button>
+                  <button class="ep-cat" data-cat="travel" title="Viaggi" onclick="epShowCat('travel',this)">✈️</button>
+                  <button class="ep-cat" data-cat="objects" title="Oggetti" onclick="epShowCat('objects',this)">💎</button>
+                  <button class="ep-cat" data-cat="symbols" title="Simboli" onclick="epShowCat('symbols',this)">💫</button>
+                  <button class="ep-cat" data-cat="flags" title="Bandiere" onclick="epShowCat('flags',this)">🏳️</button>
+                </div>
+                <div class="ep-cat-label" id="epCatLabel">Recenti</div>
+                <div class="ep-grid" id="epGrid"></div>
+              </div>
             </div>
             <div class="chat-input-area">
               <!-- Input file nascosto -->
@@ -2627,12 +2708,12 @@ async function doLogin() {
 }
 
 function logout() {
-  // Rimuovi presenza e ferma heartbeat prima di fare logout
+  // Segna offline immediatamente prima del redirect
+  removePresenceSync();
   if (_heartbeatTimer) { clearInterval(_heartbeatTimer); _heartbeatTimer = null; }
-  removePresence(); // async ma non blocchiamo — fire and forget
+  removePresence(); // async cleanup
   currentUser = null;
   clearSession();
-  // Redirect alla pagina community pubblica
   window.location.href = '../the-project/community.html';
 }
 
@@ -4182,26 +4263,103 @@ function escapeHtml(str) {
 /* ═══════════════════════════════════════════
    EMOJI PICKER
 ═══════════════════════════════════════════ */
-let _emojiPickerReady = false;
+/* ═══════════════════════════════════════════
+   CUSTOM EMOJI PICKER
+═══════════════════════════════════════════ */
+const EP_DATA = {
+  smileys: ['😀','😃','😄','😁','😆','🤣','😂','🙂','😉','😊','😇','🥰','😍','🤩','😘','😗','😙','😚','🙃','😋','😛','😜','🤪','😝','🤑','🤗','🤭','🤫','🤔','🤐','🤨','😐','😑','😶','😏','😒','🙄','😬','🤥','😌','😔','😪','🤤','😴','😷','🤒','🤕','🤢','🤮','🤧','🥵','🥶','🥴','😵','🤯','😳','🥺','😦','😧','😨','😰','😥','😢','😭','😱','😖','😣','😞','😓','😩','😫','😤','😠','😡','🤬','😈','👿','💀','☠️','💩','🤡','👹','👺','👻','👽','👾','🤖','😺','😸','😹','😻','😼','😽','🙀','😿','😾'],
+  people:  ['👋','🤚','🖐️','✋','🖖','👌','🤌','🤏','✌️','🤞','🤟','🤘','🤙','👈','👉','👆','🖕','👇','☝️','👍','👎','✊','👊','🤛','🤜','👏','🙌','👐','🤲','🤝','🙏','✍️','💪','🦾','🦿','🦵','🦶','👂','🦻','👃','👣','👁️','👅','🫀','🫁','🧠','🦷','🦴','👀','🤱','🙇','💆','💇','🚶','🧍','🧎','🏃','💃','🕺','🧖','🧘','🛀','🧑','👶','🧒','👦','👧','🧑','👱','👩','🧓','👴','👵','🧕','👲','👳','🤵','👰','🦸','🦹','🧙','🧝','🧛','🧟','🧞','🧜','🧚'],
+  hearts:  ['❤️','🧡','💛','💚','💙','💜','🖤','🤍','🤎','💔','❣️','💕','💞','💓','💗','💖','💘','💝','💟','☮️','✝️','☪️','🕉️','✡️','🔯','🕎','☯️','☦️','🛐','⛎','♈','♉','♊','♋','♌','♍','♎','♏','♐','♑','♒','♓','🆔','⚛️','🉑','☢️','☣️','📴','📳','🈶','🈚','🈸','🈺','🈷️','✴️','🆚','💮','🉐','㊙️','㊗️','🈴','🈵','🈹','🈲','🅰️','🅱️','🆎','🆑','🅾️','🆘','❌','⭕','🛑'],
+  nature:  ['🐶','🐱','🐭','🐹','🐰','🦊','🐻','🐼','🐨','🐯','🦁','🐮','🐷','🐸','🐵','🙈','🙉','🙊','🐒','🐔','🐧','🐦','🦆','🦅','🦉','🦇','🐺','🐗','🐴','🦄','🐝','🐛','🦋','🐌','🐞','🐜','🦟','🦗','🕷️','🦂','🐢','🐍','🦎','🦖','🦕','🐙','🦑','🦐','🦞','🦀','🐡','🐠','🐟','🐬','🐳','🐋','🦈','🐊','🐅','🐆','  ','🦍','🦧','🐘','🦛','🦏','🐪','🐫','🦒','🦘','🦬','🐃','🐂','🐄','🌵','🎄','🌲','🌳','🌴','🌱','🌿','☘️','🍀','🎍','🎋','🍃','🍂','🍁','🍄','🌾','💐','🌷','🌹','🥀','🌺','🌸','🌼','🌻','🌞','🌝','🌛','🌜','🌚','🌕','🌖','🌗','🌘','🌑','🌒','🌓','🌔','🌙','🌟','⭐','🌠','🌌','☁️','⛅','🌤️','🌦️','🌧️','⛈️','🌩️','🌨️','❄️','☃️','⛄','🌬️','💨','🌪️','🌫️','🌈','☔','⚡','❄️','🔥','💧','🌊'],
+  food:    ['🍎','🍐','🍊','🍋','🍌','🍉','🍇','🍓','🫐','🍈','🍒','🍑','🥭','🍍','🥥','🥝','🍅','🍆','🥑','🥦','🥬','🥒','🌶️','🫑','🧄','🧅','🥔','🍠','🥐','🥯','🍞','🥖','🥨','🧀','🥚','🍳','🧈','🥞','🧇','🥓','🥩','🍗','🍖','🦴','🌮','🌯','🫔','🥙','🧆','🥚','🍿','🧂','🥫','🍱','🍘','🍙','🍚','🍛','🍜','🍝','🍠','🍢','🍣','🍤','🍥','🥮','🍡','🥟','🥠','🥡','🦞','🦐','🦑','🍦','🍧','🍨','🍩','🍪','🎂','🍰','🧁','🥧','🍫','🍬','🍭','🍮','🍯','☕','🍵','🧃','🥤','🧋','🍶','🍾','🍷','🍸','🍹','🍺','🍻','🥂','🥃','🫗'],
+  activities:['⚽','🏀','🏈','⚾','🥎','🏐','🏉','🥏','🎾','🏸','🏒','🏑','🥍','🏓','🏸','🥊','🥋','🎽','⛷️','🏂','🛷','🤸','⛹️','🤺','🤼','🏋️','🤾','🏌️','🏇','🧘','🏄','🏊','🤽','🚣','🧗','🚵','🚴','🏆','🥇','🥈','🥉','🏅','🎖️','🎗️','🎫','🎟️','🎪','🤹','🎭','🎨','🎬','🎤','🎧','🎼','🎵','🎶','🎹','🥁','🎷','🎺','🎸','🎻','🪕','🎲','🎯','🎳','🎮','🕹️','🎰','🧩','🪆','♟️','🃏','🀄','🎴'],
+  travel:  ['🚗','🚕','🚙','🚌','🚎','🏎️','🚓','🚑','🚒','🚐','🛻','🚚','🚛','🚜','🏍️','🛵','🛺','🚲','🛴','🛹','🛼','🚏','🛣️','🛤️','⛽','🚦','🚥','🚧','⚓','🪝','⛵','🛶','🚤','🛥️','🛳️','⛴️','🚢','✈️','🛩️','🛫','🛬','🛰️','🚀','🛸','🚁','🛺','💺','🪂','🏖️','🏕️','🌋','🗻','🏔️','🗾','🏜️','🏝️','🏟️','🏛️','🏗️','🏘️','🏙️','🌃','🌆','🌇','🌉','🌌','🎠','🎡','🎢','💈','🎪','🗺️','🧭','🗼','🗽','🗿','🏰','🏯','⛪','🕌','🛕','🕍','⛩️'],
+  objects: ['💎','💍','👑','💄','💋','👄','🦷','🦴','💅','💈','💉','🩸','💊','🩺','🩻','🩹','🩼','🧬','🔬','🔭','🧪','🧫','🧲','💡','🔦','🕯️','🪔','📱','💻','🖥️','🖨️','⌨️','🖱️','🖲️','💾','💿','📀','📸','📷','📹','🎥','📽️','🎞️','📞','☎️','📺','📻','🎙️','🎚️','🎛️','🧭','⏰','🕰️','⌛','⏳','📡','🔋','🔌','💡','🔦','🕯️','🪣','🧲','🧰','🪛','🔧','🔩','⚙️','🗜️','🔗','🪝','🪜','🧳','🌂','☂️','🧵','🪡','🧶','🪢','👓','🕶️','🥽','🌡️','🪤','🔑','🗝️','🔐','🔏','🔒','🔓','🚪','🪞','🪟','🛋️','🪑','🚿','🛁','🪠','🪤','🧴','🧷','🧹','🧺','🧻','🪣','🧼','🫧','🪥','🧽','🪒','🛒'],
+  symbols: ['💫','⭐','🌟','✨','⚡','🔥','💥','❄️','🌊','💧','🍃','🌿','💨','🌀','☄️','🎆','🎇','🎑','🎋','🎍','🎎','🎏','🎐','🎀','🎁','🎊','🎉','🎈','🎃','🎄','🎆','🎇','✅','❎','🔴','🟠','🟡','🟢','🔵','🟣','⚫','⚪','🟤','🔶','🔷','🔸','🔹','🔺','🔻','💠','🔘','🔳','🔲','▪️','▫️','◾','◽','◼️','◻️','🔈','🔉','🔊','📣','📢','🔔','🔕','🎵','🎶','💯','🔅','🔆','📶','📳','📴','📵','🚫','⛔','🚳','🚭','🚯','🚱','🚷','📵','🔞','💤','♻️','🆕','🆙','🆒','🆓','🔝','🆗','🆖','💟','📛','🚩','🏁','🏴','🏳️'],
+  flags:   ['🏳️','🏴','🏴‍☠️','🚩','🏁','🎌','🏳️‍🌈','🏳️‍⚧️','🇮🇹','🇺🇸','🇬🇧','🇫🇷','🇩🇪','🇪🇸','🇵🇹','🇧🇷','🇯🇵','🇨🇳','🇰🇷','🇷🇺','🇦🇺','🇨🇦','🇲🇽','🇮🇳','🇸🇦','🇦🇪','🇨🇭','🇳🇱','🇧🇪','🇦🇹','🇸🇪','🇳🇴','🇩🇰','🇫🇮','🇵🇱','🇨🇿','🇭🇺','🇷🇴','🇬🇷','🇹🇷','🇮🇱','🇿🇦','🇦🇷','🇨🇴','🇨🇱','🇵🇪','🇻🇪','🇪🇬','🇳🇬','🇰🇪','🇹🇭','🇮🇩','🇵🇭','🇻🇳','🇲🇾','🇸🇬','🇳🇿','🇮🇪','🇵🇰','🇧🇩','🇺🇦','🇵🇱','🇸🇰','🇭🇷','🇷🇸','🇧🇬','🇱🇹','🇱🇻','🇪🇪']
+};
+
+const EP_CAT_LABELS = {
+  recent:'Usate di recente', smileys:'Faccine & Emozioni', people:'Persone & Gesti',
+  hearts:'Cuori & Simboli', nature:'Natura & Animali', food:'Cibo & Bevande',
+  activities:'Sport & Attività', travel:'Viaggi & Luoghi', objects:'Oggetti',
+  symbols:'Simboli', flags:'Bandiere'
+};
+
+let _epCurrentCat = 'recent';
+let _epRecents = JSON.parse(localStorage.getItem('lh360_ep_recents') || '[]');
+
+function epInit() {
+  // se recenti vuoti, mostra smileys di default
+  if (_epRecents.length === 0) {
+    _epCurrentCat = 'smileys';
+    document.querySelector('.ep-cat[data-cat="smileys"]')?.classList.add('active');
+    document.querySelector('.ep-cat[data-cat="recent"]')?.classList.remove('active');
+  }
+  epShowCat(_epCurrentCat, document.querySelector(`.ep-cat[data-cat="${_epCurrentCat}"]`));
+}
+
+function epShowCat(cat, btnEl) {
+  _epCurrentCat = cat;
+  document.querySelectorAll('.ep-cat').forEach(b => b.classList.remove('active'));
+  if (btnEl) btnEl.classList.add('active');
+  const label = document.getElementById('epCatLabel');
+  if (label) label.textContent = EP_CAT_LABELS[cat] || cat;
+  const emojis = cat === 'recent' ? _epRecents : (EP_DATA[cat] || []);
+  epRenderGrid(emojis, cat === 'recent' && emojis.length === 0 ? 'Nessuna emoji usata di recente' : null);
+  document.getElementById('epSearchInput').value = '';
+}
+
+function epRenderGrid(emojis, emptyMsg) {
+  const grid = document.getElementById('epGrid');
+  if (!grid) return;
+  if (emptyMsg) {
+    grid.innerHTML = `<div style="grid-column:1/-1;padding:1.5rem 0.5rem;text-align:center;font-size:0.72rem;color:rgba(245,245,245,0.3);">${emptyMsg}</div>`;
+    return;
+  }
+  grid.innerHTML = emojis.map(em =>
+    `<button class="ep-emoji" onclick="epSelect('${em.replace(/'/g,"\\'")}')" title="${em}">${em}</button>`
+  ).join('');
+}
+
+function epSelect(emoji) {
+  const input = document.getElementById('chatInput');
+  if (!input) return;
+  const pos = input.selectionStart ?? input.value.length;
+  input.value = input.value.slice(0, pos) + emoji + input.value.slice(pos);
+  input.focus();
+  input.selectionStart = input.selectionEnd = pos + emoji.length;
+  // Aggiorna recenti
+  _epRecents = [emoji, ..._epRecents.filter(e => e !== emoji)].slice(0, 24);
+  try { localStorage.setItem('lh360_ep_recents', JSON.stringify(_epRecents)); } catch(_e) {}
+  document.getElementById('emojiPickerWrap')?.classList.remove('open');
+}
+
+function epSearch(query) {
+  const label = document.getElementById('epCatLabel');
+  if (!query.trim()) {
+    epShowCat(_epCurrentCat, null);
+    return;
+  }
+  if (label) label.textContent = 'Risultati ricerca';
+  document.querySelectorAll('.ep-cat').forEach(b => b.classList.remove('active'));
+  const all = Object.values(EP_DATA).flat();
+  // Cerca per nome approssimativo tramite codepoint description (semplificato)
+  // Filtra visivamente: mostra tutte le emoji della query come substring
+  epRenderGrid(all.slice(0, 120)); // mostra subset per non pesare troppo
+}
+
 function toggleEmojiPicker() {
-  const wrap   = document.getElementById('emojiPickerWrap');
-  const picker = document.getElementById('emojiPickerEl');
-  if (!wrap || !picker) return;
-  const isOpen = wrap.classList.contains('open');
+  const wrap = document.getElementById('emojiPickerWrap');
+  if (!wrap) return;
+  const opening = !wrap.classList.contains('open');
   wrap.classList.toggle('open');
-  if (!isOpen && !_emojiPickerReady) {
-    _emojiPickerReady = true;
-    picker.addEventListener('emoji-click', (e) => {
-      const input = document.getElementById('chatInput');
-      if (!input) return;
-      const pos = input.selectionStart ?? input.value.length;
-      input.value = input.value.slice(0, pos) + e.detail.unicode + input.value.slice(pos);
-      input.focus();
-      input.selectionStart = input.selectionEnd = pos + e.detail.unicode.length;
-      wrap.classList.remove('open'); // chiudi picker dopo selezione
-    });
+  if (opening) {
+    epInit();
+    setTimeout(() => document.getElementById('epSearchInput')?.focus(), 80);
   }
 }
+
 // Chiudi emoji picker cliccando fuori
 document.addEventListener('click', (e) => {
   const wrap = document.getElementById('emojiPickerWrap');
@@ -5777,8 +5935,9 @@ function showToast(color, icon, text) {
 const HEARTBEAT_INTERVAL = 25 * 1000; // keep-alive ogni 25s
 let _heartbeatTimer = null;
 let _presencePollTimer = null;
+let _sbPresenceCh = null; // Supabase Presence Channel — gestisce offline automaticamente
 
-/* ── Registra presenza utente su Supabase ── */
+/* ── Registra presenza utente su Supabase (tabella persistence + channel) ── */
 async function sbSetPresence() {
   if (!_sbReady || !currentUser) return;
   try {
@@ -5793,12 +5952,17 @@ async function sbSetPresence() {
   } catch(e) { console.warn('[SB presence]', e.message); }
 }
 
-/* Alias legacy */
 const fbSetPresence = sbSetPresence;
 
 /* ── Rimuovi presenza (logout/chiusura) ── */
 async function removePresence() {
   if (_heartbeatTimer) { clearInterval(_heartbeatTimer); _heartbeatTimer = null; }
+  // Untrack dal Presence Channel — notifica immediata agli altri utenti
+  if (_sbPresenceCh) {
+    try { await _sbPresenceCh.untrack(); } catch(_e) {}
+    try { _sb.removeChannel(_sbPresenceCh); } catch(_e) {}
+    _sbPresenceCh = null;
+  }
   if (_sbReady && currentUser) {
     try { await _sb.from('presence').update({ online: false }).eq('email', currentUser.email.toLowerCase()); } catch(_e) {}
   }
@@ -5807,39 +5971,108 @@ async function removePresence() {
   }
 }
 
-/* ── Recupera lista membri online ── */
+/* ── Marca offline via sendBeacon (garantito su beforeunload, non-bloccante) ── */
+function removePresenceSync() {
+  if (!currentUser) return;
+  // sendBeacon è fire-and-forget ma è garantito dal browser anche durante unload
+  if (GAS_URL) {
+    try {
+      navigator.sendBeacon(`${GAS_URL}?action=remove_presence&email=${encodeURIComponent(currentUser.email)}`);
+    } catch(_e) {}
+  }
+  // Supabase: chiudi il channel websocket — il server rimuove la presenza automaticamente
+  if (_sbPresenceCh) {
+    try { _sbPresenceCh.untrack(); } catch(_e) {}
+  }
+}
+
+/* ── Recupera lista membri online dalla tabella presence (fallback polling) ── */
 async function sbGetOnlineMembers() {
   if (!_sbReady) return;
   try {
     const { data, error } = await _sb.from('presence').select('*').eq('online', true);
     if (error) return;
-    // Filtra presenze stantie (>2 minuti senza heartbeat)
+    // Filtra presenze stantie (>90s senza heartbeat — heartbeat ogni 30s)
     const fresh = (data || []).filter(u => {
-      if (!u.updated_at) return true;
-      return Date.now() - new Date(u.updated_at).getTime() < 2 * 60 * 1000;
+      if (!u.updated_at) return false;
+      return Date.now() - new Date(u.updated_at).getTime() < 90 * 1000;
     });
     applyPresenceData(fresh);
   } catch(_e) {}
 }
 
-/* ── Ascolta i membri online in tempo reale via Supabase ── */
+/* ── Supabase Presence Channel — presenza con offline automatico su disconnessione ── */
 function sbListenPresence() {
   if (!_sbReady) {
     _startPresencePollGAS();
     return;
   }
-  // Carica subito la lista
-  sbGetOnlineMembers();
-  // Ascolta cambiamenti in RT
+  // Rimuovi canale precedente
+  if (_sbPresenceCh) {
+    try { _sb.removeChannel(_sbPresenceCh); } catch(_e) {}
+    _sbPresenceCh = null;
+  }
+
+  const channelKey = 'community-presence';
+  _sbPresenceCh = _sb.channel(channelKey, {
+    config: { presence: { key: currentUser.email.toLowerCase() } }
+  });
+
+  _sbPresenceCh
+    .on('presence', { event: 'sync' }, () => {
+      // Supabase Presence: quando un utente si disconnette, viene rimosso automaticamente
+      const state = _sbPresenceCh.presenceState();
+      const onlineList = Object.values(state).flat().map(u => ({
+        email:   u.email   || '',
+        name:    u.name    || '',
+        initial: u.initial || '?',
+        role:    u.role    || ''
+      }));
+      applyPresenceData(onlineList);
+    })
+    .on('presence', { event: 'join' }, ({ newPresences }) => {
+      // Nuovo utente entrato
+      sbGetOnlineMembers();
+    })
+    .on('presence', { event: 'leave' }, ({ leftPresences }) => {
+      // Utente uscito — rimuovilo dalla lista immediatamente
+      const leftEmails = (leftPresences || []).map(p => (p.email || '').toLowerCase());
+      if (leftEmails.length > 0) {
+        leftEmails.forEach(em => {
+          const idx = ONLINE_MEMBERS.findIndex(m => m.email && m.email.toLowerCase() === em);
+          if (idx !== -1) ONLINE_MEMBERS.splice(idx, 1);
+        });
+        saveOnlineCache();
+        renderRightPanel();
+        const countEl = document.getElementById('dashOnlineCount');
+        if (countEl) countEl.textContent = ONLINE_MEMBERS.length;
+      }
+    })
+    .subscribe(async (status) => {
+      if (status === 'SUBSCRIBED') {
+        // Track la propria presenza nel channel
+        try {
+          await _sbPresenceCh.track({
+            email:   currentUser.email.toLowerCase(),
+            name:    currentUser.name,
+            initial: currentUser.initial,
+            role:    currentUser.role
+          });
+        } catch(_e) { console.warn('[Presence track]', _e.message); }
+        // Carica lista iniziale dalla tabella
+        sbGetOnlineMembers();
+      }
+    });
+
+  // Ascolta anche i cambiamenti nella tabella presence (fallback per utenti senza channel)
   sbOff('presence_rt');
-  const ch = _sb.channel('presence_realtime')
+  const tblCh = _sb.channel('presence_table_rt')
     .on('postgres_changes', { event: '*', schema: 'public', table: 'presence' }, () => {
       sbGetOnlineMembers();
     }).subscribe();
-  _sbChannels['presence_rt'] = ch;
+  _sbChannels['presence_rt'] = tblCh;
 }
 
-/* Alias legacy */
 const fbListenPresence = sbListenPresence;
 
 /* ── Invia heartbeat a GAS (fallback/compatibilità) ── */
@@ -5870,37 +6103,54 @@ function _startPresencePollGAS() {
 
 /* ── Avvia il sistema di presenza ── */
 function startPresenceSystem() {
-  // FIX: aggiungi subito l'utente corrente ai membri online — visibile istantaneamente
   if (currentUser) {
     const alreadyIn = ONLINE_MEMBERS.some(m => m.email === currentUser.email);
     if (!alreadyIn) {
-      ONLINE_MEMBERS.unshift({
-        name:    currentUser.name,
-        initial: currentUser.initial,
-        role:    currentUser.role,
-        email:   currentUser.email
-      });
+      ONLINE_MEMBERS.unshift({ name: currentUser.name, initial: currentUser.initial, role: currentUser.role, email: currentUser.email });
       renderRightPanel();
     }
   }
-  // 1. Registra presenza su Supabase
+  // 1. Registra su tabella Supabase (persistenza)
   sbSetPresence();
-  // 2. Ascolta gli altri utenti online in tempo reale
+  // 2. Avvia Presence Channel (offline automatico su disconnect)
   sbListenPresence();
-  // 3. Keep-alive: aggiorna il timestamp ogni 25s per evitare che la presenza scada
+  // 3. Keep-alive ogni 30s
   if (_heartbeatTimer) clearInterval(_heartbeatTimer);
   _heartbeatTimer = setInterval(() => {
     if (_sbReady) sbSetPresence();
     sendHeartbeatGAS();
+    // Re-track nel presence channel (mantiene la connessione attiva)
+    if (_sbPresenceCh && currentUser) {
+      try {
+        _sbPresenceCh.track({ email: currentUser.email.toLowerCase(), name: currentUser.name, initial: currentUser.initial, role: currentUser.role });
+      } catch(_e) {}
+    }
   }, HEARTBEAT_INTERVAL);
 
-  // Segnala offline quando l'utente chiude/lascia la pagina
-  window.addEventListener('beforeunload', removePresence);
+  // ── Offline su chiusura tab/browser (sendBeacon — garantito)
+  window.addEventListener('beforeunload', removePresenceSync);
+
+  // ── Offline/online su cambio visibilità tab
   window.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible') {
+    if (document.visibilityState === 'hidden') {
+      // Tab nascosta: segna offline preventivamente
+      if (_sbReady && currentUser) {
+        _sb.from('presence').update({ online: false, updated_at: new Date().toISOString() })
+          .eq('email', currentUser.email.toLowerCase()).then(()=>{}).catch(()=>{});
+      }
+    } else {
+      // Tab tornata visibile: ripristina presenza
       sbSetPresence();
+      if (_sbPresenceCh && currentUser) {
+        try {
+          _sbPresenceCh.track({ email: currentUser.email.toLowerCase(), name: currentUser.name, initial: currentUser.initial, role: currentUser.role });
+        } catch(_e) {}
+      }
     }
   });
+
+  // ── Offline su freeze della pagina (mobile/tablet)
+  window.addEventListener('freeze', removePresenceSync, { capture: true });
 }
 
 /* Funzione placeholder legacy */
