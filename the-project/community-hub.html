@@ -463,12 +463,11 @@ body {
   position: relative;
 }
 
-.panel { display: none; }
-.panel.active { display: block; animation: panelFade 0.2s ease; }
-.panel.active.no-anim { animation: none; }
+.panel { display: none; animation: panelFade 0.25s ease; }
+.panel.active { display: block; }
 @keyframes panelFade {
-  from { opacity: 0; transform: translateY(6px); }
-  to   { opacity: 1; transform: translateY(0); }
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
 .panel-inner { padding: 1.6rem; }
@@ -900,56 +899,23 @@ body {
 .chat-action:hover { background: var(--gold-faint); color: var(--gold); }
 .chat-action svg { width: 16px; height: 16px; }
 
-/* Emoji picker popup — position:fixed per sfuggire a overflow:hidden */
-#emojiPickerWrap {
-  position: fixed;
-  z-index: 9999;
-  display: none;
-  border-radius: 14px;
-  overflow: hidden;
-  box-shadow: 0 8px 40px rgba(0,0,0,0.8);
-  background: #1c1c1c;
-  border: 1px solid rgba(212,175,55,0.2);
-  width: 310px;
-  user-select: none;
+/* Emoji picker popup */
+.emoji-picker-wrap {
+  position: absolute; bottom: 70px; left: 12px; z-index: 500;
+  display: none; border-radius: 12px; overflow: hidden;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.6);
 }
-#emojiPickerWrap.open { display: flex; flex-direction: column; }
-.ep-search {
-  padding: 8px 10px;
-  border-bottom: 1px solid rgba(212,175,55,0.08);
-  background: #161616;
+.emoji-picker-wrap.open { display: block; }
+emoji-picker {
+  --background: #1a1a1a;
+  --border-color: rgba(212,175,55,0.15);
+  --indicator-color: var(--gold);
+  --input-border-color: rgba(212,175,55,0.2);
+  --input-font-color: #f5f5f5;
+  --button-hover-background: rgba(212,175,55,0.1);
+  --category-emoji-size: 1.125rem;
+  height: 320px; width: 300px;
 }
-.ep-search input {
-  width: 100%; background: #222; border: 1px solid rgba(212,175,55,0.15);
-  border-radius: 8px; padding: 5px 10px; font-size: 0.78rem;
-  color: #f5f5f5; font-family: var(--ff-ui);
-}
-.ep-search input::placeholder { color: rgba(245,245,245,0.3); }
-.ep-cats {
-  display: flex; gap: 0; border-bottom: 1px solid rgba(212,175,55,0.08);
-  background: #161616; overflow-x: auto;
-}
-.ep-cats::-webkit-scrollbar { display: none; }
-.ep-cat-btn {
-  flex-shrink: 0; padding: 6px 10px; font-size: 1rem; cursor: pointer;
-  background: none; border: none; opacity: 0.5; transition: opacity 0.15s;
-  border-bottom: 2px solid transparent;
-}
-.ep-cat-btn:hover { opacity: 0.85; }
-.ep-cat-btn.active { opacity: 1; border-bottom-color: var(--gold); }
-.ep-grid {
-  display: flex; flex-wrap: wrap; gap: 1px;
-  padding: 6px 8px; overflow-y: auto; max-height: 220px;
-  background: #1c1c1c;
-}
-.ep-grid::-webkit-scrollbar { width: 3px; }
-.ep-grid::-webkit-scrollbar-thumb { background: rgba(212,175,55,0.2); border-radius: 2px; }
-.ep-emoji {
-  width: 34px; height: 34px; display: flex; align-items: center; justify-content: center;
-  font-size: 1.3rem; cursor: pointer; border-radius: 7px;
-  transition: background 0.1s; line-height: 1;
-}
-.ep-emoji:hover { background: rgba(212,175,55,0.12); }
 
 /* Media upload progress */
 .media-upload-progress {
@@ -1776,6 +1742,8 @@ body {
 <!-- ═══ FIREBASE REALTIME DATABASE SDK ═══ -->
 <!-- Supabase Realtime SDK -->
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<!-- Emoji Picker -->
+<script type="module" src="https://cdn.jsdelivr.net/npm/emoji-picker-element@1/index.js"></script>
 </head>
 <body>
 
@@ -2089,8 +2057,10 @@ body {
               <span id="mediaPreviewName" style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"></span>
               <span class="remove-media" onclick="removeMediaAttachment()" title="Rimuovi">✕</span>
             </div>
-            
-            <!-- Emoji picker nativo — FUORI da overflow:hidden, portaled al body -->
+            <!-- Emoji picker popup -->
+            <div class="emoji-picker-wrap" id="emojiPickerWrap" style="position:relative;">
+              <emoji-picker id="emojiPickerEl" style="display:none;"></emoji-picker>
+            </div>
             <div class="chat-input-area">
               <!-- Input file nascosto -->
               <input type="file" id="chatFileInput" accept="image/*,video/*" style="display:none;" onchange="handleFileSelect(event)"/>
@@ -2107,7 +2077,6 @@ body {
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22,2 15,22 11,13 2,9"/></svg>
               </button>
             </div>
-          </div>
           </div>
         </div>
       </div>
@@ -2850,23 +2819,13 @@ function showPanel(id, navEl) {
   // Blocca pannelli admin per ruoli non-team
   const adminPanels = ['broadcast', 'members', 'moderation', 'analytics'];
   if (adminPanels.includes(id) && currentUser && currentUser.role !== 'team') {
-    showToast('red', '🔒', 'Accesso non autorizzato.');
+    showToast('red', '\uD83D\uDD12', 'Accesso non autorizzato.');
     return;
   }
-
-  // FIX flicker: se torniamo su 'messages' con chat già aperta, salta animazione e re-render
-  const messagesEl = document.getElementById('chatMessages');
-  const chatAlreadyLoaded = id === 'messages' &&
-    currentConvPartnerEmail &&
-    messagesEl && messagesEl.querySelector('.msg');
-
-  document.querySelectorAll('.panel').forEach(p => p.classList.remove('active', 'no-anim'));
+  document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
   const panel = document.getElementById('panel-' + id);
-  if (panel) {
-    panel.classList.add('active');
-    if (chatAlreadyLoaded) panel.classList.add('no-anim'); // nessuna animazione opacity
-  }
-
+  if (panel) panel.classList.add('active');
+  
   document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
   if (navEl) navEl.classList.add('active');
 
@@ -2883,25 +2842,22 @@ function showPanel(id, navEl) {
   if (id === 'messages') {
     unreadMsgs = 0; updateMsgBadge();
     loadConversations();
+    // Supabase gestisce i messaggi in RT
     if (_sbReady) {
       sbListenConversations();
       if (currentConvPartnerEmail) {
-        if (!chatAlreadyLoaded) {
-          // Prima apertura: carica messaggi da Supabase
-          sbListenMessages(currentConvPartnerEmail);
-        }
-        // Riattiva sempre typing e mantieni canale messaggi vivo
+        sbListenMessages(currentConvPartnerEmail);
         sbListenTyping(currentConvPartnerEmail);
-        if (!_sbChannels['messages']) sbListenMessages(currentConvPartnerEmail);
       }
     } else {
       startMessagePolling();
     }
   } else {
     stopMessagePolling();
+    // Rilascia i canali Supabase messaggistica quando esci dalla sezione
     if (_sbReady) {
+      sbOff('messages');
       sbOff('typing');
-      // NON chiudiamo 'messages' — così al ritorno il DOM e il canale sono già pronti
     }
   }
   if (id === 'feed') {
@@ -4219,133 +4175,32 @@ function escapeHtml(str) {
 }
 
 /* ═══════════════════════════════════════════
-   EMOJI PICKER NATIVO — PORTAL AL BODY (fixed, no overflow clip)
+   EMOJI PICKER
 ═══════════════════════════════════════════ */
-const EP_CATS = [
-  { icon:'😀', label:'Faccine',  emojis:['😀','😁','😂','🤣','😃','😄','😅','😆','😉','😊','😋','😎','😍','🥰','😘','😗','😙','😚','🙂','🤗','🤩','🥳','😏','😒','😞','😔','😟','😕','🙁','☹️','😣','😖','😫','😩','🥺','😢','😭','😤','😠','😡','🤬','🤯','😳','🥵','🥶','😱','😨','😰','😥','😓','🤔','🤭','🤫','🤥','😶','😐','😑','😬','🙄','😯','😦','😧','😮','😲','🥱','😴','🤤','😪','😵','🤐','🥴','🤢','🤮','🤧','😷','🤒','🤕','🤑','🤠','😈','👿','👹','👺','🤡','💩','👻','💀','☠️','👽','👾','🤖','😺','😸','😹','😻','😼','😽','🙀','😿','😾'] },
-  { icon:'👋', label:'Persone',  emojis:['👋','🤚','🖐','✋','🖖','👌','🤌','🤏','✌️','🤞','🤟','🤘','🤙','👈','👉','👆','👇','☝️','👍','👎','✊','👊','🤛','🤜','👏','🙌','👐','🤲','🤝','🙏','✍️','💅','🤳','💪','🦾','🦵','🦶','👂','👃','🧠','👁','👅','👀','💋','👶','🧒','👦','👧','🧑','👱','👨','🧔','👩','🧓','👴','👵','🙍','🙎','🙅','🙆','💁','🙋','🧏','🙇','🤦','🤷','👮','🕵️','💂','🥷','👷','👸','👳','👲','🧕','🤵','👰','🤰','🤱','👼','🎅','🤶','🧙','🧝','🧛','🧟','🧞','🧜','🧚','👣'] },
-  { icon:'🐶', label:'Animali',  emojis:['🐶','🐱','🐭','🐹','🐰','🦊','🐻','🐼','🐨','🐯','🦁','🐮','🐷','🐸','🐵','🙈','🙉','🙊','🐔','🐧','🐦','🐤','🦆','🦅','🦉','🦇','🐺','🐗','🐴','🦄','🐝','🐛','🦋','🐌','🐞','🐜','🦟','🦗','🕷','🦂','🐢','🐍','🦎','🦖','🦕','🐙','🦑','🦐','🦞','🦀','🐡','🐠','🐟','🐬','🐳','🐋','🦈','🦭','🐊','🐅','🐆','🦓','🦍','🦧','🦣','🐘','🦛','🦏','🐪','🐫','🦒','🦘','🦬','🐃','🐂','🐄','🐎','🐖','🐏','🐑','🦙','🐐','🦌','🐕','🐩','🦮','🐈','🐓','🦃','🦤','🦚','🦜','🦢','🦩','🕊','🐇','🦝','🦨','🦡','🦫','🦦','🦥','🐁','🐀','🐿','🦔'] },
-  { icon:'🍎', label:'Cibo',     emojis:['🍎','🍊','🍋','🍇','🍓','🫐','🍈','🍒','🍑','🥭','🍍','🥥','🥝','🍅','🍆','🥑','🥦','🥬','🥒','🌶','🫑','🌽','🥕','🧅','🧄','🥔','🍠','🥐','🥖','🍞','🥨','🧀','🥚','🍳','🧈','🥞','🧇','🥓','🥩','🍗','🍖','🌭','🍔','🍟','🍕','🫓','🥙','🧆','🌮','🌯','🫔','🥗','🥘','🫕','🥫','🍝','🍜','🍲','🍛','🍣','🍱','🥟','🦪','🍤','🍙','🍚','🍘','🍥','🥮','🍢','🧁','🍰','🎂','🍮','🍭','🍬','🍫','🍿','🍩','🍪','🌰','🥜','🍯','🧃','🥤','🧋','☕','🫖','🍵','🍺','🍻','🥂','🍷','🥃','🍸','🍹','🧉','🍾'] },
-  { icon:'⚽', label:'Sport',    emojis:['⚽','🏀','🏈','⚾','🥎','🎾','🏐','🏉','🥏','🎱','🏓','🏸','🏒','🏑','🥍','🏏','🪃','🥅','⛳','🪁','🎣','🤿','🎽','🎿','🛷','🥌','🎯','🪀','🪆','🎮','🕹','🎲','♟','🎭','🎨','🎰','🎳','🏋','🤼','🤸','⛹','🤺','🤾','🏌','🏇','🧘','🏄','🏊','🤽','🚣','🧗','🚵','🚴','🏆','🥇','🥈','🥉','🏅','🎖','🎗','🎟','🎫'] },
-  { icon:'🚗', label:'Viaggi',   emojis:['🚗','🚕','🚙','🚌','🚎','🏎','🚓','🚑','🚒','🚐','🛻','🚚','🚛','🚜','🏍','🛵','🛺','🚲','🛴','🛹','🛼','🚏','⛽','🚨','🚥','🚦','🚧','⚓','🛟','⛵','🚤','🛥','🛳','⛴','🚢','✈️','🛩','🛫','🛬','🪂','💺','🚁','🚟','🚠','🚡','🛰','🚀','🛸','🎡','🎢','🎠','🏗','🌁','🗼','🏰','🏯','🗽','🗿','🗺','🧭','🌋','⛰','🏔','🏕','🏖','🏜','🏝','🏞','🌅','🌄','🌠','🎇','🎆','🌃','🏙','🌉','🌌'] },
-  { icon:'💡', label:'Oggetti',  emojis:['💡','🔦','🕯','🪔','🧯','🛢','💰','💴','💵','💶','💷','💸','💳','🧾','📱','💻','🖥','🖨','⌨','🖱','💾','💿','📀','📷','📸','📹','🎥','📽','🎞','📞','☎️','📟','📠','📺','📻','🧭','⏱','⏲','⏰','🕰','⌛','⏳','📡','🔋','🔌','💡','🔦','🕯','🪛','🔧','🔨','⚒','🛠','⛏','⚙️','🪤','🧲','🔬','🔭','📡','🩺','🩹','💊','💉','🩸','🧬','🦠','🧫','🧪','🩻','🚪','🛗','🪞','🪟','🛏','🛋','🪑','🚽','🚿','🛁','🧴','🧷','🧹','🧺','🧻','🪣','🧼','🫧','🧽','🧯','🛒'] },
-  { icon:'❤️', label:'Simboli',  emojis:['❤️','🧡','💛','💚','💙','💜','🖤','🤍','🤎','💔','❣️','💕','💞','💓','💗','💖','💘','💝','💟','☮️','✝️','☪️','🕉','☸️','✡️','🔯','🕎','☯️','☦️','🛐','⛎','♈','♉','♊','♋','♌','♍','♎','♏','♐','♑','♒','♓','🆔','⚛️','🉑','☢️','☣️','📴','📳','🈶','🈚','🈸','🈺','🈷️','✴️','🆚','💮','🉐','㊙️','㊗️','🈴','🈵','🈹','🈲','🅰️','🅱️','🆎','🆑','🅾️','🆘','❌','⭕','🛑','⛔','📛','🚫','💯','💢','♨️','🚫','💬','💭','🗯','🔔','🔕','🎵','🎶','🎼','🎤','🔥','✨','💫','⭐','🌟'] },
-  { icon:'🌟', label:'Natura',   emojis:['🌟','⭐','🌠','💫','✨','🌙','🌛','🌜','🌝','🌞','☀️','🌤','⛅','🌥','☁️','🌦','🌧','⛈','🌩','🌨','❄️','☃️','⛄','🌬','💨','💧','💦','🌊','🌈','☔','⛱','⚡','🌪','🌫','🌀','🔥','🌍','🌎','🌏','🗺','🌋','⛰','🏔','🏕','🏖','🏜','🏝','🏞','🌅','🌄','🌠','🌃','🌆','🌇','🌉','🌌','🌿','🍀','🍁','🍂','🍃','🌾','🌵','🌴','🌲','🌳','🌱','🌿','☘️','🪴','🎋','🎍','🍄','🪸','🪨','🪵'] },
-];
-let _epCurrentCat = 0;
-let _epBuilt = false;
-
-function _createEmojiPickerDOM() {
-  if (document.getElementById('emojiPickerWrap')) return;
-  const wrap = document.createElement('div');
-  wrap.id = 'emojiPickerWrap';
-  wrap.innerHTML = `
-    <div class="ep-search"><input id="epSearchInput" placeholder="🔍 Cerca emoji…" oninput="epFilter(this.value)" onclick="event.stopPropagation()"/></div>
-    <div class="ep-cats" id="epCats"></div>
-    <div class="ep-grid" id="epGrid"></div>`;
-  document.body.appendChild(wrap);
-}
-
-function buildEmojiPicker() {
-  if (_epBuilt) return;
-  _createEmojiPickerDOM();
-  const cats = document.getElementById('epCats');
-  const grid = document.getElementById('epGrid');
-  if (!cats || !grid) return;
-  _epBuilt = true;
-  EP_CATS.forEach((cat, i) => {
-    const btn = document.createElement('button');
-    btn.className = 'ep-cat-btn' + (i === 0 ? ' active' : '');
-    btn.textContent = cat.icon;
-    btn.title = cat.label;
-    btn.onclick = (e) => {
-      e.stopPropagation();
-      document.querySelectorAll('.ep-cat-btn').forEach(b => b.classList.remove('active'));
-      btn.classList.add('active');
-      _epCurrentCat = i;
-      epRenderGrid(cat.emojis);
-      const si = document.getElementById('epSearchInput');
-      if (si) si.value = '';
-    };
-    cats.appendChild(btn);
-  });
-  epRenderGrid(EP_CATS[0].emojis);
-}
-
-function epRenderGrid(emojis) {
-  const grid = document.getElementById('epGrid');
-  if (!grid) return;
-  grid.innerHTML = emojis.map(e =>
-    `<span class="ep-emoji" onclick="epInsert('${e}');event.stopPropagation();">${e}</span>`
-  ).join('');
-}
-
-function epInsert(emoji) {
-  const input = document.getElementById('chatInput');
-  if (!input) return;
-  const pos = input.selectionStart ?? input.value.length;
-  input.value = input.value.slice(0, pos) + emoji + input.value.slice(pos);
-  input.focus();
-  const newPos = pos + emoji.length;
-  input.setSelectionRange(newPos, newPos);
-}
-
-function epFilter(query) {
-  if (!query || !query.trim()) { epRenderGrid(EP_CATS[_epCurrentCat].emojis); return; }
-  const q = query.toLowerCase().trim();
-  const all = EP_CATS.flatMap(c => c.emojis);
-  const emojiNames = {
-    'cuore':'❤️💛💚💙💜🧡🖤🤍🤎','amore':'❤️💕💞💓💗💖💘💝','risata':'😂🤣😆😅','pianto':'😢😭😥',
-    'arrabbiato':'😠😡🤬','paura':'😱😨😰','sorpresa':'😲😮😯','felice':'😊😀😁😃😄🥳',
-    'triste':'😞😔😟😕☹️','fuoco':'🔥','star':'⭐🌟💫✨','pizza':'🍕','calcio':'⚽',
-    'auto':'🚗','casa':'🏠','telefono':'📱','musica':'🎵🎶','cane':'🐶','gatto':'🐱',
-    'sole':'☀️','luna':'🌙','neve':'❄️☃️','acqua':'💧🌊','fiore':'🌸🌺🌼💐',
-    'mano':'👋🤚✋🖐','pollice':'👍👎','applauso':'👏🙌','ok':'👌✌️','cuori':'💕💞💓💗',
-    'compleanno':'🎂🎉🎁🥳','festa':'🎉🎊🥳🎈','sport':'⚽🏀🏈🎾','vino':'🍷🥂🍸',
-    'caffe':'☕🫖','birra':'🍺🍻','cibo':'🍕🍔🍝🍣','viaggio':'✈️🚂🚢','natura':'🌿🌸🌲',
-  };
-  const matched = new Set();
-  for (const [key, vals] of Object.entries(emojiNames)) {
-    if (key.includes(q)) [...vals].filter(c => c.trim()).forEach(e => matched.add(e));
-  }
-  if (matched.size === 0) epRenderGrid(all.slice(0, 50));
-  else epRenderGrid([...matched]);
-}
-
+let _emojiPickerReady = false;
 function toggleEmojiPicker() {
-  _createEmojiPickerDOM();
-  buildEmojiPicker();
-  const wrap = document.getElementById('emojiPickerWrap');
-  if (!wrap) return;
-  if (wrap.classList.contains('open')) {
-    wrap.classList.remove('open');
-    return;
+  const picker = document.getElementById('emojiPickerEl');
+  if (!picker) return;
+  const isOpen = picker.style.display !== 'none';
+  picker.style.display = isOpen ? 'none' : 'block';
+  if (!isOpen && !_emojiPickerReady) {
+    _emojiPickerReady = true;
+    picker.addEventListener('emoji-click', (e) => {
+      const input = document.getElementById('chatInput');
+      if (!input) return;
+      const pos = input.selectionStart || input.value.length;
+      input.value = input.value.slice(0, pos) + e.detail.unicode + input.value.slice(pos);
+      input.focus();
+      input.selectionStart = input.selectionEnd = pos + e.detail.unicode.length;
+    });
   }
-  // Calcola posizione dal pulsante — position:fixed rispetto alla viewport
-  const btn = document.getElementById('emojiToggleBtn');
-  if (btn) {
-    const r = btn.getBoundingClientRect();
-    const pickerH = 310; // altezza approssimativa picker
-    const pickerW = 310;
-    let top = r.top - pickerH - 8;
-    let left = r.left;
-    // Se esce dalla viewport in alto, metti sotto
-    if (top < 8) top = r.bottom + 8;
-    // Se esce a destra
-    if (left + pickerW > window.innerWidth - 8) left = window.innerWidth - pickerW - 8;
-    wrap.style.top = top + 'px';
-    wrap.style.left = left + 'px';
-  }
-  wrap.classList.add('open');
 }
-
 // Chiudi emoji picker cliccando fuori
 document.addEventListener('click', (e) => {
-  const wrap = document.getElementById('emojiPickerWrap');
+  const picker = document.getElementById('emojiPickerEl');
   const btn = document.getElementById('emojiToggleBtn');
-  if (wrap && wrap.classList.contains('open') &&
-      !wrap.contains(e.target) && !btn?.contains(e.target)) {
-    wrap.classList.remove('open');
+  if (picker && picker.style.display !== 'none' && !picker.contains(e.target) && e.target !== btn && !btn?.contains(e.target)) {
+    picker.style.display = 'none';
   }
 });
 
@@ -4368,7 +4223,7 @@ async function handleFileSelect(event) {
   try {
     let compressedFile;
     if (isImage) {
-      compressedFile = await compressImage(file);
+      compressedFile = await compressImage(file, 0.10); // comprimi al 10% della dim originale (90% riduzione)
     } else {
       // I video non vengono compressi nel browser — upload diretto
       compressedFile = file;
@@ -4382,35 +4237,30 @@ async function handleFileSelect(event) {
   }
 }
 
-/* Comprime immagine — target garantito: ~90% riduzione peso, qualità chat ok */
-function compressImage(file) {
+/* Comprime immagine con Canvas — qualità target ~10% dimensione originale */
+function compressImage(file, targetSizeFraction) {
   return new Promise((resolve, reject) => {
     const img = new Image();
     const url = URL.createObjectURL(file);
     img.onload = () => {
       URL.revokeObjectURL(url);
-      // Ridimensiona a MAX 800px lato lungo — chat non ha bisogno di più
-      const MAX_DIM = 800;
+      // Ridimensiona a max 1200px mantenendo aspect ratio
+      const MAX_DIM = 1200;
       let { width, height } = img;
       if (width > MAX_DIM || height > MAX_DIM) {
         const ratio = Math.min(MAX_DIM / width, MAX_DIM / height);
-        width  = Math.round(width  * ratio);
+        width = Math.round(width * ratio);
         height = Math.round(height * ratio);
       }
       const canvas = document.createElement('canvas');
       canvas.width = width; canvas.height = height;
       const ctx = canvas.getContext('2d');
-      ctx.imageSmoothingEnabled = true;
-      ctx.imageSmoothingQuality = 'medium';
       ctx.drawImage(img, 0, 0, width, height);
-      // Qualità 0.35 JPEG + ridimensionamento a 800px → ~90% riduzione garantita
-      // Equivalente a qualità WhatsApp/Telegram per messaggi chat
+      // Qualità 0.7 con ridimensionamento ottiene tipicamente ~90% riduzione
       canvas.toBlob((blob) => {
         if (!blob) { reject(new Error('Canvas toBlob failed')); return; }
-        const out = new File([blob], file.name.replace(/\.[^.]+$/, '.jpg'), { type: 'image/jpeg' });
-        // Se per qualche motivo la compressione peggiora (file già piccolo), usa l'originale
-        resolve(out.size < file.size ? out : file);
-      }, 'image/jpeg', 0.35);
+        resolve(new File([blob], file.name.replace(/\.[^.]+$/, '.jpg'), { type: 'image/jpeg' }));
+      }, 'image/jpeg', 0.70);
     };
     img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('Image load failed')); };
     img.src = url;
@@ -4478,8 +4328,8 @@ async function sendMessage() {
   clearTypingStatus();
 
   // Chiudi emoji picker se aperto
-  const epWrap = document.getElementById('emojiPickerWrap');
-  if (epWrap) epWrap.classList.remove('open');
+  const ep = document.getElementById('emojiPickerEl');
+  if (ep) ep.style.display = 'none';
 
   // Gestisci upload media
   let mediaUrl = null, mediaType = null;
@@ -4682,43 +4532,34 @@ function sbListenMessages(partnerEmail) {
   if (!_sbReady || !currentUser || !partnerEmail) return;
   const cid = convId(currentUser.email, partnerEmail);
 
-  // FIX flicker: se i messaggi sono già nel DOM per questa conv, non ricaricare
-  const messagesEl = document.getElementById('chatMessages');
-  const alreadyLoaded = messagesEl &&
-    messagesEl.querySelector('.msg') &&
-    currentConvPartnerEmail &&
-    currentConvPartnerEmail.toLowerCase() === partnerEmail.toLowerCase();
-
-  if (!alreadyLoaded) {
-    // Carica storico completo da Supabase solo se il DOM è vuoto
-    _sb.from('messages')
-      .select('*')
-      .eq('conv_id', cid)
-      .order('created_at', { ascending: true })
-      .limit(200)
-      .then(({ data, error }) => {
-        if (error) { console.warn('[SB msg load]', error.message); return; }
-        const msgs = (data || [])
-          .filter(m => !(m.deleted_for || []).includes(currentUser.email.toLowerCase()))
-          .map(m => ({
-            id:          m.id,
-            from:        m.sender_email,
-            fromName:    m.sender_name,
-            fromInitial: (m.sender_name || '?')[0].toUpperCase(),
-            text:        m.text || '',
-            media_url:   m.media_url || null,
-            media_type:  m.media_type || null,
-            ts:          m.created_at,
-            deletedFor:  m.deleted_for || []
-          }));
-        if (msgs.length > 0) _msgLastSeen[partnerEmail] = msgs[msgs.length - 1].id;
-        if (currentConvPartnerEmail &&
-            currentConvPartnerEmail.toLowerCase() === partnerEmail.toLowerCase()) {
-          removeTypingIndicator();
-          renderChatMessages(msgs, partnerEmail);
-        }
-      });
-  }
+  // Carica storico completo da Supabase
+  _sb.from('messages')
+    .select('*')
+    .eq('conv_id', cid)
+    .order('created_at', { ascending: true })
+    .limit(200)
+    .then(({ data, error }) => {
+      if (error) { console.warn('[SB msg load]', error.message); return; }
+      const msgs = (data || [])
+        .filter(m => !(m.deleted_for || []).includes(currentUser.email.toLowerCase()))
+        .map(m => ({
+          id:          m.id,
+          from:        m.sender_email,
+          fromName:    m.sender_name,
+          fromInitial: (m.sender_name || '?')[0].toUpperCase(),
+          text:        m.text || '',
+          media_url:   m.media_url || null,
+          media_type:  m.media_type || null,
+          ts:          m.created_at,
+          deletedFor:  m.deleted_for || []
+        }));
+      if (msgs.length > 0) _msgLastSeen[partnerEmail] = msgs[msgs.length - 1].id;
+      if (currentConvPartnerEmail &&
+          currentConvPartnerEmail.toLowerCase() === partnerEmail.toLowerCase()) {
+        removeTypingIndicator();
+        renderChatMessages(msgs, partnerEmail);
+      }
+    });
 
   // Ascolta nuovi messaggi in RT
   sbOff('messages');
@@ -6304,4 +6145,3 @@ function initGlobalSearch() {
 </script>
 </body>
 </html>
-
