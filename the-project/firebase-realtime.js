@@ -21,7 +21,8 @@ var FIREBASE_CONFIG = {
   projectId:         "luxhaven360-ada6e",
   storageBucket:     "luxhaven360-ada6e.firebasestorage.app",
   messagingSenderId: "549667743672",
-  appId:             "1:549667743672:web:8527851d6266423c70914d"
+  appId:             "1:549667743672:web:8527851d6266423c70914d",
+  measurementId: "G-3K5XMN497J"
 };
 
 function loadScript(src) {
