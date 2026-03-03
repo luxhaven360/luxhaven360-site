@@ -15,13 +15,13 @@
 
 /* ① CONFIGURAZIONE — sostituisci con i tuoi dati */
 var FIREBASE_CONFIG = {
-  apiKey:            "YOUR_API_KEY",
-  authDomain:        "YOUR_PROJECT_ID.firebaseapp.com",
-  databaseURL:       "https://YOUR_PROJECT_ID-default-rtdb.europe-west1.firebasedatabase.app",
-  projectId:         "YOUR_PROJECT_ID",
-  storageBucket:     "YOUR_PROJECT_ID.appspot.com",
-  messagingSenderId: "YOUR_SENDER_ID",
-  appId:             "YOUR_APP_ID"
+  apiKey:            "AIzaSyBg7PiTufkaj7cpUxICc-RrRMwu8GWpJQg",
+  authDomain:        "luxhaven360-ada6e.firebaseapp.com",
+  databaseURL:       "https://luxhaven360-ada6e-default-rtdb.europe-west1.firebasedatabase.app",
+  projectId:         "luxhaven360-ada6e",
+  storageBucket:     "luxhaven360-ada6e.firebasestorage.app",
+  messagingSenderId: "549667743672",
+  appId:             "1:549667743672:web:8527851d6266423c70914d"
 };
 
 function loadScript(src) {
