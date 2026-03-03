@@ -899,6 +899,54 @@ body {
 .chat-action:hover { background: var(--gold-faint); color: var(--gold); }
 .chat-action svg { width: 16px; height: 16px; }
 
+/* Emoji picker popup */
+.emoji-picker-wrap {
+  position: absolute; bottom: 70px; left: 12px; z-index: 500;
+  display: none; border-radius: 12px; overflow: hidden;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.6);
+}
+.emoji-picker-wrap.open { display: block; }
+emoji-picker {
+  --background: #1a1a1a;
+  --border-color: rgba(212,175,55,0.15);
+  --indicator-color: var(--gold);
+  --input-border-color: rgba(212,175,55,0.2);
+  --input-font-color: #f5f5f5;
+  --button-hover-background: rgba(212,175,55,0.1);
+  --category-emoji-size: 1.125rem;
+  height: 320px; width: 300px;
+}
+
+/* Media upload progress */
+.media-upload-progress {
+  display: flex; align-items: center; gap: 0.5rem;
+  padding: 0.4rem 0.8rem; background: var(--dark4);
+  border-radius: 20px; font-size: 0.72rem; color: var(--muted);
+}
+.media-upload-progress .progress-bar {
+  height: 3px; background: var(--gold); border-radius: 2px;
+  transition: width 0.3s ease;
+}
+
+/* Msg media */
+.msg-media { margin-bottom: 4px; }
+.msg-media img, .msg-media video { border-radius: 10px; display: block; max-width: 220px; }
+
+/* Media preview before send */
+#mediaPreviewBar {
+  display: none; align-items: center; gap: 0.6rem;
+  padding: 0.5rem 1.2rem 0; font-size: 0.75rem; color: var(--muted);
+}
+#mediaPreviewBar.visible { display: flex; }
+#mediaPreviewBar img, #mediaPreviewBar video {
+  width: 48px; height: 48px; object-fit: cover; border-radius: 8px; border: 1px solid var(--border2);
+}
+#mediaPreviewBar .remove-media {
+  width: 18px; height: 18px; border-radius: 50%; background: var(--red);
+  color: #fff; font-size: 0.65rem; display: flex; align-items: center; justify-content: center;
+  cursor: pointer; flex-shrink: 0;
+}
+
 /* ═══════════════════════════════════════════════
    NOTIFICATIONS
 ═══════════════════════════════════════════════ */
@@ -1694,6 +1742,8 @@ body {
 <!-- ═══ FIREBASE REALTIME DATABASE SDK ═══ -->
 <!-- Supabase Realtime SDK -->
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<!-- Emoji Picker -->
+<script type="module" src="https://cdn.jsdelivr.net/npm/emoji-picker-element@1/index.js"></script>
 </head>
 <body>
 
@@ -2001,12 +2051,24 @@ body {
               </div>
             </div>
             <div class="chat-messages" id="chatMessages"></div>
+            <!-- Preview media prima dell'invio -->
+            <div id="mediaPreviewBar">
+              <span id="mediaPreviewThumb"></span>
+              <span id="mediaPreviewName" style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"></span>
+              <span class="remove-media" onclick="removeMediaAttachment()" title="Rimuovi">✕</span>
+            </div>
+            <!-- Emoji picker popup -->
+            <div class="emoji-picker-wrap" id="emojiPickerWrap" style="position:relative;">
+              <emoji-picker id="emojiPickerEl" style="display:none;"></emoji-picker>
+            </div>
             <div class="chat-input-area">
+              <!-- Input file nascosto -->
+              <input type="file" id="chatFileInput" accept="image/*,video/*" style="display:none;" onchange="handleFileSelect(event)"/>
               <div class="chat-actions">
-                <button class="chat-action" title="Allega file">
+                <button class="chat-action" title="Allega file" onclick="document.getElementById('chatFileInput').click()">
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/></svg>
                 </button>
-                <button class="chat-action" title="Emoji">
+                <button class="chat-action" title="Emoji" id="emojiToggleBtn" onclick="toggleEmojiPicker()">
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="10"/><path d="M8 13s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/></svg>
                 </button>
               </div>
@@ -3975,7 +4037,6 @@ async function openConvByEmail(partnerEmail) {
   document.getElementById('chatHeaderName').textContent = partnerInfo.name;
   const statusEl = document.getElementById('chatHeaderStatus');
   if (statusEl) {
-    // Verifica stato online: cerca per email (da presenza GAS) o per nome come fallback
     const onlineM = ONLINE_MEMBERS.find(m =>
       (m.email && m.email.toLowerCase() === partnerEmail.toLowerCase()) ||
       (m.name && partnerInfo.name && m.name.toLowerCase() === partnerInfo.name.toLowerCase())
@@ -3989,18 +4050,17 @@ async function openConvByEmail(partnerEmail) {
   if (conv) conv.unread = 0;
   renderConversations();
 
-  // Carica messaggi
-  await loadChatMessages(partnerEmail);
-
-  // Avvia listener Supabase (o polling GAS in fallback)
+  // FIX schermata nera: se Supabase è pronto, carica direttamente da Supabase (nessun skeleton, nessuna attesa GAS)
   if (_sbReady) {
     sbListenMessages(partnerEmail);
     sbListenTyping(partnerEmail);
   } else {
+    // Fallback GAS con skeleton
+    await loadChatMessages(partnerEmail);
     startMessagePolling();
   }
 
-  // Segna letti su GAS in background
+  // Segna letti su GAS in background (fire & forget)
   if (GAS_URL) {
     fetch(`${GAS_URL}?action=mark_messages_read&email=${encodeURIComponent(currentUser.email)}&otherEmail=${encodeURIComponent(partnerEmail)}`).catch(()=>{});
   }
@@ -4059,21 +4119,23 @@ function renderChatMessages(messages, partnerEmail) {
   }
 
   let html = '';
-  let lastDateLabel = '';
+  let lastTs = 0;
   let lastSenderEmail = '';
   const partnerRole = partnerInfo.role === 'team';
+  // FIX data intelligente: mostra separatore solo se gap > 4 ore dal messaggio precedente
+  const DATE_GAP_MS = 4 * 60 * 60 * 1000;
 
-  // Render TUTTI i messaggi — nessun limite, storico completo
   messages.forEach((msg, idx) => {
     const isSent = msg.from.toLowerCase() === currentUser.email.toLowerCase();
     const senderEmail = msg.from.toLowerCase();
-    const dateLabel = new Date(msg.ts).toLocaleDateString('it-IT', { weekday:'long', day:'2-digit', month:'long' });
-    const isNewDate = dateLabel !== lastDateLabel;
-    const isNewSender = senderEmail !== lastSenderEmail || isNewDate;
+    const msgTs = new Date(msg.ts).getTime();
+    const gap = msgTs - lastTs;
+    const showDateDivider = idx === 0 || gap > DATE_GAP_MS;
+    const isNewSender = senderEmail !== lastSenderEmail || showDateDivider;
 
-    if (isNewDate) {
+    if (showDateDivider) {
+      const dateLabel = new Date(msg.ts).toLocaleDateString('it-IT', { weekday:'long', day:'2-digit', month:'long' });
       html += `<div class="chat-date-divider"><span>${dateLabel}</span></div>`;
-      lastDateLabel = dateLabel;
     }
 
     const timeLabel = formatMsgTime(msg.ts);
@@ -4083,20 +4145,27 @@ function renderChatMessages(messages, partnerEmail) {
     const avatarInitial = isSent ? currentUser.initial : partnerInfo.initial;
     const avatarVisible = isNewSender ? '' : 'visibility:hidden;';
 
+    // Render media se presente
+    const mediaHtml = msg.media_url ? renderMediaBubble(msg.media_url, msg.media_type) : '';
+
     html += `
       <div class="msg ${isSent ? 'sent' : 'received'}">
         ${!isSent ? `<div class="msg-avatar" style="${avatarStyle}${avatarVisible}">${avatarInitial}</div>` : ''}
         <div class="msg-bubble-wrap">
-          <div class="msg-bubble">${escapeHtml(msg.text)}</div>
+          ${mediaHtml}
+          ${msg.text ? `<div class="msg-bubble">${escapeHtml(msg.text)}</div>` : ''}
           <div class="msg-time">${timeLabel}</div>
         </div>
         ${isSent ? `<div class="msg-avatar" style="${avatarStyle}${avatarVisible}">${avatarInitial}</div>` : ''}
       </div>`;
 
+    lastTs = msgTs;
     lastSenderEmail = senderEmail;
   });
 
   messagesEl.innerHTML = html;
+  // Salva timestamp dell'ultimo messaggio per la logica del separatore data in appendMessageToChat
+  if (messages.length > 0) messagesEl.dataset.lastMsgTs = new Date(messages[messages.length-1].ts).getTime();
   messagesEl.scrollTop = messagesEl.scrollHeight;
 }
 
@@ -4105,39 +4174,194 @@ function escapeHtml(str) {
   return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
+/* ═══════════════════════════════════════════
+   EMOJI PICKER
+═══════════════════════════════════════════ */
+let _emojiPickerReady = false;
+function toggleEmojiPicker() {
+  const picker = document.getElementById('emojiPickerEl');
+  if (!picker) return;
+  const isOpen = picker.style.display !== 'none';
+  picker.style.display = isOpen ? 'none' : 'block';
+  if (!isOpen && !_emojiPickerReady) {
+    _emojiPickerReady = true;
+    picker.addEventListener('emoji-click', (e) => {
+      const input = document.getElementById('chatInput');
+      if (!input) return;
+      const pos = input.selectionStart || input.value.length;
+      input.value = input.value.slice(0, pos) + e.detail.unicode + input.value.slice(pos);
+      input.focus();
+      input.selectionStart = input.selectionEnd = pos + e.detail.unicode.length;
+    });
+  }
+}
+// Chiudi emoji picker cliccando fuori
+document.addEventListener('click', (e) => {
+  const picker = document.getElementById('emojiPickerEl');
+  const btn = document.getElementById('emojiToggleBtn');
+  if (picker && picker.style.display !== 'none' && !picker.contains(e.target) && e.target !== btn && !btn?.contains(e.target)) {
+    picker.style.display = 'none';
+  }
+});
+
+/* ═══════════════════════════════════════════
+   ALLEGATI — COMPRESSIONE + UPLOAD SUPABASE
+═══════════════════════════════════════════ */
+let _pendingMediaFile = null; // { file, url, type } — pronto per l'invio
+
+async function handleFileSelect(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  event.target.value = ''; // reset input per permettere ricaricamento stesso file
+
+  const isImage = file.type.startsWith('image/');
+  const isVideo = file.type.startsWith('video/');
+  if (!isImage && !isVideo) { showToast('red','⚠️','Formato non supportato. Usa immagini o video.'); return; }
+
+  showToast('blue','⏳', isImage ? 'Compressione immagine…' : 'Preparazione video…');
+
+  try {
+    let compressedFile;
+    if (isImage) {
+      compressedFile = await compressImage(file, 0.10); // comprimi al 10% della dim originale (90% riduzione)
+    } else {
+      // I video non vengono compressi nel browser — upload diretto
+      compressedFile = file;
+    }
+    _pendingMediaFile = { file: compressedFile, type: file.type };
+    showMediaPreview(compressedFile, file.type, file.name);
+    showToast('green','✅', isImage ? `Compressa: ${formatBytes(compressedFile.size)}` : `Video pronto: ${formatBytes(compressedFile.size)}`);
+  } catch(e) {
+    showToast('red','⚠️','Errore nella preparazione del file.');
+    console.warn('[Media]', e);
+  }
+}
+
+/* Comprime immagine con Canvas — qualità target ~10% dimensione originale */
+function compressImage(file, targetSizeFraction) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      // Ridimensiona a max 1200px mantenendo aspect ratio
+      const MAX_DIM = 1200;
+      let { width, height } = img;
+      if (width > MAX_DIM || height > MAX_DIM) {
+        const ratio = Math.min(MAX_DIM / width, MAX_DIM / height);
+        width = Math.round(width * ratio);
+        height = Math.round(height * ratio);
+      }
+      const canvas = document.createElement('canvas');
+      canvas.width = width; canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0, width, height);
+      // Qualità 0.7 con ridimensionamento ottiene tipicamente ~90% riduzione
+      canvas.toBlob((blob) => {
+        if (!blob) { reject(new Error('Canvas toBlob failed')); return; }
+        resolve(new File([blob], file.name.replace(/\.[^.]+$/, '.jpg'), { type: 'image/jpeg' }));
+      }, 'image/jpeg', 0.70);
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('Image load failed')); };
+    img.src = url;
+  });
+}
+
+function formatBytes(bytes) {
+  if (bytes < 1024) return bytes + ' B';
+  if (bytes < 1024*1024) return (bytes/1024).toFixed(1) + ' KB';
+  return (bytes/(1024*1024)).toFixed(1) + ' MB';
+}
+
+function showMediaPreview(file, type, name) {
+  const bar = document.getElementById('mediaPreviewBar');
+  const thumb = document.getElementById('mediaPreviewThumb');
+  const nameEl = document.getElementById('mediaPreviewName');
+  if (!bar) return;
+  const url = URL.createObjectURL(file);
+  if (type.startsWith('image')) {
+    thumb.innerHTML = `<img src="${url}" style="width:40px;height:40px;object-fit:cover;border-radius:6px;"/>`;
+  } else {
+    thumb.innerHTML = `<video src="${url}" style="width:40px;height:40px;object-fit:cover;border-radius:6px;" muted></video>`;
+  }
+  nameEl.textContent = name || file.name || 'Media';
+  bar.classList.add('visible');
+}
+
+function removeMediaAttachment() {
+  _pendingMediaFile = null;
+  const bar = document.getElementById('mediaPreviewBar');
+  if (bar) { bar.classList.remove('visible'); document.getElementById('mediaPreviewThumb').innerHTML = ''; }
+}
+
+/* Upload file su Supabase Storage → ritorna URL pubblico */
+async function uploadMediaToSupabase(file) {
+  const ext = file.name.split('.').pop() || 'jpg';
+  const path = `chat/${currentUser.email.replace(/[@.]/g,'_')}/${Date.now()}.${ext}`;
+  const { error } = await _sb.storage.from('chat-media').upload(path, file, { upsert: false, contentType: file.type });
+  if (error) throw new Error(error.message);
+  const { data } = _sb.storage.from('chat-media').getPublicUrl(path);
+  return { url: data.publicUrl, type: file.type };
+}
+function renderMediaBubble(url, type) {
+  if (!url) return '';
+  if (type && type.startsWith('video')) {
+    return `<div class="msg-media"><video src="${url}" controls preload="metadata" style="max-width:220px;max-height:180px;border-radius:10px;display:block;"></video></div>`;
+  }
+  // Default: immagine
+  return `<div class="msg-media"><img src="${url}" alt="Immagine" style="max-width:220px;max-height:240px;border-radius:10px;display:block;cursor:pointer;" onclick="window.open('${url}','_blank')"/></div>`;
+}
+
 /* ── Invia messaggio ── */
 async function sendMessage() {
   const input = document.getElementById('chatInput');
   const text = (input?.value || '').trim();
+  const hasMedia = !!_pendingMediaFile;
 
-  // Debug: controlla stato prima di procedere
-  if (!text) return;
-  if (!currentUser) {
-    showToast('red', '⚠️', 'Sessione scaduta. Ricarica la pagina.');
-    return;
-  }
-  if (!currentConvPartnerEmail) {
-    showToast('red', '⚠️', 'Nessuna conversazione aperta.');
-    return;
-  }
+  if (!text && !hasMedia) return;
+  if (!currentUser) { showToast('red', '⚠️', 'Sessione scaduta. Ricarica la pagina.'); return; }
+  if (!currentConvPartnerEmail) { showToast('red', '⚠️', 'Nessuna conversazione aperta.'); return; }
 
   const sendBtn = document.querySelector('.chat-send-btn');
+  if (sendBtn) { sendBtn.disabled = true; sendBtn.style.opacity = '0.5'; }
   input.value = '';
   clearTypingStatus();
 
+  // Chiudi emoji picker se aperto
+  const ep = document.getElementById('emojiPickerEl');
+  if (ep) ep.style.display = 'none';
+
+  // Gestisci upload media
+  let mediaUrl = null, mediaType = null;
+  if (hasMedia) {
+    const mediaFile = _pendingMediaFile;
+    removeMediaAttachment();
+    try {
+      showToast('blue','⏳','Invio media…');
+      const result = await uploadMediaToSupabase(mediaFile.file);
+      mediaUrl = result.url;
+      mediaType = result.type;
+    } catch(e) {
+      showToast('red','⚠️','Errore upload media: ' + e.message);
+      if (sendBtn) { sendBtn.disabled = false; sendBtn.style.opacity = ''; }
+      return;
+    }
+  }
+
   const partnerInfo = getPartnerInfo(currentConvPartnerEmail);
 
-  // Ottimistic update: aggiungi il messaggio subito
+  // Ottimistic update
   const tempMsg = {
     id: 'temp_' + Date.now(),
     from: currentUser.email,
     fromName: currentUser.name,
     fromInitial: currentUser.initial,
     text,
+    media_url: mediaUrl,
+    media_type: mediaType,
     ts: new Date().toISOString(),
     deletedFor: []
   };
-
   appendMessageToChat(tempMsg, true);
 
   // Aggiorna conv list preview
@@ -4171,7 +4395,9 @@ async function sendMessage() {
       conv_id:      cid,
       sender_email: currentUser.email.toLowerCase(),
       sender_name:  currentUser.name,
-      text:         text,
+      text:         text || null,
+      media_url:    mediaUrl,
+      media_type:   mediaType,
       deleted_for:  []
     }).then(({ error }) => { if (error) console.warn('[SB msg insert]', error.message); });
 
@@ -4247,13 +4473,20 @@ function appendMessageToChat(msg, isSent) {
   if (emptyState) messagesEl.innerHTML = '';
 
   const partnerInfo = getPartnerInfo(currentConvPartnerEmail || '');
-  const dateLabel = new Date(msg.ts).toLocaleDateString('it-IT', { weekday:'long', day:'2-digit', month:'long' });
+  const msgTs = new Date(msg.ts).getTime();
   const timeLabel = formatMsgTime(msg.ts);
 
-  // Date divider se necessario
-  const lastDivider = messagesEl.querySelector('.chat-date-divider:last-of-type');
-  const lastDateLabelInDOM = lastDivider ? lastDivider.querySelector('span')?.textContent : '';
-  if (dateLabel !== lastDateLabelInDOM) {
+  // FIX data intelligente: mostra separatore solo se gap > 4 ore dall'ultimo messaggio
+  const DATE_GAP_MS = 4 * 60 * 60 * 1000;
+  const lastMsgEl = messagesEl.querySelector('.msg:last-of-type');
+  const lastTimeStr = lastMsgEl ? lastMsgEl.querySelector('.msg-time')?.textContent : null;
+  // Recupera timestamp dell'ultimo messaggio dal data attribute
+  const lastMsgTs = parseInt(messagesEl.dataset.lastMsgTs || '0', 10);
+  const gap = lastMsgTs > 0 ? msgTs - lastMsgTs : DATE_GAP_MS + 1;
+  messagesEl.dataset.lastMsgTs = msgTs;
+
+  if (!lastMsgEl || gap > DATE_GAP_MS) {
+    const dateLabel = new Date(msg.ts).toLocaleDateString('it-IT', { weekday:'long', day:'2-digit', month:'long' });
     const divider = document.createElement('div');
     divider.className = 'chat-date-divider';
     divider.innerHTML = `<span>${dateLabel}</span>`;
@@ -4267,10 +4500,12 @@ function appendMessageToChat(msg, isSent) {
     ? 'color:var(--gold);border-color:var(--gold-dim);'
     : (partnerRole ? 'color:var(--gold);border-color:var(--gold-dim);' : '');
   const avInitial = isSent ? currentUser.initial : partnerInfo.initial;
+  const mediaHtml = msg.media_url ? renderMediaBubble(msg.media_url, msg.media_type) : '';
   el.innerHTML = `
     ${!isSent ? `<div class="msg-avatar" style="${avStyle}">${avInitial}</div>` : ''}
     <div class="msg-bubble-wrap">
-      <div class="msg-bubble">${escapeHtml(msg.text)}</div>
+      ${mediaHtml}
+      ${msg.text ? `<div class="msg-bubble">${escapeHtml(msg.text)}</div>` : ''}
       <div class="msg-time">${timeLabel}</div>
     </div>
     ${isSent ? `<div class="msg-avatar" style="${avStyle}">${avInitial}</div>` : ''}`;
@@ -4312,7 +4547,9 @@ function sbListenMessages(partnerEmail) {
           from:        m.sender_email,
           fromName:    m.sender_name,
           fromInitial: (m.sender_name || '?')[0].toUpperCase(),
-          text:        m.text,
+          text:        m.text || '',
+          media_url:   m.media_url || null,
+          media_type:  m.media_type || null,
           ts:          m.created_at,
           deletedFor:  m.deleted_for || []
         }));
@@ -4332,24 +4569,25 @@ function sbListenMessages(partnerEmail) {
       filter: `conv_id=eq.${cid}`
     }, (payload) => {
       const m = payload.new;
-      if (!m || !m.text) return;
+      if (!m || (!m.text && !m.media_url)) return;
       if ((m.deleted_for || []).includes(currentUser.email.toLowerCase())) return;
       // Non duplicare messaggi già inviati da noi (già mostrati ottimisticamente)
       if (m.sender_email.toLowerCase() === currentUser.email.toLowerCase()) {
         // Aggiorna solo lastTs nella lista conv
         const conv = REAL_CONVS.find(c => c.partnerEmail.toLowerCase() === partnerEmail.toLowerCase());
-        if (conv) { conv.lastMessage = m.text; conv.lastTs = m.created_at; renderConversations(); saveConvsCache(); }
+        if (conv) { conv.lastMessage = m.text || '📎 Media'; conv.lastTs = m.created_at; renderConversations(); saveConvsCache(); }
         return;
       }
       const msg = {
         id: m.id, from: m.sender_email, fromName: m.sender_name,
         fromInitial: (m.sender_name || '?')[0].toUpperCase(),
-        text: m.text, ts: m.created_at, deletedFor: m.deleted_for || []
+        text: m.text || '', media_url: m.media_url || null, media_type: m.media_type || null,
+        ts: m.created_at, deletedFor: m.deleted_for || []
       };
       appendMessageToChat(msg, false);
       // Aggiorna preview lista conv
       const conv = REAL_CONVS.find(c => c.partnerEmail.toLowerCase() === partnerEmail.toLowerCase());
-      if (conv) { conv.lastMessage = m.text; conv.lastTs = m.created_at; renderConversations(); saveConvsCache(); }
+      if (conv) { conv.lastMessage = m.text || '📎 Media'; conv.lastTs = m.created_at; renderConversations(); saveConvsCache(); }
     }).subscribe();
   _sbChannels['messages'] = ch;
 }
@@ -4604,17 +4842,32 @@ async function deleteMyHistory() {
   if (!currentConvPartnerEmail || !currentUser) return;
   if (!confirm('Elimina tutta la cronologia di questa conversazione solo per te? L\'altro utente continuerà a vedere i propri messaggi.')) return;
 
-  // Supabase: marca i messaggi come eliminati per l'utente corrente
+  // Supabase: cancellazione intelligente
+  // → Se l'altro utente ha già eliminato: cancella la riga fisicamente (libera spazio)
+  // → Altrimenti: marca come eliminata solo per te (soft delete)
   if (_sbReady) {
     const cid = convId(currentUser.email, currentConvPartnerEmail);
-    // Recupera tutti i messaggi della conv, aggiunge email alle deleted_for
     const { data: msgs } = await _sb.from('messages').select('id, deleted_for').eq('conv_id', cid);
     if (msgs && msgs.length > 0) {
+      const toDelete = []; // righe da eliminare fisicamente
+      const toUpdate = []; // righe da marcare soft-deleted
       for (const m of msgs) {
         const df = m.deleted_for || [];
-        if (!df.includes(currentUser.email.toLowerCase())) {
-          await Promise.resolve(_sb.from('messages').update({ deleted_for: [...df, currentUser.email.toLowerCase()] }).eq('id', m.id)).catch(()=>{});
+        if (df.includes(currentUser.email.toLowerCase())) continue; // già marcata per noi
+        const updatedDf = [...df, currentUser.email.toLowerCase()];
+        // Se entrambi gli utenti hanno eliminato → cancellazione fisica
+        const otherAlsoDeleted = df.includes(currentConvPartnerEmail.toLowerCase());
+        if (otherAlsoDeleted) {
+          toDelete.push(m.id);
+        } else {
+          toUpdate.push({ id: m.id, deleted_for: updatedDf });
         }
+      }
+      if (toDelete.length > 0) {
+        await Promise.resolve(_sb.from('messages').delete().in('id', toDelete)).catch(()=>{});
+      }
+      for (const u of toUpdate) {
+        await Promise.resolve(_sb.from('messages').update({ deleted_for: u.deleted_for }).eq('id', u.id)).catch(()=>{});
       }
     }
     // Rimuovi la conv dal proprio record
