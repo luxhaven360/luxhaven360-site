@@ -463,8 +463,9 @@ body {
   position: relative;
 }
 
-.panel { display: none; animation: panelFade 0.25s ease; }
+.panel { display: none; animation: panelFade 0.25s ease; background: var(--darker); }
 .panel.active { display: block; }
+#panel-messages { animation: none; } /* Nessun fade per i messaggi — previene il flash nero */
 @keyframes panelFade {
   from { opacity: 0; transform: translateY(8px); }
   to { opacity: 1; transform: translateY(0); }
@@ -798,6 +799,7 @@ body {
   padding: 1rem 1.4rem;
   display: flex; flex-direction: column; gap: 0.35rem;
   scroll-behavior: smooth;
+  background: var(--dark3); /* previene flash nero durante il caricamento */
 }
 .chat-date-divider {
   text-align: center; font-size: 0.62rem;
@@ -2058,8 +2060,8 @@ emoji-picker {
               <span class="remove-media" onclick="removeMediaAttachment()" title="Rimuovi">✕</span>
             </div>
             <!-- Emoji picker popup -->
-            <div class="emoji-picker-wrap" id="emojiPickerWrap" style="position:relative;">
-              <emoji-picker id="emojiPickerEl" style="display:none;"></emoji-picker>
+            <div class="emoji-picker-wrap" id="emojiPickerWrap">
+              <emoji-picker id="emojiPickerEl"></emoji-picker>
             </div>
             <div class="chat-input-area">
               <!-- Input file nascosto -->
@@ -4078,8 +4080,10 @@ async function loadChatMessages(partnerEmail) {
   if (!messagesEl) return;
   if (!GAS_URL) { messagesEl.innerHTML = '<div style="text-align:center;padding:2rem;color:var(--muted2);font-size:0.8rem;">Configura GAS_URL per la messaggistica reale.</div>'; return; }
 
-  // Mostra skeleton loader immediatamente — zero latenza percepita
-  messagesEl.innerHTML = `
+  // Mostra skeleton loader solo se la chat è vuota — zero latenza, nessun flash al rientro
+  const alreadyHasContent = messagesEl.children.length > 0 && !messagesEl.querySelector('.chat-skeleton');
+  if (!alreadyHasContent) {
+    messagesEl.innerHTML = `
     <div class="chat-skeleton">
       <div class="chat-skel-row"><div class="chat-skel-av"></div><div class="chat-skel-bubble"></div></div>
       <div class="chat-skel-row sent"><div class="chat-skel-av"></div><div class="chat-skel-bubble"></div></div>
@@ -4087,6 +4091,7 @@ async function loadChatMessages(partnerEmail) {
       <div class="chat-skel-row sent"><div class="chat-skel-av"></div><div class="chat-skel-bubble"></div></div>
       <div class="chat-skel-row"><div class="chat-skel-av"></div><div class="chat-skel-bubble"></div></div>
     </div>`;
+  }
 
   try {
     const resp = await fetch(`${GAS_URL}?action=get_messages&email1=${encodeURIComponent(currentUser.email)}&email2=${encodeURIComponent(partnerEmail)}&requesterEmail=${encodeURIComponent(currentUser.email)}`);
@@ -4179,28 +4184,32 @@ function escapeHtml(str) {
 ═══════════════════════════════════════════ */
 let _emojiPickerReady = false;
 function toggleEmojiPicker() {
+  const wrap   = document.getElementById('emojiPickerWrap');
   const picker = document.getElementById('emojiPickerEl');
-  if (!picker) return;
-  const isOpen = picker.style.display !== 'none';
-  picker.style.display = isOpen ? 'none' : 'block';
+  if (!wrap || !picker) return;
+  const isOpen = wrap.classList.contains('open');
+  wrap.classList.toggle('open');
   if (!isOpen && !_emojiPickerReady) {
     _emojiPickerReady = true;
     picker.addEventListener('emoji-click', (e) => {
       const input = document.getElementById('chatInput');
       if (!input) return;
-      const pos = input.selectionStart || input.value.length;
+      const pos = input.selectionStart ?? input.value.length;
       input.value = input.value.slice(0, pos) + e.detail.unicode + input.value.slice(pos);
       input.focus();
       input.selectionStart = input.selectionEnd = pos + e.detail.unicode.length;
+      wrap.classList.remove('open'); // chiudi picker dopo selezione
     });
   }
 }
 // Chiudi emoji picker cliccando fuori
 document.addEventListener('click', (e) => {
-  const picker = document.getElementById('emojiPickerEl');
-  const btn = document.getElementById('emojiToggleBtn');
-  if (picker && picker.style.display !== 'none' && !picker.contains(e.target) && e.target !== btn && !btn?.contains(e.target)) {
-    picker.style.display = 'none';
+  const wrap = document.getElementById('emojiPickerWrap');
+  const btn  = document.getElementById('emojiToggleBtn');
+  if (wrap && wrap.classList.contains('open') &&
+      !wrap.contains(e.target) &&
+      e.target !== btn && !btn?.contains(e.target)) {
+    wrap.classList.remove('open');
   }
 });
 
@@ -4294,8 +4303,25 @@ function removeMediaAttachment() {
   if (bar) { bar.classList.remove('visible'); document.getElementById('mediaPreviewThumb').innerHTML = ''; }
 }
 
+/* ── Assicura sessione Supabase (anon sign-in se necessario) — richiesta dalle RLS storage ── */
+async function ensureSupabaseAuth() {
+  if (!_sb) return false;
+  try {
+    const { data: { session } } = await _sb.auth.getSession();
+    if (session) return true; // già autenticato
+    const { error } = await _sb.auth.signInAnonymously();
+    if (error) { console.warn('[Supabase Auth] signInAnonymously error:', error.message); return false; }
+    return true;
+  } catch(e) {
+    console.warn('[Supabase Auth] ensureSupabaseAuth error:', e.message);
+    return false;
+  }
+}
+
 /* Upload file su Supabase Storage → ritorna URL pubblico */
 async function uploadMediaToSupabase(file) {
+  // Ottieni sessione auth per soddisfare le RLS policy dello storage
+  await ensureSupabaseAuth();
   const ext = file.name.split('.').pop() || 'jpg';
   const path = `chat/${currentUser.email.replace(/[@.]/g,'_')}/${Date.now()}.${ext}`;
   const { error } = await _sb.storage.from('chat-media').upload(path, file, { upsert: false, contentType: file.type });
@@ -4328,8 +4354,7 @@ async function sendMessage() {
   clearTypingStatus();
 
   // Chiudi emoji picker se aperto
-  const ep = document.getElementById('emojiPickerEl');
-  if (ep) ep.style.display = 'none';
+  document.getElementById('emojiPickerWrap')?.classList.remove('open');
 
   // Gestisci upload media
   let mediaUrl = null, mediaType = null;
