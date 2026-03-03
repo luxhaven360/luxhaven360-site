@@ -826,10 +826,23 @@ body {
   background: var(--dark5); border: 1px solid var(--border2); color: var(--muted);
   margin-bottom: 2px;
 }
+/* msg-bubble-wrap gestisce il max-width — la bubble si adatta al contenuto */
+.msg-bubble-wrap {
+  max-width: 68%;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  min-width: 0;
+}
+.msg.sent .msg-bubble-wrap {
+  align-items: flex-end;
+}
 .msg-bubble {
-  max-width: 68%; padding: 0.6rem 1rem;
+  display: inline-block;
+  padding: 0.6rem 1rem;
   border-radius: 18px; font-size: 0.82rem; line-height: 1.55;
   word-break: break-word;
+  max-width: 100%;
 }
 .msg.received .msg-bubble {
   background: var(--dark4); color: var(--light);
@@ -1678,6 +1691,12 @@ body {
   #mainApp.active { grid-template-columns: 1fr; grid-template-areas: "header" "content"; }
 }
 </style>
+<!-- ═══ FIREBASE REALTIME DATABASE SDK ═══ -->
+<!-- ⚠️ CONFIGURAZIONE RICHIESTA: sostituisci i valori di FIREBASE_CONFIG con quelli del tuo progetto Firebase.
+     Vai su https://console.firebase.google.com → Impostazioni progetto → Le tue app → Configurazione SDK.
+     Nel Realtime Database: abilita le regole di lettura/scrittura autenticata o gestita per il tuo schema. -->
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
 </head>
 <body>
 
@@ -2331,6 +2350,71 @@ body {
 const GAS_URL = 'https://script.google.com/macros/s/AKfycbwrDLCy9xO2mcX0ORieD5k9Ck7_6ysrnBfayWg_Gd_Pno4UrCa-2JuBTvkzBNvkfQ_xxQ/exec';
 
 /* ═══════════════════════════════════════════
+   FIREBASE REALTIME DATABASE — CONFIGURAZIONE
+   ⚠️ Sostituisci con i valori del tuo progetto Firebase!
+   Vai su: Firebase Console → Impostazioni progetto → Le tue app
+═══════════════════════════════════════════ */
+const FIREBASE_CONFIG = {
+    apiKey: "AIzaSyAi6YpKOndwTHpn8Tzlfoz0FvgxD68-ER8",
+    authDomain: "luxhaven360-community-hub.firebaseapp.com",
+    databaseURL: "https://luxhaven360-community-hub-default-rtdb.europe-west1.firebasedatabase.app",
+    projectId: "luxhaven360-community-hub",
+    storageBucket: "luxhaven360-community-hub.firebasestorage.app",
+    messagingSenderId: "81798064750",
+    appId: "1:81798064750:web:e88b198058715af5cd547f",
+    measurementId: "G-MNYGVXC6T3"
+  };
+
+/* ── Firebase: inizializzazione sicura ── */
+let _fbApp = null;
+let _fbDb  = null;
+let _fbReady = false;
+
+(function initFirebase() {
+  try {
+    if (FIREBASE_CONFIG.apiKey && FIREBASE_CONFIG.apiKey !== "LA_TUA_API_KEY") {
+      _fbApp   = firebase.initializeApp(FIREBASE_CONFIG);
+      _fbDb    = firebase.database();
+      _fbReady = true;
+      console.log('[Firebase] ✅ Realtime Database inizializzato');
+    } else {
+      console.warn('[Firebase] ⚠️ Configurazione non impostata — la RT funzionalità è disabilitata. Aggiorna FIREBASE_CONFIG.');
+    }
+  } catch(e) {
+    console.error('[Firebase] Errore inizializzazione:', e.message);
+  }
+})();
+
+/* ── Helpers Firebase ── */
+function fbRef(path) { return _fbReady ? _fbDb.ref(path) : null; }
+
+/* Genera un ID di conversazione canonico (ordine alfabetico delle email) */
+function convId(emailA, emailB) {
+  const a = emailA.toLowerCase().replace(/[.#$\[\]]/g, '_');
+  const b = emailB.toLowerCase().replace(/[.#$\[\]]/g, '_');
+  return a < b ? `${a}__${b}` : `${b}__${a}`;
+}
+
+/* Email → chiave Firebase sicura */
+function emailKey(email) {
+  return (email || '').toLowerCase().replace(/[.#$\[\]@]/g, '_');
+}
+
+/* ── Listener attivi: tracciati per cleanup ── */
+let _fbListeners = {};   // { key: { ref, event } }
+function fbOff(key) {
+  if (_fbListeners[key]) {
+    _fbListeners[key].ref.off(_fbListeners[key].event);
+    delete _fbListeners[key];
+  }
+}
+function fbOn(key, ref, event, cb) {
+  fbOff(key);
+  ref.on(event, cb);
+  _fbListeners[key] = { ref, event };
+}
+
+/* ═══════════════════════════════════════════
    APP STATE
 ═══════════════════════════════════════════ */
 
@@ -2634,8 +2718,35 @@ function initApp() {
   updateNotifBadge();
 
   // Simulate real-time activity
-  // Avvia presenza real-time: heartbeat immediato + timer ogni 2 minuti
+  // Avvia presenza real-time: heartbeat immediato + timer + Firebase
   startPresenceSystem();
+
+  // Firebase: ascolta notifiche in tempo reale
+  if (_fbReady && currentUser) {
+    const notifKey = emailKey(currentUser.email);
+    const notifRef = fbRef(`notifications/${notifKey}`);
+    fbOn('notifications_rt', notifRef, 'child_added', (snap) => {
+      const n = snap.val();
+      if (!n || !n.text) return;
+      // Evita duplicati
+      const alreadyIn = NOTIFICATIONS.some(x => x.id === (n.id || snap.key));
+      if (alreadyIn) return;
+      const notif = {
+        id:    n.id || snap.key,
+        icon:  n.icon  || 'blue',
+        emoji: n.emoji || '🔔',
+        text:  n.text,
+        time:  n.time  || 'Ora',
+        read:  false
+      };
+      NOTIFICATIONS.unshift(notif);
+      notifCount++;
+      updateNotifBadge();
+      renderNotifDropdown();
+      renderNotifications();
+      showToast(notif.icon, notif.emoji, notif.text);
+    });
+  }
 
   // Carica statistiche dinamiche ogni 10 secondi (aggiornamento in tempo reale)
   loadDashboardStats();
@@ -2679,9 +2790,23 @@ function showPanel(id, navEl) {
   if (id === 'messages') {
     unreadMsgs = 0; updateMsgBadge();
     loadConversations();
-    startMessagePolling();
+    // Firebase gestisce i messaggi in RT — polling solo come fallback
+    if (_fbReady) {
+      fbListenConversations();
+      if (currentConvPartnerEmail) {
+        fbListenMessages(currentConvPartnerEmail);
+        fbListenTyping(currentConvPartnerEmail);
+      }
+    } else {
+      startMessagePolling();
+    }
   } else {
     stopMessagePolling();
+    // Rilascia i listener Firebase quando lasci la sezione messaggi
+    if (_fbReady) {
+      fbOff('messages');
+      fbOff('typing');
+    }
   }
   if (id === 'feed') {
     document.getElementById('feedBadge').classList.add('hidden');
@@ -3721,7 +3846,12 @@ function getPartnerInfo(partnerEmail) {
 
 /* ── Carica conversazioni da GAS ── */
 async function loadConversations() {
-  if (!GAS_URL || !currentUser) return;
+  // Se Firebase è pronto, il listener fbListenConversations() gestisce gli aggiornamenti
+  // Facciamo comunque un fetch GAS iniziale per popolare REAL_CONVS da storico
+  if (!GAS_URL || !currentUser) {
+    if (_fbReady) fbListenConversations();
+    return;
+  }
   try {
     const resp = await fetch(`${GAS_URL}?action=get_conversations&email=${encodeURIComponent(currentUser.email)}`);
     const data = await resp.json();
@@ -3756,6 +3886,9 @@ async function loadConversations() {
       }
     }
   } catch(e) { console.warn('[Messages] loadConversations error:', e.message); }
+
+  // Avvia il listener Firebase per aggiornamenti RT sulle conversazioni
+  if (_fbReady) fbListenConversations();
 }
 
 /* ── Renderizza lista conversazioni ── */
@@ -3831,6 +3964,14 @@ async function openConvByEmail(partnerEmail) {
 
   // Carica messaggi
   await loadChatMessages(partnerEmail);
+
+  // Avvia listener Firebase (o polling GAS in fallback)
+  if (_fbReady) {
+    fbListenMessages(partnerEmail);
+    fbListenTyping(partnerEmail);
+  } else {
+    startMessagePolling();
+  }
 
   // Segna letti su GAS in background
   if (GAS_URL) {
@@ -3918,7 +4059,7 @@ function renderChatMessages(messages, partnerEmail) {
     html += `
       <div class="msg ${isSent ? 'sent' : 'received'}">
         ${!isSent ? `<div class="msg-avatar" style="${avatarStyle}${avatarVisible}">${avatarInitial}</div>` : ''}
-        <div style="max-width:68%;">
+        <div class="msg-bubble-wrap">
           <div class="msg-bubble">${escapeHtml(msg.text)}</div>
           <div class="msg-time">${timeLabel}</div>
         </div>
@@ -3992,7 +4133,52 @@ async function sendMessage() {
   }
   renderConversations();
 
-  // Persisti su GAS
+  // Persisti su Firebase (RT istantaneo) E su GAS (persistenza storica)
+  const cid = convId(currentUser.email, currentConvPartnerEmail);
+
+  // ── Firebase: scrivi il messaggio in real-time ──
+  if (_fbReady) {
+    const fbMsgRef = fbRef(`messages/${cid}`).push();
+    const fbMsgData = {
+      id:           fbMsgRef.key,
+      from:         currentUser.email,
+      fromName:     currentUser.name,
+      fromInitial:  currentUser.initial,
+      text,
+      ts:           firebase.database.ServerValue.TIMESTAMP,
+      deletedFor:   []
+    };
+    fbMsgRef.set(fbMsgData).catch(e => console.warn('[FB msg]', e.message));
+
+    // Aggiorna le conv di entrambi gli utenti su Firebase
+    const tsNow = firebase.database.ServerValue.TIMESTAMP;
+    const myKey      = emailKey(currentUser.email);
+    const partnerKey2 = emailKey(currentConvPartnerEmail);
+
+    fbRef(`conversations/${myKey}/${partnerKey2}`).set({
+      partnerEmail:   currentConvPartnerEmail,
+      partnerName:    partnerInfo.name,
+      partnerInitial: partnerInfo.initial,
+      partnerRole:    partnerInfo.role || '',
+      lastMessage:    text,
+      lastTs:         tsNow,
+      unread:         0
+    }).catch(()=>{});
+
+    fbRef(`conversations/${partnerKey2}/${myKey}`).update({
+      partnerEmail:   currentUser.email,
+      partnerName:    currentUser.name,
+      partnerInitial: currentUser.initial,
+      partnerRole:    currentUser.role || '',
+      lastMessage:    text,
+      lastTs:         tsNow
+    }).then(() => {
+      // Incrementa unread del destinatario
+      fbRef(`conversations/${partnerKey2}/${myKey}/unread`).transaction(n => (n || 0) + 1);
+    }).catch(()=>{});
+  }
+
+  // ── GAS: persistenza storica (fallback o doppio-salvataggio) ──
   if (!GAS_URL) {
     if (sendBtn) { sendBtn.disabled = false; sendBtn.style.opacity = ''; }
     return;
@@ -4051,7 +4237,7 @@ function appendMessageToChat(msg, isSent) {
   const avInitial = isSent ? currentUser.initial : partnerInfo.initial;
   el.innerHTML = `
     ${!isSent ? `<div class="msg-avatar" style="${avStyle}">${avInitial}</div>` : ''}
-    <div style="max-width:68%;">
+    <div class="msg-bubble-wrap">
       <div class="msg-bubble">${escapeHtml(msg.text)}</div>
       <div class="msg-time">${timeLabel}</div>
     </div>
@@ -4061,12 +4247,142 @@ function appendMessageToChat(msg, isSent) {
 }
 
 /* ── Polling messaggi: attivo solo quando il pannello messaggi è visibile ── */
+/* ── Con Firebase questo è solo un fallback: i listener Firebase sostituiscono il polling ── */
 function startMessagePolling() {
   stopMessagePolling();
-  _msgPollTimer = setInterval(pollMessages, 600); // polling ogni 600ms — near real-time
+  if (_fbReady && currentConvPartnerEmail) {
+    // Firebase già in ascolto — nessun polling necessario
+    return;
+  }
+  // Fallback GAS polling (solo se Firebase non disponibile)
+  _msgPollTimer = setInterval(pollMessages, 600);
 }
 function stopMessagePolling() {
   if (_msgPollTimer) { clearInterval(_msgPollTimer); _msgPollTimer = null; }
+}
+
+/* ── Listener Firebase Realtime per i messaggi di una conversazione ── */
+function fbListenMessages(partnerEmail) {
+  if (!_fbReady || !currentUser || !partnerEmail) return;
+
+  const cid = convId(currentUser.email, partnerEmail);
+  const ref = fbRef(`messages/${cid}`);
+
+  fbOn('messages', ref, 'value', (snap) => {
+    const data = snap.val() || {};
+    // Converti oggetto Firebase in array ordinato per timestamp
+    const msgs = Object.values(data)
+      .filter(m => {
+        // Escludi i messaggi eliminati per l'utente corrente
+        if (!m || !m.ts) return false;
+        if (m.deletedFor && Array.isArray(m.deletedFor)) {
+          if (m.deletedFor.includes(currentUser.email.toLowerCase())) return false;
+        }
+        return true;
+      })
+      .sort((a, b) => (a.ts || 0) - (b.ts || 0))
+      .map(m => ({
+        id:   m.id || m.ts,
+        from: m.from || '',
+        fromName: m.fromName || '',
+        fromInitial: m.fromInitial || '',
+        text: m.text || '',
+        ts:   typeof m.ts === 'number' ? new Date(m.ts).toISOString() : m.ts,
+        deletedFor: m.deletedFor || []
+      }));
+
+    if (msgs.length > 0) _msgLastSeen[partnerEmail] = msgs[msgs.length - 1].id;
+
+    // Se la conv è ancora quella aperta, aggiorna il render completo
+    if (currentConvPartnerEmail &&
+        currentConvPartnerEmail.toLowerCase() === partnerEmail.toLowerCase()) {
+      removeTypingIndicator();
+      renderChatMessages(msgs, partnerEmail);
+    }
+
+    // Aggiorna preview nella lista conv
+    if (msgs.length > 0) {
+      const last = msgs[msgs.length - 1];
+      let conv = REAL_CONVS.find(c => c.partnerEmail.toLowerCase() === partnerEmail.toLowerCase());
+      if (conv) {
+        conv.lastMessage = last.text;
+        conv.lastTs      = last.ts;
+      }
+      renderConversations();
+    }
+  });
+}
+
+/* ── Listener Firebase per lista conversazioni ── */
+function fbListenConversations() {
+  if (!_fbReady || !currentUser) return;
+
+  const key = emailKey(currentUser.email);
+  const ref = fbRef(`conversations/${key}`);
+
+  fbOn('conversations', ref, 'value', (snap) => {
+    const data = snap.val() || {};
+    const convs = Object.values(data)
+      .filter(c => c && c.partnerEmail)
+      .sort((a, b) => (b.lastTs || 0) - (a.lastTs || 0));
+
+    // Merge con REAL_CONVS senza sovrascrivere la conv aperta
+    convs.forEach(c => {
+      const existing = REAL_CONVS.find(r => r.partnerEmail.toLowerCase() === c.partnerEmail.toLowerCase());
+      if (existing) {
+        existing.lastMessage = c.lastMessage || existing.lastMessage;
+        existing.lastTs      = c.lastTs      || existing.lastTs;
+        if (currentConvPartnerEmail &&
+            c.partnerEmail.toLowerCase() === currentConvPartnerEmail.toLowerCase()) {
+          existing.unread = 0;
+        } else {
+          existing.unread = c.unread || 0;
+        }
+      } else {
+        const info = getPartnerInfo(c.partnerEmail);
+        REAL_CONVS.push({
+          partnerEmail:   c.partnerEmail,
+          partnerName:    c.partnerName    || info.name,
+          partnerInitial: c.partnerInitial || info.initial,
+          partnerRole:    c.partnerRole    || info.role,
+          lastMessage:    c.lastMessage || '',
+          lastTs:         c.lastTs      ? new Date(c.lastTs).toISOString() : '',
+          unread:         c.unread      || 0
+        });
+      }
+    });
+
+    // Aggiorna badge messaggi non letti
+    const totalUnread = REAL_CONVS.reduce((sum, c) => sum + (c.unread || 0), 0);
+    const msgBadge = document.querySelector('.nav-item[onclick*="messages"] .nav-badge');
+    if (msgBadge) {
+      if (totalUnread > 0) { msgBadge.textContent = totalUnread; msgBadge.classList.remove('hidden'); }
+      else { msgBadge.classList.add('hidden'); }
+    }
+
+    renderConversations();
+  });
+}
+
+/* ── Listener Firebase per typing indicator ── */
+function fbListenTyping(partnerEmail) {
+  if (!_fbReady || !currentUser || !partnerEmail) return;
+
+  const cid = convId(currentUser.email, partnerEmail);
+  const partnerKey = emailKey(partnerEmail);
+  const ref = fbRef(`typing/${cid}/${partnerKey}`);
+
+  fbOn('typing', ref, 'value', (snap) => {
+    const data = snap.val();
+    if (data && data.isTyping) {
+      // Mostra solo se il valore è recente (ultimi 6 secondi)
+      const age = Date.now() - (data.ts || 0);
+      if (age < 6000) showTypingIndicator();
+      else removeTypingIndicator();
+    } else {
+      removeTypingIndicator();
+    }
+  });
 }
 
 async function pollMessages() {
@@ -4162,23 +4478,45 @@ function handleChatInput(e) {
 }
 
 function sendTypingStatus(isTyping) {
-  if (!GAS_URL || !currentConvPartnerEmail || !currentUser) return;
+  if (!currentConvPartnerEmail || !currentUser) return;
   const now = Date.now();
-  if (isTyping && now - _typingSentAt < 800) return; // throttle: max 1 volta ogni 800ms
+  if (isTyping && now - _typingSentAt < 800) return; // throttle 800ms
   _typingSentAt = now;
 
-  fetch(`${GAS_URL}?action=set_typing&email=${encodeURIComponent(currentUser.email)}&otherEmail=${encodeURIComponent(currentConvPartnerEmail)}&isTyping=${isTyping}`).catch(()=>{});
-
-  // Auto-clear typing dopo 4s di inattività
-  if (_typingTimer) clearTimeout(_typingTimer);
-  if (isTyping) {
-    _typingTimer = setTimeout(() => clearTypingStatus(), 4000);
+  // Firebase: scrittura istantanea — zero latenza
+  if (_fbReady) {
+    const cid     = convId(currentUser.email, currentConvPartnerEmail);
+    const myKey   = emailKey(currentUser.email);
+    const ref     = fbRef(`typing/${cid}/${myKey}`);
+    if (isTyping) {
+      ref.set({ isTyping: true, ts: firebase.database.ServerValue.TIMESTAMP });
+      // Auto-rimuovi da Firebase dopo 5s di inattività
+      if (_typingTimer) clearTimeout(_typingTimer);
+      _typingTimer = setTimeout(() => {
+        ref.remove().catch(()=>{});
+      }, 5000);
+    } else {
+      ref.remove().catch(()=>{});
+    }
+  } else {
+    // Fallback GAS
+    fetch(`${GAS_URL}?action=set_typing&email=${encodeURIComponent(currentUser.email)}&otherEmail=${encodeURIComponent(currentConvPartnerEmail)}&isTyping=${isTyping}`).catch(()=>{});
+    if (_typingTimer) clearTimeout(_typingTimer);
+    if (isTyping) {
+      _typingTimer = setTimeout(() => clearTypingStatus(), 4000);
+    }
   }
 }
 
 function clearTypingStatus() {
   if (_typingTimer) { clearTimeout(_typingTimer); _typingTimer = null; }
-  if (currentConvPartnerEmail && currentUser) {
+  if (!currentConvPartnerEmail || !currentUser) return;
+
+  if (_fbReady) {
+    const cid   = convId(currentUser.email, currentConvPartnerEmail);
+    const myKey = emailKey(currentUser.email);
+    fbRef(`typing/${cid}/${myKey}`)?.remove().catch(()=>{});
+  } else {
     fetch(`${GAS_URL}?action=set_typing&email=${encodeURIComponent(currentUser.email)}&otherEmail=${encodeURIComponent(currentConvPartnerEmail)}&isTyping=false`).catch(()=>{});
   }
 }
@@ -4211,7 +4549,38 @@ async function deleteMyHistory() {
   if (!currentConvPartnerEmail || !currentUser) return;
   if (!confirm('Elimina tutta la cronologia di questa conversazione solo per te? L\'altro utente continuerà a vedere i propri messaggi.')) return;
 
-  if (!GAS_URL) { showToast('red','⚠️','GAS non configurato.'); return; }
+  // Firebase: marca i messaggi come eliminati per l'utente corrente
+  if (_fbReady) {
+    const cid = convId(currentUser.email, currentConvPartnerEmail);
+    const ref = fbRef(`messages/${cid}`);
+    const snap = await ref.once('value');
+    const msgs = snap.val() || {};
+    const updates = {};
+    Object.keys(msgs).forEach(key => {
+      const existing = msgs[key].deletedFor || [];
+      if (!existing.includes(currentUser.email.toLowerCase())) {
+        updates[`${key}/deletedFor`] = [...existing, currentUser.email.toLowerCase()];
+      }
+    });
+    if (Object.keys(updates).length > 0) await ref.update(updates).catch(()=>{});
+
+    // Rimuovi la conv dal nodo conversazioni
+    const myKey = emailKey(currentUser.email);
+    const partnerKey2 = emailKey(currentConvPartnerEmail);
+    await fbRef(`conversations/${myKey}/${partnerKey2}`).remove().catch(()=>{});
+  }
+
+  if (!GAS_URL) {
+    REAL_CONVS = REAL_CONVS.filter(c => c.partnerEmail.toLowerCase() !== currentConvPartnerEmail.toLowerCase());
+    renderConversations();
+    const messagesEl = document.getElementById('chatMessages');
+    if (messagesEl) messagesEl.innerHTML = '<div style="text-align:center;padding:3rem 1rem;color:var(--muted2);font-size:0.8rem;">Cronologia eliminata.</div>';
+    showToast('green','🗑','Cronologia eliminata.');
+    currentConvPartnerEmail = null;
+    document.getElementById('chatHeaderName').textContent = 'Seleziona una conversazione';
+    document.getElementById('chatHeaderStatus').textContent = '—';
+    return;
+  }
   try {
     const resp = await fetch(`${GAS_URL}?action=delete_messages_for_user&email=${encodeURIComponent(currentUser.email)}&otherEmail=${encodeURIComponent(currentConvPartnerEmail)}`);
     const data = await resp.json();
@@ -4257,7 +4626,8 @@ function startConvWithMember(memberEmail, memberName, memberInitial, memberRole)
     renderConversations();
   }
   openConvByEmail(memberEmail);
-  startMessagePolling();
+  // Firebase gestisce i listener — startMessagePolling è fallback
+  if (!_fbReady) startMessagePolling();
 }
 
 /* ── Quick menu membro online ── */
@@ -5072,14 +5442,49 @@ function showToast(color, icon, text) {
    REAL-TIME SIMULATION
 ═══════════════════════════════════════════ */
 /* ═══════════════════════════════════════════
-   PRESENZA REAL-TIME
+   PRESENZA REAL-TIME — FIREBASE REALTIME DATABASE
+   Sostituisce completamente il sistema heartbeat GAS
 ═══════════════════════════════════════════ */
-const HEARTBEAT_INTERVAL = 30 * 1000; // ogni 30 secondi (era 2 min)
+const HEARTBEAT_INTERVAL = 30 * 1000; // fallback GAS — usato solo se Firebase non è pronto
 let _heartbeatTimer = null;
 let _presencePollTimer = null;
+let _fbPresenceRef = null; // ref Firebase per la presenza dell'utente corrente
 
-/* Invia heartbeat a GAS — segnala che l'utente è online */
-async function sendHeartbeat() {
+/* ── Registra presenza utente su Firebase con onDisconnect ── */
+function fbSetPresence() {
+  if (!_fbReady || !currentUser) return;
+
+  const key  = emailKey(currentUser.email);
+  const ref  = fbRef(`presence/${key}`);
+  _fbPresenceRef = ref;
+
+  const presenceData = {
+    name:    currentUser.name,
+    initial: currentUser.initial,
+    role:    currentUser.role,
+    email:   currentUser.email,
+    online:  true,
+    ts:      firebase.database.ServerValue.TIMESTAMP
+  };
+
+  // onDisconnect: Firebase rimuove automaticamente la presenza se il client si disconnette
+  ref.onDisconnect().remove();
+
+  // Scrivi la presenza
+  ref.set(presenceData).catch(e => console.warn('[Presenza FB]', e.message));
+
+  // Mantieni aggiornato il timestamp ogni 30s (keep-alive)
+  if (_heartbeatTimer) clearInterval(_heartbeatTimer);
+  _heartbeatTimer = setInterval(() => {
+    if (_fbReady && ref) ref.update({ ts: firebase.database.ServerValue.TIMESTAMP }).catch(()=>{});
+  }, HEARTBEAT_INTERVAL);
+
+  // Fallback: invia anche heartbeat GAS per mantenere compatibilità backend
+  sendHeartbeatGAS();
+}
+
+/* ── Invia heartbeat a GAS (fallback/compatibilità) ── */
+async function sendHeartbeatGAS() {
   if (!GAS_URL || !currentUser) return;
   try {
     await fetch(`${GAS_URL}?action=heartbeat` +
@@ -5089,16 +5494,71 @@ async function sendHeartbeat() {
       `&role=${encodeURIComponent(currentUser.role)}`);
   } catch(_e) {}
 }
+/* alias legacy */
+const sendHeartbeat = sendHeartbeatGAS;
 
-/* Rimuove la presenza quando l'utente si disconnette/chiude */
+/* ── Rimuovi presenza (logout/chiusura pagina) ── */
 async function removePresence() {
-  if (!GAS_URL || !currentUser) return;
-  try {
-    await fetch(`${GAS_URL}?action=remove_presence&email=${encodeURIComponent(currentUser.email)}`);
-  } catch(_e) {}
+  // Firebase: rimuovi immediatamente
+  if (_fbPresenceRef) {
+    try { await _fbPresenceRef.remove(); } catch(_e) {}
+    _fbPresenceRef = null;
+  }
+  // GAS: compatibilità
+  if (GAS_URL && currentUser) {
+    try { await fetch(`${GAS_URL}?action=remove_presence&email=${encodeURIComponent(currentUser.email)}`); } catch(_e) {}
+  }
 }
 
-/* Aggiorna la lista membri online dal payload GAS */
+/* ── Ascolta i membri online in tempo reale via Firebase ── */
+function fbListenPresence() {
+  if (!_fbReady) {
+    // Fallback: polling GAS ogni 15s
+    _startPresencePollGAS();
+    return;
+  }
+
+  const ref = fbRef('presence');
+  fbOn('presence', ref, 'value', (snap) => {
+    const data = snap.val() || {};
+    const online = Object.values(data).filter(u => u && u.online && u.name);
+    applyPresenceData(online);
+  });
+}
+
+/* ── Polling GAS fallback (solo se Firebase non disponibile) ── */
+function _startPresencePollGAS() {
+  if (_presencePollTimer) clearInterval(_presencePollTimer);
+  _presencePollTimer = setInterval(async () => {
+    if (!GAS_URL || !currentUser) return;
+    try {
+      const r = await fetch(`${GAS_URL}?action=get_online_members`);
+      const d = await r.json();
+      if (d.success && Array.isArray(d.members)) applyPresenceData(d.members);
+    } catch(_e) {}
+  }, 15000);
+}
+
+/* ── Avvia il sistema di presenza ── */
+function startPresenceSystem() {
+  // 1. Registra presenza su Firebase (con onDisconnect automatico)
+  fbSetPresence();
+  // 2. Ascolta gli altri utenti online in tempo reale
+  fbListenPresence();
+
+  // Segnala offline quando l'utente chiude/lascia la pagina
+  window.addEventListener('beforeunload', removePresence);
+  window.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') {
+      fbSetPresence(); // ritorna dalla tab → aggiorna presenza
+    }
+  });
+}
+
+/* Funzione placeholder legacy */
+function startRealTimeSimulation() {
+  // Rimpiazzata da startPresenceSystem() — nessuna simulazione
+}
 function applyPresenceData(onlineList) {
   if (!Array.isArray(onlineList)) return;
   ONLINE_MEMBERS.length = 0;
@@ -5171,26 +5631,6 @@ function applyEventsData(eventsList) {
 
   // Persisti gli eventi in cache locale per rendering immediato al prossimo caricamento
   saveEventsCache();
-}
-
-/* Inizia la presenza: heartbeat immediato + timer */
-function startPresenceSystem() {
-  sendHeartbeat(); // immediato
-  if (_heartbeatTimer) clearInterval(_heartbeatTimer);
-  _heartbeatTimer = setInterval(sendHeartbeat, HEARTBEAT_INTERVAL);
-
-  // Segnala presenza come "offline" quando l'utente chiude/lascia la pagina
-  window.addEventListener('beforeunload', removePresence);
-  window.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible') {
-      sendHeartbeat(); // ritorna dalla tab → heartbeat immediato
-    }
-  });
-}
-
-/* Funzione placeholder — sostituta dalla simulazione fake */
-function startRealTimeSimulation() {
-  // Rimpiazzata da startPresenceSystem() — nessuna simulazione
 }
 
 /* ─── Toggle evento live (solo team) ─── */
@@ -5380,7 +5820,6 @@ function initGlobalSearch() {
   });
 }
 </script>
-<script src="firebase-realtime.js"></script>
 </body>
 </html>
 
