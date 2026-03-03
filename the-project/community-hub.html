@@ -2874,6 +2874,8 @@ async function initCommunityData() {
   if (!GAS_URL) return;
   try {
     await sendHeartbeat(); // assicura che il server ci conosca prima di chiedere chi è online
+    // Fetch presenza immediata in parallelo dopo heartbeat
+    fetch(GAS_URL+'?action=get_presence').then(r=>r.json()).then(p=>{ if(p.success&&Array.isArray(p.online)) applyPresenceData(p.online); }).catch(()=>{});
     const data = await fetch(`${GAS_URL}?action=get_community_data`).then(r => r.json());
     if (data.success) {
       applyRemoteData(data);
@@ -2885,9 +2887,9 @@ async function initCommunityData() {
     renderRightPanel();
   }
 
-  // 3. Polling real-time ogni 5 secondi
+  // 3. Polling real-time ogni 3 secondi (presenza e notifiche) + 15s per contenuti pesanti
   if (_communityPollTimer) clearInterval(_communityPollTimer);
-  _communityPollTimer = setInterval(pollCommunityUpdates, 5 * 1000);
+  _communityPollTimer = setInterval(pollCommunityUpdates, 3 * 1000);
 }
 
 /* Polling leggero: solo metadati per evitare render inutili */
@@ -2913,7 +2915,8 @@ async function pollCommunityUpdates() {
         if (notifPanel && notifPanel.classList.contains('active')) renderNotifications();
       }
       // Ogni 3 cicli (≈15s): aggiorna anche posts/discussions (più pesante)
-      if (_pollCycle % 3 === 0) applyRemoteData(data);
+      // Posts/discussions ogni 5 cicli (≈15s) — presenza aggiornata ogni ciclo (3s)
+      if (_pollCycle % 5 === 0) applyRemoteData(data);
     }
   } catch(e) {}
   // Statistiche dashboard
@@ -3696,9 +3699,17 @@ async function loadConversations() {
           partnerRole: c.partnerRole || info.role,
           lastMessage: c.lastMessage || '',
           lastTs: c.lastTs || '',
-          unread: c.unread || 0
+          unread: currentConvPartnerEmail && c.partnerEmail.toLowerCase() === currentConvPartnerEmail.toLowerCase() ? 0 : (c.unread || 0)
         };
       });
+      // Preserva la conv attiva se non ancora sul server (nessun messaggio inviato)
+      if (currentConvPartnerEmail) {
+        const _activeInList = REAL_CONVS.some(c => c.partnerEmail.toLowerCase() === currentConvPartnerEmail.toLowerCase());
+        if (!_activeInList) {
+          const _pi = getPartnerInfo(currentConvPartnerEmail);
+          REAL_CONVS.unshift({ partnerEmail: currentConvPartnerEmail, partnerName: _pi.name, partnerInitial: _pi.initial, partnerRole: _pi.role, lastMessage: '', lastTs: new Date().toISOString(), unread: 0 });
+        }
+      }
       renderConversations();
       // Aggiorna badge messaggi
       const totalUnread = REAL_CONVS.reduce((s, c) => s + (c.unread || 0), 0);
@@ -3733,7 +3744,7 @@ function renderConversations() {
   container.innerHTML = convs.map(c => {
     const isActive = currentConvPartnerEmail && c.partnerEmail.toLowerCase() === currentConvPartnerEmail.toLowerCase();
     const isTeam = c.partnerRole === 'team';
-    const onlineM = ONLINE_MEMBERS.find(m => m.email && m.email.toLowerCase() === c.partnerEmail.toLowerCase());
+    const onlineM = ONLINE_MEMBERS.find(m => (m.email && m.email.toLowerCase() === c.partnerEmail.toLowerCase()) || (m.name && c.partnerName && m.name.toLowerCase() === c.partnerName.toLowerCase()));
     const status = onlineM ? 'online' : 'offline';
     return `
     <div class="conv-item ${isActive ? 'active' : ''}" onclick="openConvByEmail('${c.partnerEmail}')">
@@ -3768,7 +3779,11 @@ async function openConvByEmail(partnerEmail) {
   document.getElementById('chatHeaderName').textContent = partnerInfo.name;
   const statusEl = document.getElementById('chatHeaderStatus');
   if (statusEl) {
-    const onlineM = ONLINE_MEMBERS.find(m => m.email && m.email.toLowerCase() === partnerEmail.toLowerCase());
+    // Verifica stato online: cerca per email (da presenza GAS) o per nome come fallback
+    const onlineM = ONLINE_MEMBERS.find(m =>
+      (m.email && m.email.toLowerCase() === partnerEmail.toLowerCase()) ||
+      (m.name && partnerInfo.name && m.name.toLowerCase() === partnerInfo.name.toLowerCase())
+    );
     statusEl.textContent = onlineM ? '● Online' : '○ Offline';
     statusEl.className = 'chat-header-status ' + (onlineM ? '' : 'offline');
   }
@@ -3983,7 +3998,7 @@ function appendMessageToChat(msg, isSent) {
 /* ── Polling messaggi: attivo solo quando il pannello messaggi è visibile ── */
 function startMessagePolling() {
   stopMessagePolling();
-  _msgPollTimer = setInterval(pollMessages, 2500);
+  _msgPollTimer = setInterval(pollMessages, 2000); // polling ogni 2s per messaggi istantanei
 }
 function stopMessagePolling() {
   if (_msgPollTimer) { clearInterval(_msgPollTimer); _msgPollTimer = null; }
@@ -4011,6 +4026,14 @@ async function pollMessages() {
           unread: currentConvPartnerEmail && c.partnerEmail.toLowerCase() === currentConvPartnerEmail.toLowerCase() ? 0 : (c.unread || 0)
         };
       });
+      // Preserva la conv attiva se non ancora presente sul server
+      if (currentConvPartnerEmail) {
+        const _aInList = REAL_CONVS.some(c => c.partnerEmail.toLowerCase() === currentConvPartnerEmail.toLowerCase());
+        if (!_aInList) {
+          const _pi2 = getPartnerInfo(currentConvPartnerEmail);
+          REAL_CONVS.unshift({ partnerEmail: currentConvPartnerEmail, partnerName: _pi2.name, partnerInitial: _pi2.initial, partnerRole: _pi2.role, lastMessage: '', lastTs: new Date().toISOString(), unread: 0 });
+        }
+      }
       renderConversations();
     }
   } catch(e) {}
@@ -4119,9 +4142,14 @@ function filterConversations(query) {
 }
 
 /* ── Avvia conversazione con un membro ── */
+/* ── Avvia conversazione con un membro ── */
 function startConvWithMember(memberEmail, memberName, memberInitial, memberRole) {
   memberName = decodeURIComponent(memberName);
   closeQuickMenu();
+  // PRIMA imposta currentConvPartnerEmail — POI chiama showPanel
+  // Così quando showPanel → loadConversations() risolve async,
+  // la conv attiva viene preservata nel merge
+  currentConvPartnerEmail = memberEmail;
   showPanel('messages', document.querySelector('.nav-item[data-panel="messages"]'));
   // Crea una conv "vuota" se non esiste già
   const existing = REAL_CONVS.find(c => c.partnerEmail.toLowerCase() === memberEmail.toLowerCase());
@@ -4138,7 +4166,6 @@ function startConvWithMember(memberEmail, memberName, memberInitial, memberRole)
     renderConversations();
   }
   openConvByEmail(memberEmail);
-  // Avvia polling
   startMessagePolling();
 }
 
@@ -4956,7 +4983,7 @@ function showToast(color, icon, text) {
 /* ═══════════════════════════════════════════
    PRESENZA REAL-TIME
 ═══════════════════════════════════════════ */
-const HEARTBEAT_INTERVAL = 2 * 60 * 1000; // ogni 2 minuti
+const HEARTBEAT_INTERVAL = 30 * 1000; // ogni 30 secondi (era 2 min)
 let _heartbeatTimer = null;
 let _presencePollTimer = null;
 
@@ -5003,9 +5030,28 @@ function applyPresenceData(onlineList) {
   saveOnlineCache();
   renderRightPanel();
 
-  // Aggiorna anche il contatore nella dashboard
+  // Aggiorna il contatore nella dashboard
   const countEl = document.getElementById('dashOnlineCount');
   if (countEl) countEl.textContent = ONLINE_MEMBERS.length;
+
+  // Aggiorna IMMEDIATAMENTE lo stato online/offline nella chat aperta
+  if (currentConvPartnerEmail) {
+    const _sEl = document.getElementById('chatHeaderStatus');
+    if (_sEl) {
+      const _cPart = REAL_CONVS.find(c => c.partnerEmail.toLowerCase() === currentConvPartnerEmail.toLowerCase());
+      const _pName = _cPart ? _cPart.partnerName : '';
+      const _isOnline = ONLINE_MEMBERS.find(m =>
+        (m.email && m.email.toLowerCase() === currentConvPartnerEmail.toLowerCase()) ||
+        (m.name && _pName && m.name.toLowerCase() === _pName.toLowerCase())
+      );
+      _sEl.textContent = _isOnline ? '● Online' : '○ Offline';
+      _sEl.className = 'chat-header-status ' + (_isOnline ? '' : 'offline');
+    }
+  }
+  // Aggiorna lista conv se il pannello messaggi è attivo
+  if (document.getElementById('panel-messages') && document.getElementById('panel-messages').classList.contains('active')) {
+    renderConversations();
+  }
 }
 
 /* Aggiorna la lista eventi dal payload GAS */
@@ -5245,4 +5291,3 @@ function initGlobalSearch() {
 </script>
 </body>
 </html>
-
