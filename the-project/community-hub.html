@@ -1692,11 +1692,8 @@ body {
 }
 </style>
 <!-- ═══ FIREBASE REALTIME DATABASE SDK ═══ -->
-<!-- ⚠️ CONFIGURAZIONE RICHIESTA: sostituisci i valori di FIREBASE_CONFIG con quelli del tuo progetto Firebase.
-     Vai su https://console.firebase.google.com → Impostazioni progetto → Le tue app → Configurazione SDK.
-     Nel Realtime Database: abilita le regole di lettura/scrittura autenticata o gestita per il tuo schema. -->
-<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
+<!-- Supabase Realtime SDK -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
 <body>
 
@@ -2350,43 +2347,38 @@ body {
 const GAS_URL = 'https://script.google.com/macros/s/AKfycbwrDLCy9xO2mcX0ORieD5k9Ck7_6ysrnBfayWg_Gd_Pno4UrCa-2JuBTvkzBNvkfQ_xxQ/exec';
 
 /* ═══════════════════════════════════════════
-   FIREBASE REALTIME DATABASE — CONFIGURAZIONE
-   ⚠️ Sostituisci con i valori del tuo progetto Firebase!
-   Vai su: Firebase Console → Impostazioni progetto → Le tue app
+   SUPABASE — CONFIGURAZIONE & INIZIALIZZAZIONE
+   Progetto: luxhaven360-community (West EU - Ireland)
 ═══════════════════════════════════════════ */
-const FIREBASE_CONFIG = {
-    apiKey: "AIzaSyAi6YpKOndwTHpn8Tzlfoz0FvgxD68-ER8",
-    authDomain: "luxhaven360-community-hub.firebaseapp.com",
-    databaseURL: "https://luxhaven360-community-hub-default-rtdb.europe-west1.firebasedatabase.app",
-    projectId: "luxhaven360-community-hub",
-    storageBucket: "luxhaven360-community-hub.firebasestorage.app",
-    messagingSenderId: "81798064750",
-    appId: "1:81798064750:web:e88b198058715af5cd547f",
-    measurementId: "G-MNYGVXC6T3"
-  };
+const SUPABASE_URL = 'https://tilxhlrwhqvmpxugvslw.supabase.co';
+const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRpbHhobHJ3aHF2bXB4dWd2c2x3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzI1Njc3ODksImV4cCI6MjA4ODE0Mzc4OX0.OVNdNfX-5Y9QQMQjXnKs5iZRUpEuHMnL-Fx1LrtuSRQ';
 
-/* ── Firebase: inizializzazione sicura ── */
-let _fbApp = null;
-let _fbDb  = null;
-let _fbReady = false;
+let _sb      = null;
+let _sbReady = false;
+// Alias di compatibilità — il codice usa ancora _fbReady in alcuni punti
+Object.defineProperty(window, '_fbReady', { get: () => _sbReady });
 
-(function initFirebase() {
+(function initSupabase() {
   try {
-    if (FIREBASE_CONFIG.apiKey && FIREBASE_CONFIG.apiKey !== "LA_TUA_API_KEY") {
-      _fbApp   = firebase.initializeApp(FIREBASE_CONFIG);
-      _fbDb    = firebase.database();
-      _fbReady = true;
-      console.log('[Firebase] ✅ Realtime Database inizializzato');
-    } else {
-      console.warn('[Firebase] ⚠️ Configurazione non impostata — la RT funzionalità è disabilitata. Aggiorna FIREBASE_CONFIG.');
-    }
+    _sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {
+      realtime: { params: { eventsPerSecond: 20 } }
+    });
+    _sbReady = true;
+    console.log('[Supabase] ✅ Client inizializzato — Realtime attivo');
   } catch(e) {
-    console.error('[Firebase] Errore inizializzazione:', e.message);
+    console.error('[Supabase] Errore inizializzazione:', e.message);
   }
 })();
 
-/* ── Helpers Firebase ── */
-function fbRef(path) { return _fbReady ? _fbDb.ref(path) : null; }
+/* ── Canali Supabase attivi (per cleanup) ── */
+let _sbChannels = {}; // { key: RealtimeChannel }
+
+function sbOff(key) {
+  if (_sbChannels[key]) {
+    _sb.removeChannel(_sbChannels[key]);
+    delete _sbChannels[key];
+  }
+}
 
 /* Genera un ID di conversazione canonico (ordine alfabetico delle email) */
 function convId(emailA, emailB) {
@@ -2395,24 +2387,15 @@ function convId(emailA, emailB) {
   return a < b ? `${a}__${b}` : `${b}__${a}`;
 }
 
-/* Email → chiave Firebase sicura */
+/* Email → chiave sicura */
 function emailKey(email) {
   return (email || '').toLowerCase().replace(/[.#$\[\]@]/g, '_');
 }
 
-/* ── Listener attivi: tracciati per cleanup ── */
-let _fbListeners = {};   // { key: { ref, event } }
-function fbOff(key) {
-  if (_fbListeners[key]) {
-    _fbListeners[key].ref.off(_fbListeners[key].event);
-    delete _fbListeners[key];
-  }
-}
-function fbOn(key, ref, event, cb) {
-  fbOff(key);
-  ref.on(event, cb);
-  _fbListeners[key] = { ref, event };
-}
+/* Alias legacy — non più usati ma mantenuti per compatibilità */
+function fbRef() { return null; }
+function fbOff(key) { sbOff(key); }
+function fbOn() {} // no-op: rimpiazzato da canali Supabase
 
 /* ═══════════════════════════════════════════
    APP STATE
@@ -2721,31 +2704,35 @@ function initApp() {
   // Avvia presenza real-time: heartbeat immediato + timer + Firebase
   startPresenceSystem();
 
-  // Firebase: ascolta notifiche in tempo reale
-  if (_fbReady && currentUser) {
+  // Supabase: ascolta notifiche in tempo reale
+  if (_sbReady && currentUser) {
     const notifKey = emailKey(currentUser.email);
-    const notifRef = fbRef(`notifications/${notifKey}`);
-    fbOn('notifications_rt', notifRef, 'child_added', (snap) => {
-      const n = snap.val();
-      if (!n || !n.text) return;
-      // Evita duplicati
-      const alreadyIn = NOTIFICATIONS.some(x => x.id === (n.id || snap.key));
-      if (alreadyIn) return;
-      const notif = {
-        id:    n.id || snap.key,
-        icon:  n.icon  || 'blue',
-        emoji: n.emoji || '🔔',
-        text:  n.text,
-        time:  n.time  || 'Ora',
-        read:  false
-      };
-      NOTIFICATIONS.unshift(notif);
-      notifCount++;
-      updateNotifBadge();
-      renderNotifDropdown();
-      renderNotifications();
-      showToast(notif.icon, notif.emoji, notif.text);
-    });
+    sbOff('notifications_rt');
+    const notifCh = _sb.channel('notifications_rt_' + notifKey)
+      .on('postgres_changes', {
+        event: 'INSERT', schema: 'public', table: 'notifications',
+        filter: `user_email=eq.${currentUser.email.toLowerCase()}`
+      }, (payload) => {
+        const n = payload.new;
+        if (!n || !n.text) return;
+        const alreadyIn = NOTIFICATIONS.some(x => x.id === n.id);
+        if (alreadyIn) return;
+        const notif = {
+          id:    n.id,
+          icon:  n.icon  || 'blue',
+          emoji: n.emoji || '🔔',
+          text:  n.text,
+          time:  'Ora',
+          read:  false
+        };
+        NOTIFICATIONS.unshift(notif);
+        notifCount++;
+        updateNotifBadge();
+        renderNotifDropdown();
+        renderNotifications();
+        showToast(notif.icon, notif.emoji, notif.text);
+      }).subscribe();
+    _sbChannels['notifications_rt'] = notifCh;
   }
 
   // Carica statistiche dinamiche ogni 10 secondi (aggiornamento in tempo reale)
@@ -2790,22 +2777,22 @@ function showPanel(id, navEl) {
   if (id === 'messages') {
     unreadMsgs = 0; updateMsgBadge();
     loadConversations();
-    // Firebase gestisce i messaggi in RT — polling solo come fallback
-    if (_fbReady) {
-      fbListenConversations();
+    // Supabase gestisce i messaggi in RT
+    if (_sbReady) {
+      sbListenConversations();
       if (currentConvPartnerEmail) {
-        fbListenMessages(currentConvPartnerEmail);
-        fbListenTyping(currentConvPartnerEmail);
+        sbListenMessages(currentConvPartnerEmail);
+        sbListenTyping(currentConvPartnerEmail);
       }
     } else {
       startMessagePolling();
     }
   } else {
     stopMessagePolling();
-    // Rilascia i listener Firebase quando lasci la sezione messaggi
-    if (_fbReady) {
-      fbOff('messages');
-      fbOff('typing');
+    // Rilascia i canali Supabase messaggistica quando esci dalla sezione
+    if (_sbReady) {
+      sbOff('messages');
+      sbOff('typing');
     }
   }
   if (id === 'feed') {
@@ -2879,6 +2866,7 @@ const COMMUNITY_CACHE_KEY  = 'lh360_community_v3';
 const COMMUNITY_CACHE_TTL  = 5 * 60 * 1000; // 5 minuti (solo per posts/discussions)
 const EVENTS_CACHE_KEY     = 'lh360_events_v1'; // cache eventi separata, senza TTL
 const ONLINE_CACHE_KEY     = 'lh360_online_v1'; // cache membri online, TTL breve (60s)
+const CONVS_CACHE_KEY      = 'lh360_convs_v2';  // FIX: cache conversazioni per caricamento immediato
 let _communityPollTimer    = null;
 
 function saveCommunityCache() {
@@ -2913,12 +2901,35 @@ function saveOnlineCache() {
   try { localStorage.setItem(ONLINE_CACHE_KEY, JSON.stringify({ ts: Date.now(), members: ONLINE_MEMBERS })); } catch(e) {}
 }
 
+/* FIX: Cache locale conversazioni — caricamento immediato senza attendere GAS/Firebase */
+function saveConvsCache() {
+  try {
+    if (!currentUser || REAL_CONVS.length === 0) return;
+    localStorage.setItem(CONVS_CACHE_KEY, JSON.stringify({ ts: Date.now(), email: currentUser.email, convs: REAL_CONVS }));
+  } catch(e) {}
+}
+
+function loadConvsCache() {
+  try {
+    const raw = localStorage.getItem(CONVS_CACHE_KEY);
+    if (!raw) return null;
+    const obj = JSON.parse(raw);
+    // Verifica che la cache appartenga all'utente corrente
+    if (!currentUser || obj.email !== currentUser.email) return null;
+    // TTL 10 minuti — abbastanza lungo da coprire il caricamento GAS
+    if (Date.now() - obj.ts > 10 * 60 * 1000) return null;
+    return obj.convs || null;
+  } catch(e) { return null; }
+}
+
 function loadOnlineCache() {
   try {
     const raw = localStorage.getItem(ONLINE_CACHE_KEY);
     if (!raw) return null;
     const obj = JSON.parse(raw);
-    if (Date.now() - obj.ts > 60 * 1000) return null; // scade dopo 60s
+    // FIX: TTL esteso a 5 minuti — mostra subito i membri della sessione precedente
+    // mentre Firebase stabilisce la connessione (~1-2s). Firebase aggiorna poi in tempo reale.
+    if (Date.now() - obj.ts > 5 * 60 * 1000) return null;
     return obj.members || null;
   } catch(e) { return null; }
 }
@@ -3293,6 +3304,8 @@ function logActivity(dotColor, text) {
 
 function formatTimeAgo(ts) {
   const diff = Date.now() - ts;
+  // FIX: timestamp leggermente nel futuro → mostra "Ora"
+  if (diff < 0)  return 'Ora';
   const m = Math.floor(diff / 60000);
   const h = Math.floor(diff / 3600000);
   const d = Math.floor(diff / 86400000);
@@ -3816,8 +3829,12 @@ function formatMsgTime(isoStr) {
   if (!isoStr) return '';
   try {
     const d = new Date(isoStr);
+    if (isNaN(d.getTime())) return '';
     const now = new Date();
     const diffMs = now - d;
+    // FIX: se diffMs < 0 il messaggio ha timestamp leggermente nel futuro
+    // (sfasamento clock server/client o timezone UTC vs locale) → mostra ora reale
+    if (diffMs < 0) return d.getHours().toString().padStart(2,'0') + ':' + d.getMinutes().toString().padStart(2,'0');
     const diffDays = Math.floor(diffMs / 86400000);
     if (diffDays === 0) return d.getHours().toString().padStart(2,'0') + ':' + d.getMinutes().toString().padStart(2,'0');
     if (diffDays === 1) return 'Ieri';
@@ -3846,10 +3863,16 @@ function getPartnerInfo(partnerEmail) {
 
 /* ── Carica conversazioni da GAS ── */
 async function loadConversations() {
-  // Se Firebase è pronto, il listener fbListenConversations() gestisce gli aggiornamenti
-  // Facciamo comunque un fetch GAS iniziale per popolare REAL_CONVS da storico
+  // FIX: carica subito dalla cache locale — zero latenza, UI reattiva istantaneamente
+  const cachedConvs = loadConvsCache();
+  if (cachedConvs && cachedConvs.length > 0 && REAL_CONVS.length === 0) {
+    REAL_CONVS = cachedConvs;
+    renderConversations();
+  }
+
+  // Se Supabase è pronto, il listener sbListenConversations() gestisce gli aggiornamenti RT
   if (!GAS_URL || !currentUser) {
-    if (_fbReady) fbListenConversations();
+    if (_sbReady) sbListenConversations();
     return;
   }
   try {
@@ -3876,6 +3899,7 @@ async function loadConversations() {
           REAL_CONVS.unshift({ partnerEmail: currentConvPartnerEmail, partnerName: _pi.name, partnerInitial: _pi.initial, partnerRole: _pi.role, lastMessage: '', lastTs: new Date().toISOString(), unread: 0 });
         }
       }
+      saveConvsCache(); // FIX: persisti per caricamento istantaneo al prossimo accesso
       renderConversations();
       // Aggiorna badge messaggi
       const totalUnread = REAL_CONVS.reduce((s, c) => s + (c.unread || 0), 0);
@@ -3887,8 +3911,8 @@ async function loadConversations() {
     }
   } catch(e) { console.warn('[Messages] loadConversations error:', e.message); }
 
-  // Avvia il listener Firebase per aggiornamenti RT sulle conversazioni
-  if (_fbReady) fbListenConversations();
+  // Avvia il listener Supabase per aggiornamenti RT sulle conversazioni
+  if (_sbReady) sbListenConversations();
 }
 
 /* ── Renderizza lista conversazioni ── */
@@ -3965,10 +3989,10 @@ async function openConvByEmail(partnerEmail) {
   // Carica messaggi
   await loadChatMessages(partnerEmail);
 
-  // Avvia listener Firebase (o polling GAS in fallback)
-  if (_fbReady) {
-    fbListenMessages(partnerEmail);
-    fbListenTyping(partnerEmail);
+  // Avvia listener Supabase (o polling GAS in fallback)
+  if (_sbReady) {
+    sbListenMessages(partnerEmail);
+    sbListenTyping(partnerEmail);
   } else {
     startMessagePolling();
   }
@@ -4133,49 +4157,54 @@ async function sendMessage() {
   }
   renderConversations();
 
-  // Persisti su Firebase (RT istantaneo) E su GAS (persistenza storica)
+  // Persisti su Supabase (RT istantaneo) E su GAS (persistenza storica)
   const cid = convId(currentUser.email, currentConvPartnerEmail);
 
-  // ── Firebase: scrivi il messaggio in real-time ──
-  if (_fbReady) {
-    const fbMsgRef = fbRef(`messages/${cid}`).push();
-    const fbMsgData = {
-      id:           fbMsgRef.key,
-      from:         currentUser.email,
-      fromName:     currentUser.name,
-      fromInitial:  currentUser.initial,
-      text,
-      ts:           firebase.database.ServerValue.TIMESTAMP,
-      deletedFor:   []
-    };
-    fbMsgRef.set(fbMsgData).catch(e => console.warn('[FB msg]', e.message));
+  // ── Supabase: scrivi il messaggio in real-time ──
+  if (_sbReady) {
+    const now = new Date().toISOString();
+    // Inserisci messaggio
+    _sb.from('messages').insert({
+      conv_id:      cid,
+      sender_email: currentUser.email.toLowerCase(),
+      sender_name:  currentUser.name,
+      text:         text,
+      deleted_for:  []
+    }).then(({ error }) => { if (error) console.warn('[SB msg insert]', error.message); });
 
-    // Aggiorna le conv di entrambi gli utenti su Firebase
-    const tsNow = firebase.database.ServerValue.TIMESTAMP;
-    const myKey      = emailKey(currentUser.email);
-    const partnerKey2 = emailKey(currentConvPartnerEmail);
+    // Upsert metadati conversazione per mittente (unread=0)
+    _sb.from('conversations').upsert({
+      conv_id:         cid,
+      user_email:      currentUser.email.toLowerCase(),
+      partner_email:   currentConvPartnerEmail.toLowerCase(),
+      partner_name:    partnerInfo.name,
+      partner_initial: partnerInfo.initial,
+      partner_role:    partnerInfo.role || '',
+      last_message:    text,
+      last_ts:         now,
+      unread:          0
+    }, { onConflict: 'conv_id,user_email' }).then(({ error }) => { if (error) console.warn('[SB conv upsert]', error.message); });
 
-    fbRef(`conversations/${myKey}/${partnerKey2}`).set({
-      partnerEmail:   currentConvPartnerEmail,
-      partnerName:    partnerInfo.name,
-      partnerInitial: partnerInfo.initial,
-      partnerRole:    partnerInfo.role || '',
-      lastMessage:    text,
-      lastTs:         tsNow,
-      unread:         0
-    }).catch(()=>{});
-
-    fbRef(`conversations/${partnerKey2}/${myKey}`).update({
-      partnerEmail:   currentUser.email,
-      partnerName:    currentUser.name,
-      partnerInitial: currentUser.initial,
-      partnerRole:    currentUser.role || '',
-      lastMessage:    text,
-      lastTs:         tsNow
-    }).then(() => {
-      // Incrementa unread del destinatario
-      fbRef(`conversations/${partnerKey2}/${myKey}/unread`).transaction(n => (n || 0) + 1);
-    }).catch(()=>{});
+    // Upsert metadati conversazione per destinatario (unread++)
+    _sb.from('conversations')
+      .select('unread')
+      .eq('conv_id', cid)
+      .eq('user_email', currentConvPartnerEmail.toLowerCase())
+      .maybeSingle()
+      .then(({ data: existing }) => {
+        const currentUnread = existing ? (existing.unread || 0) : 0;
+        return _sb.from('conversations').upsert({
+          conv_id:         cid,
+          user_email:      currentConvPartnerEmail.toLowerCase(),
+          partner_email:   currentUser.email.toLowerCase(),
+          partner_name:    currentUser.name,
+          partner_initial: currentUser.initial,
+          partner_role:    currentUser.role || '',
+          last_message:    text,
+          last_ts:         now,
+          unread:          currentUnread + 1
+        }, { onConflict: 'conv_id,user_email' });
+      }).then(({ error } = {}) => { if (error) console.warn('[SB conv partner upsert]', error.message); });
   }
 
   // ── GAS: persistenza storica (fallback o doppio-salvataggio) ──
@@ -4246,143 +4275,149 @@ function appendMessageToChat(msg, isSent) {
   messagesEl.scrollTo({ top: messagesEl.scrollHeight, behavior: 'smooth' });
 }
 
-/* ── Polling messaggi: attivo solo quando il pannello messaggi è visibile ── */
-/* ── Con Firebase questo è solo un fallback: i listener Firebase sostituiscono il polling ── */
+/* ── Polling messaggi: fallback GAS se Supabase non disponibile ── */
 function startMessagePolling() {
   stopMessagePolling();
-  if (_fbReady && currentConvPartnerEmail) {
-    // Firebase già in ascolto — nessun polling necessario
+  if (_sbReady && currentConvPartnerEmail) {
+    // Supabase già in ascolto — nessun polling necessario
     return;
   }
-  // Fallback GAS polling (solo se Firebase non disponibile)
+  // Fallback GAS polling (solo se Supabase non disponibile)
   _msgPollTimer = setInterval(pollMessages, 600);
 }
 function stopMessagePolling() {
   if (_msgPollTimer) { clearInterval(_msgPollTimer); _msgPollTimer = null; }
 }
 
-/* ── Listener Firebase Realtime per i messaggi di una conversazione ── */
-function fbListenMessages(partnerEmail) {
-  if (!_fbReady || !currentUser || !partnerEmail) return;
-
+/* ── Listener Supabase Realtime per i messaggi di una conversazione ── */
+function sbListenMessages(partnerEmail) {
+  if (!_sbReady || !currentUser || !partnerEmail) return;
   const cid = convId(currentUser.email, partnerEmail);
-  const ref = fbRef(`messages/${cid}`);
 
-  fbOn('messages', ref, 'value', (snap) => {
-    const data = snap.val() || {};
-    // Converti oggetto Firebase in array ordinato per timestamp
-    const msgs = Object.values(data)
-      .filter(m => {
-        // Escludi i messaggi eliminati per l'utente corrente
-        if (!m || !m.ts) return false;
-        if (m.deletedFor && Array.isArray(m.deletedFor)) {
-          if (m.deletedFor.includes(currentUser.email.toLowerCase())) return false;
-        }
-        return true;
-      })
-      .sort((a, b) => (a.ts || 0) - (b.ts || 0))
-      .map(m => ({
-        id:   m.id || m.ts,
-        from: m.from || '',
-        fromName: m.fromName || '',
-        fromInitial: m.fromInitial || '',
-        text: m.text || '',
-        ts:   typeof m.ts === 'number' ? new Date(m.ts).toISOString() : m.ts,
-        deletedFor: m.deletedFor || []
-      }));
-
-    if (msgs.length > 0) _msgLastSeen[partnerEmail] = msgs[msgs.length - 1].id;
-
-    // Se la conv è ancora quella aperta, aggiorna il render completo
-    if (currentConvPartnerEmail &&
-        currentConvPartnerEmail.toLowerCase() === partnerEmail.toLowerCase()) {
-      removeTypingIndicator();
-      renderChatMessages(msgs, partnerEmail);
-    }
-
-    // Aggiorna preview nella lista conv
-    if (msgs.length > 0) {
-      const last = msgs[msgs.length - 1];
-      let conv = REAL_CONVS.find(c => c.partnerEmail.toLowerCase() === partnerEmail.toLowerCase());
-      if (conv) {
-        conv.lastMessage = last.text;
-        conv.lastTs      = last.ts;
-      }
-      renderConversations();
-    }
-  });
-}
-
-/* ── Listener Firebase per lista conversazioni ── */
-function fbListenConversations() {
-  if (!_fbReady || !currentUser) return;
-
-  const key = emailKey(currentUser.email);
-  const ref = fbRef(`conversations/${key}`);
-
-  fbOn('conversations', ref, 'value', (snap) => {
-    const data = snap.val() || {};
-    const convs = Object.values(data)
-      .filter(c => c && c.partnerEmail)
-      .sort((a, b) => (b.lastTs || 0) - (a.lastTs || 0));
-
-    // Merge con REAL_CONVS senza sovrascrivere la conv aperta
-    convs.forEach(c => {
-      const existing = REAL_CONVS.find(r => r.partnerEmail.toLowerCase() === c.partnerEmail.toLowerCase());
-      if (existing) {
-        existing.lastMessage = c.lastMessage || existing.lastMessage;
-        existing.lastTs      = c.lastTs      || existing.lastTs;
-        if (currentConvPartnerEmail &&
-            c.partnerEmail.toLowerCase() === currentConvPartnerEmail.toLowerCase()) {
-          existing.unread = 0;
-        } else {
-          existing.unread = c.unread || 0;
-        }
-      } else {
-        const info = getPartnerInfo(c.partnerEmail);
-        REAL_CONVS.push({
-          partnerEmail:   c.partnerEmail,
-          partnerName:    c.partnerName    || info.name,
-          partnerInitial: c.partnerInitial || info.initial,
-          partnerRole:    c.partnerRole    || info.role,
-          lastMessage:    c.lastMessage || '',
-          lastTs:         c.lastTs      ? new Date(c.lastTs).toISOString() : '',
-          unread:         c.unread      || 0
-        });
+  // Carica storico completo da Supabase
+  _sb.from('messages')
+    .select('*')
+    .eq('conv_id', cid)
+    .order('created_at', { ascending: true })
+    .limit(200)
+    .then(({ data, error }) => {
+      if (error) { console.warn('[SB msg load]', error.message); return; }
+      const msgs = (data || [])
+        .filter(m => !(m.deleted_for || []).includes(currentUser.email.toLowerCase()))
+        .map(m => ({
+          id:          m.id,
+          from:        m.sender_email,
+          fromName:    m.sender_name,
+          fromInitial: (m.sender_name || '?')[0].toUpperCase(),
+          text:        m.text,
+          ts:          m.created_at,
+          deletedFor:  m.deleted_for || []
+        }));
+      if (msgs.length > 0) _msgLastSeen[partnerEmail] = msgs[msgs.length - 1].id;
+      if (currentConvPartnerEmail &&
+          currentConvPartnerEmail.toLowerCase() === partnerEmail.toLowerCase()) {
+        removeTypingIndicator();
+        renderChatMessages(msgs, partnerEmail);
       }
     });
 
-    // Aggiorna badge messaggi non letti
-    const totalUnread = REAL_CONVS.reduce((sum, c) => sum + (c.unread || 0), 0);
-    const msgBadge = document.querySelector('.nav-item[onclick*="messages"] .nav-badge');
-    if (msgBadge) {
-      if (totalUnread > 0) { msgBadge.textContent = totalUnread; msgBadge.classList.remove('hidden'); }
-      else { msgBadge.classList.add('hidden'); }
-    }
-
-    renderConversations();
-  });
+  // Ascolta nuovi messaggi in RT
+  sbOff('messages');
+  const ch = _sb.channel('messages_' + cid)
+    .on('postgres_changes', {
+      event: 'INSERT', schema: 'public', table: 'messages',
+      filter: `conv_id=eq.${cid}`
+    }, (payload) => {
+      const m = payload.new;
+      if (!m || !m.text) return;
+      if ((m.deleted_for || []).includes(currentUser.email.toLowerCase())) return;
+      // Non duplicare messaggi già inviati da noi (già mostrati ottimisticamente)
+      if (m.sender_email.toLowerCase() === currentUser.email.toLowerCase()) {
+        // Aggiorna solo lastTs nella lista conv
+        const conv = REAL_CONVS.find(c => c.partnerEmail.toLowerCase() === partnerEmail.toLowerCase());
+        if (conv) { conv.lastMessage = m.text; conv.lastTs = m.created_at; renderConversations(); saveConvsCache(); }
+        return;
+      }
+      const msg = {
+        id: m.id, from: m.sender_email, fromName: m.sender_name,
+        fromInitial: (m.sender_name || '?')[0].toUpperCase(),
+        text: m.text, ts: m.created_at, deletedFor: m.deleted_for || []
+      };
+      appendMessageToChat(msg, false);
+      // Aggiorna preview lista conv
+      const conv = REAL_CONVS.find(c => c.partnerEmail.toLowerCase() === partnerEmail.toLowerCase());
+      if (conv) { conv.lastMessage = m.text; conv.lastTs = m.created_at; renderConversations(); saveConvsCache(); }
+    }).subscribe();
+  _sbChannels['messages'] = ch;
 }
 
-/* ── Listener Firebase per typing indicator ── */
-function fbListenTyping(partnerEmail) {
-  if (!_fbReady || !currentUser || !partnerEmail) return;
+/* ── Listener Supabase per lista conversazioni ── */
+function sbListenConversations() {
+  if (!_sbReady || !currentUser) return;
 
+  sbOff('conversations');
+  const ch = _sb.channel('convs_' + emailKey(currentUser.email))
+    .on('postgres_changes', {
+      event: '*', schema: 'public', table: 'conversations',
+      filter: `user_email=eq.${currentUser.email.toLowerCase()}`
+    }, (payload) => {
+      const c = payload.new;
+      if (!c || !c.partner_email) return;
+      const existing = REAL_CONVS.find(r => r.partnerEmail.toLowerCase() === c.partner_email.toLowerCase());
+      if (existing) {
+        existing.lastMessage = c.last_message || existing.lastMessage;
+        existing.lastTs      = c.last_ts      || existing.lastTs;
+        existing.unread = (currentConvPartnerEmail &&
+          c.partner_email.toLowerCase() === currentConvPartnerEmail.toLowerCase()) ? 0 : (c.unread || 0);
+      } else {
+        const info = getPartnerInfo(c.partner_email);
+        REAL_CONVS.push({
+          partnerEmail:   c.partner_email,
+          partnerName:    c.partner_name    || info.name,
+          partnerInitial: c.partner_initial || info.initial,
+          partnerRole:    c.partner_role    || info.role,
+          lastMessage:    c.last_message || '',
+          lastTs:         c.last_ts      || '',
+          unread:         c.unread       || 0
+        });
+      }
+      // Aggiorna badge messaggi non letti
+      const totalUnread = REAL_CONVS.reduce((sum, conv) => sum + (conv.unread || 0), 0);
+      const msgBadge = document.querySelector('.nav-item[onclick*="messages"] .nav-badge');
+      if (msgBadge) {
+        if (totalUnread > 0) { msgBadge.textContent = totalUnread; msgBadge.classList.remove('hidden'); }
+        else { msgBadge.classList.add('hidden'); }
+      }
+      renderConversations();
+      saveConvsCache(); // FIX: aggiorna cache dopo ogni update Supabase
+    }).subscribe();
+  _sbChannels['conversations'] = ch;
+}
+
+/* ── Listener Supabase per typing indicator ── */
+function sbListenTyping(partnerEmail) {
+  if (!_sbReady || !currentUser || !partnerEmail) return;
   const cid = convId(currentUser.email, partnerEmail);
-  const partnerKey = emailKey(partnerEmail);
-  const ref = fbRef(`typing/${cid}/${partnerKey}`);
 
-  fbOn('typing', ref, 'value', (snap) => {
-    const data = snap.val();
-    if (data && data.isTyping) {
-      // Mostra solo se il valore è recente (ultimi 6 secondi)
-      const age = Date.now() - (data.ts || 0);
-      if (age < 6000) showTypingIndicator();
-      else removeTypingIndicator();
-    } else {
-      removeTypingIndicator();
-    }
-  });
+  sbOff('typing');
+  const ch = _sb.channel('typing_' + cid)
+    .on('postgres_changes', {
+      event: '*', schema: 'public', table: 'typing',
+      filter: `conv_id=eq.${cid}`
+    }, (payload) => {
+      const d = payload.new;
+      if (!d) { removeTypingIndicator(); return; }
+      // Mostra solo il typing del partner, non il nostro
+      if (d.user_email.toLowerCase() === currentUser.email.toLowerCase()) return;
+      if (d.is_typing) {
+        const age = Date.now() - new Date(d.updated_at).getTime();
+        if (age < 6000) showTypingIndicator();
+        else removeTypingIndicator();
+      } else {
+        removeTypingIndicator();
+      }
+    }).subscribe();
+  _sbChannels['typing'] = ch;
 }
 
 async function pollMessages() {
@@ -4483,20 +4518,33 @@ function sendTypingStatus(isTyping) {
   if (isTyping && now - _typingSentAt < 800) return; // throttle 800ms
   _typingSentAt = now;
 
-  // Firebase: scrittura istantanea — zero latenza
-  if (_fbReady) {
-    const cid     = convId(currentUser.email, currentConvPartnerEmail);
-    const myKey   = emailKey(currentUser.email);
-    const ref     = fbRef(`typing/${cid}/${myKey}`);
+  // Supabase: scrittura istantanea — zero latenza
+  if (_sbReady) {
+    const cid = convId(currentUser.email, currentConvPartnerEmail);
     if (isTyping) {
-      ref.set({ isTyping: true, ts: firebase.database.ServerValue.TIMESTAMP });
-      // Auto-rimuovi da Firebase dopo 5s di inattività
+      _sb.from('typing').upsert({
+        conv_id:    cid,
+        user_email: currentUser.email.toLowerCase(),
+        is_typing:  true,
+        updated_at: new Date().toISOString()
+      }, { onConflict: 'conv_id,user_email' }).catch(()=>{});
+      // Auto-rimuovi dopo 5s di inattività
       if (_typingTimer) clearTimeout(_typingTimer);
       _typingTimer = setTimeout(() => {
-        ref.remove().catch(()=>{});
+        _sb.from('typing').upsert({
+          conv_id:    cid,
+          user_email: currentUser.email.toLowerCase(),
+          is_typing:  false,
+          updated_at: new Date().toISOString()
+        }, { onConflict: 'conv_id,user_email' }).catch(()=>{});
       }, 5000);
     } else {
-      ref.remove().catch(()=>{});
+      _sb.from('typing').upsert({
+        conv_id:    cid,
+        user_email: currentUser.email.toLowerCase(),
+        is_typing:  false,
+        updated_at: new Date().toISOString()
+      }, { onConflict: 'conv_id,user_email' }).catch(()=>{});
     }
   } else {
     // Fallback GAS
@@ -4512,10 +4560,14 @@ function clearTypingStatus() {
   if (_typingTimer) { clearTimeout(_typingTimer); _typingTimer = null; }
   if (!currentConvPartnerEmail || !currentUser) return;
 
-  if (_fbReady) {
-    const cid   = convId(currentUser.email, currentConvPartnerEmail);
-    const myKey = emailKey(currentUser.email);
-    fbRef(`typing/${cid}/${myKey}`)?.remove().catch(()=>{});
+  if (_sbReady) {
+    const cid = convId(currentUser.email, currentConvPartnerEmail);
+    _sb.from('typing').upsert({
+      conv_id:    cid,
+      user_email: currentUser.email.toLowerCase(),
+      is_typing:  false,
+      updated_at: new Date().toISOString()
+    }, { onConflict: 'conv_id,user_email' }).catch(()=>{});
   } else {
     fetch(`${GAS_URL}?action=set_typing&email=${encodeURIComponent(currentUser.email)}&otherEmail=${encodeURIComponent(currentConvPartnerEmail)}&isTyping=false`).catch(()=>{});
   }
@@ -4549,25 +4601,25 @@ async function deleteMyHistory() {
   if (!currentConvPartnerEmail || !currentUser) return;
   if (!confirm('Elimina tutta la cronologia di questa conversazione solo per te? L\'altro utente continuerà a vedere i propri messaggi.')) return;
 
-  // Firebase: marca i messaggi come eliminati per l'utente corrente
-  if (_fbReady) {
+  // Supabase: marca i messaggi come eliminati per l'utente corrente
+  if (_sbReady) {
     const cid = convId(currentUser.email, currentConvPartnerEmail);
-    const ref = fbRef(`messages/${cid}`);
-    const snap = await ref.once('value');
-    const msgs = snap.val() || {};
-    const updates = {};
-    Object.keys(msgs).forEach(key => {
-      const existing = msgs[key].deletedFor || [];
-      if (!existing.includes(currentUser.email.toLowerCase())) {
-        updates[`${key}/deletedFor`] = [...existing, currentUser.email.toLowerCase()];
+    // Recupera tutti i messaggi della conv, aggiunge email alle deleted_for
+    const { data: msgs } = await _sb.from('messages').select('id, deleted_for').eq('conv_id', cid);
+    if (msgs && msgs.length > 0) {
+      for (const m of msgs) {
+        const df = m.deleted_for || [];
+        if (!df.includes(currentUser.email.toLowerCase())) {
+          await _sb.from('messages').update({ deleted_for: [...df, currentUser.email.toLowerCase()] }).eq('id', m.id).catch(()=>{});
+        }
       }
-    });
-    if (Object.keys(updates).length > 0) await ref.update(updates).catch(()=>{});
-
-    // Rimuovi la conv dal nodo conversazioni
-    const myKey = emailKey(currentUser.email);
-    const partnerKey2 = emailKey(currentConvPartnerEmail);
-    await fbRef(`conversations/${myKey}/${partnerKey2}`).remove().catch(()=>{});
+    }
+    // Rimuovi la conv dal proprio record
+    await _sb.from('conversations')
+      .delete()
+      .eq('conv_id', cid)
+      .eq('user_email', currentUser.email.toLowerCase())
+      .catch(()=>{});
   }
 
   if (!GAS_URL) {
@@ -4626,8 +4678,8 @@ function startConvWithMember(memberEmail, memberName, memberInitial, memberRole)
     renderConversations();
   }
   openConvByEmail(memberEmail);
-  // Firebase gestisce i listener — startMessagePolling è fallback
-  if (!_fbReady) startMessagePolling();
+  // Supabase gestisce i listener — startMessagePolling è fallback
+  if (!_sbReady) startMessagePolling();
 }
 
 /* ── Quick menu membro online ── */
@@ -5439,49 +5491,76 @@ function showToast(color, icon, text) {
 }
 
 /* ═══════════════════════════════════════════
-   REAL-TIME SIMULATION
+   PRESENZA REAL-TIME — SUPABASE
+   Sostituisce completamente il sistema Firebase
 ═══════════════════════════════════════════ */
-/* ═══════════════════════════════════════════
-   PRESENZA REAL-TIME — FIREBASE REALTIME DATABASE
-   Sostituisce completamente il sistema heartbeat GAS
-═══════════════════════════════════════════ */
-const HEARTBEAT_INTERVAL = 30 * 1000; // fallback GAS — usato solo se Firebase non è pronto
+const HEARTBEAT_INTERVAL = 25 * 1000; // keep-alive ogni 25s
 let _heartbeatTimer = null;
 let _presencePollTimer = null;
-let _fbPresenceRef = null; // ref Firebase per la presenza dell'utente corrente
 
-/* ── Registra presenza utente su Firebase con onDisconnect ── */
-function fbSetPresence() {
-  if (!_fbReady || !currentUser) return;
-
-  const key  = emailKey(currentUser.email);
-  const ref  = fbRef(`presence/${key}`);
-  _fbPresenceRef = ref;
-
-  const presenceData = {
-    name:    currentUser.name,
-    initial: currentUser.initial,
-    role:    currentUser.role,
-    email:   currentUser.email,
-    online:  true,
-    ts:      firebase.database.ServerValue.TIMESTAMP
-  };
-
-  // onDisconnect: Firebase rimuove automaticamente la presenza se il client si disconnette
-  ref.onDisconnect().remove();
-
-  // Scrivi la presenza
-  ref.set(presenceData).catch(e => console.warn('[Presenza FB]', e.message));
-
-  // Mantieni aggiornato il timestamp ogni 30s (keep-alive)
-  if (_heartbeatTimer) clearInterval(_heartbeatTimer);
-  _heartbeatTimer = setInterval(() => {
-    if (_fbReady && ref) ref.update({ ts: firebase.database.ServerValue.TIMESTAMP }).catch(()=>{});
-  }, HEARTBEAT_INTERVAL);
-
-  // Fallback: invia anche heartbeat GAS per mantenere compatibilità backend
-  sendHeartbeatGAS();
+/* ── Registra presenza utente su Supabase ── */
+async function sbSetPresence() {
+  if (!_sbReady || !currentUser) return;
+  try {
+    await _sb.from('presence').upsert({
+      email:      currentUser.email.toLowerCase(),
+      name:       currentUser.name,
+      initial:    currentUser.initial,
+      role:       currentUser.role,
+      online:     true,
+      updated_at: new Date().toISOString()
+    }, { onConflict: 'email' });
+  } catch(e) { console.warn('[SB presence]', e.message); }
 }
+
+/* Alias legacy */
+const fbSetPresence = sbSetPresence;
+
+/* ── Rimuovi presenza (logout/chiusura) ── */
+async function removePresence() {
+  if (_heartbeatTimer) { clearInterval(_heartbeatTimer); _heartbeatTimer = null; }
+  if (_sbReady && currentUser) {
+    try { await _sb.from('presence').update({ online: false }).eq('email', currentUser.email.toLowerCase()); } catch(_e) {}
+  }
+  if (GAS_URL && currentUser) {
+    try { await fetch(`${GAS_URL}?action=remove_presence&email=${encodeURIComponent(currentUser.email)}`); } catch(_e) {}
+  }
+}
+
+/* ── Recupera lista membri online ── */
+async function sbGetOnlineMembers() {
+  if (!_sbReady) return;
+  try {
+    const { data, error } = await _sb.from('presence').select('*').eq('online', true);
+    if (error) return;
+    // Filtra presenze stantie (>2 minuti senza heartbeat)
+    const fresh = (data || []).filter(u => {
+      if (!u.updated_at) return true;
+      return Date.now() - new Date(u.updated_at).getTime() < 2 * 60 * 1000;
+    });
+    applyPresenceData(fresh);
+  } catch(_e) {}
+}
+
+/* ── Ascolta i membri online in tempo reale via Supabase ── */
+function sbListenPresence() {
+  if (!_sbReady) {
+    _startPresencePollGAS();
+    return;
+  }
+  // Carica subito la lista
+  sbGetOnlineMembers();
+  // Ascolta cambiamenti in RT
+  sbOff('presence_rt');
+  const ch = _sb.channel('presence_realtime')
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'presence' }, () => {
+      sbGetOnlineMembers();
+    }).subscribe();
+  _sbChannels['presence_rt'] = ch;
+}
+
+/* Alias legacy */
+const fbListenPresence = sbListenPresence;
 
 /* ── Invia heartbeat a GAS (fallback/compatibilità) ── */
 async function sendHeartbeatGAS() {
@@ -5494,39 +5573,9 @@ async function sendHeartbeatGAS() {
       `&role=${encodeURIComponent(currentUser.role)}`);
   } catch(_e) {}
 }
-/* alias legacy */
 const sendHeartbeat = sendHeartbeatGAS;
 
-/* ── Rimuovi presenza (logout/chiusura pagina) ── */
-async function removePresence() {
-  // Firebase: rimuovi immediatamente
-  if (_fbPresenceRef) {
-    try { await _fbPresenceRef.remove(); } catch(_e) {}
-    _fbPresenceRef = null;
-  }
-  // GAS: compatibilità
-  if (GAS_URL && currentUser) {
-    try { await fetch(`${GAS_URL}?action=remove_presence&email=${encodeURIComponent(currentUser.email)}`); } catch(_e) {}
-  }
-}
-
-/* ── Ascolta i membri online in tempo reale via Firebase ── */
-function fbListenPresence() {
-  if (!_fbReady) {
-    // Fallback: polling GAS ogni 15s
-    _startPresencePollGAS();
-    return;
-  }
-
-  const ref = fbRef('presence');
-  fbOn('presence', ref, 'value', (snap) => {
-    const data = snap.val() || {};
-    const online = Object.values(data).filter(u => u && u.online && u.name);
-    applyPresenceData(online);
-  });
-}
-
-/* ── Polling GAS fallback (solo se Firebase non disponibile) ── */
+/* ── Polling GAS fallback (solo se Supabase non disponibile) ── */
 function _startPresencePollGAS() {
   if (_presencePollTimer) clearInterval(_presencePollTimer);
   _presencePollTimer = setInterval(async () => {
@@ -5541,16 +5590,35 @@ function _startPresencePollGAS() {
 
 /* ── Avvia il sistema di presenza ── */
 function startPresenceSystem() {
-  // 1. Registra presenza su Firebase (con onDisconnect automatico)
-  fbSetPresence();
+  // FIX: aggiungi subito l'utente corrente ai membri online — visibile istantaneamente
+  if (currentUser) {
+    const alreadyIn = ONLINE_MEMBERS.some(m => m.email === currentUser.email);
+    if (!alreadyIn) {
+      ONLINE_MEMBERS.unshift({
+        name:    currentUser.name,
+        initial: currentUser.initial,
+        role:    currentUser.role,
+        email:   currentUser.email
+      });
+      renderRightPanel();
+    }
+  }
+  // 1. Registra presenza su Supabase
+  sbSetPresence();
   // 2. Ascolta gli altri utenti online in tempo reale
-  fbListenPresence();
+  sbListenPresence();
+  // 3. Keep-alive: aggiorna il timestamp ogni 25s per evitare che la presenza scada
+  if (_heartbeatTimer) clearInterval(_heartbeatTimer);
+  _heartbeatTimer = setInterval(() => {
+    if (_sbReady) sbSetPresence();
+    sendHeartbeatGAS();
+  }, HEARTBEAT_INTERVAL);
 
   // Segnala offline quando l'utente chiude/lascia la pagina
   window.addEventListener('beforeunload', removePresence);
   window.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible') {
-      fbSetPresence(); // ritorna dalla tab → aggiorna presenza
+      sbSetPresence();
     }
   });
 }
