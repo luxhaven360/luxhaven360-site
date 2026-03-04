@@ -8,18 +8,16 @@
 <title>Community Hub — LuxHaven360</title>
 
 <script>
-// Anti-bypass + pre-sessione: nasconde il contenuto principale finché l'autenticazione non è verificata.
-// Se la sessione esiste, nasconde subito il loginGate per evitare qualsiasi flash.
+// Anti-bypass: nasconde il contenuto principale finché l'autenticazione non è verificata
+// NOTA: non usare document.write — #mainApp è già display:none nel CSS,
+//       e viene mostrato solo quando si aggiunge la classe .active via JS.
 (function() {
   try {
     var session = localStorage.getItem('lh360_community_session');
     if (!session) {
+      // Senza sessione: nessuna azione necessaria, #mainApp è già hidden via CSS
+      // Aggiungiamo solo un marker sul body per eventuali stili condizionali
       document.documentElement.classList.add('no-session');
-    } else {
-      // Sessione presente: prepara l'ambiente visivo prima che il DOM sia completamente pronto
-      document.documentElement.classList.add('has-session');
-      // Inietta stile inline per nascondere loginGate e pre-mostrare mainApp il più presto possibile
-      document.write('<style>#loginGate{display:none!important}#mainApp{display:grid!important;visibility:hidden}</style>');
     }
   } catch(e) {}
 })();
@@ -266,14 +264,8 @@ body {
   height: 100vh;
   overflow: hidden;
 }
-/* Con sessione: l'app è già in grid ma invisibile finché non è .active */
-html.has-session #mainApp {
-  display: grid;
-  visibility: hidden;
-}
 #mainApp.active {
   display: grid;
-  visibility: visible;
   grid-template-columns: var(--sidebar-w) 1fr var(--right-w);
   grid-template-rows: var(--header-h) 1fr;
   grid-template-areas:
@@ -2741,119 +2733,54 @@ function logout() {
 }
 
 /* ═══════════════════════════════════════════
-   PRE-HYDRATION — applica dati utente al DOM PRIMA che l'app sia visibile
-   Evita qualsiasi flash di placeholder, "—" o stati vuoti.
-═══════════════════════════════════════════ */
-function _preHydrateUserInfo(user) {
-  if (!user) return;
-  const role = user.role;
-
-  // Sidebar role class
-  const sidebar = document.getElementById('sidebar');
-  if (sidebar) sidebar.className = `role-${role === 'team' ? 'team' : role === 'founding' ? 'founding' : 'candidate'}`;
-
-  // Avatar + status dot
-  const av = document.getElementById('sidebarAvatar');
-  if (av) {
-    av.textContent = user.initial;
-    if (!av.querySelector('.status-dot')) {
-      const dot = document.createElement('div');
-      dot.className = 'status-dot';
-      av.appendChild(dot);
-    }
-  }
-
-  // Nome e ruolo sidebar
-  const nameEl = document.getElementById('sidebarName');
-  if (nameEl) nameEl.textContent = user.name;
-  const roleEl = document.getElementById('sidebarRole');
-  if (roleEl) {
-    roleEl.textContent = user.title || '';
-    roleEl.className = 'user-role-sm ' + (role === 'team' ? 'gold' : role === 'founding' ? 'green' : 'amber');
-  }
-
-  // Header badge
-  const badge = document.getElementById('headerBadge');
-  if (badge) {
-    if (role === 'team')     { badge.textContent = '⬡ Team LuxHaven360'; badge.className = 'level-badge team'; }
-    else if (role === 'founding') { badge.textContent = '★ Founding Member';  badge.className = 'level-badge founding'; }
-    else                     { badge.textContent = '◈ Founder Candidate'; badge.className = 'level-badge candidate'; }
-  }
-
-  // Benvenuto e ora di accesso
-  const welcomeEl = document.getElementById('dashWelcome');
-  if (welcomeEl) welcomeEl.textContent = `Benvenuto, ${user.name.split(' ')[0]}`;
-  const now = new Date();
-  const timeEl = document.getElementById('lastLoginTime');
-  if (timeEl) timeEl.textContent = `Accesso: ${now.getHours()}:${String(now.getMinutes()).padStart(2,'0')}`;
-
-  // Listings nav (mostra/nasconde in base al ruolo)
-  if (role === 'team' || role === 'founding') {
-    const nav = document.querySelector('.nav-item.member-plus[onclick*="listings"]');
-    if (nav) nav.style.display = 'flex';
-    const locked = document.getElementById('listingsLockedNav');
-    if (locked) locked.style.display = 'none';
-  } else {
-    const nav = document.querySelector('.nav-item.member-plus[onclick*="listings"]');
-    if (nav) nav.style.display = 'none';
-    const locked = document.getElementById('listingsLockedNav');
-    if (locked) locked.style.display = 'flex';
-  }
-
-  // Admin sections visibility
-  if (role === 'team') {
-    document.querySelectorAll('.admin-only').forEach(el => el.style.removeProperty('display'));
-  }
-}
-
-/* ═══════════════════════════════════════════
    AUTO-AUTH CHECK (eseguito al caricamento)
-   STRATEGIA: applica TUTTI i dati dalla cache PRIMA di rendere visibile
-   l'app — nessun placeholder, nessun "—", zero flash.
 ═══════════════════════════════════════════ */
 (async function checkSessionOnLoad() {
   const saved = loadSession();
   if (!saved) return; // nessuna sessione: login gate già visibile
 
   currentUser = saved;
-
-  // ── FASE 1: Nascondi login gate (app ancora hidden) ──────────────────────
-  document.getElementById('loginGate').style.display = 'none';
-
-  // ── FASE 2: Idrata il DOM dalla cache — SINCRONO, prima di qualsiasi paint ──
-  // Utente
-  _preHydrateUserInfo(saved);
-
-  // Stats dashboard
-  const cachedStats = loadStatsCache();
-  if (cachedStats) applyDashboardStats(cachedStats);
-
-  // Conversazioni
-  const _cachedConvs = loadConvsCache();
-  if (_cachedConvs && _cachedConvs.length > 0) REAL_CONVS = _cachedConvs;
-
-  // ── FASE 3: Mostra l'app — tutto già idratato, zero flash ────────────────
   document.documentElement.classList.remove('no-session');
   const mainAppEl = document.getElementById('mainApp');
   mainAppEl.style.cssText = '';
+  document.getElementById('loginGate').style.display = 'none';
   mainAppEl.classList.add('active');
 
-  // ── FASE 4: Se non c'è cache stats, fetch sincrono prima di initApp ──────
-  if (!cachedStats && typeof GAS_URL !== 'undefined' && GAS_URL && !GAS_URL.includes('YOUR_GAS')) {
-    try {
-      const r = await fetch(`${GAS_URL}?action=get_dashboard_stats`);
-      if (r.ok) {
-        const d = await r.json();
-        if (d && d.success) { saveStatsCache(d); applyDashboardStats(d); }
-      }
-    } catch (_e) { /* silenzioso — GAS non raggiungibile */ }
-  }
-
-  // ── FASE 5: initApp — avvia RT, polling e rendering completo ─────────────
-  if (document.readyState === 'complete' || document.readyState === 'interactive') {
-    initApp();
+  // ── Strategia stats zero-latency ────────────────────────────────────────
+  // CASO A: Cache presente (utente di ritorno) → applica subito, zero latenza.
+  // CASO B: Cache assente (localStorage svuotato / primo accesso) →
+  //         fetch sincrono GAS PRIMA di chiamare initApp, così le card
+  //         mostrano i valori reali al primo render. Mai "—".
+  const cachedStats = loadStatsCache();
+  if (cachedStats) {
+    // Applica immediatamente: valori reali visibili dal primo frame
+    applyDashboardStats(cachedStats);
+    // initApp NON aspetta — può partire subito
+    if (document.readyState === 'complete' || document.readyState === 'interactive') {
+      initApp();
+    } else {
+      document.addEventListener('DOMContentLoaded', initApp);
+    }
   } else {
-    document.addEventListener('DOMContentLoaded', initApp);
+    // Nessuna cache: fetch real-time PRIMA di mostrare la dashboard
+    if (typeof GAS_URL !== 'undefined' && GAS_URL && !GAS_URL.includes('YOUR_GAS')) {
+      try {
+        const r = await fetch(`${GAS_URL}?action=get_dashboard_stats`);
+        if (r.ok) {
+          const d = await r.json();
+          if (d && d.success) {
+            saveStatsCache(d);
+            applyDashboardStats(d);
+          }
+        }
+      } catch (_e) { /* GAS non raggiungibile: le card rimarranno con —, ma è raro */ }
+    }
+    // Avvia l'app dopo il fetch (o subito se GAS non configurato)
+    if (document.readyState === 'complete' || document.readyState === 'interactive') {
+      initApp();
+    } else {
+      document.addEventListener('DOMContentLoaded', initApp);
+    }
   }
 })();
 
@@ -2870,19 +2797,16 @@ function initApp() {
 
   const role = currentUser.role;
   
-  // Apply role class to sidebar (già fatto da _preHydrateUserInfo, ma qui lo confermiamo)
+  // Apply role class to sidebar
   const sidebar = document.getElementById('sidebar');
   sidebar.className = `role-${role === 'team' ? 'team' : role === 'founding' ? 'founding' : 'candidate'}`;
 
   // Update sidebar user
   const av = document.getElementById('sidebarAvatar');
   av.textContent = currentUser.initial;
-  // Aggiunge status-dot solo se non già presente (evita duplicati con _preHydrateUserInfo)
-  if (!av.querySelector('.status-dot')) {
-    const statusDot = document.createElement('div');
-    statusDot.className = 'status-dot';
-    av.appendChild(statusDot);
-  }
+  const statusDot = document.createElement('div');
+  statusDot.className = 'status-dot';
+  av.appendChild(statusDot);
   document.getElementById('sidebarName').textContent = currentUser.name;
   const roleEl = document.getElementById('sidebarRole');
   roleEl.textContent = currentUser.title;
