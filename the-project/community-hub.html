@@ -4443,6 +4443,11 @@ async function loadConversations() {
     REAL_CONVS = cachedConvs;
     renderConversations();
     updateMsgBadge();
+  } else if (REAL_CONVS.length > 0) {
+    // Cache scaduta o già caricata, ma abbiamo dati in memoria: render immediato
+    // senza aspettare il fetch GAS (evita il flash di lista vuota al rientro nel pannello)
+    renderConversations();
+    updateMsgBadge();
   }
 
   // Se Supabase è pronto, il listener sbListenConversations() gestisce gli aggiornamenti RT
@@ -4460,11 +4465,25 @@ async function loadConversations() {
         NOTIFICATIONS.filter(n => n.prefKey === 'direct_messages' && n.senderEmail).map(n => n.senderEmail)
       );
 
+      // ── GUARD: se GAS ritorna lista vuota ma Supabase ha già popolato REAL_CONVS in
+      // memoria, non sovrascrivere — Supabase è il backend autoritativo per le conversazioni.
+      // GAS può avere dati mancanti/incompleti se i messaggi sono stati inviati via Supabase.
+      if (data.conversations.length === 0 && REAL_CONVS.length > 0) {
+        // GAS vuoto ma abbiamo dati in memoria → saltiamo l'overwrite
+        if (_sbReady) { sbListenConversations(); sbListenInbox(); }
+        return;
+      }
+
+      // Snapshot in-memoria indicizzato per email: usato per preservare lastMessage/lastTs
+      // aggiornati in RT da Supabase, che GAS potrebbe non conoscere ancora.
+      const _memByEmail = new Map(REAL_CONVS.map(c => [c.partnerEmail.toLowerCase(), c]));
+
       REAL_CONVS = data.conversations
         // Filtra tombstone: conv eliminate localmente non devono riapparire da GAS
         .filter(c => !tombstones.includes(c.partnerEmail.toLowerCase()))
         .map(c => {
           const info = getPartnerInfo(c.partnerEmail);
+          const _mem = _memByEmail.get(c.partnerEmail.toLowerCase()); // entry in-memoria
           // Azzera unread SOLO se il pannello Messaggi è aperto E questa è la conv visualizzata.
           const _panelOpen = !!document.getElementById('panel-messages')?.classList.contains('active');
           const isCurrentlyOpen = _panelOpen && currentConvPartnerEmail &&
@@ -4474,8 +4493,10 @@ async function loadConversations() {
             partnerName:    c.partnerName    || info.name,
             partnerInitial: c.partnerInitial || info.initial,
             partnerRole:    c.partnerRole    || info.role,
-            lastMessage:    c.lastMessage || '',
-            lastTs:         c.lastTs      || '',
+            // Preferisce il valore in-memoria se GAS ha lastMessage vuoto:
+            // Supabase aggiorna lastMessage via eventi RT, GAS potrebbe non averlo.
+            lastMessage:    c.lastMessage || _mem?.lastMessage || '',
+            lastTs:         c.lastTs      || _mem?.lastTs      || '',
             unread:         isCurrentlyOpen ? 0 : (c.unread || 0)
           };
         });
@@ -5296,7 +5317,7 @@ function sbListenMessages(partnerEmail) {
           currentConvPartnerEmail.toLowerCase() === partnerEmail.toLowerCase()) {
         removeTypingIndicator();
         if (_hasNewData) {
-          // Nuovi messaggi rispetto alla cache → ri-renderizza
+          // Nuovi messaggi rispetto alla cache già mostrata → ri-renderizza
           renderChatMessages(msgs, partnerEmail);
         }
         // Se i dati sono identici alla cache già mostrata, nessun re-render → nessun flicker
