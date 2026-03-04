@@ -3088,6 +3088,10 @@ function showPanel(id, navEl) {
       sbOff('messages');
       sbOff('typing');
     }
+    // FIX NOTIFICHE: resetta _activeListenPartner quando si lascia il pannello messaggi.
+    // Senza questo reset, sbListenInbox e sbListenConversations pensano che il listener
+    // RT sia ancora attivo e saltano la generazione delle notifiche per quel partner.
+    _activeListenPartner = null;
   }
   if (id === 'feed') {
     document.getElementById('feedBadge').classList.add('hidden');
@@ -4373,13 +4377,10 @@ async function loadConversations() {
       }
       saveConvsCache(); // FIX: persisti per caricamento istantaneo al prossimo accesso
       renderConversations();
-      // Aggiorna badge messaggi
+      // Aggiorna badge messaggi — FIX: ID corretto è 'msgBadge' (non 'msgNavBadge')
       const totalUnread = REAL_CONVS.reduce((s, c) => s + (c.unread || 0), 0);
-      const badge = document.getElementById('msgNavBadge');
-      if (badge) {
-        badge.textContent = totalUnread > 0 ? totalUnread : '';
-        badge.style.display = totalUnread > 0 ? '' : 'none';
-      }
+      unreadMsgs = totalUnread; // sincronizza variabile globale
+      updateMsgBadge();         // usa la funzione centralizzata
     }
   } catch(e) { console.warn('[Messages] loadConversations error:', e.message); }
 
@@ -5509,27 +5510,314 @@ function removeTypingIndicator() {
   if (el) el.remove();
 }
 
-/* ── Elimina cronologia solo per l'utente corrente ── */
-async function deleteMyHistory() {
-  if (!currentConvPartnerEmail || !currentUser) return;
-  if (!confirm('Elimina tutta la cronologia di questa conversazione solo per te? L\'altro utente continuerà a vedere i propri messaggi.')) return;
+/* ═══════════════════════════════════════════════════════════════
+   ELIMINAZIONE CRONOLOGIA — OVERLAY PREMIUM CON PROGRESS DINAMICO
+════════════════════════════════════════════════════════════════ */
 
-  // Supabase: cancellazione intelligente
-  // → Se l'altro utente ha già eliminato: cancella la riga fisicamente (libera spazio)
-  // → Altrimenti: marca come eliminata solo per te (soft delete)
+/* Mostra l'overlay premium di conferma eliminazione */
+function deleteMyHistory() {
+  if (!currentConvPartnerEmail || !currentUser) return;
+  const partnerInfo = getPartnerInfo(currentConvPartnerEmail);
+  const partnerName = partnerInfo.name || 'questo utente';
+
+  // Rimuovi overlay precedente se esistente
+  document.getElementById('deleteHistoryOverlay')?.remove();
+
+  const overlay = document.createElement('div');
+  overlay.id = 'deleteHistoryOverlay';
+  overlay.style.cssText = `
+    position:fixed;inset:0;z-index:99998;
+    display:flex;align-items:center;justify-content:center;
+    background:rgba(5,5,5,0.82);
+    backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);
+    animation:dhoFadeIn 0.28s cubic-bezier(0.4,0,0.2,1) forwards;
+  `;
+
+  overlay.innerHTML = `
+    <style>
+      @keyframes dhoFadeIn  { from{opacity:0} to{opacity:1} }
+      @keyframes dhoFadeOut { from{opacity:1} to{opacity:0} }
+      @keyframes dhoCardIn  { from{opacity:0;transform:translateY(24px) scale(0.97)} to{opacity:1;transform:translateY(0) scale(1)} }
+      @keyframes dhoProgressPulse { 0%,100%{opacity:0.7} 50%{opacity:1} }
+      @keyframes dhoSpinRing {
+        from { stroke-dashoffset: 220; }
+        to   { stroke-dashoffset: 0; }
+      }
+      @keyframes dhoCheckIn {
+        from { stroke-dashoffset: 40; opacity:0; }
+        to   { stroke-dashoffset: 0;  opacity:1; }
+      }
+      #deleteHistoryCard {
+        position:relative;
+        width:420px;max-width:92vw;
+        background:linear-gradient(160deg,#141414,#0f0f0f);
+        border:1px solid rgba(212,175,55,0.18);
+        border-radius:18px;
+        padding:2.2rem 2rem 1.8rem;
+        box-shadow:0 40px 100px rgba(0,0,0,0.85),0 0 0 1px rgba(212,175,55,0.06);
+        animation:dhoCardIn 0.32s cubic-bezier(0.34,1.2,0.64,1) forwards;
+        overflow:hidden;
+      }
+      #deleteHistoryCard::before {
+        content:'';position:absolute;top:0;left:0;right:0;height:1px;
+        background:linear-gradient(90deg,transparent,rgba(212,175,55,0.4),transparent);
+      }
+      .dho-icon-ring {
+        width:72px;height:72px;margin:0 auto 1.4rem;display:flex;
+        align-items:center;justify-content:center;position:relative;
+      }
+      .dho-icon-ring svg { position:absolute; }
+      .dho-icon-ring .dho-emoji {
+        font-size:1.6rem;position:relative;z-index:1;
+        filter:drop-shadow(0 0 8px rgba(200,80,106,0.5));
+      }
+      .dho-title {
+        font-family:var(--ff-display);
+        font-size:1.3rem;font-weight:400;
+        color:var(--light);text-align:center;
+        letter-spacing:0.02em;margin-bottom:0.5rem;
+      }
+      .dho-desc {
+        font-size:0.76rem;color:var(--muted);
+        text-align:center;line-height:1.7;
+        margin-bottom:1.8rem;
+      }
+      .dho-warning {
+        display:flex;align-items:flex-start;gap:0.6rem;
+        padding:0.75rem 0.9rem;
+        background:rgba(200,80,106,0.07);
+        border:1px solid rgba(200,80,106,0.2);
+        border-radius:10px;
+        font-size:0.72rem;color:rgba(232,160,160,0.85);
+        line-height:1.6;margin-bottom:1.6rem;
+      }
+      .dho-warning svg { flex-shrink:0;margin-top:1px;opacity:0.7; }
+      .dho-actions { display:flex;gap:0.7rem; }
+      .dho-btn-cancel {
+        flex:1;padding:0.75rem 1rem;
+        background:transparent;
+        border:1px solid rgba(245,245,245,0.1);
+        border-radius:10px;
+        color:var(--muted);
+        font-family:var(--ff-ui);font-size:0.76rem;font-weight:500;
+        letter-spacing:0.08em;text-transform:uppercase;
+        cursor:pointer;transition:all 0.2s;
+      }
+      .dho-btn-cancel:hover { border-color:rgba(245,245,245,0.2);color:var(--light); }
+      .dho-btn-delete {
+        flex:1.4;padding:0.75rem 1rem;
+        background:linear-gradient(135deg,rgba(200,80,106,0.85),rgba(180,60,86,0.9));
+        border:1px solid rgba(200,80,106,0.35);
+        border-radius:10px;
+        color:#fff;
+        font-family:var(--ff-ui);font-size:0.76rem;font-weight:600;
+        letter-spacing:0.1em;text-transform:uppercase;
+        cursor:pointer;transition:all 0.2s;
+        box-shadow:0 4px 16px rgba(200,80,106,0.25);
+      }
+      .dho-btn-delete:hover { transform:translateY(-1px);box-shadow:0 6px 20px rgba(200,80,106,0.35); }
+      .dho-btn-delete:active { transform:translateY(0); }
+      /* Progress state */
+      #dhoProgressWrap {
+        display:none;
+        flex-direction:column;align-items:center;
+        padding:0.5rem 0 0.2rem;
+      }
+      .dho-spinner {
+        width:72px;height:72px;margin:0 auto 1.4rem;position:relative;
+      }
+      .dho-ring-track { fill:none;stroke:rgba(212,175,55,0.1);stroke-width:3; }
+      .dho-ring-fill  { fill:none;stroke:var(--gold);stroke-width:3;stroke-linecap:round;
+        stroke-dasharray:220;stroke-dashoffset:220;
+        transform-origin:36px 36px;transform:rotate(-90deg);
+        transition:stroke-dashoffset 0.4s ease;
+      }
+      .dho-ring-icon { position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);
+        font-size:1.5rem;
+        animation:dhoProgressPulse 1.5s ease infinite;
+      }
+      .dho-progress-label {
+        font-family:var(--ff-display);font-size:1rem;font-weight:400;
+        color:var(--light);margin-bottom:0.35rem;letter-spacing:0.03em;
+      }
+      .dho-progress-sub {
+        font-size:0.7rem;color:var(--muted);letter-spacing:0.05em;
+        text-transform:uppercase;margin-bottom:1.2rem;
+      }
+      .dho-step-list {
+        width:100%;display:flex;flex-direction:column;gap:0.35rem;
+        background:rgba(255,255,255,0.025);
+        border:1px solid rgba(255,255,255,0.05);
+        border-radius:10px;padding:0.8rem 1rem;
+      }
+      .dho-step {
+        display:flex;align-items:center;gap:0.6rem;
+        font-size:0.72rem;color:rgba(245,245,245,0.35);
+        transition:all 0.3s ease;
+      }
+      .dho-step.active { color:var(--light); }
+      .dho-step.done   { color:var(--green); }
+      .dho-step-dot {
+        width:7px;height:7px;border-radius:50%;
+        background:rgba(245,245,245,0.15);
+        flex-shrink:0;transition:all 0.3s ease;
+      }
+      .dho-step.active .dho-step-dot { background:var(--gold);
+        box-shadow:0 0 8px rgba(212,175,55,0.6);
+        animation:dhoProgressPulse 1s ease infinite;
+      }
+      .dho-step.done .dho-step-dot { background:var(--green); }
+      /* Done state */
+      #dhoDoneWrap {
+        display:none;flex-direction:column;align-items:center;padding:0.5rem 0;
+      }
+      .dho-done-icon {
+        width:72px;height:72px;margin:0 auto 1.2rem;
+        background:rgba(76,175,120,0.1);
+        border:1px solid rgba(76,175,120,0.25);
+        border-radius:50%;display:flex;align-items:center;justify-content:center;
+        font-size:1.8rem;
+        animation:dhoCardIn 0.3s ease;
+      }
+      .dho-done-title {
+        font-family:var(--ff-display);font-size:1.15rem;font-weight:400;
+        color:var(--green);margin-bottom:0.3rem;text-align:center;
+      }
+      .dho-done-sub { font-size:0.72rem;color:var(--muted);text-align:center;line-height:1.6; }
+    </style>
+
+    <div id="deleteHistoryCard">
+      <!-- Stato 1: Conferma -->
+      <div id="dhoConfirmWrap">
+        <div class="dho-icon-ring">
+          <svg width="72" height="72" viewBox="0 0 72 72">
+            <circle cx="36" cy="36" r="34" fill="none"
+              stroke="rgba(200,80,106,0.15)" stroke-width="1.5"/>
+          </svg>
+          <div class="dho-emoji">🗑</div>
+        </div>
+        <div class="dho-title">Elimina Cronologia</div>
+        <div class="dho-desc">
+          Stai per eliminare tutti i messaggi con<br>
+          <strong style="color:var(--light);">${escapeHtml(partnerName)}</strong>
+          per il tuo account.
+        </div>
+        <div class="dho-warning">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+          L'altro membro continuerà a vedere i propri messaggi. Questa azione è irreversibile.
+        </div>
+        <div class="dho-actions">
+          <button class="dho-btn-cancel" onclick="document.getElementById('deleteHistoryOverlay').remove()">
+            Annulla
+          </button>
+          <button class="dho-btn-delete" onclick="_executeDeletion()">
+            Elimina tutto
+          </button>
+        </div>
+      </div>
+
+      <!-- Stato 2: Progress -->
+      <div id="dhoProgressWrap">
+        <div class="dho-spinner">
+          <svg width="72" height="72" viewBox="0 0 72 72" style="position:relative;z-index:1;">
+            <circle class="dho-ring-track" cx="36" cy="36" r="33"/>
+            <circle class="dho-ring-fill"  cx="36" cy="36" r="33" id="dhoRingFill"/>
+          </svg>
+          <div class="dho-ring-icon" id="dhoRingIcon">🗑</div>
+        </div>
+        <div class="dho-progress-label" id="dhoProgressLabel">Eliminazione in corso…</div>
+        <div class="dho-progress-sub" id="dhoProgressSub">Preparazione</div>
+        <div class="dho-step-list">
+          <div class="dho-step active" id="dhoStep1">
+            <div class="dho-step-dot"></div>Recupero messaggi
+          </div>
+          <div class="dho-step" id="dhoStep2">
+            <div class="dho-step-dot"></div>Eliminazione messaggi
+          </div>
+          <div class="dho-step" id="dhoStep3">
+            <div class="dho-step-dot"></div>Aggiornamento conversazione
+          </div>
+          <div class="dho-step" id="dhoStep4">
+            <div class="dho-step-dot"></div>Sincronizzazione dati
+          </div>
+        </div>
+      </div>
+
+      <!-- Stato 3: Done -->
+      <div id="dhoDoneWrap">
+        <div class="dho-done-icon">✓</div>
+        <div class="dho-done-title">Cronologia eliminata</div>
+        <div class="dho-done-sub">
+          I messaggi sono stati rimossi dal tuo account.<br>
+          L'altro membro non è stato influenzato.
+        </div>
+      </div>
+    </div>
+  `;
+
+  document.body.appendChild(overlay);
+
+  // Chiudi cliccando fuori dalla card
+  overlay.addEventListener('click', (e) => {
+    if (e.target === overlay) overlay.remove();
+  });
+}
+
+/* Funzione helper per animare un step del progress */
+function _dhoSetStep(stepId, state) { // state: 'active' | 'done' | ''
+  const el = document.getElementById(stepId);
+  if (!el) return;
+  el.className = 'dho-step ' + state;
+}
+
+/* Funzione helper per aggiornare il ring progress (0–100) */
+function _dhoSetProgress(pct) {
+  const ring = document.getElementById('dhoRingFill');
+  if (!ring) return;
+  const circumference = 2 * Math.PI * 33; // ~207.3
+  ring.style.strokeDashoffset = circumference - (circumference * pct / 100);
+}
+
+/* Esecuzione effettiva dell'eliminazione */
+async function _executeDeletion() {
+  if (!currentConvPartnerEmail || !currentUser) return;
+  const partnerEmail = currentConvPartnerEmail; // salva prima del reset
+
+  // Transizione: mostra il progress
+  const confirmWrap  = document.getElementById('dhoConfirmWrap');
+  const progressWrap = document.getElementById('dhoProgressWrap');
+  const doneWrap     = document.getElementById('dhoDoneWrap');
+  if (!confirmWrap || !progressWrap) return;
+
+  confirmWrap.style.display  = 'none';
+  progressWrap.style.display = 'flex';
+
+  _dhoSetProgress(5);
+
+  // ── Step 1: Recupero messaggi da Supabase ─────────────────────────────
+  _dhoSetStep('dhoStep1', 'active');
+  document.getElementById('dhoProgressSub').textContent = 'Recupero messaggi…';
+
   if (_sbReady) {
-    const cid = convId(currentUser.email, currentConvPartnerEmail);
+    await new Promise(r => setTimeout(r, 350)); // breve pausa visiva
+    const cid = convId(currentUser.email, partnerEmail);
     const { data: msgs } = await _sb.from('messages').select('id, deleted_for').eq('conv_id', cid);
+
+    _dhoSetStep('dhoStep1', 'done');
+    _dhoSetProgress(25);
+
+    // ── Step 2: Eliminazione messaggi ──────────────────────────────────
+    _dhoSetStep('dhoStep2', 'active');
+    document.getElementById('dhoProgressSub').textContent = 'Rimozione messaggi…';
+    await new Promise(r => setTimeout(r, 300));
+
     if (msgs && msgs.length > 0) {
-      const toDelete = []; // righe da eliminare fisicamente
-      const toUpdate = []; // righe da marcare soft-deleted
+      const toDelete = [], toUpdate = [];
       for (const m of msgs) {
         const df = m.deleted_for || [];
-        if (df.includes(currentUser.email.toLowerCase())) continue; // già marcata per noi
+        if (df.includes(currentUser.email.toLowerCase())) continue;
         const updatedDf = [...df, currentUser.email.toLowerCase()];
-        // Se entrambi gli utenti hanno eliminato → cancellazione fisica
-        const otherAlsoDeleted = df.includes(currentConvPartnerEmail.toLowerCase());
-        if (otherAlsoDeleted) {
+        if (df.includes(partnerEmail.toLowerCase())) {
           toDelete.push(m.id);
         } else {
           toUpdate.push({ id: m.id, deleted_for: updatedDf });
@@ -5542,38 +5830,72 @@ async function deleteMyHistory() {
         await Promise.resolve(_sb.from('messages').update({ deleted_for: u.deleted_for }).eq('id', u.id)).catch(()=>{});
       }
     }
-    // Rimuovi la conv dal proprio record
+
+    _dhoSetStep('dhoStep2', 'done');
+    _dhoSetProgress(55);
+
+    // ── Step 3: Aggiornamento conversazione ────────────────────────────
+    _dhoSetStep('dhoStep3', 'active');
+    document.getElementById('dhoProgressSub').textContent = 'Aggiornamento conversazione…';
+    await new Promise(r => setTimeout(r, 350));
+
     await Promise.resolve(_sb.from('conversations')
       .delete()
       .eq('conv_id', cid)
       .eq('user_email', currentUser.email.toLowerCase())).catch(()=>{});
+
+    _dhoSetStep('dhoStep3', 'done');
+    _dhoSetProgress(75);
   }
 
-  if (!GAS_URL) {
-    REAL_CONVS = REAL_CONVS.filter(c => c.partnerEmail.toLowerCase() !== currentConvPartnerEmail.toLowerCase());
-    renderConversations();
-    const messagesEl = document.getElementById('chatMessages');
-    if (messagesEl) messagesEl.innerHTML = '<div style="text-align:center;padding:3rem 1rem;color:var(--muted2);font-size:0.8rem;">Cronologia eliminata.</div>';
-    showToast('green','🗑','Cronologia eliminata.');
-    currentConvPartnerEmail = null;
-    document.getElementById('chatHeaderName').textContent = 'Seleziona una conversazione';
-    document.getElementById('chatHeaderStatus').textContent = '—';
-    return;
+  // ── Step 4: Sincronizzazione GAS + aggiornamento UI ────────────────────
+  _dhoSetStep('dhoStep4', 'active');
+  document.getElementById('dhoProgressSub').textContent = 'Sincronizzazione…';
+  await new Promise(r => setTimeout(r, 280));
+
+  if (GAS_URL) {
+    await fetch(`${GAS_URL}?action=delete_messages_for_user&email=${encodeURIComponent(currentUser.email)}&otherEmail=${encodeURIComponent(partnerEmail)}`).catch(()=>{});
   }
-  try {
-    const resp = await fetch(`${GAS_URL}?action=delete_messages_for_user&email=${encodeURIComponent(currentUser.email)}&otherEmail=${encodeURIComponent(currentConvPartnerEmail)}`);
-    const data = await resp.json();
-    if (data.success) {
-      REAL_CONVS = REAL_CONVS.filter(c => c.partnerEmail.toLowerCase() !== currentConvPartnerEmail.toLowerCase());
-      renderConversations();
-      const messagesEl = document.getElementById('chatMessages');
-      if (messagesEl) messagesEl.innerHTML = '<div style="text-align:center;padding:3rem 1rem;color:var(--muted2);font-size:0.8rem;">Cronologia eliminata.</div>';
-      showToast('green','🗑','Cronologia eliminata. L\'altro utente continua a vedere i suoi messaggi.');
-      currentConvPartnerEmail = null;
-      document.getElementById('chatHeaderName').textContent = 'Seleziona una conversazione';
-      document.getElementById('chatHeaderStatus').textContent = '—';
+
+  // FIX BUG 2: aggiorna REAL_CONVS E la cache prima di renderizzare
+  // senza questo, al ritorno nel pannello la cache vecchia mostrerebbe la chat eliminata
+  REAL_CONVS = REAL_CONVS.filter(c => c.partnerEmail.toLowerCase() !== partnerEmail.toLowerCase());
+  delete _msgCache[partnerEmail.toLowerCase()]; // svuota cache messaggi di questa conv
+  saveConvsCache(); // persiste lo stato aggiornato → nessuna comparsa temporanea al ritorno
+
+  _dhoSetStep('dhoStep4', 'done');
+  _dhoSetProgress(100);
+  document.getElementById('dhoRingIcon').textContent = '✓';
+  document.getElementById('dhoRingIcon').style.color = 'var(--green)';
+  document.getElementById('dhoRingFill').style.stroke = 'var(--green)';
+
+  await new Promise(r => setTimeout(r, 500));
+
+  // ── Stato Done ──────────────────────────────────────────────────────────
+  progressWrap.style.display = 'none';
+  doneWrap.style.display     = 'flex';
+
+  // Aggiorna UI chat → empty state + reset header
+  const messagesEl = document.getElementById('chatMessages');
+  if (messagesEl) {
+    messagesEl.innerHTML = '<div style="text-align:center;padding:3rem 1rem;color:var(--muted2);font-size:0.8rem;line-height:1.8;">Nessun messaggio ancora.<br>Inizia la conversazione!</div>';
+  }
+  currentConvPartnerEmail = null;
+  _activeListenPartner    = null; // FIX NOTIFICHE: reset anche qui per sicurezza
+  const headerName   = document.getElementById('chatHeaderName');
+  const headerStatus = document.getElementById('chatHeaderStatus');
+  if (headerName)   headerName.textContent   = 'Seleziona una conversazione';
+  if (headerStatus) headerStatus.textContent = '—';
+  renderConversations();
+
+  // Chiude l'overlay dopo 1.6s
+  setTimeout(() => {
+    const overlay = document.getElementById('deleteHistoryOverlay');
+    if (overlay) {
+      overlay.style.animation = 'dhoFadeOut 0.28s ease forwards';
+      setTimeout(() => overlay.remove(), 300);
     }
-  } catch(e) { showToast('red','⚠️','Errore durante l\'eliminazione.'); }
+  }, 1600);
 }
 
 function filterConversations(query) {
