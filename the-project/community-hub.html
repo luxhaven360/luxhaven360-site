@@ -3065,7 +3065,7 @@ function showPanel(id, navEl) {
   // Clear badges when viewing
   if (id === 'notifications') { notifCount = 0; updateNotifBadge(); renderNotifications(); }
   if (id === 'messages') {
-    unreadMsgs = 0; updateMsgBadge();
+    updateMsgBadge(); // Ricalcola da REAL_CONVS — NON azzerare qui: il badge si azzera conv per conv quando l'utente le apre
     // Carica conv solo se lista vuota o non ancora sincronizzata con Supabase
     if (REAL_CONVS.length === 0) {
       loadConversations();
@@ -4485,9 +4485,10 @@ async function openConvByEmail(partnerEmail) {
     statusEl.className = 'chat-header-status ' + (onlineM ? '' : 'offline');
   }
 
-  // Marca conv come letta
+  // Marca conv come letta — aggiorna badge in tempo reale
   const conv = REAL_CONVS.find(c => c.partnerEmail.toLowerCase() === partnerEmail.toLowerCase());
   if (conv) conv.unread = 0;
+  updateMsgBadge(); // ricalcola badge da REAL_CONVS dopo azzeramento
   renderConversations();
 
   // FIX schermata nera: se Supabase è pronto, carica direttamente da Supabase (nessun skeleton, nessuna attesa GAS)
@@ -6144,13 +6145,15 @@ function renderNotifications() {
 
   if (markAllBtn) markAllBtn.style.display = '';
   container.innerHTML = NOTIFICATIONS.map(n => {
-    const timeLabel = n.ts ? _notifRelTime(n.ts) : (n.time || 'Ora');
+    // Usa ts se disponibile, altrimenti ricava da id (id = Date.now() + Math.random())
+    const ts = n.ts || Math.floor(n.id) || 0;
+    const timeLabel = ts ? _notifRelTime(ts) : (n.time || 'Ora');
     return `
     <div class="notif-item ${n.unread ? 'unread' : ''}" onclick="markNotifRead(${n.id})">
       <div class="notif-icon ${colorMap[n.type] || 'gold'}">${n.icon}</div>
       <div class="notif-content">
         <div class="notif-text">${n.text}</div>
-        <div class="notif-time">${timeLabel}</div>
+        <div class="notif-time" data-ts="${ts}">${timeLabel}</div>
       </div>
       ${n.unread ? '<div class="notif-unread-dot"></div>' : ''}
     </div>`;
@@ -6170,14 +6173,15 @@ function renderNotifDropdown() {
   }
 
   list.innerHTML = NOTIFICATIONS.slice(0,6).map(n => {
-    // Aggiorna sempre il tempo relativo dal ts grezzo (se disponibile)
-    const timeLabel = n.ts ? _notifRelTime(n.ts) : (n.time || 'Ora');
+    // Usa ts se disponibile, altrimenti ricava da id (id = Date.now() + Math.random())
+    const ts = n.ts || Math.floor(n.id) || 0;
+    const timeLabel = ts ? _notifRelTime(ts) : (n.time || 'Ora');
     return `
     <div class="notif-dropdown-item ${n.unread ? 'unread' : ''}" onclick="markNotifRead(${n.id}); toggleNotifDropdown();">
       <div class="ndi-icon">${n.icon}</div>
       <div class="ndi-text">
         ${n.text}
-        <div class="ndi-time">${timeLabel}</div>
+        <div class="ndi-time" data-ts="${ts}">${timeLabel}</div>
       </div>
       ${n.unread ? '<div class="ndi-unread"></div>' : ''}
     </div>`;
@@ -6236,10 +6240,17 @@ function updateNotifBadge() {
 
 function updateMsgBadge() {
   const badge = document.getElementById('msgBadge');
-  if (unreadMsgs > 0) {
-    badge.textContent = unreadMsgs;
+  if (!badge) return;
+  // FONTE DI VERITÀ: somma degli unread di tutte le conversazioni (come updateNotifBadge usa NOTIFICATIONS)
+  // Non usare la variabile unreadMsgs direttamente — potrebbe essere desincronizzata
+  const totalUnread = REAL_CONVS.reduce((s, c) => s + (c.unread || 0), 0);
+  unreadMsgs = totalUnread; // sincronizza la variabile globale
+  if (totalUnread > 0) {
+    badge.textContent = totalUnread;
     badge.style.display = '';
+    badge.classList.remove('hidden');
   } else {
+    badge.textContent = '';
     badge.style.display = 'none';
     badge.classList.add('hidden');
   }
@@ -6358,28 +6369,20 @@ function _showNotifPopup(icon, text, ts) {
   setTimeout(() => { popup.classList.add('out'); setTimeout(() => popup.remove(), 300); }, 7000);
 }
 
-/* Ticker live: aggiorna il campo "time" di tutte le notifiche ogni 30 secondi */
+/* Ticker live: aggiorna i tempi direttamente nel DOM ogni secondo — zero re-render.
+   Funziona sia per notifiche nuove (con ts) che vecchie (ts ricavato da id). */
 let _notifTimeTicker = null;
 function _startNotifTimeTicker() {
   if (_notifTimeTicker) return; // già avviato
   _notifTimeTicker = setInterval(() => {
-    let changed = false;
-    NOTIFICATIONS.forEach(n => {
-      if (!n.ts) return;
-      const newTime = _notifRelTime(n.ts);
-      if (n.time !== newTime) { n.time = newTime; changed = true; }
-    });
-    // Aggiorna anche i popup visibili nel DOM
-    document.querySelectorAll('.popup-notif-time[data-ts]').forEach(el => {
+    // Aggiorna direttamente tutti gli elementi [data-ts] nel DOM — nessun re-render costoso
+    document.querySelectorAll('[data-ts]').forEach(el => {
       const ts = parseInt(el.dataset.ts, 10);
-      if (ts) el.textContent = _notifRelTime(ts);
+      if (!ts) return;
+      const newText = _notifRelTime(ts);
+      if (el.textContent !== newText) el.textContent = newText;
     });
-    if (changed) {
-      renderNotifDropdown();
-      const np = document.getElementById('panel-notifications');
-      if (np && np.classList.contains('active')) renderNotifications();
-    }
-  }, 30000); // aggiorna ogni 30 secondi
+  }, 1000); // ogni secondo — aggiornamento in tempo reale
 }
 
 /* Cache notifiche su localStorage per persistenza cross-sessione */
@@ -6394,6 +6397,8 @@ function _loadNotifCache() {
     const arr = JSON.parse(raw);
     if (!Array.isArray(arr) || arr.length === 0) return;
     arr.forEach(n => {
+      // Retrocompatibilità: le notifiche vecchie non hanno ts → ricava da id (id = Date.now() + Math.random())
+      if (!n.ts && n.id) n.ts = Math.floor(n.id);
       // Aggiorna la stringa tempo relativo usando il ts grezzo
       if (n.ts) n.time = _notifRelTime(n.ts);
       else if (!n.time) n.time = 'Ora';
