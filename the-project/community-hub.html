@@ -2970,6 +2970,9 @@ function initApp() {
   // notifCount è 0 e NOTIFICATIONS è vuoto → campanella priva di badge
   updateNotifBadge();
 
+  // Avvia ticker aggiornamento tempi relativi notifiche
+  _startNotifTimeTicker();
+
   // Simulate real-time activity
   // Avvia presenza real-time: heartbeat immediato + timer + Firebase
   startPresenceSystem();
@@ -4427,8 +4430,8 @@ function renderConversations() {
         ${previewHtml}
       </div>
       <div class="conv-meta">
-        <div class="conv-time">${formatMsgTime(c.lastTs)}</div>
-        ${c.unread > 0 ? `<div class="conv-unread">${c.unread}</div>` : ''}
+        <div class="conv-time" style="${c.unread > 0 ? 'color:var(--gold);font-weight:600;' : ''}">${formatMsgTime(c.lastTs)}</div>
+        ${c.unread > 0 ? `<div class="conv-unread" title="${c.unread} messaggi non letti">${c.unread}</div>` : ''}
       </div>
     </div>`;
   }).join('');
@@ -4442,6 +4445,27 @@ async function openConvByEmail(partnerEmail) {
   }
   currentConvPartnerEmail = partnerEmail;
   const partnerInfo = getPartnerInfo(partnerEmail);
+
+  // ── AUTO-MARK NOTIFICHE LETTE ────────────────────────────────────────────
+  // Quando l'utente apre la conversazione con un mittente, segna come lette
+  // TUTTE le notifiche DM provenienti da quel mittente, incluse quelle nella
+  // cache che non erano state ancora visualizzate.
+  const partnerEmailLow = partnerEmail.toLowerCase();
+  let notifMarkedRead = false;
+  NOTIFICATIONS.forEach(n => {
+    if (n.unread && n.senderEmail && n.senderEmail === partnerEmailLow) {
+      n.unread = false;
+      notifMarkedRead = true;
+    }
+  });
+  if (notifMarkedRead) {
+    updateNotifBadge();
+    renderNotifDropdown();
+    _saveNotifCache();
+    const np = document.getElementById('panel-notifications');
+    if (np && np.classList.contains('active')) renderNotifications();
+  }
+  // ────────────────────────────────────────────────────────────────────────
 
   // Aggiorna header
   const headerAvatar = document.getElementById('chatHeaderAvatar');
@@ -5158,7 +5182,7 @@ function sbListenMessages(partnerEmail) {
         currentConvPartnerEmail.toLowerCase() === partnerEmail.toLowerCase();
       if (!isViewingThisConv) {
         const senderName = msg.fromName ? msg.fromName.split(' ')[0] : 'un membro';
-        addRealNotification('direct_messages', '💬', `Nuovo messaggio da <strong>${senderName}</strong>`);
+        addRealNotification('direct_messages', '💬', `Nuovo messaggio da <strong>${senderName}</strong>`, msg.from);
       }
       // Aggiorna preview lista conv
       const conv = REAL_CONVS.find(c => c.partnerEmail.toLowerCase() === partnerEmail.toLowerCase());
@@ -5221,7 +5245,7 @@ function sbListenConversations() {
           if (!isActiveListened) {
             const senderName = c.partner_name ? c.partner_name.split(' ')[0] : 'un membro';
             addRealNotification('direct_messages', '💬',
-              `Nuovo messaggio da <strong>${senderName}</strong>`);
+              `Nuovo messaggio da <strong>${senderName}</strong>`, c.partner_email);
           }
         }
       }
@@ -5239,34 +5263,38 @@ function sbListenInbox() {
   sbOff('inbox');
 
   const myEmail = currentUser.email.toLowerCase();
-  const myKey   = emailKey(myEmail);  // forma usata nel conv_id (punti → _)
+  // CORREZIONE CRITICA: usare lo STESSO pattern di convId (che NON sostituisce @)
+  // emailKey() sostituisce anche @ → myKey non corrisponde mai al conv_id reale
+  // convId() usa solo /[.#$\[\]]/ → mantiene @, sostituisce solo punti e caratteri speciali
+  const myConvKey = myEmail.replace(/[.#$\[\]]/g, '_'); // "mario@gmail_com" come in convId()
 
-  const ch = _sb.channel('inbox_' + myKey)
+  const ch = _sb.channel('inbox_' + emailKey(myEmail)) // channel name usa emailKey (sicuro per nomi canale)
     .on('postgres_changes', {
       event: 'INSERT', schema: 'public', table: 'messages'
     }, (payload) => {
       const m = payload.new;
       if (!m) return;
       // Filtra: il messaggio deve appartenere a una conv che coinvolge noi
-      if (!m.conv_id || !m.conv_id.includes(myKey)) return;
+      // Usa myConvKey (stesso formato di convId) — non emailKey che ha @ → _ e non matcha mai
+      if (!m.conv_id || !m.conv_id.includes(myConvKey)) return;
       // Ignora i messaggi che abbiamo inviato noi
       if (!m.sender_email || m.sender_email.toLowerCase() === myEmail) return;
-      // Ignora se questo messaggio è già gestito da sbListenMessages (conv attiva)
-      const senderEmail = m.sender_email.toLowerCase();
-      const isActiveConv = _activeListenPartner &&
-        _activeListenPartner.toLowerCase() === senderEmail;
-      if (isActiveConv) return; // sbListenMessages lo gestisce già
 
-      // Notifica solo se la preferenza è abilitata
+      const senderEmail = m.sender_email.toLowerCase();
+
+      // DEDUP SEMPLIFICATO: non notificare SOLO se l'utente sta guardando
+      // questa conversazione esatta in questo preciso momento.
+      // Rimuoviamo il check _activeListenPartner che era troppo aggressivo
+      // e sopprimeva notifiche anche dopo aver lasciato il pannello messaggi.
       const inMsgPanel = document.getElementById('panel-messages')?.classList.contains('active');
       const isViewingThisConv = inMsgPanel &&
         currentConvPartnerEmail &&
         currentConvPartnerEmail.toLowerCase() === senderEmail;
-      if (isViewingThisConv) return;
+      if (isViewingThisConv) return; // l'utente sta guardando la conv → nessuna notifica
 
       const senderName = m.sender_name ? m.sender_name.split(' ')[0] : 'un membro';
       addRealNotification('direct_messages', '💬',
-        `Nuovo messaggio da <strong>${senderName}</strong>`);
+        `Nuovo messaggio da <strong>${senderName}</strong>`, senderEmail);
 
       // Aggiorna anche il badge messaggi e la lista conversazioni
       let conv = REAL_CONVS.find(c => c.partnerEmail.toLowerCase() === senderEmail);
@@ -6115,16 +6143,18 @@ function renderNotifications() {
   }
 
   if (markAllBtn) markAllBtn.style.display = '';
-  container.innerHTML = NOTIFICATIONS.map(n => `
+  container.innerHTML = NOTIFICATIONS.map(n => {
+    const timeLabel = n.ts ? _notifRelTime(n.ts) : (n.time || 'Ora');
+    return `
     <div class="notif-item ${n.unread ? 'unread' : ''}" onclick="markNotifRead(${n.id})">
       <div class="notif-icon ${colorMap[n.type] || 'gold'}">${n.icon}</div>
       <div class="notif-content">
         <div class="notif-text">${n.text}</div>
-        <div class="notif-time">${n.time}</div>
+        <div class="notif-time">${timeLabel}</div>
       </div>
       ${n.unread ? '<div class="notif-unread-dot"></div>' : ''}
-    </div>
-  `).join('');
+    </div>`;
+  }).join('');
 }
 
 function renderNotifDropdown() {
@@ -6139,16 +6169,19 @@ function renderNotifDropdown() {
     return;
   }
 
-  list.innerHTML = NOTIFICATIONS.slice(0,5).map(n => `
+  list.innerHTML = NOTIFICATIONS.slice(0,6).map(n => {
+    // Aggiorna sempre il tempo relativo dal ts grezzo (se disponibile)
+    const timeLabel = n.ts ? _notifRelTime(n.ts) : (n.time || 'Ora');
+    return `
     <div class="notif-dropdown-item ${n.unread ? 'unread' : ''}" onclick="markNotifRead(${n.id}); toggleNotifDropdown();">
       <div class="ndi-icon">${n.icon}</div>
       <div class="ndi-text">
         ${n.text}
-        <div class="ndi-time">${n.time}</div>
+        <div class="ndi-time">${timeLabel}</div>
       </div>
       ${n.unread ? '<div class="ndi-unread"></div>' : ''}
-    </div>
-  `).join('');
+    </div>`;
+  }).join('');
 }
 
 function toggleNotifDropdown() {
@@ -6273,39 +6306,80 @@ function isNotifEnabled(prefKey) {
   return p[prefKey] !== false;
 }
 
-/* Aggiunge una notifica reale rispettando le preferenze */
-function addRealNotification(prefKey, icon, text) {
+/* Aggiunge una notifica reale rispettando le preferenze.
+   senderEmail (opzionale): email del mittente per auto-mark-read quando si apre la conv */
+function addRealNotification(prefKey, icon, text, senderEmail) {
   if (!isNotifEnabled(prefKey)) return; // preferenza disabilitata → nessuna notifica
-  const n = { id: Date.now() + Math.random(), icon, text, time: 'Ora', unread: true, prefKey };
+  const nowTs = Date.now();
+  const n = {
+    id:          nowTs + Math.random(),
+    icon,
+    text,
+    time:        'Ora',       // stringa leggibile, aggiornata da _startNotifTimeTicker
+    ts:          nowTs,       // timestamp grezzo in ms per calcolo tempo relativo
+    unread:      true,
+    prefKey,
+    senderEmail: senderEmail ? senderEmail.toLowerCase() : null
+  };
   NOTIFICATIONS.unshift(n);
   updateNotifBadge();
   renderNotifDropdown();
   const np = document.getElementById('panel-notifications');
   if (np && np.classList.contains('active')) renderNotifications();
   // Mostra popup bottom-right in qualunque pannello sia attivo
-  _showNotifPopup(icon, text);
+  _showNotifPopup(icon, text, nowTs);
   // Persisti le notifiche localmente per resistere ai refresh
   _saveNotifCache();
+  // Avvia ticker aggiornamento tempi (se non già attivo)
+  _startNotifTimeTicker();
 }
 
 /* Popup notifica bottom-right — visibile in ogni sezione, più duraturo del toast standard */
-function _showNotifPopup(icon, text) {
+function _showNotifPopup(icon, text, ts) {
   const container = document.getElementById('toastContainer');
   if (!container) return;
   const popup = document.createElement('div');
   popup.className = 'toast';
   popup.style.cssText = 'border-left:2px solid var(--gold);background:var(--dark3);box-shadow:0 8px 32px rgba(0,0,0,0.7),0 0 0 1px rgba(212,175,55,0.15);';
+  const timeStr = ts ? _notifRelTime(ts) : 'Ora';
   popup.innerHTML = `
     <div class="toast-icon gold">${icon}</div>
     <div style="flex:1;min-width:0;">
-      <div style="font-size:0.62rem;letter-spacing:0.14em;text-transform:uppercase;color:var(--gold);margin-bottom:2px;">Notifica</div>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:2px;">
+        <div style="font-size:0.62rem;letter-spacing:0.14em;text-transform:uppercase;color:var(--gold);">Notifica</div>
+        <div class="popup-notif-time" style="font-size:0.6rem;color:var(--muted2);" data-ts="${ts||0}">${timeStr}</div>
+      </div>
       <div class="toast-text" style="font-size:0.78rem;">${text}</div>
     </div>
     <button class="toast-close" onclick="this.parentElement.remove()">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
     </button>`;
   container.appendChild(popup);
-  setTimeout(() => { popup.classList.add('out'); setTimeout(() => popup.remove(), 300); }, 6000);
+  setTimeout(() => { popup.classList.add('out'); setTimeout(() => popup.remove(), 300); }, 7000);
+}
+
+/* Ticker live: aggiorna il campo "time" di tutte le notifiche ogni 30 secondi */
+let _notifTimeTicker = null;
+function _startNotifTimeTicker() {
+  if (_notifTimeTicker) return; // già avviato
+  _notifTimeTicker = setInterval(() => {
+    let changed = false;
+    NOTIFICATIONS.forEach(n => {
+      if (!n.ts) return;
+      const newTime = _notifRelTime(n.ts);
+      if (n.time !== newTime) { n.time = newTime; changed = true; }
+    });
+    // Aggiorna anche i popup visibili nel DOM
+    document.querySelectorAll('.popup-notif-time[data-ts]').forEach(el => {
+      const ts = parseInt(el.dataset.ts, 10);
+      if (ts) el.textContent = _notifRelTime(ts);
+    });
+    if (changed) {
+      renderNotifDropdown();
+      const np = document.getElementById('panel-notifications');
+      if (np && np.classList.contains('active')) renderNotifications();
+    }
+  }, 30000); // aggiorna ogni 30 secondi
 }
 
 /* Cache notifiche su localStorage per persistenza cross-sessione */
@@ -6320,25 +6394,32 @@ function _loadNotifCache() {
     const arr = JSON.parse(raw);
     if (!Array.isArray(arr) || arr.length === 0) return;
     arr.forEach(n => {
-      // Rifissa time relativo
+      // Aggiorna la stringa tempo relativo usando il ts grezzo
       if (n.ts) n.time = _notifRelTime(n.ts);
+      else if (!n.time) n.time = 'Ora';
       if (!NOTIFICATIONS.some(x => x.id === n.id)) NOTIFICATIONS.push(n);
     });
     NOTIFICATIONS.sort((a,b) => (b.id||0) - (a.id||0));
     updateNotifBadge();
     renderNotifDropdown();
+    // Avvia il ticker live dei tempi ora che ci sono notifiche
+    _startNotifTimeTicker();
   } catch(_e) {}
 }
 function _notifRelTime(ts) {
   if (!ts) return 'Ora';
   const diff = Date.now() - ts;
+  if (diff < 0)    return 'Ora';
+  const s = Math.floor(diff / 1000);
   const m = Math.floor(diff / 60000);
   const h = Math.floor(diff / 3600000);
   const d = Math.floor(diff / 86400000);
-  if (m < 1) return 'Ora';
-  if (m < 60) return m + 'm fa';
-  if (h < 24) return h + 'h fa';
-  return d + 'g fa';
+  if (s < 10)  return 'Ora';
+  if (s < 60)  return s + 's fa';
+  if (m < 60)  return m + 'm fa';
+  if (h < 24)  return h + 'h fa';
+  if (d < 7)   return d + 'g fa';
+  return new Date(ts).toLocaleDateString('it-IT', { day:'2-digit', month:'short' });
 }
 
 /* ── Statistiche attività utente ── */
