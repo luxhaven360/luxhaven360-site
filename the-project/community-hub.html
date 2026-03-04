@@ -1909,95 +1909,6 @@ body {
 
 /* Badge disc per nuove discussioni */
 #discBadge:not(.hidden) { display: inline-flex; }
-/* ── Delete Progress Overlay ─────────────────────────────── */
-#deleteProgressOverlay {
-  position: fixed; inset: 0; z-index: 9998;
-  background: rgba(5,5,5,0.82);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  display: flex; align-items: center; justify-content: center;
-  opacity: 0; pointer-events: none;
-  transition: opacity 0.35s cubic-bezier(0.4,0,0.2,1);
-}
-#deleteProgressOverlay.visible {
-  opacity: 1; pointer-events: all;
-}
-.delete-progress-card {
-  background: var(--dark3);
-  border: 1px solid rgba(212,175,55,0.18);
-  border-radius: 18px;
-  padding: 2.8rem 3.2rem;
-  min-width: 340px;
-  display: flex; flex-direction: column; align-items: center; gap: 1.8rem;
-  box-shadow: 0 32px 80px rgba(0,0,0,0.8), 0 0 0 1px rgba(212,175,55,0.08);
-  transform: translateY(16px) scale(0.97);
-  transition: transform 0.35s cubic-bezier(0.4,0,0.2,1);
-}
-#deleteProgressOverlay.visible .delete-progress-card {
-  transform: translateY(0) scale(1);
-}
-.delete-progress-icon {
-  width: 56px; height: 56px; border-radius: 50%;
-  background: radial-gradient(circle at 40% 40%, rgba(212,175,55,0.18), rgba(212,175,55,0.04));
-  border: 1px solid rgba(212,175,55,0.22);
-  display: flex; align-items: center; justify-content: center;
-  font-size: 1.4rem;
-  animation: deleteIconPulse 1.8s ease-in-out infinite;
-}
-@keyframes deleteIconPulse {
-  0%,100% { box-shadow: 0 0 0 0 rgba(212,175,55,0.0); }
-  50%      { box-shadow: 0 0 0 10px rgba(212,175,55,0.08); }
-}
-.delete-progress-title {
-  font-family: var(--ff-display);
-  font-size: 1.25rem; font-weight: 400;
-  color: var(--light); letter-spacing: 0.02em;
-  text-align: center;
-}
-.delete-progress-subtitle {
-  font-size: 0.72rem; color: var(--muted);
-  text-align: center; line-height: 1.6;
-  margin-top: -1rem;
-}
-.delete-progress-bar-wrap {
-  width: 100%; height: 2px;
-  background: rgba(245,245,245,0.06);
-  border-radius: 2px; overflow: hidden;
-}
-.delete-progress-bar {
-  height: 100%;
-  background: linear-gradient(90deg, var(--gold-dim), var(--gold), var(--gold-light));
-  border-radius: 2px;
-  width: 0%;
-  transition: width 0.3s ease;
-  box-shadow: 0 0 8px rgba(212,175,55,0.5);
-}
-.delete-progress-steps {
-  display: flex; flex-direction: column; gap: 0.55rem;
-  width: 100%;
-}
-.delete-step {
-  display: flex; align-items: center; gap: 0.75rem;
-  font-size: 0.72rem; color: var(--muted2);
-  transition: color 0.3s ease;
-}
-.delete-step.active { color: var(--light); }
-.delete-step.done { color: var(--gold); }
-.delete-step-dot {
-  width: 6px; height: 6px; border-radius: 50%;
-  background: var(--muted3); flex-shrink: 0;
-  transition: background 0.3s ease;
-}
-.delete-step.active .delete-step-dot {
-  background: var(--gold);
-  box-shadow: 0 0 6px rgba(212,175,55,0.6);
-  animation: stepDotPulse 0.8s ease-in-out infinite;
-}
-.delete-step.done .delete-step-dot { background: var(--gold); animation: none; }
-@keyframes stepDotPulse {
-  0%,100% { transform: scale(1); } 50% { transform: scale(1.5); }
-}
-
 </style>
 
 <!-- ═══ FIREBASE REALTIME DATABASE SDK ═══ -->
@@ -3176,7 +3087,6 @@ function showPanel(id, navEl) {
     if (_sbReady) {
       sbOff('messages');
       sbOff('typing');
-      _activeListenPartner = null; // consente a sbListenInbox di ricevere tutti i DM
     }
   }
   if (id === 'feed') {
@@ -5599,55 +5509,31 @@ function removeTypingIndicator() {
   if (el) el.remove();
 }
 
-/* ── Progress overlay per eliminazione chat ── */
-function _showDeleteProgress() {
-  const ov = document.getElementById('deleteProgressOverlay');
-  if (ov) ov.classList.add('visible');
-}
-function _hideDeleteProgress() {
-  const ov = document.getElementById('deleteProgressOverlay');
-  if (ov) ov.classList.remove('visible');
-}
-function _setDeleteStep(stepNum, progress) {
-  for (let i = 1; i <= 4; i++) {
-    const el = document.getElementById('dstep' + i);
-    if (!el) continue;
-    el.classList.remove('active','done');
-    if (i < stepNum) el.classList.add('done');
-    else if (i === stepNum) el.classList.add('active');
-  }
-  const bar = document.getElementById('deleteProgressBar');
-  if (bar) bar.style.width = progress + '%';
-}
-
 /* ── Elimina cronologia solo per l'utente corrente ── */
 async function deleteMyHistory() {
   if (!currentConvPartnerEmail || !currentUser) return;
   if (!confirm('Elimina tutta la cronologia di questa conversazione solo per te? L\'altro utente continuerà a vedere i propri messaggi.')) return;
 
-  const _deletedPartner = currentConvPartnerEmail;
-  _showDeleteProgress();
-  _setDeleteStep(1, 8);
-  await new Promise(r => setTimeout(r, 350));
-
   // Supabase: cancellazione intelligente
+  // → Se l'altro utente ha già eliminato: cancella la riga fisicamente (libera spazio)
+  // → Altrimenti: marca come eliminata solo per te (soft delete)
   if (_sbReady) {
-    const cid = convId(currentUser.email, _deletedPartner);
-    _setDeleteStep(1, 25);
+    const cid = convId(currentUser.email, currentConvPartnerEmail);
     const { data: msgs } = await _sb.from('messages').select('id, deleted_for').eq('conv_id', cid);
-    _setDeleteStep(2, 45);
-    await new Promise(r => setTimeout(r, 250));
-
     if (msgs && msgs.length > 0) {
-      const toDelete = [];
-      const toUpdate = [];
+      const toDelete = []; // righe da eliminare fisicamente
+      const toUpdate = []; // righe da marcare soft-deleted
       for (const m of msgs) {
         const df = m.deleted_for || [];
-        if (df.includes(currentUser.email.toLowerCase())) continue;
+        if (df.includes(currentUser.email.toLowerCase())) continue; // già marcata per noi
         const updatedDf = [...df, currentUser.email.toLowerCase()];
-        const otherAlsoDeleted = df.includes(_deletedPartner.toLowerCase());
-        if (otherAlsoDeleted) toDelete.push(m.id);
-        else toUpdate.push({ id: m.id, deleted_for: updatedDf });
+        // Se entrambi gli utenti hanno eliminato → cancellazione fisica
+        const otherAlsoDeleted = df.includes(currentConvPartnerEmail.toLowerCase());
+        if (otherAlsoDeleted) {
+          toDelete.push(m.id);
+        } else {
+          toUpdate.push({ id: m.id, deleted_for: updatedDf });
+        }
       }
       if (toDelete.length > 0) {
         await Promise.resolve(_sb.from('messages').delete().in('id', toDelete)).catch(()=>{});
@@ -5656,22 +5542,16 @@ async function deleteMyHistory() {
         await Promise.resolve(_sb.from('messages').update({ deleted_for: u.deleted_for }).eq('id', u.id)).catch(()=>{});
       }
     }
-    _setDeleteStep(3, 70);
+    // Rimuovi la conv dal proprio record
     await Promise.resolve(_sb.from('conversations')
       .delete()
       .eq('conv_id', cid)
       .eq('user_email', currentUser.email.toLowerCase())).catch(()=>{});
-    await new Promise(r => setTimeout(r, 250));
   }
 
   if (!GAS_URL) {
-    _setDeleteStep(4, 100);
-    await new Promise(r => setTimeout(r, 400));
-    REAL_CONVS = REAL_CONVS.filter(c => c.partnerEmail.toLowerCase() !== _deletedPartner.toLowerCase());
-    delete _msgCache[_deletedPartner.toLowerCase()];
-    saveConvsCache();
+    REAL_CONVS = REAL_CONVS.filter(c => c.partnerEmail.toLowerCase() !== currentConvPartnerEmail.toLowerCase());
     renderConversations();
-    _hideDeleteProgress();
     const messagesEl = document.getElementById('chatMessages');
     if (messagesEl) messagesEl.innerHTML = '<div style="text-align:center;padding:3rem 1rem;color:var(--muted2);font-size:0.8rem;">Cronologia eliminata.</div>';
     showToast('green','🗑','Cronologia eliminata.');
@@ -5680,32 +5560,20 @@ async function deleteMyHistory() {
     document.getElementById('chatHeaderStatus').textContent = '—';
     return;
   }
-
   try {
-    const resp = await fetch(`${GAS_URL}?action=delete_messages_for_user&email=${encodeURIComponent(currentUser.email)}&otherEmail=${encodeURIComponent(_deletedPartner)}`);
+    const resp = await fetch(`${GAS_URL}?action=delete_messages_for_user&email=${encodeURIComponent(currentUser.email)}&otherEmail=${encodeURIComponent(currentConvPartnerEmail)}`);
     const data = await resp.json();
-    _setDeleteStep(4, 100);
-    await new Promise(r => setTimeout(r, 500));
     if (data.success) {
-      REAL_CONVS = REAL_CONVS.filter(c => c.partnerEmail.toLowerCase() !== _deletedPartner.toLowerCase());
-      delete _msgCache[_deletedPartner.toLowerCase()];
-      saveConvsCache();
+      REAL_CONVS = REAL_CONVS.filter(c => c.partnerEmail.toLowerCase() !== currentConvPartnerEmail.toLowerCase());
       renderConversations();
-      _hideDeleteProgress();
       const messagesEl = document.getElementById('chatMessages');
       if (messagesEl) messagesEl.innerHTML = '<div style="text-align:center;padding:3rem 1rem;color:var(--muted2);font-size:0.8rem;">Cronologia eliminata.</div>';
       showToast('green','🗑','Cronologia eliminata. L\'altro utente continua a vedere i suoi messaggi.');
       currentConvPartnerEmail = null;
       document.getElementById('chatHeaderName').textContent = 'Seleziona una conversazione';
       document.getElementById('chatHeaderStatus').textContent = '—';
-    } else {
-      _hideDeleteProgress();
-      showToast('red','⚠️','Errore durante l\'eliminazione.');
     }
-  } catch(e) {
-    _hideDeleteProgress();
-    showToast('red','⚠️','Errore durante l\'eliminazione.');
-  }
+  } catch(e) { showToast('red','⚠️','Errore durante l\'eliminazione.'); }
 }
 
 function filterConversations(query) {
@@ -7109,37 +6977,5 @@ function initGlobalSearch() {
   });
 }
 </script>
-
-<!-- ── Delete Progress Overlay ── -->
-<div id="deleteProgressOverlay">
-  <div class="delete-progress-card">
-    <div class="delete-progress-icon">🗑</div>
-    <div>
-      <div class="delete-progress-title">Eliminazione in corso</div>
-      <div class="delete-progress-subtitle">Rimozione sicura della cronologia…</div>
-    </div>
-    <div class="delete-progress-bar-wrap">
-      <div class="delete-progress-bar" id="deleteProgressBar"></div>
-    </div>
-    <div class="delete-progress-steps" id="deleteProgressSteps">
-      <div class="delete-step" id="dstep1">
-        <div class="delete-step-dot"></div>
-        <span>Recupero messaggi</span>
-      </div>
-      <div class="delete-step" id="dstep2">
-        <div class="delete-step-dot"></div>
-        <span>Eliminazione dati</span>
-      </div>
-      <div class="delete-step" id="dstep3">
-        <div class="delete-step-dot"></div>
-        <span>Aggiornamento archivio</span>
-      </div>
-      <div class="delete-step" id="dstep4">
-        <div class="delete-step-dot"></div>
-        <span>Completamento</span>
-      </div>
-    </div>
-  </div>
-</div>
 </body>
 </html>
