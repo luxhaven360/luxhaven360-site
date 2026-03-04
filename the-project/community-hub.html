@@ -8,18 +8,20 @@
 <title>Community Hub — LuxHaven360</title>
 
 <script>
-// Anti-bypass + pre-sessione: nasconde il contenuto principale finché l'autenticazione non è verificata.
-// Se la sessione esiste, nasconde subito il loginGate per evitare qualsiasi flash.
+// Anti-bypass: nasconde loginGate e pre-configura mainApp se la sessione esiste.
+// USA SOLO metodi DOM sicuri — mai document.write() che distrugge il documento.
 (function() {
   try {
     var session = localStorage.getItem('lh360_community_session');
     if (!session) {
       document.documentElement.classList.add('no-session');
     } else {
-      // Sessione presente: prepara l'ambiente visivo prima che il DOM sia completamente pronto
       document.documentElement.classList.add('has-session');
-      // Inietta stile inline per nascondere loginGate e pre-mostrare mainApp il più presto possibile
-      document.write('<style>#loginGate{display:none!important}#mainApp{display:grid!important;visibility:hidden}</style>');
+      // Inietta un tag <style> nel <head> in modo sicuro (nessun document.write)
+      var s = document.createElement('style');
+      s.id = 'lh360-presession-style';
+      s.textContent = '#loginGate{display:none!important}';
+      document.head.appendChild(s);
     }
   } catch(e) {}
 })();
@@ -265,11 +267,6 @@ body {
   display: none;
   height: 100vh;
   overflow: hidden;
-}
-/* Con sessione: l'app è già in grid ma invisibile finché non è .active */
-html.has-session #mainApp {
-  display: grid;
-  visibility: hidden;
 }
 #mainApp.active {
   display: grid;
@@ -2709,7 +2706,6 @@ async function doLogin() {
 
       document.documentElement.classList.remove('no-session');
       const mainAppEl = document.getElementById('mainApp');
-      mainAppEl.style.cssText = '';
       document.getElementById('loginGate').style.display = 'none';
       mainAppEl.classList.add('active');
       initApp();
@@ -2817,8 +2813,9 @@ function _preHydrateUserInfo(user) {
 
   currentUser = saved;
 
-  // ── FASE 1: Nascondi login gate (app ancora hidden) ──────────────────────
-  document.getElementById('loginGate').style.display = 'none';
+  // ── FASE 1: Nascondi login gate ──────────────────────────────────────────
+  const _loginGateEl = document.getElementById('loginGate');
+  if (_loginGateEl) _loginGateEl.style.display = 'none';
 
   // ── FASE 2: Idrata il DOM dalla cache — SINCRONO, prima di qualsiasi paint ──
   // Utente
@@ -2835,7 +2832,6 @@ function _preHydrateUserInfo(user) {
   // ── FASE 3: Mostra l'app — tutto già idratato, zero flash ────────────────
   document.documentElement.classList.remove('no-session');
   const mainAppEl = document.getElementById('mainApp');
-  mainAppEl.style.cssText = '';
   mainAppEl.classList.add('active');
 
   // ── FASE 4: Se non c'è cache stats, fetch sincrono prima di initApp ──────
