@@ -3208,9 +3208,43 @@ function saveOnlineCache() {
 }
 
 /* FIX: Cache locale conversazioni — caricamento immediato senza attendere GAS/Firebase */
+/* ── Tombstone: conversazioni eliminate localmente ─────────────────────────
+   Quando l'utente elimina una cronologia, salviamo l'email del partner qui.
+   Questo impedisce che la conv riappaia temporaneamente dalla cache prima che
+   il server confermi la cancellazione. Il tombstone viene rimosso solo quando
+   arriva un nuovo messaggio da quel partner (conversazione ricreata).        */
+const DELETED_CONVS_KEY = 'lh360_deleted_convs_v1';
+function _saveDeletedConvTombstone(partnerEmail) {
+  try {
+    const k = `${DELETED_CONVS_KEY}_${(currentUser?.email||'').replace(/[^a-z0-9]/gi,'_')}`;
+    const raw = localStorage.getItem(k);
+    const list = raw ? JSON.parse(raw) : [];
+    const pe = partnerEmail.toLowerCase();
+    if (!list.includes(pe)) { list.push(pe); localStorage.setItem(k, JSON.stringify(list)); }
+  } catch(e) {}
+}
+function _loadDeletedConvTombstones() {
+  try {
+    const k = `${DELETED_CONVS_KEY}_${(currentUser?.email||'').replace(/[^a-z0-9]/gi,'_')}`;
+    const raw = localStorage.getItem(k);
+    return raw ? JSON.parse(raw) : [];
+  } catch(e) { return []; }
+}
+function _clearDeletedConvTombstone(partnerEmail) {
+  try {
+    const k = `${DELETED_CONVS_KEY}_${(currentUser?.email||'').replace(/[^a-z0-9]/gi,'_')}`;
+    const raw = localStorage.getItem(k);
+    if (!raw) return;
+    const list = JSON.parse(raw).filter(e => e !== partnerEmail.toLowerCase());
+    localStorage.setItem(k, JSON.stringify(list));
+  } catch(e) {}
+}
+
 function saveConvsCache() {
   try {
-    if (!currentUser || REAL_CONVS.length === 0) return;
+    if (!currentUser) return;
+    // Salva SEMPRE — anche lista vuota (dopo eliminazione dell'unica conv):
+    // senza questo, loadConvsCache ritorna null e la cache vecchia "sopravvive"
     localStorage.setItem(CONVS_CACHE_KEY, JSON.stringify({ ts: Date.now(), email: currentUser.email, convs: REAL_CONVS }));
   } catch(e) {}
 }
@@ -3220,11 +3254,15 @@ function loadConvsCache() {
     const raw = localStorage.getItem(CONVS_CACHE_KEY);
     if (!raw) return null;
     const obj = JSON.parse(raw);
-    // Verifica che la cache appartenga all'utente corrente
     if (!currentUser || obj.email !== currentUser.email) return null;
-    // TTL 10 minuti — abbastanza lungo da coprire il caricamento GAS
+    // TTL 10 minuti
     if (Date.now() - obj.ts > 10 * 60 * 1000) return null;
-    return obj.convs || null;
+    const convs = obj.convs || [];
+    // Filtra le conv con tombstone (eliminate localmente ma non ancora uscite dal TTL)
+    const tombstones = _loadDeletedConvTombstones();
+    if (tombstones.length === 0) return convs.length > 0 ? convs : null;
+    const filtered = convs.filter(c => !tombstones.includes(c.partnerEmail.toLowerCase()));
+    return filtered; // può essere [] — significa lista intenzionalmente vuota
   } catch(e) { return null; }
 }
 
@@ -4342,11 +4380,14 @@ function getPartnerInfo(partnerEmail) {
 
 /* ── Carica conversazioni da GAS ── */
 async function loadConversations() {
-  // FIX: carica subito dalla cache locale — zero latenza, UI reattiva istantaneamente
+  // Carica subito dalla cache locale — zero latenza, UI reattiva istantaneamente.
+  // loadConvsCache() filtra già i tombstone delle conv eliminate → non riappaiono mai.
   const cachedConvs = loadConvsCache();
-  if (cachedConvs && cachedConvs.length > 0 && REAL_CONVS.length === 0) {
+  if (cachedConvs !== null && REAL_CONVS.length === 0) {
+    // cachedConvs può essere [] (lista intenzionalmente vuota dopo eliminazione)
     REAL_CONVS = cachedConvs;
     renderConversations();
+    updateMsgBadge();
   }
 
   // Se Supabase è pronto, il listener sbListenConversations() gestisce gli aggiornamenti RT
@@ -4358,32 +4399,60 @@ async function loadConversations() {
     const resp = await fetch(`${GAS_URL}?action=get_conversations&email=${encodeURIComponent(currentUser.email)}`);
     const data = await resp.json();
     if (data.success && Array.isArray(data.conversations)) {
-      REAL_CONVS = data.conversations.map(c => {
-        const info = getPartnerInfo(c.partnerEmail);
-        return {
-          partnerEmail: c.partnerEmail,
-          partnerName: c.partnerName || info.name,
-          partnerInitial: c.partnerInitial || info.initial,
-          partnerRole: c.partnerRole || info.role,
-          lastMessage: c.lastMessage || '',
-          lastTs: c.lastTs || '',
-          unread: currentConvPartnerEmail && c.partnerEmail.toLowerCase() === currentConvPartnerEmail.toLowerCase() ? 0 : (c.unread || 0)
-        };
-      });
+      const tombstones = _loadDeletedConvTombstones();
+      // Traccia le conv già notificate in questa sessione per offline-rejoin notification
+      const alreadyNotifiedEmails = new Set(
+        NOTIFICATIONS.filter(n => n.prefKey === 'direct_messages' && n.senderEmail).map(n => n.senderEmail)
+      );
+
+      REAL_CONVS = data.conversations
+        // Filtra tombstone: conv eliminate localmente non devono riapparire da GAS
+        .filter(c => !tombstones.includes(c.partnerEmail.toLowerCase()))
+        .map(c => {
+          const info = getPartnerInfo(c.partnerEmail);
+          // Se la conv è già letta localmente (aperta in questa sessione), mantieni unread=0
+          const isCurrentlyOpen = currentConvPartnerEmail &&
+            c.partnerEmail.toLowerCase() === currentConvPartnerEmail.toLowerCase();
+          return {
+            partnerEmail:   c.partnerEmail,
+            partnerName:    c.partnerName    || info.name,
+            partnerInitial: c.partnerInitial || info.initial,
+            partnerRole:    c.partnerRole    || info.role,
+            lastMessage:    c.lastMessage || '',
+            lastTs:         c.lastTs      || '',
+            unread:         isCurrentlyOpen ? 0 : (c.unread || 0)
+          };
+        });
+
       // Preserva la conv attiva se non ancora sul server (nessun messaggio inviato)
       if (currentConvPartnerEmail) {
         const _activeInList = REAL_CONVS.some(c => c.partnerEmail.toLowerCase() === currentConvPartnerEmail.toLowerCase());
-        if (!_activeInList) {
+        if (!_activeInList && !tombstones.includes(currentConvPartnerEmail.toLowerCase())) {
           const _pi = getPartnerInfo(currentConvPartnerEmail);
           REAL_CONVS.unshift({ partnerEmail: currentConvPartnerEmail, partnerName: _pi.name, partnerInitial: _pi.initial, partnerRole: _pi.role, lastMessage: '', lastTs: new Date().toISOString(), unread: 0 });
         }
       }
-      saveConvsCache(); // FIX: persisti per caricamento istantaneo al prossimo accesso
+
+      // ── Notifica per utenti offline che rientrano ────────────────────────
+      // Se il server riporta unread > 0 per una conv e non abbiamo ancora mostrato
+      // una notifica per quel mittente in questa sessione → genera notifica.
+      REAL_CONVS.forEach(c => {
+        if ((c.unread || 0) > 0 && !alreadyNotifiedEmails.has(c.partnerEmail.toLowerCase())) {
+          const inMsgPanel = document.getElementById('panel-messages')?.classList.contains('active');
+          const isViewingThisConv = inMsgPanel &&
+            currentConvPartnerEmail &&
+            c.partnerEmail.toLowerCase() === currentConvPartnerEmail.toLowerCase();
+          if (!isViewingThisConv) {
+            const senderName = c.partnerName ? c.partnerName.split(' ')[0] : 'un membro';
+            addRealNotification('direct_messages', '💬',
+              `Nuovo messaggio da <strong>${senderName}</strong>`, c.partnerEmail);
+          }
+        }
+      });
+
+      saveConvsCache();
       renderConversations();
-      // Aggiorna badge messaggi — FIX: ID corretto è 'msgBadge' (non 'msgNavBadge')
-      const totalUnread = REAL_CONVS.reduce((s, c) => s + (c.unread || 0), 0);
-      unreadMsgs = totalUnread; // sincronizza variabile globale
-      updateMsgBadge();         // usa la funzione centralizzata
+      updateMsgBadge();
     }
   } catch(e) { console.warn('[Messages] loadConversations error:', e.message); }
 
@@ -5222,34 +5291,13 @@ function sbListenConversations() {
           unread:         c.unread       || 0
         });
       }
-      // Aggiorna badge messaggi non letti
-      const totalUnread = REAL_CONVS.reduce((sum, conv) => sum + (conv.unread || 0), 0);
-      unreadMsgs = totalUnread;  // sincronizza la variabile globale
-      updateMsgBadge();           // aggiorna il badge sidebar "Messaggi"
+      // ── sbListenConversations: SOLO aggiornamento dati/badge/UI ─────────────
+      // Le notifiche DM sono generate ESCLUSIVAMENTE da sbListenInbox (tabella messages)
+      // e da sbListenMessages (conv attiva). Generarle qui crea notifiche doppie perché
+      // un singolo DM triggera sia INSERT su messages che UPDATE su conversations.
+      updateMsgBadge();
       renderConversations();
-      saveConvsCache(); // FIX: aggiorna cache dopo ogni update Supabase
-
-      // ── Notifica DM globale ──────────────────────────────────────────────
-      // Scatta quando arriva un nuovo messaggio da qualsiasi partner,
-      // anche da conversazioni mai aperte (listener sbListenMessages non attivo)
-      if (c.unread > 0) {
-        const inMsgPanel = document.getElementById('panel-messages')?.classList.contains('active');
-        const isViewingThisConv = inMsgPanel &&
-          currentConvPartnerEmail &&
-          c.partner_email.toLowerCase() === currentConvPartnerEmail.toLowerCase();
-
-        if (!isViewingThisConv) {
-          // Anti-duplicato: evita popup se sbListenMessages ha già notificato
-          // (sbListenMessages notifica solo la conv attiva; qui copriamo tutte le altre)
-          const isActiveListened = _activeListenPartner &&
-            _activeListenPartner.toLowerCase() === c.partner_email.toLowerCase();
-          if (!isActiveListened) {
-            const senderName = c.partner_name ? c.partner_name.split(' ')[0] : 'un membro';
-            addRealNotification('direct_messages', '💬',
-              `Nuovo messaggio da <strong>${senderName}</strong>`, c.partner_email);
-          }
-        }
-      }
+      saveConvsCache();
     }).subscribe();
   _sbChannels['conversations'] = ch;
 }
@@ -5283,19 +5331,28 @@ function sbListenInbox() {
 
       const senderEmail = m.sender_email.toLowerCase();
 
-      // DEDUP SEMPLIFICATO: non notificare SOLO se l'utente sta guardando
-      // questa conversazione esatta in questo preciso momento.
-      // Rimuoviamo il check _activeListenPartner che era troppo aggressivo
-      // e sopprimeva notifiche anche dopo aver lasciato il pannello messaggi.
+      // ── DEDUP a due livelli ─────────────────────────────────────────────
+      // Livello 1: l'utente sta GUARDANDO questa conv esatta → silenzio
       const inMsgPanel = document.getElementById('panel-messages')?.classList.contains('active');
       const isViewingThisConv = inMsgPanel &&
         currentConvPartnerEmail &&
         currentConvPartnerEmail.toLowerCase() === senderEmail;
-      if (isViewingThisConv) return; // l'utente sta guardando la conv → nessuna notifica
+      if (isViewingThisConv) return;
+
+      // Livello 2: sbListenMessages è già attivo su questa conv (utente è uscito dal pannello
+      // ma il listener RT è ancora vivo) → sbListenMessages gestirà la notifica, noi saltiamo.
+      // Senza questo check, sia sbListenMessages che sbListenInbox notificano lo stesso DM.
+      const isActiveListenedConv = _activeListenPartner &&
+        _activeListenPartner.toLowerCase() === senderEmail;
+      if (isActiveListenedConv) return;
 
       const senderName = m.sender_name ? m.sender_name.split(' ')[0] : 'un membro';
       addRealNotification('direct_messages', '💬',
         `Nuovo messaggio da <strong>${senderName}</strong>`, senderEmail);
+
+      // Se questa conv aveva un tombstone (eliminata in precedenza), rimuovilo:
+      // l'arrivo di un nuovo messaggio "ricrea" la conversazione.
+      _clearDeletedConvTombstone(senderEmail);
 
       // Aggiorna anche il badge messaggi e la lista conversazioni
       let conv = REAL_CONVS.find(c => c.partnerEmail.toLowerCase() === senderEmail);
@@ -5886,11 +5943,15 @@ async function _executeDeletion() {
     await fetch(`${GAS_URL}?action=delete_messages_for_user&email=${encodeURIComponent(currentUser.email)}&otherEmail=${encodeURIComponent(partnerEmail)}`).catch(()=>{});
   }
 
-  // FIX BUG 2: aggiorna REAL_CONVS E la cache prima di renderizzare
-  // senza questo, al ritorno nel pannello la cache vecchia mostrerebbe la chat eliminata
+  // Aggiorna REAL_CONVS, tombstone e cache — ordine importante:
+  // 1. tombstone prima di tutto → loadConvsCache filtra subito questa conv
+  _saveDeletedConvTombstone(partnerEmail);
+  // 2. rimuovi dalla lista in memoria
   REAL_CONVS = REAL_CONVS.filter(c => c.partnerEmail.toLowerCase() !== partnerEmail.toLowerCase());
-  delete _msgCache[partnerEmail.toLowerCase()]; // svuota cache messaggi di questa conv
-  saveConvsCache(); // persiste lo stato aggiornato → nessuna comparsa temporanea al ritorno
+  // 3. svuota cache messaggi di questa conv
+  delete _msgCache[partnerEmail.toLowerCase()];
+  // 4. salva stato aggiornato (anche se REAL_CONVS ora è vuoto)
+  saveConvsCache();
 
   _dhoSetStep('dhoStep4', 'done');
   _dhoSetProgress(100);
@@ -6192,23 +6253,53 @@ function toggleNotifDropdown() {
   document.getElementById('notifDropdown').classList.toggle('open');
 }
 
+/* Azzera la conv.unread in REAL_CONVS e chiama GAS mark_messages_read
+   in modo che il badge NON si ripristini al prossimo refresh della pagina. */
+function _markConvReadForNotif(n) {
+  if (!n || n.prefKey !== 'direct_messages' || !n.senderEmail) return;
+  const pe = n.senderEmail.toLowerCase();
+  const conv = REAL_CONVS.find(c => c.partnerEmail.toLowerCase() === pe);
+  if (conv && conv.unread > 0) {
+    conv.unread = 0;
+    updateMsgBadge();
+    saveConvsCache();
+    // Aggiorna il server in background così il badge non torna dopo refresh
+    if (GAS_URL && currentUser) {
+      fetch(`${GAS_URL}?action=mark_messages_read&email=${encodeURIComponent(currentUser.email)}&otherEmail=${encodeURIComponent(pe)}`).catch(()=>{});
+    }
+    // Aggiorna anche Supabase conversations
+    if (_sbReady && currentUser) {
+      const cid = convId(currentUser.email, pe);
+      _sb.from('conversations').update({ unread: 0 }).eq('conv_id', cid).eq('user_email', currentUser.email.toLowerCase()).then(null, ()=>{});
+    }
+  }
+}
+
 function markNotifRead(id) {
   const n = NOTIFICATIONS.find(n => n.id === id);
   if (n && n.unread) {
     n.unread = false;
-    notifCount = Math.max(0, notifCount - 1);
     updateNotifBadge();
     renderNotifications();
     renderNotifDropdown();
+    _saveNotifCache();
+    // Sincronizza il badge messaggi e il server
+    _markConvReadForNotif(n);
   }
 }
 
 function markAllRead() {
-  NOTIFICATIONS.forEach(n => n.unread = false);
+  NOTIFICATIONS.forEach(n => {
+    if (n.unread) {
+      n.unread = false;
+      _markConvReadForNotif(n); // sincronizza badge + server per ogni notifica DM
+    }
+  });
   notifCount = 0;
   updateNotifBadge();
   renderNotifications();
   renderNotifDropdown();
+  _saveNotifCache();
   document.getElementById('notifDropdown').classList.remove('open');
   showToast('green', '✓', 'Tutte le notifiche segnate come lette.');
 }
@@ -6414,13 +6505,12 @@ function _loadNotifCache() {
 function _notifRelTime(ts) {
   if (!ts) return 'Ora';
   const diff = Date.now() - ts;
-  if (diff < 0)    return 'Ora';
-  const s = Math.floor(diff / 1000);
+  if (diff < 0) return 'Ora';
   const m = Math.floor(diff / 60000);
   const h = Math.floor(diff / 3600000);
   const d = Math.floor(diff / 86400000);
-  if (s < 10)  return 'Ora';
-  if (s < 60)  return s + 's fa';
+  // "Ora" per il primo minuto intero — come richiesto dall'utente
+  if (m < 1)   return 'Ora';
   if (m < 60)  return m + 'm fa';
   if (h < 24)  return h + 'h fa';
   if (d < 7)   return d + 'g fa';
