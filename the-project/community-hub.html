@@ -2818,16 +2818,53 @@ function _preHydrateUserInfo(user) {
   if (_loginGateEl) _loginGateEl.style.display = 'none';
 
   // ── FASE 2: Idrata il DOM dalla cache — SINCRONO, prima di qualsiasi paint ──
-  // Utente
   _preHydrateUserInfo(saved);
 
-  // Stats dashboard
+  // Stats dashboard (numeri nelle card)
   const cachedStats = loadStatsCache();
   if (cachedStats) applyDashboardStats(cachedStats);
+
+  // Community data: popola FEED_POSTS, DISCUSSIONS, LISTINGS, SURVEYS, THREAD_MESSAGES
+  // PRIMA che renderDashboard() venga chiamato → Feed Preview e Activity Feed non sono mai vuoti
+  const _commCache = loadCommunityCache();
+  if (_commCache) {
+    if (Array.isArray(_commCache.posts)) {
+      const likedSet = new Set();
+      FEED_POSTS = _commCache.posts.map(p => ({ ...p, liked: likedSet.has(p.id), commentsData: p.commentsData || [] }));
+    }
+    if (Array.isArray(_commCache.discussions))  DISCUSSIONS    = _commCache.discussions;
+    if (Array.isArray(_commCache.listings))     LISTINGS       = _commCache.listings;
+    if (Array.isArray(_commCache.surveys))      SURVEYS        = _commCache.surveys;
+    if (_commCache.threadMsgs && typeof _commCache.threadMsgs === 'object') {
+      Object.assign(THREAD_MESSAGES, _commCache.threadMsgs);
+    }
+  }
 
   // Conversazioni
   const _cachedConvs = loadConvsCache();
   if (_cachedConvs && _cachedConvs.length > 0) REAL_CONVS = _cachedConvs;
+
+  // Membri online dalla cache
+  const _onlineCache = loadOnlineCache();
+  if (_onlineCache && _onlineCache.length > 0) {
+    ONLINE_MEMBERS.length = 0;
+    _onlineCache.forEach(u => ONLINE_MEMBERS.push(u));
+    // Garantisce che l'utente corrente sia sempre nella lista
+    if (!ONLINE_MEMBERS.some(m => m.email === saved.email)) {
+      ONLINE_MEMBERS.unshift({ name: saved.name, initial: saved.initial, role: saved.role, email: saved.email });
+    }
+  }
+
+  // Eventi dalla cache dedicata
+  const _eventsCache = loadEventsCache();
+  if (_eventsCache && _eventsCache.length > 0) applyEventsData(_eventsCache);
+
+  // Notifiche persistite da sessioni precedenti
+  const _storedNotifsPre = loadNotifStore();
+  if (_storedNotifsPre.length > 0) {
+    NOTIFICATIONS.length = 0;
+    _storedNotifsPre.forEach(n => NOTIFICATIONS.push(n));
+  }
 
   // ── FASE 3: Mostra l'app — tutto già idratato, zero flash ────────────────
   document.documentElement.classList.remove('no-session');
@@ -2929,18 +2966,20 @@ function initApp() {
   renderNotifDropdown();
   renderWeeklyChart();
 
-  // Pre-carica conversazioni dalla cache locale — zero latenza
-  const _initConvsCache = loadConvsCache();
-  if (_initConvsCache && _initConvsCache.length > 0) {
-    REAL_CONVS = _initConvsCache;
+  // Conversazioni: usa cache già caricata in checkSessionOnLoad, oppure carica ora (percorso login)
+  if (REAL_CONVS.length === 0) {
+    const _initConvsCache = loadConvsCache();
+    if (_initConvsCache && _initConvsCache.length > 0) REAL_CONVS = _initConvsCache;
   }
   renderConversations();
 
-  // Carica notifiche persistite da sessioni precedenti
-  const _storedNotifs = loadNotifStore();
-  if (_storedNotifs.length > 0) {
-    NOTIFICATIONS.length = 0;
-    _storedNotifs.forEach(n => NOTIFICATIONS.push(n));
+  // Notifiche: usa store già caricato in checkSessionOnLoad, oppure carica ora (percorso login)
+  if (NOTIFICATIONS.length === 0) {
+    const _storedNotifs = loadNotifStore();
+    if (_storedNotifs.length > 0) {
+      NOTIFICATIONS.length = 0;
+      _storedNotifs.forEach(n => NOTIFICATIONS.push(n));
+    }
   }
 
   // notifCount è 0 e NOTIFICATIONS è vuoto → campanella priva di badge
@@ -5184,23 +5223,18 @@ function sbListenMessages(partnerEmail) {
       if (!_msgCache[cacheKey]) _msgCache[cacheKey] = [];
       _msgCache[cacheKey].push(msg);
       appendMessageToChat(msg, false);
-      // Notifica messaggio privato ricevuto (se il pannello messaggi non è attivo)
-      const msgPanelActive = document.getElementById('panel-messages')?.classList.contains('active');
-      if (!msgPanelActive) {
-        const senderName = msg.fromName || msg.from;
-        addRealNotification('direct_messages', '✉️',
-          `<strong>${senderName}</strong> ti ha inviato un messaggio`, 'message');
-        logActivity('blue', `<strong>${senderName}</strong> ti ha inviato un messaggio privato`);
-        unreadMsgs++; updateMsgBadge();
-      }
-      // Aggiorna preview lista conv
+      // Preview lista conv (la notifica è gestita da sbListenConversations)
       const conv = REAL_CONVS.find(c => c.partnerEmail.toLowerCase() === partnerEmail.toLowerCase());
       if (conv) { conv.lastMessage = m.text || '📎 Media'; conv.lastTs = m.created_at; renderConversations(); saveConvsCache(); }
     }).subscribe();
   _sbChannels['messages'] = ch;
 }
 
-/* ── Listener Supabase per lista conversazioni ── */
+/* ── Listener Supabase per lista conversazioni ──
+   Questo è il canale PRINCIPALE per le notifiche di messaggi: si sottoscrive
+   a TUTTE le conversazioni dell'utente, non solo a quella aperta.
+   Ogni aggiornamento alla tabella `conversations` (nuovo messaggio in arrivo)
+   genera toast + notifica + badge immediatamente. */
 function sbListenConversations() {
   if (!_sbReady || !currentUser) return;
 
@@ -5212,12 +5246,20 @@ function sbListenConversations() {
     }, (payload) => {
       const c = payload.new;
       if (!c || !c.partner_email) return;
-      const existing = REAL_CONVS.find(r => r.partnerEmail.toLowerCase() === c.partner_email.toLowerCase());
+
+      const partnerKey   = c.partner_email.toLowerCase();
+      const isActiveConv = currentConvPartnerEmail &&
+        currentConvPartnerEmail.toLowerCase() === partnerKey;
+
+      // Aggiorna o inserisce la conversazione in REAL_CONVS
+      const existing = REAL_CONVS.find(r => r.partnerEmail.toLowerCase() === partnerKey);
+      const prevUnread = existing ? (existing.unread || 0) : 0;
+      const newUnread  = isActiveConv ? 0 : (c.unread || 0);
+
       if (existing) {
         existing.lastMessage = c.last_message || existing.lastMessage;
         existing.lastTs      = c.last_ts      || existing.lastTs;
-        existing.unread = (currentConvPartnerEmail &&
-          c.partner_email.toLowerCase() === currentConvPartnerEmail.toLowerCase()) ? 0 : (c.unread || 0);
+        existing.unread      = newUnread;
       } else {
         const info = getPartnerInfo(c.partner_email);
         REAL_CONVS.push({
@@ -5225,20 +5267,55 @@ function sbListenConversations() {
           partnerName:    c.partner_name    || info.name,
           partnerInitial: c.partner_initial || info.initial,
           partnerRole:    c.partner_role    || info.role,
-          lastMessage:    c.last_message || '',
-          lastTs:         c.last_ts      || '',
-          unread:         c.unread       || 0
+          lastMessage:    c.last_message    || '',
+          lastTs:         c.last_ts         || '',
+          unread:         newUnread
         });
       }
-      // Aggiorna badge messaggi non letti
-      const totalUnread = REAL_CONVS.reduce((sum, conv) => sum + (conv.unread || 0), 0);
-      const msgBadge = document.querySelector('.nav-item[onclick*="messages"] .nav-badge');
-      if (msgBadge) {
-        if (totalUnread > 0) { msgBadge.textContent = totalUnread; msgBadge.classList.remove('hidden'); }
-        else { msgBadge.classList.add('hidden'); }
+
+      // ── Notifica: nuovo messaggio ricevuto ───────────────────────
+      // Condizioni: ci sono nuovi non letti E la conv non è aperta in questo momento
+      const hasNewMsg = !isActiveConv && (newUnread > prevUnread || (newUnread > 0 && prevUnread === 0));
+      if (hasNewMsg && c.last_message) {
+        const senderName = c.partner_name || c.partner_email;
+        const preview    = String(c.last_message).substring(0, 55) + (c.last_message.length > 55 ? '…' : '');
+
+        // Toast visivo in basso a destra
+        showToast('blue', '✉️', `<strong>${senderName}</strong>: ${preview}`);
+
+        // Centro notifiche + campanella
+        if (isNotifEnabled('direct_messages')) {
+          _pushNotif(
+            'direct_messages', '✉️',
+            `<strong>${senderName}</strong> ti ha inviato un messaggio`,
+            Date.now(), 'message'
+          );
+        }
+
+        // Badge nav "Messaggi"
+        unreadMsgs++;
+        updateMsgBadge();
+
+        // Log attività dashboard
+        logActivity('blue', `<strong>${senderName}</strong> ti ha inviato un messaggio privato`);
       }
+
+      // ── Badge totale non letti nav ───────────────────────────────
+      const totalUnread = REAL_CONVS.reduce((s, r) => s + (r.unread || 0), 0);
+      const navBadge = document.getElementById('msgBadge');
+      if (navBadge) {
+        if (totalUnread > 0) {
+          navBadge.textContent = totalUnread;
+          navBadge.style.display = '';
+          navBadge.classList.remove('hidden');
+        } else {
+          navBadge.style.display = 'none';
+          navBadge.classList.add('hidden');
+        }
+      }
+
       renderConversations();
-      saveConvsCache(); // FIX: aggiorna cache dopo ogni update Supabase
+      saveConvsCache();
     }).subscribe();
   _sbChannels['conversations'] = ch;
 }
@@ -6603,22 +6680,61 @@ function startPresenceSystem() {
   // ── Offline su chiusura tab/browser (sendBeacon — garantito)
   window.addEventListener('beforeunload', removePresenceSync);
 
-  // ── Offline/online su cambio visibilità tab
+  // ── Offline/online su cambio visibilità tab / finestra minimizzata
   window.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'hidden') {
-      // Tab nascosta: segna offline preventivamente
       if (_sbReady && currentUser) {
         _sb.from('presence').update({ online: false, updated_at: new Date().toISOString() })
           .eq('email', currentUser.email.toLowerCase()).then(()=>{}).catch(()=>{});
       }
     } else {
-      // Tab tornata visibile: ripristina presenza
+      // ── Finestra tornata visibile ──────────────────────────────────
+      // 1. Ripristina presenza
       sbSetPresence();
       if (_sbPresenceCh && currentUser) {
-        try {
-          _sbPresenceCh.track({ email: currentUser.email.toLowerCase(), name: currentUser.name, initial: currentUser.initial, role: currentUser.role });
-        } catch(_e) {}
+        try { _sbPresenceCh.track({ email: currentUser.email.toLowerCase(), name: currentUser.name, initial: currentUser.initial, role: currentUser.role }); } catch(_e) {}
       }
+
+      if (!_sbReady || !currentUser) return;
+
+      // 2. Re-fetch messaggi della conversazione attiva
+      //    I canali Supabase RT possono perdere eventi mentre la finestra è inattiva/minimizzata.
+      //    Un re-fetch garantisce che i messaggi arrivati nel frattempo siano sempre visibili.
+      if (currentConvPartnerEmail) {
+        const _visibCid = convId(currentUser.email, currentConvPartnerEmail);
+        _sb.from('messages')
+          .select('*')
+          .eq('conv_id', _visibCid)
+          .order('created_at', { ascending: true })
+          .limit(200)
+          .then(({ data, error }) => {
+            if (error || !data) return;
+            const refreshedMsgs = data
+              .filter(m => !(m.deleted_for || []).includes(currentUser.email.toLowerCase()))
+              .map(m => ({
+                id: m.id, from: m.sender_email, fromName: m.sender_name,
+                fromInitial: (m.sender_name || '?')[0].toUpperCase(),
+                text: m.text || '', media_url: m.media_url || null,
+                media_type: m.media_type || null, ts: m.created_at,
+                deletedFor: m.deleted_for || []
+              }));
+            const cacheKey = currentConvPartnerEmail.toLowerCase();
+            const prevCount = (_msgCache[cacheKey] || []).length;
+            _msgCache[cacheKey] = refreshedMsgs;
+            // Ri-renderizza solo se ci sono messaggi nuovi
+            if (refreshedMsgs.length !== prevCount) {
+              renderChatMessages(refreshedMsgs, currentConvPartnerEmail);
+            }
+          });
+
+        // 3. Riconnetti i canali RT (possono essere scaduti dopo lunga inattività)
+        _activeListenPartner = null; // forza re-subscribe
+        sbListenMessages(currentConvPartnerEmail);
+        sbListenTyping(currentConvPartnerEmail);
+      }
+
+      // 4. Riconnetti il canale conversazioni (sempre)
+      sbListenConversations();
     }
   });
 
