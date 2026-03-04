@@ -3086,22 +3086,15 @@ function showPanel(id, navEl) {
     }
   } else {
     stopMessagePolling();
+    // Rilascia i canali Supabase messaggistica quando esci dalla sezione
     if (_sbReady) {
-      // NON chiudere il canale 'messages' quando si lascia il pannello.
-      // Mantenerlo attivo serve a due scopi:
-      //   1. Nessun doppio render al rientro: sbListenMessages trova _activeListenPartner
-      //      ancora settato, scatta l'early-return, mostra la cache UNA SOLA VOLTA senza
-      //      lanciare un nuovo fetch Supabase.
-      //   2. La cache _msgCache resta aggiornata in background: i nuovi messaggi ricevuti
-      //      mentre il pannello è nascosto vengono appenditi al DOM (invisibile) E alla
-      //      cache, così al rientro la cache è già completa.
-      // Le notifiche DM continuano a funzionare correttamente: sbListenMessages genera
-      // la notifica quando inMsgPanel è false; sbListenInbox la salta via dedup Level 2
-      // (_activeListenPartner ancora settato → riga isActiveListenedConv).
-      sbOff('typing'); // typing indicator: ok da killare, è solo UI transitoria
+      sbOff('messages');
+      sbOff('typing');
     }
-    // NON azzerare _activeListenPartner: serve come guard per il single-render al rientro
-    // e come segnale a sbListenInbox che sbListenMessages è ancora vivo per quel partner.
+    // FIX NOTIFICHE: resetta _activeListenPartner quando si lascia il pannello messaggi.
+    // Senza questo reset, sbListenInbox e sbListenConversations pensano che il listener
+    // RT sia ancora attivo e saltano la generazione delle notifiche per quel partner.
+    _activeListenPartner = null;
   }
   if (id === 'feed') {
     document.getElementById('feedBadge').classList.add('hidden');
@@ -5210,6 +5203,23 @@ function sbListenMessages(partnerEmail) {
       if (msgs.length > 0) _msgLastSeen[partnerEmail] = msgs[msgs.length - 1].id;
       // Aggiorna cache in memoria
       _msgCache[partnerEmail.toLowerCase()] = msgs;
+
+      // ── Aggiorna lastMessage in REAL_CONVS dalla cronologia caricata ──────────
+      // sbListenMessages carica lo storico completo da Supabase ma NON aggiornavа
+      // REAL_CONVS.lastMessage, causando la sidebar vuota sotto il nome del partner.
+      // Fix: se la conv esiste in REAL_CONVS e lastMessage è vuoto (o meno recente),
+      // lo aggiorniamo con l'ultimo messaggio reale dalla cronologia.
+      if (msgs.length > 0) {
+        const _lastMsg = msgs[msgs.length - 1];
+        const _sidebarConv = REAL_CONVS.find(r => r.partnerEmail.toLowerCase() === partnerEmail.toLowerCase());
+        if (_sidebarConv && !_sidebarConv.lastMessage) {
+          _sidebarConv.lastMessage = _lastMsg.text || '📎 Media';
+          _sidebarConv.lastTs      = _lastMsg.ts;
+          renderConversations();
+          saveConvsCache();
+        }
+      }
+
       if (currentConvPartnerEmail &&
           currentConvPartnerEmail.toLowerCase() === partnerEmail.toLowerCase()) {
         removeTypingIndicator();
