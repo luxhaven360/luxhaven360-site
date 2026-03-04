@@ -2663,19 +2663,6 @@ let currentConv = null;
 let notifCount = 0;
 let unreadMsgs = 0;
 
-/* ── HELPER: l'utente sta DAVVERO guardando questa conversazione?
-   Richiede sia che il pannello messaggi sia attivo sia che la conv
-   con quell'email sia quella correntemente aperta.
-   Usato per non azzerare erroneamente i badge quando currentConvPartnerEmail
-   è impostato ma l'utente ha navigato altrove. ── */
-function isActivelyViewingConv(email) {
-  return !!(
-    document.getElementById('panel-messages')?.classList.contains('active') &&
-    currentConvPartnerEmail &&
-    currentConvPartnerEmail.toLowerCase() === (email || '').toLowerCase()
-  );
-}
-
 /* Mock data */
 const MEMBERS_DATA = [
   { name:'Sofia Romano',    initial:'S', level:'founding',  joined:'12 Nov 2024', last:'2 min fa',  status:'online' },
@@ -4418,51 +4405,26 @@ async function loadConversations() {
         NOTIFICATIONS.filter(n => n.prefKey === 'direct_messages' && n.senderEmail).map(n => n.senderEmail)
       );
 
-      // ── MERGE invece di REPLACE ──────────────────────────────────────────
-      // GAS è fonte di verità per le conv che conosce, ma potrebbe non avere ancora
-      // le conv aggiornate in RT da Supabase (lag di sincronizzazione). Per evitare
-      // che conv reali spariscano, si fa un merge: si usano i dati GAS come base e si
-      // preservano le entry di REAL_CONVS con messaggi che GAS non riporta ancora.
-      const gasConvsMap = new Map(
-        data.conversations
-          .filter(c => !tombstones.includes(c.partnerEmail.toLowerCase()))
-          .map(c => [c.partnerEmail.toLowerCase(), c])
-      );
-
-      // Costruisce array aggiornato partendo da GAS
-      const mergedConvs = [];
-      gasConvsMap.forEach((c, key) => {
-        const info = getPartnerInfo(c.partnerEmail);
-        const existing = REAL_CONVS.find(r => r.partnerEmail.toLowerCase() === key);
-        // Conserva il conteggio unread più alto tra GAS e locale
-        // ma azzera SOLO se l'utente sta DAVVERO guardando questa conv ora
-        const localUnread = existing ? (existing.unread || 0) : 0;
-        const serverUnread = c.unread || 0;
-        mergedConvs.push({
-          partnerEmail:   c.partnerEmail,
-          partnerName:    c.partnerName    || info.name,
-          partnerInitial: c.partnerInitial || info.initial,
-          partnerRole:    c.partnerRole    || info.role,
-          lastMessage:    c.lastMessage || '',
-          lastTs:         c.lastTs      || '',
-          unread:         isActivelyViewingConv(c.partnerEmail) ? 0 : Math.max(serverUnread, localUnread)
+      REAL_CONVS = data.conversations
+        // Filtra tombstone: conv eliminate localmente non devono riapparire da GAS
+        .filter(c => !tombstones.includes(c.partnerEmail.toLowerCase()))
+        .map(c => {
+          const info = getPartnerInfo(c.partnerEmail);
+          // Se la conv è già letta localmente (aperta in questa sessione), mantieni unread=0
+          const isCurrentlyOpen = currentConvPartnerEmail &&
+            c.partnerEmail.toLowerCase() === currentConvPartnerEmail.toLowerCase();
+          return {
+            partnerEmail:   c.partnerEmail,
+            partnerName:    c.partnerName    || info.name,
+            partnerInitial: c.partnerInitial || info.initial,
+            partnerRole:    c.partnerRole    || info.role,
+            lastMessage:    c.lastMessage || '',
+            lastTs:         c.lastTs      || '',
+            unread:         isCurrentlyOpen ? 0 : (c.unread || 0)
+          };
         });
-      });
 
-      // Preserva conv in REAL_CONVS con messaggi che GAS non conosce ancora (lag Supabase→GAS)
-      REAL_CONVS.forEach(r => {
-        const key = r.partnerEmail.toLowerCase();
-        if (tombstones.includes(key)) return;                 // eliminata → scarta
-        if (gasConvsMap.has(key)) return;                     // già in GAS → gestita sopra
-        if (!r.lastMessage && !(r.unread > 0)) return;        // conv vuota/effimera → scarta
-        mergedConvs.push(r);                                  // conv reale non ancora in GAS → mantieni
-      });
-
-      // Ordina per timestamp decrescente
-      mergedConvs.sort((a, b) => new Date(b.lastTs || 0) - new Date(a.lastTs || 0));
-      REAL_CONVS = mergedConvs;
-
-      // Preserva la conv attiva corrente se non ancora sul server (nessun messaggio inviato)
+      // Preserva la conv attiva se non ancora sul server (nessun messaggio inviato)
       if (currentConvPartnerEmail) {
         const _activeInList = REAL_CONVS.some(c => c.partnerEmail.toLowerCase() === currentConvPartnerEmail.toLowerCase());
         if (!_activeInList && !tombstones.includes(currentConvPartnerEmail.toLowerCase())) {
@@ -4476,7 +4438,11 @@ async function loadConversations() {
       // una notifica per quel mittente in questa sessione → genera notifica.
       REAL_CONVS.forEach(c => {
         if ((c.unread || 0) > 0 && !alreadyNotifiedEmails.has(c.partnerEmail.toLowerCase())) {
-          if (!isActivelyViewingConv(c.partnerEmail)) {
+          const inMsgPanel = document.getElementById('panel-messages')?.classList.contains('active');
+          const isViewingThisConv = inMsgPanel &&
+            currentConvPartnerEmail &&
+            c.partnerEmail.toLowerCase() === currentConvPartnerEmail.toLowerCase();
+          if (!isViewingThisConv) {
             const senderName = c.partnerName ? c.partnerName.split(' ')[0] : 'un membro';
             addRealNotification('direct_messages', '💬',
               `Nuovo messaggio da <strong>${senderName}</strong>`, c.partnerEmail);
@@ -5278,7 +5244,13 @@ function sbListenMessages(partnerEmail) {
       _msgCache[cacheKey].push(msg);
       appendMessageToChat(msg, false);
       // Notifica DM — solo se l'utente non sta guardando questa conversazione
-      if (!isActivelyViewingConv(partnerEmail)) {
+      // (sbListenConversations gestisce i messaggi di partner non ancora aperti;
+      //  qui notifichiamo solo la conv attualmente ascoltata ma non visibile)
+      const inMsgPanel = document.getElementById('panel-messages')?.classList.contains('active');
+      const isViewingThisConv = inMsgPanel &&
+        currentConvPartnerEmail &&
+        currentConvPartnerEmail.toLowerCase() === partnerEmail.toLowerCase();
+      if (!isViewingThisConv) {
         const senderName = msg.fromName ? msg.fromName.split(' ')[0] : 'un membro';
         addRealNotification('direct_messages', '💬', `Nuovo messaggio da <strong>${senderName}</strong>`, msg.from);
       }
@@ -5305,8 +5277,8 @@ function sbListenConversations() {
       if (existing) {
         existing.lastMessage = c.last_message || existing.lastMessage;
         existing.lastTs      = c.last_ts      || existing.lastTs;
-        // Azzera unread SOLO se l'utente sta DAVVERO guardando questa conv ora
-        existing.unread = isActivelyViewingConv(c.partner_email) ? 0 : (c.unread || 0);
+        existing.unread = (currentConvPartnerEmail &&
+          c.partner_email.toLowerCase() === currentConvPartnerEmail.toLowerCase()) ? 0 : (c.unread || 0);
       } else {
         const info = getPartnerInfo(c.partner_email);
         REAL_CONVS.push({
@@ -5360,8 +5332,12 @@ function sbListenInbox() {
       const senderEmail = m.sender_email.toLowerCase();
 
       // ── DEDUP a due livelli ─────────────────────────────────────────────
-      // Livello 1: l'utente sta DAVVERO guardando questa conv (pannello aperto + conv aperta)
-      if (isActivelyViewingConv(senderEmail)) return;
+      // Livello 1: l'utente sta GUARDANDO questa conv esatta → silenzio
+      const inMsgPanel = document.getElementById('panel-messages')?.classList.contains('active');
+      const isViewingThisConv = inMsgPanel &&
+        currentConvPartnerEmail &&
+        currentConvPartnerEmail.toLowerCase() === senderEmail;
+      if (isViewingThisConv) return;
 
       // Livello 2: sbListenMessages è già attivo su questa conv (utente è uscito dal pannello
       // ma il listener RT è ancora vivo) → sbListenMessages gestirà la notifica, noi saltiamo.
@@ -5460,38 +5436,18 @@ async function pollMessages() {
         .then(r => r.json())
         .then(data => {
           if (data.success && Array.isArray(data.conversations)) {
-            const tombstones = _loadDeletedConvTombstones();
-            const gasConvsMap = new Map(
-              data.conversations
-                .filter(c => !tombstones.includes(c.partnerEmail.toLowerCase()))
-                .map(c => [c.partnerEmail.toLowerCase(), c])
-            );
-            // Merge: aggiorna con dati GAS, preserva conv con messaggi non ancora in GAS
-            const mergedPoll = [];
-            gasConvsMap.forEach((c, key) => {
+            REAL_CONVS = data.conversations.map(c => {
               const info = getPartnerInfo(c.partnerEmail);
-              const existing = REAL_CONVS.find(r => r.partnerEmail.toLowerCase() === key);
-              const localUnread = existing ? (existing.unread || 0) : 0;
-              mergedPoll.push({
-                partnerEmail:   c.partnerEmail,
-                partnerName:    c.partnerName    || info.name,
+              return {
+                partnerEmail: c.partnerEmail,
+                partnerName: c.partnerName || info.name,
                 partnerInitial: c.partnerInitial || info.initial,
-                partnerRole:    c.partnerRole    || info.role,
-                lastMessage:    c.lastMessage    || '',
-                lastTs:         c.lastTs         || '',
-                unread:         isActivelyViewingConv(c.partnerEmail) ? 0 : Math.max(c.unread || 0, localUnread)
-              });
+                partnerRole: c.partnerRole || info.role,
+                lastMessage: c.lastMessage || '',
+                lastTs: c.lastTs || '',
+                unread: currentConvPartnerEmail && c.partnerEmail.toLowerCase() === currentConvPartnerEmail.toLowerCase() ? 0 : (c.unread || 0)
+              };
             });
-            REAL_CONVS.forEach(r => {
-              const key = r.partnerEmail.toLowerCase();
-              if (tombstones.includes(key)) return;
-              if (gasConvsMap.has(key)) return;
-              if (!r.lastMessage && !(r.unread > 0)) return;
-              mergedPoll.push(r);
-            });
-            mergedPoll.sort((a, b) => new Date(b.lastTs || 0) - new Date(a.lastTs || 0));
-            REAL_CONVS = mergedPoll;
-            // Preserva conv attiva vuota (nessun messaggio inviato ancora)
             if (currentConvPartnerEmail) {
               const _aInList = REAL_CONVS.some(c => c.partnerEmail.toLowerCase() === currentConvPartnerEmail.toLowerCase());
               if (!_aInList) {
@@ -5499,7 +5455,6 @@ async function pollMessages() {
                 REAL_CONVS.unshift({ partnerEmail: currentConvPartnerEmail, partnerName: _pi2.name, partnerInitial: _pi2.initial, partnerRole: _pi2.role, lastMessage: '', lastTs: new Date().toISOString(), unread: 0 });
               }
             }
-            updateMsgBadge();
             renderConversations();
           }
         }).catch(() => {})
