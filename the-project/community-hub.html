@@ -3025,15 +3025,6 @@ function initApp() {
   // Carica notifiche dalla cache locale (persistenza cross-sessione)
   _loadNotifCache();
 
-  // ── INBOX GLOBALE: avvia subito il listener DM indipendente dal pannello aperto ──
-  // sbListenInbox deve essere attivo per TUTTA la sessione. Senza questo, le notifiche
-  // DM arrivano solo se l'utente ha già visitato il pannello "Messaggi".
-  // sbListenConversations serve per aggiornare i metadati (unread, lastMessage) in RT.
-  if (_sbReady && currentUser) {
-    sbListenInbox();
-    sbListenConversations();
-  }
-
   // Carica statistiche dinamiche ogni 10 secondi (aggiornamento in tempo reale)
   loadDashboardStats();
   if (_dashStatsTimer) clearInterval(_dashStatsTimer);
@@ -3041,16 +3032,6 @@ function initApp() {
 
   // Carica dati community (post, discussioni, sondaggi, presenza, eventi) da GAS
   initCommunityData();
-
-  // ── BADGE DM ALL'AVVIO: carica conv in background per mostrare subito badge e notifiche ──
-  // Serve sia per mostrare il badge numerico in "Messaggi" senza che l'utente ci navighi,
-  // sia per generare le notifiche di "rientro offline" (messaggi ricevuti mentre era assente).
-  // Prima aggiorna badge dalla cache locale (zero latenza), poi sincronizza con GAS/Supabase.
-  if (REAL_CONVS.length > 0) {
-    updateMsgBadge(); // badge immediato dalla cache già caricata sopra
-  }
-  // Carica/sincronizza in background senza bloccare l'UI
-  setTimeout(() => loadConversations(), 800);
 
   // Gestisci link diretto a un post (#post-ID nella URL)
   handlePostAnchor();
@@ -3085,8 +3066,13 @@ function showPanel(id, navEl) {
   if (id === 'notifications') { notifCount = 0; updateNotifBadge(); renderNotifications(); }
   if (id === 'messages') {
     updateMsgBadge(); // Ricalcola da REAL_CONVS — NON azzerare qui: il badge si azzera conv per conv quando l'utente le apre
-    // Sincronizza le conversazioni con il server
-    loadConversations();
+    // Carica conv solo se lista vuota o non ancora sincronizzata con Supabase
+    if (REAL_CONVS.length === 0) {
+      loadConversations();
+    } else {
+      // Lista già presente — sincronizza silenziosamente in background
+      loadConversations();
+    }
     // Supabase gestisce i messaggi in RT
     if (_sbReady) {
       sbListenConversations();
@@ -3094,62 +3080,28 @@ function showPanel(id, navEl) {
       if (currentConvPartnerEmail) {
         sbListenMessages(currentConvPartnerEmail);
         sbListenTyping(currentConvPartnerEmail);
-
-        // ── RE-MARK LETTI: se si rientra nel pannello con una conv già aperta,
-        // segna come lette tutte le notifiche di quel partner (potrebbero essere
-        // arrivate mentre si era in un altro pannello e la conv era già "aperta").
-        const _reMsgLow = currentConvPartnerEmail.toLowerCase();
-        let _reMsgMarked = false;
-        NOTIFICATIONS.forEach(n => {
-          if (n.unread && n.senderEmail && n.senderEmail === _reMsgLow) {
-            n.unread = false; _reMsgMarked = true;
-          }
-        });
-        const _reConv = REAL_CONVS.find(c => c.partnerEmail.toLowerCase() === _reMsgLow);
-        if (_reConv && _reConv.unread > 0) {
-          _reConv.unread = 0; _reMsgMarked = true;
-          if (_sbReady && currentUser) {
-            const _reCid = convId(currentUser.email, currentConvPartnerEmail);
-            _sb.from('conversations').update({ unread: 0 }).eq('conv_id', _reCid).eq('user_email', currentUser.email.toLowerCase()).then(null, () => {});
-          }
-          if (GAS_URL) fetch(`${GAS_URL}?action=mark_messages_read&email=${encodeURIComponent(currentUser.email)}&otherEmail=${encodeURIComponent(currentConvPartnerEmail)}`).catch(() => {});
-        }
-        if (_reMsgMarked) {
-          updateMsgBadge();
-          updateNotifBadge();
-          renderNotifDropdown();
-          _saveNotifCache();
-          renderConversations();
-        }
       }
     } else {
       startMessagePolling();
     }
   } else {
     stopMessagePolling();
-    // Rilascia i canali Supabase messaggistica quando esci dalla sezione
     if (_sbReady) {
-      sbOff('messages');
-      sbOff('typing');
+      // NON chiudere il canale 'messages' quando si lascia il pannello.
+      // Mantenerlo attivo serve a due scopi:
+      //   1. Nessun doppio render al rientro: sbListenMessages trova _activeListenPartner
+      //      ancora settato, scatta l'early-return, mostra la cache UNA SOLA VOLTA senza
+      //      lanciare un nuovo fetch Supabase.
+      //   2. La cache _msgCache resta aggiornata in background: i nuovi messaggi ricevuti
+      //      mentre il pannello è nascosto vengono appenditi al DOM (invisibile) E alla
+      //      cache, così al rientro la cache è già completa.
+      // Le notifiche DM continuano a funzionare correttamente: sbListenMessages genera
+      // la notifica quando inMsgPanel è false; sbListenInbox la salta via dedup Level 2
+      // (_activeListenPartner ancora settato → riga isActiveListenedConv).
+      sbOff('typing'); // typing indicator: ok da killare, è solo UI transitoria
     }
-    // FIX NOTIFICHE: resetta _activeListenPartner quando si lascia il pannello messaggi.
-    // Senza questo reset, sbListenInbox e sbListenConversations pensano che il listener
-    // RT sia ancora attivo e saltano la generazione delle notifiche per quel partner.
-    _activeListenPartner = null;
-
-    // ── CASO B: rimuovi conv vuota se l'utente non ha mai inviato messaggi ──
-    // Se la conv ha lastMessage vuoto (nessun msg mai inviato), rimuovila dalla lista
-    // recenti quando si lascia il pannello Messaggi. Se ha messaggi, resta.
-    // currentConvPartnerEmail NON viene azzerato: serve per il re-mark al rientro.
-    if (currentConvPartnerEmail) {
-      const _leaving = REAL_CONVS.find(c => c.partnerEmail.toLowerCase() === currentConvPartnerEmail.toLowerCase());
-      if (_leaving && !_leaving.lastMessage) {
-        REAL_CONVS = REAL_CONVS.filter(c => c.partnerEmail.toLowerCase() !== currentConvPartnerEmail.toLowerCase());
-        saveConvsCache();
-        // Azzera solo ora, dopo la rimozione
-        currentConvPartnerEmail = null;
-      }
-    }
+    // NON azzerare _activeListenPartner: serve come guard per il single-render al rientro
+    // e come segnale a sbListenInbox che sbListenMessages è ancora vivo per quel partner.
   }
   if (id === 'feed') {
     document.getElementById('feedBadge').classList.add('hidden');
@@ -4465,9 +4417,8 @@ async function loadConversations() {
         .filter(c => !tombstones.includes(c.partnerEmail.toLowerCase()))
         .map(c => {
           const info = getPartnerInfo(c.partnerEmail);
-          // Azzera unread SOLO se il pannello Messaggi è aperto E questa è la conv visualizzata.
-          const _panelOpen = !!document.getElementById('panel-messages')?.classList.contains('active');
-          const isCurrentlyOpen = _panelOpen && currentConvPartnerEmail &&
+          // Se la conv è già letta localmente (aperta in questa sessione), mantieni unread=0
+          const isCurrentlyOpen = currentConvPartnerEmail &&
             c.partnerEmail.toLowerCase() === currentConvPartnerEmail.toLowerCase();
           return {
             partnerEmail:   c.partnerEmail,
@@ -4520,18 +4471,6 @@ async function loadConversations() {
 function renderConversations() {
   const container = document.getElementById('convListContainer');
   if (!container) return;
-
-  // ── SAFETY NET: la conv correntemente aperta non sparisce mai dalla sidebar ──
-  // Qualsiasi operazione asincrona che sovrascrive REAL_CONVS viene neutralizzata:
-  // se currentConvPartnerEmail è settato E il pannello messaggi è aperto E la conv
-  // non è in lista, viene reinserita come voce vuota prima del render.
-  if (currentConvPartnerEmail && document.getElementById('panel-messages')?.classList.contains('active')) {
-    const _inList = REAL_CONVS.some(c => c.partnerEmail.toLowerCase() === currentConvPartnerEmail.toLowerCase());
-    if (!_inList) {
-      const _si = getPartnerInfo(currentConvPartnerEmail);
-      REAL_CONVS.unshift({ partnerEmail: currentConvPartnerEmail, partnerName: _si.name, partnerInitial: _si.initial, partnerRole: _si.role, lastMessage: '', lastTs: new Date().toISOString(), unread: 0 });
-    }
-  }
 
   const query = (document.querySelector('.conv-search-input')?.value || '').toLowerCase();
   const convs = query
@@ -4641,19 +4580,6 @@ async function openConvByEmail(partnerEmail) {
   // Segna letti su GAS in background (fire & forget)
   if (GAS_URL) {
     fetch(`${GAS_URL}?action=mark_messages_read&email=${encodeURIComponent(currentUser.email)}&otherEmail=${encodeURIComponent(partnerEmail)}`).catch(()=>{});
-  }
-
-  // ── MARK READ SU SUPABASE ─────────────────────────────────────────────────
-  // CRITICO: senza questo aggiornamento, sbListenConversations riceve il prossimo
-  // evento Supabase con unread > 0 dal DB e ripristina il badge anche dopo la lettura.
-  // GAS viene aggiornato sopra, Supabase deve essere aggiornato qui separatamente.
-  if (_sbReady && currentUser) {
-    const _readCid = convId(currentUser.email, partnerEmail);
-    _sb.from('conversations')
-      .update({ unread: 0 })
-      .eq('conv_id', _readCid)
-      .eq('user_email', currentUser.email.toLowerCase())
-      .then(null, () => {});
   }
 }
 
@@ -5358,11 +5284,7 @@ function sbListenConversations() {
       if (existing) {
         existing.lastMessage = c.last_message || existing.lastMessage;
         existing.lastTs      = c.last_ts      || existing.lastTs;
-        // Azzera unread SOLO se il pannello Messaggi è aperto E questa è la conv visualizzata.
-        // Se il pannello è chiuso, currentConvPartnerEmail resta settato ma l'utente NON sta
-        // guardando la conv → non azzerare (fix badge che lampeggiava e scompariva).
-        const _convPanelOpen = !!document.getElementById('panel-messages')?.classList.contains('active');
-        existing.unread = (_convPanelOpen && currentConvPartnerEmail &&
+        existing.unread = (currentConvPartnerEmail &&
           c.partner_email.toLowerCase() === currentConvPartnerEmail.toLowerCase()) ? 0 : (c.unread || 0);
       } else {
         const info = getPartnerInfo(c.partner_email);
