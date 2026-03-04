@@ -5147,9 +5147,14 @@ function sbListenMessages(partnerEmail) {
       if (!_msgCache[cacheKey]) _msgCache[cacheKey] = [];
       _msgCache[cacheKey].push(msg);
       appendMessageToChat(msg, false);
-      // Notifica DM — solo se l'utente non è nel pannello messaggi
+      // Notifica DM — solo se l'utente non sta guardando questa conversazione
+      // (sbListenConversations gestisce i messaggi di partner non ancora aperti;
+      //  qui notifichiamo solo la conv attualmente ascoltata ma non visibile)
       const inMsgPanel = document.getElementById('panel-messages')?.classList.contains('active');
-      if (!inMsgPanel) {
+      const isViewingThisConv = inMsgPanel &&
+        currentConvPartnerEmail &&
+        currentConvPartnerEmail.toLowerCase() === partnerEmail.toLowerCase();
+      if (!isViewingThisConv) {
         const senderName = msg.fromName ? msg.fromName.split(' ')[0] : 'un membro';
         addRealNotification('direct_messages', '💬', `Nuovo messaggio da <strong>${senderName}</strong>`);
       }
@@ -5199,6 +5204,28 @@ function sbListenConversations() {
       }
       renderConversations();
       saveConvsCache(); // FIX: aggiorna cache dopo ogni update Supabase
+
+      // ── Notifica DM globale ──────────────────────────────────────────────
+      // Scatta quando arriva un nuovo messaggio da qualsiasi partner,
+      // anche da conversazioni mai aperte (listener sbListenMessages non attivo)
+      if (c.unread > 0) {
+        const inMsgPanel = document.getElementById('panel-messages')?.classList.contains('active');
+        const isViewingThisConv = inMsgPanel &&
+          currentConvPartnerEmail &&
+          c.partner_email.toLowerCase() === currentConvPartnerEmail.toLowerCase();
+
+        if (!isViewingThisConv) {
+          // Anti-duplicato: evita popup se sbListenMessages ha già notificato
+          // (sbListenMessages notifica solo la conv attiva; qui copriamo tutte le altre)
+          const isActiveListened = _activeListenPartner &&
+            _activeListenPartner.toLowerCase() === c.partner_email.toLowerCase();
+          if (!isActiveListened) {
+            const senderName = c.partner_name ? c.partner_name.split(' ')[0] : 'un membro';
+            addRealNotification('direct_messages', '💬',
+              `Nuovo messaggio da <strong>${senderName}</strong>`);
+          }
+        }
+      }
     }).subscribe();
   _sbChannels['conversations'] = ch;
 }
