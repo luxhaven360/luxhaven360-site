@@ -5282,12 +5282,24 @@ function sbListenMessages(partnerEmail) {
           deletedFor:  m.deleted_for || []
         }));
       if (msgs.length > 0) _msgLastSeen[partnerEmail] = msgs[msgs.length - 1].id;
+      // Confronta con la cache per evitare un doppio render a vuoto al rientro nel pannello:
+      // ri-renderizza solo se ci sono messaggi effettivamente nuovi rispetto a quanto già mostrato.
+      const _cacheKey = partnerEmail.toLowerCase();
+      const _prevCache = _msgCache[_cacheKey];
+      const _hasNewData = !_prevCache ||
+        msgs.length !== _prevCache.length ||
+        (msgs.length > 0 && _prevCache.length > 0 &&
+          msgs[msgs.length - 1].id !== _prevCache[_prevCache.length - 1].id);
       // Aggiorna cache in memoria
-      _msgCache[partnerEmail.toLowerCase()] = msgs;
+      _msgCache[_cacheKey] = msgs;
       if (currentConvPartnerEmail &&
           currentConvPartnerEmail.toLowerCase() === partnerEmail.toLowerCase()) {
         removeTypingIndicator();
-        renderChatMessages(msgs, partnerEmail);
+        if (_hasNewData) {
+          // Nuovi messaggi rispetto alla cache → ri-renderizza
+          renderChatMessages(msgs, partnerEmail);
+        }
+        // Se i dati sono identici alla cache già mostrata, nessun re-render → nessun flicker
       }
     });
 
