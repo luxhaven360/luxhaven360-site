@@ -4405,13 +4405,14 @@ async function loadConversations() {
         NOTIFICATIONS.filter(n => n.prefKey === 'direct_messages' && n.senderEmail).map(n => n.senderEmail)
       );
 
-      REAL_CONVS = data.conversations
+      const _lcFromServer = data.conversations
         // Filtra tombstone: conv eliminate localmente non devono riapparire da GAS
         .filter(c => !tombstones.includes(c.partnerEmail.toLowerCase()))
         .map(c => {
           const info = getPartnerInfo(c.partnerEmail);
-          // Se la conv è già letta localmente (aperta in questa sessione), mantieni unread=0
-          const isCurrentlyOpen = currentConvPartnerEmail &&
+          // BUG-FIX #1: zero out unread only when the panel is actually open and this conv is visible.
+          const _lcPanelActive  = document.getElementById('panel-messages')?.classList.contains('active');
+          const isCurrentlyOpen = _lcPanelActive && currentConvPartnerEmail &&
             c.partnerEmail.toLowerCase() === currentConvPartnerEmail.toLowerCase();
           return {
             partnerEmail:   c.partnerEmail,
@@ -4424,14 +4425,16 @@ async function loadConversations() {
           };
         });
 
-      // Preserva la conv attiva se non ancora sul server (nessun messaggio inviato)
-      if (currentConvPartnerEmail) {
-        const _activeInList = REAL_CONVS.some(c => c.partnerEmail.toLowerCase() === currentConvPartnerEmail.toLowerCase());
-        if (!_activeInList && !tombstones.includes(currentConvPartnerEmail.toLowerCase())) {
-          const _pi = getPartnerInfo(currentConvPartnerEmail);
-          REAL_CONVS.unshift({ partnerEmail: currentConvPartnerEmail, partnerName: _pi.name, partnerInitial: _pi.initial, partnerRole: _pi.role, lastMessage: '', lastTs: new Date().toISOString(), unread: 0 });
-        }
-      }
+      // BUG-FIX #2: MERGE col locale — preserva conv con contenuto non ancora confermate dal server.
+      // Sostituire REAL_CONVS completamente cancellerebbe le conv create localmente (es. primo messaggio
+      // inviato ma GAS non ancora aggiornato) se non sono la conv correntemente attiva.
+      const _lcServerEmails = new Set(_lcFromServer.map(c => c.partnerEmail.toLowerCase()));
+      const _lcLocalOnly    = REAL_CONVS.filter(c =>
+        !_lcServerEmails.has(c.partnerEmail.toLowerCase()) &&
+        !tombstones.includes(c.partnerEmail.toLowerCase()) &&
+        c.lastMessage  // mantieni solo conv con almeno un messaggio inviato
+      );
+      REAL_CONVS = [..._lcFromServer, ..._lcLocalOnly];
 
       // ── Notifica per utenti offline che rientrano ────────────────────────
       // Se il server riporta unread > 0 per una conv e non abbiamo ancora mostrato
@@ -5277,8 +5280,13 @@ function sbListenConversations() {
       if (existing) {
         existing.lastMessage = c.last_message || existing.lastMessage;
         existing.lastTs      = c.last_ts      || existing.lastTs;
-        existing.unread = (currentConvPartnerEmail &&
-          c.partner_email.toLowerCase() === currentConvPartnerEmail.toLowerCase()) ? 0 : (c.unread || 0);
+        // BUG-FIX #1: azzera unread SOLO se il pannello messaggi è aperto E questa conv è attiva.
+        // Prima: bastava che currentConvPartnerEmail coincidesse (anche con pannello chiuso), quindi
+        // sbListenConversations azzerava il badge mezzo secondo dopo che sbListenInbox lo aveva impostato.
+        const _sbcPanelActive = document.getElementById('panel-messages')?.classList.contains('active');
+        const _sbcIsViewing   = _sbcPanelActive && currentConvPartnerEmail &&
+          c.partner_email.toLowerCase() === currentConvPartnerEmail.toLowerCase();
+        existing.unread = _sbcIsViewing ? 0 : (c.unread || 0);
       } else {
         const info = getPartnerInfo(c.partner_email);
         REAL_CONVS.push({
@@ -5436,25 +5444,35 @@ async function pollMessages() {
         .then(r => r.json())
         .then(data => {
           if (data.success && Array.isArray(data.conversations)) {
-            REAL_CONVS = data.conversations.map(c => {
-              const info = getPartnerInfo(c.partnerEmail);
-              return {
-                partnerEmail: c.partnerEmail,
-                partnerName: c.partnerName || info.name,
-                partnerInitial: c.partnerInitial || info.initial,
-                partnerRole: c.partnerRole || info.role,
-                lastMessage: c.lastMessage || '',
-                lastTs: c.lastTs || '',
-                unread: currentConvPartnerEmail && c.partnerEmail.toLowerCase() === currentConvPartnerEmail.toLowerCase() ? 0 : (c.unread || 0)
-              };
-            });
-            if (currentConvPartnerEmail) {
-              const _aInList = REAL_CONVS.some(c => c.partnerEmail.toLowerCase() === currentConvPartnerEmail.toLowerCase());
-              if (!_aInList) {
-                const _pi2 = getPartnerInfo(currentConvPartnerEmail);
-                REAL_CONVS.unshift({ partnerEmail: currentConvPartnerEmail, partnerName: _pi2.name, partnerInitial: _pi2.initial, partnerRole: _pi2.role, lastMessage: '', lastTs: new Date().toISOString(), unread: 0 });
-              }
-            }
+            // BUG-FIX #1: unread=0 solo se il pannello è aperto E la conv è quella attiva
+            const _pmPanelActive = document.getElementById('panel-messages')?.classList.contains('active');
+            // BUG-FIX #2: MERGE col locale — non sovrascrivere conv create localmente non ancora su server
+            const _pmTombstones  = _loadDeletedConvTombstones();
+            const _pmFromServer  = data.conversations
+              .filter(c => !_pmTombstones.includes((c.partnerEmail||'').toLowerCase()))
+              .map(c => {
+                const info = getPartnerInfo(c.partnerEmail);
+                const _pmIsViewing = _pmPanelActive && currentConvPartnerEmail &&
+                  c.partnerEmail.toLowerCase() === currentConvPartnerEmail.toLowerCase();
+                return {
+                  partnerEmail:   c.partnerEmail,
+                  partnerName:    c.partnerName    || info.name,
+                  partnerInitial: c.partnerInitial || info.initial,
+                  partnerRole:    c.partnerRole    || info.role,
+                  lastMessage:    c.lastMessage || '',
+                  lastTs:         c.lastTs      || '',
+                  unread:         _pmIsViewing ? 0 : (c.unread || 0)
+                };
+              });
+            // Mantieni le conv locali con contenuto che il server non ha ancora confermato
+            const _pmServerEmails = new Set(_pmFromServer.map(c => c.partnerEmail.toLowerCase()));
+            const _pmLocalOnly    = REAL_CONVS.filter(c =>
+              !_pmServerEmails.has(c.partnerEmail.toLowerCase()) &&
+              !_pmTombstones.includes(c.partnerEmail.toLowerCase()) &&
+              c.lastMessage
+            );
+            REAL_CONVS = [..._pmFromServer, ..._pmLocalOnly];
+            updateMsgBadge();
             renderConversations();
           }
         }).catch(() => {})
