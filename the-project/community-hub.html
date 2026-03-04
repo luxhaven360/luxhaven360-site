@@ -3095,6 +3095,23 @@ function showPanel(id, navEl) {
     // Senza questo reset, sbListenInbox e sbListenConversations pensano che il listener
     // RT sia ancora attivo e saltano la generazione delle notifiche per quel partner.
     _activeListenPartner = null;
+
+    // ── CASO B: conv vuota (nessun messaggio inviato) ────────────────────────
+    // Se l'utente esce dal pannello Messaggi senza aver mai inviato un messaggio,
+    // la conv effimera (lastMessage vuoto) viene rimossa dai recenti e
+    // currentConvPartnerEmail viene azzerato. Se la conv ha messaggi, rimane.
+    if (currentConvPartnerEmail) {
+      const _leavingConv = REAL_CONVS.find(c =>
+        c.partnerEmail.toLowerCase() === currentConvPartnerEmail.toLowerCase()
+      );
+      if (_leavingConv && !_leavingConv.lastMessage) {
+        REAL_CONVS = REAL_CONVS.filter(c =>
+          c.partnerEmail.toLowerCase() !== currentConvPartnerEmail.toLowerCase()
+        );
+        currentConvPartnerEmail = null;
+        saveConvsCache();
+      }
+    }
   }
   if (id === 'feed') {
     document.getElementById('feedBadge').classList.add('hidden');
@@ -4465,6 +4482,29 @@ function renderConversations() {
   const container = document.getElementById('convListContainer');
   if (!container) return;
 
+  // ── SAFETY NET: la conv correntemente aperta non può MAI sparire dalla sidebar.
+  // Qualsiasi operazione asincrona (GAS, Supabase RT, ecc.) che svuota REAL_CONVS
+  // viene neutralizzata qui: se currentConvPartnerEmail è impostato e la conv non è
+  // in lista, viene re-inserita come voce vuota prima del render.
+  if (currentConvPartnerEmail) {
+    const _alreadyIn = REAL_CONVS.some(c =>
+      c.partnerEmail.toLowerCase() === currentConvPartnerEmail.toLowerCase()
+    );
+    if (!_alreadyIn) {
+      const _safeInfo = getPartnerInfo(currentConvPartnerEmail);
+      REAL_CONVS.unshift({
+        partnerEmail:   currentConvPartnerEmail,
+        partnerName:    _safeInfo.name,
+        partnerInitial: _safeInfo.initial,
+        partnerRole:    _safeInfo.role,
+        lastMessage:    '',
+        lastTs:         new Date().toISOString(),
+        unread:         0
+      });
+    }
+  }
+  // ── fine safety net ──
+
   const query = (document.querySelector('.conv-search-input')?.value || '').toLowerCase();
   const convs = query
     ? REAL_CONVS.filter(c => (c.partnerName||'').toLowerCase().includes(query))
@@ -5277,7 +5317,11 @@ function sbListenConversations() {
       if (existing) {
         existing.lastMessage = c.last_message || existing.lastMessage;
         existing.lastTs      = c.last_ts      || existing.lastTs;
-        existing.unread = (currentConvPartnerEmail &&
+        // Azzera unread SOLO se il pannello Messaggi è aperto E questa è la conv visualizzata.
+        // Se il pannello è chiuso, currentConvPartnerEmail resta settato ma l'utente NON sta
+        // guardando la conv → il badge NON deve essere azzerato (causa del badge che lampeggiava).
+        const _panelOpen = !!document.getElementById('panel-messages')?.classList.contains('active');
+        existing.unread = (_panelOpen && currentConvPartnerEmail &&
           c.partner_email.toLowerCase() === currentConvPartnerEmail.toLowerCase()) ? 0 : (c.unread || 0);
       } else {
         const info = getPartnerInfo(c.partner_email);
