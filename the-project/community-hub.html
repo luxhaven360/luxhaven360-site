@@ -8,20 +8,18 @@
 <title>Community Hub — LuxHaven360</title>
 
 <script>
-// Anti-bypass: nasconde loginGate e pre-configura mainApp se la sessione esiste.
-// USA SOLO metodi DOM sicuri — mai document.write() che distrugge il documento.
+// Anti-bypass + pre-sessione: nasconde il contenuto principale finché l'autenticazione non è verificata.
+// Se la sessione esiste, nasconde subito il loginGate per evitare qualsiasi flash.
 (function() {
   try {
     var session = localStorage.getItem('lh360_community_session');
     if (!session) {
       document.documentElement.classList.add('no-session');
     } else {
+      // Sessione presente: prepara l'ambiente visivo prima che il DOM sia completamente pronto
       document.documentElement.classList.add('has-session');
-      // Inietta un tag <style> nel <head> in modo sicuro (nessun document.write)
-      var s = document.createElement('style');
-      s.id = 'lh360-presession-style';
-      s.textContent = '#loginGate{display:none!important}';
-      document.head.appendChild(s);
+      // Inietta stile inline per nascondere loginGate e pre-mostrare mainApp il più presto possibile
+      document.write('<style>#loginGate{display:none!important}#mainApp{display:grid!important;visibility:hidden}</style>');
     }
   } catch(e) {}
 })();
@@ -267,6 +265,11 @@ body {
   display: none;
   height: 100vh;
   overflow: hidden;
+}
+/* Con sessione: l'app è già in grid ma invisibile finché non è .active */
+html.has-session #mainApp {
+  display: grid;
+  visibility: hidden;
 }
 #mainApp.active {
   display: grid;
@@ -2706,6 +2709,7 @@ async function doLogin() {
 
       document.documentElement.classList.remove('no-session');
       const mainAppEl = document.getElementById('mainApp');
+      mainAppEl.style.cssText = '';
       document.getElementById('loginGate').style.display = 'none';
       mainAppEl.classList.add('active');
       initApp();
@@ -2813,62 +2817,25 @@ function _preHydrateUserInfo(user) {
 
   currentUser = saved;
 
-  // ── FASE 1: Nascondi login gate ──────────────────────────────────────────
-  const _loginGateEl = document.getElementById('loginGate');
-  if (_loginGateEl) _loginGateEl.style.display = 'none';
+  // ── FASE 1: Nascondi login gate (app ancora hidden) ──────────────────────
+  document.getElementById('loginGate').style.display = 'none';
 
   // ── FASE 2: Idrata il DOM dalla cache — SINCRONO, prima di qualsiasi paint ──
+  // Utente
   _preHydrateUserInfo(saved);
 
-  // Stats dashboard (numeri nelle card)
+  // Stats dashboard
   const cachedStats = loadStatsCache();
   if (cachedStats) applyDashboardStats(cachedStats);
-
-  // Community data: popola FEED_POSTS, DISCUSSIONS, LISTINGS, SURVEYS, THREAD_MESSAGES
-  // PRIMA che renderDashboard() venga chiamato → Feed Preview e Activity Feed non sono mai vuoti
-  const _commCache = loadCommunityCache();
-  if (_commCache) {
-    if (Array.isArray(_commCache.posts)) {
-      const likedSet = new Set();
-      FEED_POSTS = _commCache.posts.map(p => ({ ...p, liked: likedSet.has(p.id), commentsData: p.commentsData || [] }));
-    }
-    if (Array.isArray(_commCache.discussions))  DISCUSSIONS    = _commCache.discussions;
-    if (Array.isArray(_commCache.listings))     LISTINGS       = _commCache.listings;
-    if (Array.isArray(_commCache.surveys))      SURVEYS        = _commCache.surveys;
-    if (_commCache.threadMsgs && typeof _commCache.threadMsgs === 'object') {
-      Object.assign(THREAD_MESSAGES, _commCache.threadMsgs);
-    }
-  }
 
   // Conversazioni
   const _cachedConvs = loadConvsCache();
   if (_cachedConvs && _cachedConvs.length > 0) REAL_CONVS = _cachedConvs;
 
-  // Membri online dalla cache
-  const _onlineCache = loadOnlineCache();
-  if (_onlineCache && _onlineCache.length > 0) {
-    ONLINE_MEMBERS.length = 0;
-    _onlineCache.forEach(u => ONLINE_MEMBERS.push(u));
-    // Garantisce che l'utente corrente sia sempre nella lista
-    if (!ONLINE_MEMBERS.some(m => m.email === saved.email)) {
-      ONLINE_MEMBERS.unshift({ name: saved.name, initial: saved.initial, role: saved.role, email: saved.email });
-    }
-  }
-
-  // Eventi dalla cache dedicata
-  const _eventsCache = loadEventsCache();
-  if (_eventsCache && _eventsCache.length > 0) applyEventsData(_eventsCache);
-
-  // Notifiche persistite da sessioni precedenti
-  const _storedNotifsPre = loadNotifStore();
-  if (_storedNotifsPre.length > 0) {
-    NOTIFICATIONS.length = 0;
-    _storedNotifsPre.forEach(n => NOTIFICATIONS.push(n));
-  }
-
   // ── FASE 3: Mostra l'app — tutto già idratato, zero flash ────────────────
   document.documentElement.classList.remove('no-session');
   const mainAppEl = document.getElementById('mainApp');
+  mainAppEl.style.cssText = '';
   mainAppEl.classList.add('active');
 
   // ── FASE 4: Se non c'è cache stats, fetch sincrono prima di initApp ──────
@@ -2966,22 +2933,12 @@ function initApp() {
   renderNotifDropdown();
   renderWeeklyChart();
 
-  // Conversazioni: usa cache già caricata in checkSessionOnLoad, oppure carica ora (percorso login)
-  if (REAL_CONVS.length === 0) {
-    const _initConvsCache = loadConvsCache();
-    if (_initConvsCache && _initConvsCache.length > 0) REAL_CONVS = _initConvsCache;
+  // Pre-carica conversazioni dalla cache locale — zero latenza
+  const _initConvsCache = loadConvsCache();
+  if (_initConvsCache && _initConvsCache.length > 0) {
+    REAL_CONVS = _initConvsCache;
   }
   renderConversations();
-
-  // Notifiche: usa store già caricato in checkSessionOnLoad, oppure carica ora (percorso login)
-  if (NOTIFICATIONS.length === 0) {
-    const _storedNotifs = loadNotifStore();
-    if (_storedNotifs.length > 0) {
-      NOTIFICATIONS.length = 0;
-      _storedNotifs.forEach(n => NOTIFICATIONS.push(n));
-    }
-  }
-
   // notifCount è 0 e NOTIFICATIONS è vuoto → campanella priva di badge
   updateNotifBadge();
 
@@ -2989,7 +2946,7 @@ function initApp() {
   // Avvia presenza real-time: heartbeat immediato + timer + Firebase
   startPresenceSystem();
 
-  // Supabase: ascolta notifiche in tempo reale (dalla tabella `notifications`)
+  // Supabase: ascolta notifiche in tempo reale
   if (_sbReady && currentUser) {
     const notifKey = emailKey(currentUser.email);
     sbOff('notifications_rt');
@@ -3000,27 +2957,22 @@ function initApp() {
       }, (payload) => {
         const n = payload.new;
         if (!n || !n.text) return;
-        const alreadyIn = NOTIFICATIONS.some(x => String(x.id) === String(n.id));
+        const alreadyIn = NOTIFICATIONS.some(x => x.id === n.id);
         if (alreadyIn) return;
-        const prefKey = n.type || 'system';
-        if (!isNotifEnabled(prefKey)) return;
         const notif = {
           id:    n.id,
-          _ts:   n.created_at ? new Date(n.created_at).getTime() : Date.now(),
-          icon:  n.emoji || n.icon || '🔔',
-          type:  n.type || 'system',
+          icon:  n.icon  || 'blue',
+          emoji: n.emoji || '🔔',
           text:  n.text,
           time:  'Ora',
-          unread: true
+          read:  false
         };
         NOTIFICATIONS.unshift(notif);
-        if (NOTIFICATIONS.length > 50) NOTIFICATIONS.length = 50;
-        saveNotifStore();
+        notifCount++;
         updateNotifBadge();
         renderNotifDropdown();
         renderNotifications();
-        showToast(n.color || 'gold', notif.icon, notif.text);
-        logActivity('gold', notif.text);
+        showToast(notif.icon, notif.emoji, notif.text);
       }).subscribe();
     _sbChannels['notifications_rt'] = notifCh;
   }
@@ -3063,40 +3015,20 @@ function showPanel(id, navEl) {
   document.getElementById('headerTitle').textContent = titles[id] || id;
 
   // Clear badges when viewing
-  if (id === 'notifications') { notifCount = 0; updateNotifBadge(); markAllRead(); }
-  if (id === 'feed') {
-    updateFeedBadge(0);
-    document.getElementById('feedBadge').classList.add('hidden');
-    // Aggiorna "visto" al timestamp più recente per non rimostrare badge
-    const seen = loadSeen();
-    if (FEED_POSTS.length > 0) {
-      const maxTs = Math.max(...FEED_POSTS.map(p => p.ts ? new Date(p.ts).getTime() : 0));
-      if (maxTs > 0) { seen.feed = maxTs; saveSeen(seen); }
-    }
-    // Avvia/riavvia il tracking lettura post quando il feed diventa visibile
-    requestAnimationFrame(() => initFeedReadTracking());
-  }
-  if (id === 'discussions') {
-    updateDiscBadge(0);
-    const seen = loadSeen();
-    if (DISCUSSIONS.length > 0) {
-      const maxTs = Math.max(...DISCUSSIONS.map(d => d.ts ? new Date(d.ts).getTime() : 0));
-      if (maxTs > 0) { seen.disc = maxTs; saveSeen(seen); }
-    }
-  }
+  if (id === 'notifications') { notifCount = 0; updateNotifBadge(); }
   if (id === 'messages') {
     unreadMsgs = 0; updateMsgBadge();
-    // Renderizza subito dalla cache — nessuna latenza visiva
-    renderConversations();
-    // Carica conv da Supabase SOLO se la lista è vuota (primo accesso o cache scaduta)
+    // Carica conv solo se lista vuota o non ancora sincronizzata con Supabase
     if (REAL_CONVS.length === 0) {
       loadConversations();
+    } else {
+      // Lista già presente — sincronizza silenziosamente in background
+      loadConversations();
     }
-    // Assicura che i canali RT siano attivi
+    // Supabase gestisce i messaggi in RT
     if (_sbReady) {
       sbListenConversations();
       if (currentConvPartnerEmail) {
-        // sbListenMessages gestisce il caso "canale vivo" senza double-fetch
         sbListenMessages(currentConvPartnerEmail);
         sbListenTyping(currentConvPartnerEmail);
       }
@@ -3105,8 +3037,16 @@ function showPanel(id, navEl) {
     }
   } else {
     stopMessagePolling();
-    // I canali 'messages' e 'typing' restano vivi anche fuori dal pannello:
-    // continuano ad aggiornare _msgCache via RT INSERT.
+    // Rilascia i canali Supabase messaggistica quando esci dalla sezione
+    if (_sbReady) {
+      sbOff('messages');
+      sbOff('typing');
+    }
+  }
+  if (id === 'feed') {
+    document.getElementById('feedBadge').classList.add('hidden');
+    // Avvia/riavvia il tracking lettura post quando il feed diventa visibile
+    requestAnimationFrame(() => initFeedReadTracking());
   }
   if (id === 'dashboard') { renderActivityFeed(); renderFeedPreview(); loadDashboardStats(); }
   if (id === 'profile') {
@@ -3310,12 +3250,6 @@ function applyRemoteData(data) {
   }
 
   saveCommunityCache();
-
-  // ── Genera attività community dal dato reale ─────────────────────
-  generateCommunityActivity(data);
-
-  // ── Rileva nuovi contenuti e genera notifiche ────────────────────
-  detectAndNotify(data);
 
   // Re-renderizza solo i pannelli visibili
   const activePanel = document.querySelector('.panel.active');
@@ -3599,274 +3533,41 @@ function applyDashboardStats(data) {
    ACTIVITY LOG (localStorage-based)
 ═══════════════════════════════════════════ */
 const ACTIVITY_LOG_KEY = 'lh360_activity_log';
-const ACTIVITY_MAX     = 200;
+const ACTIVITY_MAX     = 100;
 const ACTIVITY_DAYS    = 14;
 
-/* ── "Visto l'ultima volta" per rilevare contenuti nuovi ── */
-function _seenKey() {
-  return currentUser ? `lh360_seen_${currentUser.email.replace(/[^a-z0-9]/gi,'_')}` : null;
-}
-function loadSeen() {
-  const k = _seenKey(); if (!k) return {};
-  try { const r = localStorage.getItem(k); return r ? JSON.parse(r) : {}; } catch { return {}; }
-}
-function saveSeen(obj) {
-  const k = _seenKey(); if (!k) return;
-  try { localStorage.setItem(k, JSON.stringify(obj)); } catch {}
-}
-
-/* ── Contatori badge feed/disc ── */
-let _unreadFeed = 0;
-let _unreadDisc = 0;
-
-function updateFeedBadge(n) {
-  _unreadFeed = n;
-  const b = document.getElementById('feedBadge');
-  if (!b) return;
-  if (n > 0) { b.textContent = n; b.classList.remove('hidden'); b.style.display = ''; }
-  else        { b.textContent = ''; b.classList.add('hidden'); b.style.display = 'none'; }
-}
-function updateDiscBadge(n) {
-  _unreadDisc = n;
-  const b = document.getElementById('discBadge');
-  if (!b) return;
-  if (n > 0) { b.textContent = n; b.classList.remove('hidden'); b.style.display = ''; }
-  else        { b.textContent = ''; b.classList.add('hidden'); b.style.display = 'none'; }
-}
-
-/* ── logActivity: scrive nel log locale persistente ── */
-function logActivity(dotColor, text, ts) {
-  const entry = { dotColor, text, ts: ts || Date.now() };
+function logActivity(dotColor, text) {
+  const entry = { dotColor, text, ts: Date.now() };
   try {
     const raw = localStorage.getItem(ACTIVITY_LOG_KEY);
     let log = raw ? JSON.parse(raw) : [];
-    // dedup: non inserire se esiste voce identica negli ultimi 2 minuti
-    const dup = log.find(e => e.text === text && (entry.ts - e.ts) < 120000);
-    if (dup) return;
     log.unshift(entry);
     if (log.length > ACTIVITY_MAX) log = log.slice(0, ACTIVITY_MAX);
     localStorage.setItem(ACTIVITY_LOG_KEY, JSON.stringify(log));
-  } catch {}
+  } catch(e) {}
+  // Aggiorna il feed se la dashboard è visibile
   const dashPanel = document.getElementById('panel-dashboard');
   if (dashPanel && dashPanel.classList.contains('active')) renderActivityFeed();
 }
 
-/* ── Genera attività dalla risposta GAS e le persiste nel log ── */
-function generateCommunityActivity(data) {
-  if (!data || !currentUser) return;
-  const cutoff = Date.now() - ACTIVITY_DAYS * 24 * 60 * 60 * 1000;
-
-  // Post del feed: ogni post è un'attività
-  if (Array.isArray(data.posts)) {
-    data.posts.forEach(p => {
-      const ts = p.ts ? new Date(p.ts).getTime() : null;
-      if (!ts || ts < cutoff) return;
-      const isTeam = p.role && p.role.toLowerCase().includes('team');
-      const dot = isTeam ? 'gold' : 'green';
-      const verb = isTeam ? 'ha pubblicato un aggiornamento' : 'ha pubblicato nel feed';
-      logActivity(dot, `<strong>${p.author}</strong> ${verb}`, ts);
-    });
-  }
-
-  // Discussioni: ogni thread è un'attività
-  if (Array.isArray(data.discussions)) {
-    data.discussions.forEach(d => {
-      const ts = d.ts ? new Date(d.ts).getTime() : null;
-      if (!ts || ts < cutoff) return;
-      logActivity('blue', `<strong>${d.author}</strong> ha avviato una nuova discussione`, ts);
-    });
-  }
-
-  // Risposte ai thread: ogni reply è un'attività
-  if (data.replies && typeof data.replies === 'object') {
-    Object.values(data.replies).forEach(replies => {
-      if (!Array.isArray(replies)) return;
-      replies.forEach(r => {
-        const ts = r.ts ? new Date(r.ts).getTime() : null;
-        if (!ts || ts < cutoff) return;
-        logActivity('amber', `<strong>${r.author}</strong> ha risposto in una discussione`, ts);
-      });
-    });
-  }
-
-  // Commenti ai post
-  if (Array.isArray(data.posts)) {
-    data.posts.forEach(p => {
-      if (!Array.isArray(p.commentsData)) return;
-      p.commentsData.forEach(c => {
-        const ts = c.ts ? new Date(c.ts).getTime() : null;
-        if (!ts || ts < cutoff) return;
-        logActivity('green', `<strong>${c.author}</strong> ha commentato nel feed`, ts);
-      });
-    });
-  }
-}
-
-/* ── Rileva contenuti nuovi e genera notifiche ── */
-function detectAndNotify(data) {
-  if (!data || !currentUser) return;
-  const seen  = loadSeen();
-  const prefs = loadNotifPrefs();
-  const now   = Date.now();
-  let seenChanged = false;
-  let newFeedPosts = 0;
-  let newDiscs = 0;
-
-  // ── Nuovi post del team (team_announce / project_updates) ──────────
-  if (Array.isArray(data.posts)) {
-    const lastSeenFeed = seen.feed || 0;
-    let maxFeedTs = lastSeenFeed;
-    data.posts.forEach(p => {
-      const ts = p.ts ? new Date(p.ts).getTime() : 0;
-      if (ts <= lastSeenFeed) return;
-      maxFeedTs = Math.max(maxFeedTs, ts);
-      const isTeam = p.role && p.role.toLowerCase().includes('team');
-      newFeedPosts++;
-      if (isTeam && prefs.team_announce !== false && prefs.project_updates !== false) {
-        const badge = p.type === 'exclusive' ? 'EXCL' : p.type === 'update' ? 'UPD' : 'NEWS';
-        _pushNotif('team_announce', '📢', `[${badge}] Il team ha pubblicato: <strong>${p.title}</strong>`, ts, 'update');
-      }
-    });
-    if (maxFeedTs > lastSeenFeed) { seen.feed = maxFeedTs; seenChanged = true; }
-    updateFeedBadge(lastSeenFeed === 0 ? 0 : newFeedPosts); // non mostrare badge al primo accesso assoluto
-  }
-
-  // ── Nuove discussioni ──────────────────────────────────────────────
-  if (Array.isArray(data.discussions)) {
-    const lastSeenDisc = seen.disc || 0;
-    let maxDiscTs = lastSeenDisc;
-    data.discussions.forEach(d => {
-      const ts = d.ts ? new Date(d.ts).getTime() : 0;
-      if (ts <= lastSeenDisc) return;
-      maxDiscTs = Math.max(maxDiscTs, ts);
-      if (d.author === currentUser.name) return; // skip: è mia
-      newDiscs++;
-      if (prefs.new_discussions !== false) {
-        _pushNotif('new_discussions', '💬', `<strong>${d.author}</strong> ha aperto una nuova discussione: <em>${d.title||''}</em>`, ts, 'reply');
-      }
-    });
-    if (maxDiscTs > lastSeenDisc) { seen.disc = maxDiscTs; seenChanged = true; }
-    updateDiscBadge(lastSeenDisc === 0 ? 0 : newDiscs);
-  }
-
-  // ── Risposte ai miei thread / commenti ────────────────────────────
-  if (data.replies && typeof data.replies === 'object') {
-    const lastSeenReplies = seen.replies || 0;
-    let maxReplyTs = lastSeenReplies;
-    // trova le discussioni mie
-    const myDiscIds = new Set((DISCUSSIONS || []).filter(d => d.author === currentUser.name).map(d => String(d.id)));
-    Object.entries(data.replies).forEach(([discId, replies]) => {
-      if (!Array.isArray(replies)) return;
-      const isMyDisc = myDiscIds.has(String(discId));
-      replies.forEach(r => {
-        const ts = r.ts ? new Date(r.ts).getTime() : 0;
-        if (ts <= lastSeenReplies) return;
-        maxReplyTs = Math.max(maxReplyTs, ts);
-        if (r.author === currentUser.name) return;
-        if (isMyDisc && prefs.disc_replies !== false) {
-          _pushNotif('disc_replies', '↩️', `<strong>${r.author}</strong> ha risposto alla tua discussione`, ts, 'reply');
-        }
-      });
-    });
-    if (maxReplyTs > lastSeenReplies) { seen.replies = maxReplyTs; seenChanged = true; }
-  }
-
-  // ── Risposte ai miei commenti nel feed ────────────────────────────
-  if (Array.isArray(data.posts)) {
-    const lastSeenComments = seen.comments || 0;
-    let maxCommentTs = lastSeenComments;
-    data.posts.forEach(p => {
-      if (!Array.isArray(p.commentsData)) return;
-      let iCommentedHere = false;
-      p.commentsData.forEach(c => {
-        if (c.author === currentUser.name) iCommentedHere = true;
-      });
-      p.commentsData.forEach(c => {
-        const ts = c.ts ? new Date(c.ts).getTime() : 0;
-        if (ts <= lastSeenComments) return;
-        maxCommentTs = Math.max(maxCommentTs, ts);
-        if (c.author === currentUser.name) return;
-        if (iCommentedHere && prefs.post_replies !== false) {
-          _pushNotif('post_replies', '💭', `<strong>${c.author}</strong> ha commentato in un post a cui hai partecipato`, ts, 'like');
-        }
-      });
-    });
-    if (maxCommentTs > lastSeenComments) { seen.comments = maxCommentTs; seenChanged = true; }
-  }
-
-  // ── Nuovi listing ─────────────────────────────────────────────────
-  if (Array.isArray(data.listings)) {
-    const lastSeenListing = seen.listings || 0;
-    let maxListTs = lastSeenListing;
-    data.listings.forEach(l => {
-      const ts = l.ts ? new Date(l.ts).getTime() : 0;
-      if (ts <= lastSeenListing) return;
-      maxListTs = Math.max(maxListTs, ts);
-      if (prefs.new_listings !== false) {
-        _pushNotif('new_listings', '🏠', `Nuovo listing esclusivo disponibile: <strong>${l.title||'Nuova proprietà'}</strong>`, ts, 'listing');
-      }
-    });
-    if (maxListTs > lastSeenListing) { seen.listings = maxListTs; seenChanged = true; }
-  }
-
-  if (seenChanged) saveSeen(seen);
-}
-
-/* ── Aggiunge notifica evitando duplicati e rispettando le prefs ── */
-function _pushNotif(prefKey, icon, text, ts, type) {
-  if (!isNotifEnabled(prefKey)) return;
-  // dedup: stessa combinazione text+ts già presente?
-  const alreadyIn = NOTIFICATIONS.some(n => n.text === text && Math.abs((n._ts||0) - ts) < 5000);
-  if (alreadyIn) return;
-  const n = {
-    id:   ts + Math.random(),
-    _ts:  ts,
-    icon,
-    text,
-    type: type || 'system',
-    time: formatTimeAgo(ts),
-    unread: true
-  };
-  NOTIFICATIONS.unshift(n);
-  // mantieni max 50 notifiche
-  if (NOTIFICATIONS.length > 50) NOTIFICATIONS.length = 50;
-  saveNotifStore();
-  updateNotifBadge();
-  renderNotifDropdown();
-  const np = document.getElementById('panel-notifications');
-  if (np && np.classList.contains('active')) renderNotifications();
-}
-
-/* ── Persiste NOTIFICATIONS in localStorage (per utente) ── */
-function _notifStoreKey() {
-  return currentUser ? `lh360_notifs_${currentUser.email.replace(/[^a-z0-9]/gi,'_')}` : null;
-}
-function saveNotifStore() {
-  const k = _notifStoreKey(); if (!k) return;
-  try { localStorage.setItem(k, JSON.stringify(NOTIFICATIONS.slice(0,50))); } catch {}
-}
-function loadNotifStore() {
-  const k = _notifStoreKey(); if (!k) return [];
-  try { const r = localStorage.getItem(k); return r ? JSON.parse(r) : []; } catch { return []; }
-}
-
 function formatTimeAgo(ts) {
   const diff = Date.now() - ts;
+  // FIX: timestamp leggermente nel futuro → mostra "Ora"
   if (diff < 0)  return 'Ora';
   const m = Math.floor(diff / 60000);
   const h = Math.floor(diff / 3600000);
   const d = Math.floor(diff / 86400000);
   if (m < 1)  return 'Ora';
-  if (m < 60) return m + 'm fa';
-  if (h < 24) return h + 'h fa';
-  return d + 'g fa';
+  if (m < 60) return m + 'm';
+  if (h < 24) return h + 'h';
+  return d + 'g';
 }
 
 /* ═══════════════════════════════════════════
-   RENDER ATTIVITÀ RECENTE — da log reale + dati community
+   RENDER ATTIVITÀ RECENTE (dinamico)
 ═══════════════════════════════════════════ */
 function clearActivityLog() {
-  try { localStorage.removeItem(ACTIVITY_LOG_KEY); } catch {}
+  try { localStorage.removeItem(ACTIVITY_LOG_KEY); } catch(e) {}
   renderActivityFeed();
   showToast('blue', '🗑️', 'Attività recente svuotata');
 }
@@ -3878,15 +3579,18 @@ function renderActivityFeed() {
   const cutoff = Date.now() - ACTIVITY_DAYS * 24 * 60 * 60 * 1000;
   let activities = [];
 
+  // Leggi dal log persistente
   try {
     const raw = localStorage.getItem(ACTIVITY_LOG_KEY);
     if (raw) {
       activities = JSON.parse(raw)
         .filter(e => e.ts >= cutoff)
-        .sort((a, b) => b.ts - a.ts)
-        .slice(0, 8);
+        .slice(0, 5)
+        .map(e => ({ dot: e.dotColor, text: e.text, time: formatTimeAgo(e.ts) }));
     }
-  } catch {}
+  } catch(e) {}
+
+  // Nessun seed statico — mostra solo attività reali del log persistente
 
   if (activities.length === 0) {
     act.innerHTML = '<div style="font-size:0.75rem;color:var(--muted2);text-align:center;padding:1rem 0;">Nessuna attività recente.</div>';
@@ -3895,9 +3599,9 @@ function renderActivityFeed() {
 
   act.innerHTML = activities.map(a => `
     <div class="activity-item">
-      <div class="activity-dot ${a.dotColor}"></div>
+      <div class="activity-dot ${a.dot}"></div>
       <div class="activity-text">${a.text}</div>
-      <div class="activity-time">${formatTimeAgo(a.ts)}</div>
+      <div class="activity-time">${a.time}</div>
     </div>
   `).join('');
 }
@@ -4636,7 +4340,7 @@ function renderChatMessages(messages, partnerEmail) {
         ${!isSent ? `<div class="msg-avatar" style="${avatarStyle}${avatarVisible}">${avatarInitial}</div>` : ''}
         <div class="msg-bubble-wrap">
           ${mediaHtml}
-          ${msg.text ? `<div class="msg-bubble" data-msg-id="${msg.id}">${escapeHtml(msg.text)}</div>` : ''}
+          ${msg.text ? `<div class="msg-bubble">${escapeHtml(msg.text)}</div>` : ''}
           <div class="msg-time">${timeLabel}</div>
         </div>
         ${isSent ? `<div class="msg-avatar" style="${avatarStyle}${avatarVisible}">${avatarInitial}</div>` : ''}
@@ -5134,81 +4838,29 @@ function stopMessagePolling() {
 }
 
 /* ── Listener Supabase Realtime per i messaggi di una conversazione ── */
-/* ═══════════════════════════════════════════
-   sbListenMessages — architettura WhatsApp-like
-   ─────────────────────────────────────────
-   PRINCIPI:
-   1. Render immediato dalla cache (zero latenza visiva)
-   2. Il canale RT riceve INSERT → aggiunge a cache → appendMessageToChat (nessun re-render completo)
-   3. "Delta fetch" solo se rileviamo un gap (lastTs nel DB > lastTs in cache)
-   4. Il canale non viene mai distrutto su cambio pannello — solo su cambio partner
-   5. Re-subscribe solo se il canale è veramente morto (non se è solo stale)
-═══════════════════════════════════════════ */
 function sbListenMessages(partnerEmail) {
   if (!_sbReady || !currentUser || !partnerEmail) return;
-  const cid      = convId(currentUser.email, partnerEmail);
-  const cacheKey = partnerEmail.toLowerCase();
+  const cid = convId(currentUser.email, partnerEmail);
 
-  // ── 1. Render immediato dalla cache ──────────────────────────────
-  const cachedMsgs = _msgCache[cacheKey];
+  // Se la conv è già attiva (stesso partner), non ricaricare — mostra cache istantaneamente
+  if (_activeListenPartner && _activeListenPartner.toLowerCase() === partnerEmail.toLowerCase()) {
+    const cached = _msgCache[partnerEmail.toLowerCase()];
+    if (cached) {
+      removeTypingIndicator();
+      renderChatMessages(cached, partnerEmail);
+    }
+    return;
+  }
+  _activeListenPartner = partnerEmail;
+
+  // Mostra immediatamente dalla cache se disponibile — zero latenza
+  const cachedMsgs = _msgCache[partnerEmail.toLowerCase()];
   if (cachedMsgs && cachedMsgs.length > 0) {
     removeTypingIndicator();
     renderChatMessages(cachedMsgs, partnerEmail);
   }
 
-  // ── 2. Stessa conv, canale già vivo → solo delta-fetch silenzioso ─
-  const samePartner = _activeListenPartner &&
-    _activeListenPartner.toLowerCase() === cacheKey;
-  const channelAlive = !!_sbChannels['messages_' + cid];
-
-  if (samePartner && channelAlive) {
-    // Il canale RT è vivo: ha già ricevuto tutti gli INSERT mentre eravamo altrove.
-    // Facciamo solo un delta-fetch per recuperare eventuali messaggi persi
-    // durante brief network gaps (< 30s). Non ri-renderizziamo se nulla cambia.
-    const lastKnownTs = cachedMsgs && cachedMsgs.length > 0
-      ? cachedMsgs[cachedMsgs.length - 1].ts
-      : null;
-    if (lastKnownTs) {
-      _sb.from('messages')
-        .select('*')
-        .eq('conv_id', cid)
-        .gt('created_at', lastKnownTs)           // solo messaggi NUOVI
-        .order('created_at', { ascending: true })
-        .then(({ data }) => {
-          if (!data || data.length === 0) return; // nessun gap → nessun render
-          data
-            .filter(m => !(m.deleted_for||[]).includes(currentUser.email.toLowerCase()))
-            .forEach(m => {
-              const already = (_msgCache[cacheKey]||[]).some(x => x.id === m.id);
-              if (already) return;
-              const msg = _mapMsg(m);
-              if (!_msgCache[cacheKey]) _msgCache[cacheKey] = [];
-              _msgCache[cacheKey].push(msg);
-              appendMessageToChat(msg, msg.from.toLowerCase() === currentUser.email.toLowerCase());
-            });
-        });
-    }
-    return; // NON ri-sottoscriviamo, NON facciamo full-fetch
-  }
-
-  // ── 3. Cambio partner o canale morto → setup completo ────────────
-  _activeListenPartner = cacheKey;
-
-  // Distrugge SOLO il vecchio canale messaggi (non touching 'conversations')
-  const oldKey = 'messages_' + cid;
-  if (_sbChannels[oldKey]) {
-    try { _sbChannels[oldKey].unsubscribe(); } catch {}
-    delete _sbChannels[oldKey];
-  }
-  // Cerca e chiudi qualsiasi altro canale messaggi attivo
-  Object.keys(_sbChannels).forEach(k => {
-    if (k.startsWith('messages_') && k !== oldKey) {
-      try { _sbChannels[k].unsubscribe(); } catch {}
-      delete _sbChannels[k];
-    }
-  });
-
-  // Full fetch storico
+  // Carica storico completo da Supabase (aggiorna la cache)
   _sb.from('messages')
     .select('*')
     .eq('conv_id', cid)
@@ -5217,19 +4869,30 @@ function sbListenMessages(partnerEmail) {
     .then(({ data, error }) => {
       if (error) { console.warn('[SB msg load]', error.message); return; }
       const msgs = (data || [])
-        .filter(m => !(m.deleted_for||[]).includes(currentUser.email.toLowerCase()))
-        .map(_mapMsg);
+        .filter(m => !(m.deleted_for || []).includes(currentUser.email.toLowerCase()))
+        .map(m => ({
+          id:          m.id,
+          from:        m.sender_email,
+          fromName:    m.sender_name,
+          fromInitial: (m.sender_name || '?')[0].toUpperCase(),
+          text:        m.text || '',
+          media_url:   m.media_url || null,
+          media_type:  m.media_type || null,
+          ts:          m.created_at,
+          deletedFor:  m.deleted_for || []
+        }));
       if (msgs.length > 0) _msgLastSeen[partnerEmail] = msgs[msgs.length - 1].id;
-      _msgCache[cacheKey] = msgs;
-      // Renderizza solo se questa conv è ancora quella aperta
+      // Aggiorna cache in memoria
+      _msgCache[partnerEmail.toLowerCase()] = msgs;
       if (currentConvPartnerEmail &&
-          currentConvPartnerEmail.toLowerCase() === cacheKey) {
+          currentConvPartnerEmail.toLowerCase() === partnerEmail.toLowerCase()) {
         removeTypingIndicator();
         renderChatMessages(msgs, partnerEmail);
       }
     });
 
-  // ── 4. Sottoscrizione RT INSERT ───────────────────────────────────
+  // Ascolta nuovi messaggi in RT
+  sbOff('messages');
   const ch = _sb.channel('messages_' + cid)
     .on('postgres_changes', {
       event: 'INSERT', schema: 'public', table: 'messages',
@@ -5237,46 +4900,38 @@ function sbListenMessages(partnerEmail) {
     }, (payload) => {
       const m = payload.new;
       if (!m || (!m.text && !m.media_url)) return;
-      if ((m.deleted_for||[]).includes(currentUser.email.toLowerCase())) return;
-
-      const isMine = m.sender_email.toLowerCase() === currentUser.email.toLowerCase();
-      if (!_msgCache[cacheKey]) _msgCache[cacheKey] = [];
-      const already = _msgCache[cacheKey].some(x => x.id === m.id);
-      if (!already) _msgCache[cacheKey].push(_mapMsg(m));
-
-      // Aggiorna UI solo se la conv è aperta
-      if (currentConvPartnerEmail &&
-          currentConvPartnerEmail.toLowerCase() === cacheKey) {
-        if (!already) appendMessageToChat(_mapMsg(m), isMine);
+      if ((m.deleted_for || []).includes(currentUser.email.toLowerCase())) return;
+      // Non duplicare messaggi già inviati da noi (già mostrati ottimisticamente)
+      if (m.sender_email.toLowerCase() === currentUser.email.toLowerCase()) {
+        // Aggiorna cache e preview lista conv
+        const cacheKey = partnerEmail.toLowerCase();
+        if (_msgCache[cacheKey]) {
+          const alreadyCached = _msgCache[cacheKey].some(x => x.id === m.id);
+          if (!alreadyCached) _msgCache[cacheKey].push({ id: m.id, from: m.sender_email, fromName: m.sender_name, fromInitial: (m.sender_name||'?')[0].toUpperCase(), text: m.text||'', media_url: m.media_url||null, media_type: m.media_type||null, ts: m.created_at, deletedFor: m.deleted_for||[] });
+        }
+        const conv = REAL_CONVS.find(c => c.partnerEmail.toLowerCase() === partnerEmail.toLowerCase());
+        if (conv) { conv.lastMessage = m.text || '📎 Media'; conv.lastTs = m.created_at; renderConversations(); saveConvsCache(); }
+        return;
       }
-
-      // Preview lista conv
-      const conv = REAL_CONVS.find(c => c.partnerEmail.toLowerCase() === cacheKey);
-      if (conv) { conv.lastMessage = m.text||'📎 Media'; conv.lastTs = m.created_at; renderConversations(); saveConvsCache(); }
+      const msg = {
+        id: m.id, from: m.sender_email, fromName: m.sender_name,
+        fromInitial: (m.sender_name || '?')[0].toUpperCase(),
+        text: m.text || '', media_url: m.media_url || null, media_type: m.media_type || null,
+        ts: m.created_at, deletedFor: m.deleted_for || []
+      };
+      // Aggiorna cache in memoria
+      const cacheKey = partnerEmail.toLowerCase();
+      if (!_msgCache[cacheKey]) _msgCache[cacheKey] = [];
+      _msgCache[cacheKey].push(msg);
+      appendMessageToChat(msg, false);
+      // Aggiorna preview lista conv
+      const conv = REAL_CONVS.find(c => c.partnerEmail.toLowerCase() === partnerEmail.toLowerCase());
+      if (conv) { conv.lastMessage = m.text || '📎 Media'; conv.lastTs = m.created_at; renderConversations(); saveConvsCache(); }
     }).subscribe();
-  _sbChannels['messages_' + cid] = ch;
+  _sbChannels['messages'] = ch;
 }
 
-/* Normalizza una riga Supabase in un oggetto messaggio */
-function _mapMsg(m) {
-  return {
-    id:          m.id,
-    from:        m.sender_email,
-    fromName:    m.sender_name,
-    fromInitial: (m.sender_name||'?')[0].toUpperCase(),
-    text:        m.text||'',
-    media_url:   m.media_url||null,
-    media_type:  m.media_type||null,
-    ts:          m.created_at,
-    deletedFor:  m.deleted_for||[]
-  };
-}
-
-/* ── Listener Supabase per lista conversazioni ──
-   Questo è il canale PRINCIPALE per le notifiche di messaggi: si sottoscrive
-   a TUTTE le conversazioni dell'utente, non solo a quella aperta.
-   Ogni aggiornamento alla tabella `conversations` (nuovo messaggio in arrivo)
-   genera toast + notifica + badge immediatamente. */
+/* ── Listener Supabase per lista conversazioni ── */
 function sbListenConversations() {
   if (!_sbReady || !currentUser) return;
 
@@ -5288,20 +4943,12 @@ function sbListenConversations() {
     }, (payload) => {
       const c = payload.new;
       if (!c || !c.partner_email) return;
-
-      const partnerKey   = c.partner_email.toLowerCase();
-      const isActiveConv = currentConvPartnerEmail &&
-        currentConvPartnerEmail.toLowerCase() === partnerKey;
-
-      // Aggiorna o inserisce la conversazione in REAL_CONVS
-      const existing = REAL_CONVS.find(r => r.partnerEmail.toLowerCase() === partnerKey);
-      const prevUnread = existing ? (existing.unread || 0) : 0;
-      const newUnread  = isActiveConv ? 0 : (c.unread || 0);
-
+      const existing = REAL_CONVS.find(r => r.partnerEmail.toLowerCase() === c.partner_email.toLowerCase());
       if (existing) {
         existing.lastMessage = c.last_message || existing.lastMessage;
         existing.lastTs      = c.last_ts      || existing.lastTs;
-        existing.unread      = newUnread;
+        existing.unread = (currentConvPartnerEmail &&
+          c.partner_email.toLowerCase() === currentConvPartnerEmail.toLowerCase()) ? 0 : (c.unread || 0);
       } else {
         const info = getPartnerInfo(c.partner_email);
         REAL_CONVS.push({
@@ -5309,55 +4956,20 @@ function sbListenConversations() {
           partnerName:    c.partner_name    || info.name,
           partnerInitial: c.partner_initial || info.initial,
           partnerRole:    c.partner_role    || info.role,
-          lastMessage:    c.last_message    || '',
-          lastTs:         c.last_ts         || '',
-          unread:         newUnread
+          lastMessage:    c.last_message || '',
+          lastTs:         c.last_ts      || '',
+          unread:         c.unread       || 0
         });
       }
-
-      // ── Notifica: nuovo messaggio ricevuto ───────────────────────
-      // Condizioni: ci sono nuovi non letti E la conv non è aperta in questo momento
-      const hasNewMsg = !isActiveConv && (newUnread > prevUnread || (newUnread > 0 && prevUnread === 0));
-      if (hasNewMsg && c.last_message) {
-        const senderName = c.partner_name || c.partner_email;
-        const preview    = String(c.last_message).substring(0, 55) + (c.last_message.length > 55 ? '…' : '');
-
-        // Toast visivo in basso a destra
-        showToast('blue', '✉️', `<strong>${senderName}</strong>: ${preview}`);
-
-        // Centro notifiche + campanella
-        if (isNotifEnabled('direct_messages')) {
-          _pushNotif(
-            'direct_messages', '✉️',
-            `<strong>${senderName}</strong> ti ha inviato un messaggio`,
-            Date.now(), 'message'
-          );
-        }
-
-        // Badge nav "Messaggi"
-        unreadMsgs++;
-        updateMsgBadge();
-
-        // Log attività dashboard
-        logActivity('blue', `<strong>${senderName}</strong> ti ha inviato un messaggio privato`);
+      // Aggiorna badge messaggi non letti
+      const totalUnread = REAL_CONVS.reduce((sum, conv) => sum + (conv.unread || 0), 0);
+      const msgBadge = document.querySelector('.nav-item[onclick*="messages"] .nav-badge');
+      if (msgBadge) {
+        if (totalUnread > 0) { msgBadge.textContent = totalUnread; msgBadge.classList.remove('hidden'); }
+        else { msgBadge.classList.add('hidden'); }
       }
-
-      // ── Badge totale non letti nav ───────────────────────────────
-      const totalUnread = REAL_CONVS.reduce((s, r) => s + (r.unread || 0), 0);
-      const navBadge = document.getElementById('msgBadge');
-      if (navBadge) {
-        if (totalUnread > 0) {
-          navBadge.textContent = totalUnread;
-          navBadge.style.display = '';
-          navBadge.classList.remove('hidden');
-        } else {
-          navBadge.style.display = 'none';
-          navBadge.classList.add('hidden');
-        }
-      }
-
       renderConversations();
-      saveConvsCache();
+      saveConvsCache(); // FIX: aggiorna cache dopo ogni update Supabase
     }).subscribe();
   _sbChannels['conversations'] = ch;
 }
@@ -5842,19 +5454,9 @@ async function voteSurvey(surveyId, optionIndex) {
    RENDER NOTIFICATIONS
 ═══════════════════════════════════════════ */
 function renderNotifications() {
-  const colorMap = {
-    update:'gold', team_announce:'gold', project_updates:'gold',
-    message:'blue', direct_messages:'blue',
-    reply:'green', disc_replies:'green', post_replies:'green', new_discussions:'green',
-    like:'red',
-    listing:'gold', new_listings:'gold',
-    system:'gold', event:'blue', new_members:'amber'
-  };
+  const colorMap = { message:'blue', update:'gold', like:'red', reply:'green', listing:'gold', system:'gold', event:'blue' };
   const container = document.getElementById('notifsContainer');
   const markAllBtn = document.getElementById('markAllReadBtn');
-
-  // Aggiorna i timestamp relativi ogni volta che si renderizza
-  NOTIFICATIONS.forEach(n => { if (n._ts) n.time = formatTimeAgo(n._ts); });
 
   if (NOTIFICATIONS.length === 0) {
     if (markAllBtn) markAllBtn.style.display = 'none';
@@ -5884,15 +5486,6 @@ function renderNotifications() {
 
 function renderNotifDropdown() {
   const list = document.getElementById('notifDropdownList');
-  const colorMap = {
-    update:'gold', team_announce:'gold', project_updates:'gold',
-    message:'blue', direct_messages:'blue',
-    reply:'green', disc_replies:'green', post_replies:'green', new_discussions:'green',
-    like:'red', listing:'gold', new_listings:'gold', system:'gold', event:'blue'
-  };
-
-  // Aggiorna i timestamp relativi
-  NOTIFICATIONS.forEach(n => { if (n._ts) n.time = formatTimeAgo(n._ts); });
 
   if (NOTIFICATIONS.length === 0) {
     list.innerHTML = `
@@ -5903,9 +5496,9 @@ function renderNotifDropdown() {
     return;
   }
 
-  list.innerHTML = NOTIFICATIONS.slice(0,6).map(n => `
+  list.innerHTML = NOTIFICATIONS.slice(0,5).map(n => `
     <div class="notif-dropdown-item ${n.unread ? 'unread' : ''}" onclick="markNotifRead(${n.id}); toggleNotifDropdown();">
-      <div class="ndi-icon" style="color:var(--${colorMap[n.type]||'gold'})">${n.icon}</div>
+      <div class="ndi-icon">${n.icon}</div>
       <div class="ndi-text">
         ${n.text}
         <div class="ndi-time">${n.time}</div>
@@ -5927,7 +5520,6 @@ function markNotifRead(id) {
     updateNotifBadge();
     renderNotifications();
     renderNotifDropdown();
-    saveNotifStore();
   }
 }
 
@@ -5937,7 +5529,6 @@ function markAllRead() {
   updateNotifBadge();
   renderNotifications();
   renderNotifDropdown();
-  saveNotifStore();
   document.getElementById('notifDropdown').classList.remove('open');
   showToast('green', '✓', 'Tutte le notifiche segnate come lette.');
 }
@@ -6005,16 +5596,7 @@ function langCodeToName(code) {
 }
 
 /* ── Lettura/salvataggio preferenze notifiche ── */
-const NOTIF_PREF_DEFAULTS = {
-  project_updates:  true,
-  direct_messages:  true,
-  new_listings:     true,
-  post_replies:     true,
-  new_discussions:  true,
-  disc_replies:     true,
-  team_announce:    true,
-  new_members:      false
-};
+const NOTIF_PREF_DEFAULTS = { project_updates:true, direct_messages:true, new_listings:true, post_replies:false };
 
 function _notifPrefKey() {
   return currentUser ? `lh360_np_${currentUser.email.replace(/[^a-z0-9]/gi,'_')}` : null;
@@ -6042,8 +5624,14 @@ function isNotifEnabled(prefKey) {
 }
 
 /* Aggiunge una notifica reale rispettando le preferenze */
-function addRealNotification(prefKey, icon, text, type) {
-  _pushNotif(prefKey, icon, text, Date.now(), type || 'system');
+function addRealNotification(prefKey, icon, text) {
+  if (!isNotifEnabled(prefKey)) return; // preferenza disabilitata → nessuna notifica
+  const n = { id: Date.now() + Math.random(), icon, text, time: 'Ora', unread: true };
+  NOTIFICATIONS.unshift(n);
+  updateNotifBadge();
+  renderNotifDropdown();
+  const np = document.getElementById('panel-notifications');
+  if (np && np.classList.contains('active')) renderNotifications();
 }
 
 /* ── Statistiche attività utente ── */
@@ -6114,16 +5702,8 @@ function toggleNotifPref(el) {
   const prefs = loadNotifPrefs();
   prefs[prefKey] = newState;
   saveNotifPrefsLocal(prefs);
-  const labels = {
-    project_updates:  'aggiornamenti del progetto',
-    direct_messages:  'messaggi diretti',
-    new_listings:     'nuovi listing',
-    post_replies:     'risposte ai post',
-    new_discussions:  'nuove discussioni',
-    disc_replies:     'risposte ai thread',
-    team_announce:    'annunci del team',
-    new_members:      'nuovi membri'
-  };
+  const labels = { project_updates:'aggiornamenti progetto', direct_messages:'messaggi diretti',
+                   new_listings:'nuovi listing', post_replies:'risposte ai post' };
   showToast(newState ? 'green' : 'blue', newState ? '🔔' : '🔕',
     `Notifiche ${labels[prefKey]||prefKey} ${newState ? 'abilitate' : 'disabilitate'}.`);
 }
@@ -6152,14 +5732,10 @@ function renderProfile() {
   const roleColor = role === 'team' ? 'var(--gold)' : role === 'founding' ? 'var(--green)' : 'var(--amber)';
 
   const notifToggles = [
-    ['Aggiornamenti progetto',    'Annunci e aggiornamenti ufficiali del team',       'project_updates'],
-    ['Annunci del team',          'Notifiche per ogni comunicazione ufficiale',        'team_announce'],
-    ['Messaggi diretti',          'Ricevi notifiche per i messaggi privati',           'direct_messages'],
-    ['Nuovi listing esclusivi',   'Avvisi per i nuovi listing aggiunti al portfolio',  'new_listings'],
-    ['Risposte ai tuoi post',     'Notifiche quando qualcuno commenta dove hai scritto','post_replies'],
-    ['Nuove discussioni',         'Avvisi per le nuove discussioni aperte in community','new_discussions'],
-    ['Risposte ai thread',        'Notifiche per le risposte nelle tue discussioni',   'disc_replies'],
-    ['Nuovi membri',              'Avvisi quando un nuovo membro entra in community',  'new_members'],
+    ['Aggiornamenti progetto','Ricevi notifiche per i nuovi aggiornamenti','project_updates'],
+    ['Messaggi diretti','Notifiche per i tuoi messaggi','direct_messages'],
+    ['Nuovi listing','Avvisi per i nuovi listing disponibili','new_listings'],
+    ['Risposte ai tuoi post','Notifiche per le risposte','post_replies'],
   ];
 
   container.innerHTML = `
@@ -6722,48 +6298,21 @@ function startPresenceSystem() {
   // ── Offline su chiusura tab/browser (sendBeacon — garantito)
   window.addEventListener('beforeunload', removePresenceSync);
 
-  // ── Gestione visibilità tab / finestra minimizzata
+  // ── Offline/online su cambio visibilità tab
   window.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'hidden') {
-      // Finestra nascosta: aggiorna presenza a offline
+      // Tab nascosta: segna offline preventivamente
       if (_sbReady && currentUser) {
-        _sb.from('presence')
-          .update({ online: false, updated_at: new Date().toISOString() })
-          .eq('email', currentUser.email.toLowerCase())
-          .then(()=>{}).catch(()=>{});
+        _sb.from('presence').update({ online: false, updated_at: new Date().toISOString() })
+          .eq('email', currentUser.email.toLowerCase()).then(()=>{}).catch(()=>{});
       }
     } else {
-      // ── Finestra tornata visibile ──────────────────────────────────
-      // Ripristina presenza
+      // Tab tornata visibile: ripristina presenza
       sbSetPresence();
       if (_sbPresenceCh && currentUser) {
-        try { _sbPresenceCh.track({ email: currentUser.email.toLowerCase(), name: currentUser.name, initial: currentUser.initial, role: currentUser.role }); } catch {}
-      }
-
-      if (!_sbReady || !currentUser) return;
-
-      // Il canale RT 'messages' NON viene distrutto su cambio pannello (vedi showPanel),
-      // quindi ha ricevuto tutti gli INSERT anche mentre la finestra era nascosta.
-      // NON facciamo re-fetch né re-subscribe: evita qualsiasi doppio caricamento.
-      //
-      // L'unica cosa che facciamo è: se la conv è aperta E ci sono messaggi in cache
-      // arrivati via RT ma non ancora renderizzati (perché il pannello non era visibile),
-      // ri-renderizziamo silenziosamente dalla cache senza nessuna richiesta di rete.
-      if (currentConvPartnerEmail) {
-        const cacheKey = currentConvPartnerEmail.toLowerCase();
-        const cached   = _msgCache[cacheKey];
-        const msgPanel = document.getElementById('panel-messages');
-        if (cached && msgPanel && msgPanel.classList.contains('active')) {
-          // Controlla se l'ultimo msg renderizzato è lo stesso dell'ultimo in cache
-          const chatEl    = document.getElementById('chatMessages');
-          const lastRendered   = chatEl ? chatEl.querySelector('[data-msg-id]:last-of-type') : null;
-          const lastRenderedId = lastRendered ? lastRendered.dataset.msgId : null;
-          const lastCached = cached[cached.length - 1];
-          if (lastCached && String(lastCached.id) !== String(lastRenderedId)) {
-            // Cache più aggiornata della UI → ri-renderizza da cache (zero network)
-            renderChatMessages(cached, currentConvPartnerEmail);
-          }
-        }
+        try {
+          _sbPresenceCh.track({ email: currentUser.email.toLowerCase(), name: currentUser.name, initial: currentUser.initial, role: currentUser.role });
+        } catch(_e) {}
       }
     }
   });
