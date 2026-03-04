@@ -1813,7 +1813,103 @@ body {
   #sidebar { display: none; }
   #mainApp.active { grid-template-columns: 1fr; grid-template-areas: "header" "content"; }
 }
-</style>
+
+/* ═══════════════════════════════════════════════
+   NOTIFICATION ENHANCEMENTS
+═══════════════════════════════════════════════ */
+/* Notif popup bottom-right — gold accent left border */
+.toast[style*="border-left:2px solid var(--gold)"] {
+  border-left: 2px solid var(--gold) !important;
+  background: var(--dark3) !important;
+  min-width: 280px;
+}
+
+/* Activity dot colors extended */
+.activity-dot.gold { background: var(--gold); }
+.activity-dot.green { background: var(--green); }
+.activity-dot.blue { background: var(--blue); }
+.activity-dot.amber { background: var(--amber); }
+.activity-dot.red { background: var(--red); }
+
+/* Notification panel empty state */
+.notif-empty-state {
+  display: flex; flex-direction: column; align-items: center;
+  padding: 3rem 1rem; gap: 0.8rem;
+}
+.notif-empty-icon {
+  width: 52px; height: 52px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--dark4); border: 1px solid var(--border2);
+  color: var(--muted2);
+}
+.notif-empty-title { font-family: var(--ff-display); font-size: 1rem; color: var(--light); }
+.notif-empty-desc { font-size: 0.75rem; color: var(--muted); text-align: center; max-width: 300px; line-height: 1.6; }
+
+/* Notification item in panel */
+.notif-item {
+  display: flex; align-items: flex-start; gap: 0.8rem;
+  padding: 0.8rem 0; border-bottom: 1px solid var(--border2);
+  cursor: pointer; transition: var(--transition); position: relative;
+}
+.notif-item:hover { background: var(--gold-faint); padding-left: 0.4rem; border-radius: var(--radius); }
+.notif-item.unread { background: rgba(212,175,55,0.03); }
+.notif-icon {
+  width: 32px; height: 32px; border-radius: 50%; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 0.95rem;
+}
+.notif-icon.gold  { background: rgba(212,175,55,0.12); }
+.notif-icon.blue  { background: rgba(91,142,212,0.12); }
+.notif-icon.green { background: rgba(76,175,120,0.12); }
+.notif-icon.red   { background: rgba(200,80,106,0.12); }
+.notif-content { flex: 1; min-width: 0; }
+.notif-text { font-size: 0.78rem; color: var(--light); line-height: 1.5; }
+.notif-time { font-size: 0.65rem; color: var(--muted2); margin-top: 0.2rem; }
+.notif-unread-dot {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: var(--gold); flex-shrink: 0; margin-top: 6px;
+}
+
+/* Notification dropdown */
+.notif-dropdown {
+  position: absolute; top: calc(100% + 8px); right: 0;
+  width: 320px; max-height: 420px;
+  background: var(--dark3); border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow); z-index: 500;
+  overflow: hidden; display: none;
+}
+.notif-dropdown.open { display: flex; flex-direction: column; }
+.notif-dropdown-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0.8rem 1rem; border-bottom: 1px solid var(--border2);
+}
+.notif-dropdown-title { font-size: 0.75rem; font-weight: 600; color: var(--light); }
+.notif-mark-all { font-size: 0.65rem; color: var(--gold); cursor: pointer; }
+.notif-mark-all:hover { text-decoration: underline; }
+.notif-dropdown-list { overflow-y: auto; flex: 1; }
+.notif-dropdown-item {
+  display: flex; align-items: flex-start; gap: 0.7rem;
+  padding: 0.7rem 1rem; border-bottom: 1px solid rgba(245,245,245,0.03);
+  cursor: pointer; transition: var(--transition);
+}
+.notif-dropdown-item:hover { background: var(--gold-faint); }
+.notif-dropdown-item.unread { background: rgba(212,175,55,0.04); }
+.ndi-icon { font-size: 1rem; flex-shrink: 0; margin-top: 2px; }
+.ndi-text { font-size: 0.75rem; color: rgba(245,245,245,0.8); line-height: 1.5; flex: 1; min-width: 0; }
+.ndi-time { font-size: 0.62rem; color: var(--muted2); margin-top: 2px; }
+.ndi-unread {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: var(--gold); flex-shrink: 0; margin-top: 6px;
+}
+.notif-dropdown-empty {
+  display: flex; align-items: center; gap: 0.6rem;
+  padding: 1.2rem 1rem; font-size: 0.75rem; color: var(--muted2);
+}
+
+/* Badge disc per nuove discussioni */
+#discBadge:not(.hidden) { display: inline-flex; }
+
 <!-- ═══ FIREBASE REALTIME DATABASE SDK ═══ -->
 <!-- Supabase Realtime SDK -->
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -2598,6 +2694,13 @@ let _activeListenPartner = null;  // email del partner per cui sbListenMessages 
 
 const NOTIFICATIONS = [];
 // Le notifiche vengono generate da eventi reali
+
+/* ── Stato interno per rilevare nuovi contenuti ── */
+let _lastKnownTeamPostIds   = new Set(); // IDs team post già noti → rileva nuovi annunci
+let _lastKnownListingIds    = new Set(); // IDs listing già noti  → rileva nuove proprietà
+let _lastKnownDiscIds       = new Set(); // IDs discussioni note  → rileva nuovi thread
+let _lastKnownThreadReplies = {};        // { discId: replyCount } → rileva nuove risposte
+let _communityDataReady     = false;     // flag: primo caricamento completato
 let SURVEYS = [];
 // I sondaggi vengono caricati esclusivamente da GAS (get_community_data → surveys)
 
@@ -2899,7 +3002,24 @@ function initApp() {
         showToast(notif.icon, notif.emoji, notif.text);
       }).subscribe();
     _sbChannels['notifications_rt'] = notifCh;
+
+    // Ascolta attività community in tempo reale (feed attività dashboard)
+    sbOff('community_activity');
+    const actCh = _sb.channel('community_activity_rt')
+      .on('postgres_changes', {
+        event: 'INSERT', schema: 'public', table: 'community_activity'
+      }, (payload) => {
+        const a = payload.new;
+        if (!a || !a.text) return;
+        // Non mostrare l'attività dell'utente corrente (già loggata localmente)
+        if (currentUser && a.user_email && a.user_email.toLowerCase() === currentUser.email.toLowerCase()) return;
+        logActivity(a.dot_color || 'blue', a.text);
+      }).subscribe();
+    _sbChannels['community_activity'] = actCh;
   }
+
+  // Carica notifiche dalla cache locale (persistenza cross-sessione)
+  _loadNotifCache();
 
   // Carica statistiche dinamiche ogni 10 secondi (aggiornamento in tempo reale)
   loadDashboardStats();
@@ -2971,6 +3091,11 @@ function showPanel(id, navEl) {
     document.getElementById('feedBadge').classList.add('hidden');
     // Avvia/riavvia il tracking lettura post quando il feed diventa visibile
     requestAnimationFrame(() => initFeedReadTracking());
+  }
+  if (id === 'discussions') {
+    // Azzera badge nuove discussioni
+    const discBadge = document.getElementById('discBadge');
+    if (discBadge) { discBadge.textContent = '0'; discBadge.classList.add('hidden'); }
   }
   if (id === 'dashboard') { renderActivityFeed(); renderFeedPreview(); loadDashboardStats(); }
   if (id === 'profile') {
@@ -3175,6 +3300,16 @@ function applyRemoteData(data) {
 
   saveCommunityCache();
 
+  // ── Rilevamento nuovi contenuti → notifiche reali ────────────────────────
+  // Esegui solo dopo il primo caricamento (evita notifiche spurie all'avvio)
+  if (_communityDataReady) {
+    _detectNewContentAndNotify(data);
+  } else {
+    // Primo caricamento: inizializza gli snapshot di riferimento
+    _initContentSnapshots();
+    _communityDataReady = true;
+  }
+
   // Re-renderizza solo i pannelli visibili
   const activePanel = document.querySelector('.panel.active');
   if (!activePanel) return;
@@ -3183,7 +3318,16 @@ function applyRemoteData(data) {
   if (pid === 'discussions') renderDiscussions();
   if (pid === 'surveys')     renderSurveys();
   if (pid === 'listings')    renderListings();
-  if (pid === 'dashboard')   { renderActivityFeed(); renderFeedPreview(); }
+  if (pid === 'dashboard')   {
+    // Se il log locale è vuoto, costruisci attività dai dati reali disponibili
+    try {
+      const raw = localStorage.getItem('lh360_activity_log');
+      const logEmpty = !raw || JSON.parse(raw).length === 0;
+      if (logEmpty) _buildActivityFromRealData();
+    } catch(_e) { _buildActivityFromRealData(); }
+    renderActivityFeed();
+    renderFeedPreview();
+  }
 }
 
 /* Carica dati community da GAS (o cache se fresca) */
@@ -3260,7 +3404,18 @@ async function pollCommunityUpdates() {
       }
       // Ogni 3 cicli (≈15s): aggiorna anche posts/discussions (più pesante)
       // Posts/discussions ogni 5 cicli (≈15s) — presenza aggiornata ogni ciclo (3s)
-      if (_pollCycle % 5 === 0) applyRemoteData(data);
+      if (_pollCycle % 5 === 0) {
+        applyRemoteData(data);
+        // Se il dashboard è attivo, ricostruisci activity se log è scarso
+        const dashActive = document.getElementById('panel-dashboard')?.classList.contains('active');
+        if (dashActive) {
+          try {
+            const raw = localStorage.getItem('lh360_activity_log');
+            const logLen = raw ? JSON.parse(raw).length : 0;
+            if (logLen < 3) _buildActivityFromRealData();
+          } catch(_e) {}
+        }
+      }
     }
   } catch(e) {}
   // Statistiche dashboard
@@ -3566,9 +3721,128 @@ function renderFeedPreview() {
   `).join('');
 }
 
-/* ═══════════════════════════════════════════
-   RENDER FEED
-═══════════════════════════════════════════ */
+/* ── Inizializza snapshot contenuti (primo caricamento — no notifiche) ── */
+function _initContentSnapshots() {
+  FEED_POSTS.forEach(p => {
+    if (p.role && (p.role.toLowerCase().includes('team') || p.role.toLowerCase().includes('admin'))) {
+      _lastKnownTeamPostIds.add(p.id);
+    }
+  });
+  LISTINGS.forEach(l => _lastKnownListingIds.add(l.id));
+  DISCUSSIONS.forEach(d => {
+    _lastKnownDiscIds.add(d.id);
+    _lastKnownThreadReplies[d.id] = d.replies || 0;
+  });
+}
+
+/* ── Rileva nuovi contenuti e genera notifiche reali ── */
+function _detectNewContentAndNotify(data) {
+  // 1. Nuovi post del team → notifica project_updates
+  FEED_POSTS.forEach(p => {
+    if (!p.role) return;
+    const isTeam = p.role.toLowerCase().includes('team') || p.role.toLowerCase().includes('admin');
+    if (isTeam && !_lastKnownTeamPostIds.has(p.id)) {
+      _lastKnownTeamPostIds.add(p.id);
+      addRealNotification('project_updates', '📢',
+        `Nuovo aggiornamento del team: <strong>${p.title || 'Annuncio'}</strong>`);
+      logActivity('gold', `<strong>Team LH360</strong> ha pubblicato: ${p.title || 'un aggiornamento'}`);
+    }
+  });
+
+  // 2. Nuove discussioni → notifica new_discussions
+  DISCUSSIONS.forEach(d => {
+    if (!_lastKnownDiscIds.has(d.id)) {
+      _lastKnownDiscIds.add(d.id);
+      _lastKnownThreadReplies[d.id] = d.replies || 0;
+      // Non notificare se la discussione è dell'utente corrente (già sa che l'ha creata)
+      if (currentUser && d.author !== currentUser.name) {
+        addRealNotification('new_discussions', '💬',
+          `Nuova discussione da <strong>${(d.author||'').split(' ')[0]}</strong>: ${d.title}`);
+        logActivity('blue', `<strong>${(d.author||'').split(' ')[0]}</strong> ha avviato: ${d.title}`);
+        // Aggiorna badge discussioni nella sidebar
+        const discBadge = document.getElementById('discBadge');
+        if (discBadge) {
+          const curr = parseInt(discBadge.textContent || '0', 10);
+          discBadge.textContent = curr + 1;
+          discBadge.classList.remove('hidden');
+        }
+      }
+    }
+  });
+
+  // 3. Nuove risposte ai thread → notifica discussion_reply (solo thread dell'utente corrente)
+  if (currentUser) {
+    const myDiscussions = DISCUSSIONS.filter(d => d.author === currentUser.name);
+    myDiscussions.forEach(d => {
+      const prev = _lastKnownThreadReplies[d.id] || 0;
+      const curr = d.replies || 0;
+      if (curr > prev) {
+        _lastKnownThreadReplies[d.id] = curr;
+        addRealNotification('discussion_reply', '💬',
+          `Nuova risposta nel tuo thread: <strong>${d.title}</strong>`);
+      }
+    });
+  }
+
+  // 4. Nuovi listing → notifica new_listings
+  LISTINGS.forEach(l => {
+    if (!_lastKnownListingIds.has(l.id)) {
+      _lastKnownListingIds.add(l.id);
+      addRealNotification('new_listings', '🏠',
+        `Nuova proprietà disponibile: <strong>${l.name || l.city || 'Listing esclusivo'}</strong>`);
+      logActivity('gold', `Nuovo listing aggiunto: <strong>${l.name || l.city || 'Proprietà esclusiva'}</strong>`);
+    }
+  });
+}
+
+/* ── Scrivi attività su Supabase community_activity (visibile a tutti) ── */
+async function _writeActivityToSupabase(dotColor, text) {
+  if (!_sbReady || !currentUser) return;
+  try {
+    await _sb.from('community_activity').insert({
+      user_email: currentUser.email.toLowerCase(),
+      user_name:  currentUser.name,
+      dot_color:  dotColor,
+      text:       text,
+      created_at: new Date().toISOString()
+    });
+  } catch(_e) { /* silenzioso — tabella potrebbe non esistere, logActivity locale è sufficiente */ }
+}
+
+/* ── Inizializza attività dalla community real-data (all'avvio) ── */
+function _buildActivityFromRealData() {
+  const allActivities = [];
+  const now = Date.now();
+
+  // Ultimi post del team
+  FEED_POSTS
+    .filter(p => p.role && (p.role.toLowerCase().includes('team') || p.role.toLowerCase().includes('admin')))
+    .slice(0, 3)
+    .forEach(p => {
+      const authorName = (p.author || 'Team').split(' ')[0];
+      allActivities.push({
+        dotColor: 'gold',
+        text: `<strong>${authorName}</strong> ha pubblicato: ${p.title || 'un aggiornamento'}`,
+        ts: p.ts ? new Date(p.ts).getTime() : now - 3600000
+      });
+    });
+
+  // Ultime discussioni
+  DISCUSSIONS.slice(0, 3).forEach(d => {
+    const authorName = (d.author || 'Membro').split(' ')[0];
+    allActivities.push({
+      dotColor: 'blue',
+      text: `<strong>${authorName}</strong> ha avviato: ${d.title}`,
+      ts: now - 7200000
+    });
+  });
+
+  // Ordina per ts decrescente e prendi i 5 più recenti
+  allActivities.sort((a, b) => b.ts - a.ts);
+  allActivities.slice(0, 5).forEach(a => logActivity(a.dotColor, a.text));
+}
+
+
 function renderFeed() {
   const container = document.getElementById('feedContainer');
   if (FEED_POSTS.length === 0) {
@@ -3713,8 +3987,16 @@ function submitCommentBtn(postId, inputEl) {
   }
   showToast('green', '💬', 'Commento pubblicato!');
   logActivity('green', `<strong>${currentUser.name.split(' ')[0]}</strong> ha commentato nel feed`);
+  // Scrivi attività su Supabase (visibile agli altri membri in tempo reale)
+  _writeActivityToSupabase('green', `<strong>${currentUser.name.split(' ')[0]}</strong> ha commentato nel feed`);
 
-  // Aggiorna contatore commenti nel profilo in tempo reale
+  // Se il post è di un altro utente, invia notifica tramite GAS (post_replies)
+  if (post.author && post.author !== currentUser.name && GAS_URL) {
+    fetch(`${GAS_URL}?action=notify_post_comment` +
+      `&postId=${postId}&commenter=${encodeURIComponent(currentUser.name)}` +
+      `&postAuthor=${encodeURIComponent(post.author)}&postTitle=${encodeURIComponent(post.title||'')}`
+    ).catch(() => {});
+  }
   const profComments = document.getElementById('profileStatComments');
   if (profComments) profComments.textContent = countUserComments();
 
@@ -3894,6 +4176,18 @@ async function submitThreadReply() {
   renderDiscussions();
   showToast('green', '💬', 'Risposta pubblicata con successo!');
   logActivity('blue', `<strong>${currentUser.name.split(' ')[0]}</strong> ha risposto in una discussione`);
+  // Scrivi attività su Supabase (visibile agli altri in tempo reale)
+  const _threadTitle = DISCUSSIONS.find(d => d.id === currentThreadId)?.title || 'una discussione';
+  _writeActivityToSupabase('blue', `<strong>${currentUser.name.split(' ')[0]}</strong> ha risposto in: ${_threadTitle}`);
+
+  // Notifica il creatore del thread (se diverso dall'utente corrente) tramite GAS
+  const _threadOwner = DISCUSSIONS.find(d => d.id === currentThreadId);
+  if (_threadOwner && _threadOwner.author !== currentUser.name && GAS_URL) {
+    fetch(`${GAS_URL}?action=notify_thread_reply` +
+      `&threadId=${currentThreadId}&replier=${encodeURIComponent(currentUser.name)}` +
+      `&threadAuthor=${encodeURIComponent(_threadOwner.author)}&threadTitle=${encodeURIComponent(_threadOwner.title||'')}`
+    ).catch(() => {});
+  }
 
   // Persisti su GAS
   if (GAS_URL && currentUser) {
@@ -3954,6 +4248,10 @@ async function submitNewThread() {
   renderDiscussions();
   showToast('gold', '✏️', 'Thread pubblicato con successo!');
   logActivity('blue', `<strong>${currentUser.name.split(' ')[0]}</strong> ha avviato una nuova discussione`);
+  // Scrivi attività su Supabase
+  _writeActivityToSupabase('blue', `<strong>${currentUser.name.split(' ')[0]}</strong> ha avviato: ${title}`);
+  // Aggiungi al set dei disc noti (evita auto-notifica)
+  _lastKnownDiscIds.add(tempId);
 
   // Aggiorna contatore discussioni nel profilo in tempo reale
   const profDisc = document.getElementById('profileStatDiscussions');
@@ -4848,6 +5146,12 @@ function sbListenMessages(partnerEmail) {
       if (!_msgCache[cacheKey]) _msgCache[cacheKey] = [];
       _msgCache[cacheKey].push(msg);
       appendMessageToChat(msg, false);
+      // Notifica DM — solo se l'utente non è nel pannello messaggi
+      const inMsgPanel = document.getElementById('panel-messages')?.classList.contains('active');
+      if (!inMsgPanel) {
+        const senderName = msg.fromName ? msg.fromName.split(' ')[0] : 'un membro';
+        addRealNotification('direct_messages', '💬', `Nuovo messaggio da <strong>${senderName}</strong>`);
+      }
       // Aggiorna preview lista conv
       const conv = REAL_CONVS.find(c => c.partnerEmail.toLowerCase() === partnerEmail.toLowerCase());
       if (conv) { conv.lastMessage = m.text || '📎 Media'; conv.lastTs = m.created_at; renderConversations(); saveConvsCache(); }
@@ -5520,7 +5824,14 @@ function langCodeToName(code) {
 }
 
 /* ── Lettura/salvataggio preferenze notifiche ── */
-const NOTIF_PREF_DEFAULTS = { project_updates:true, direct_messages:true, new_listings:true, post_replies:false };
+const NOTIF_PREF_DEFAULTS = {
+  project_updates:  true,   // nuovi aggiornamenti dal team
+  direct_messages:  true,   // messaggi privati
+  new_listings:     true,   // nuove proprietà disponibili
+  post_replies:     true,   // risposte ai tuoi commenti
+  new_discussions:  true,   // nuove discussioni create
+  discussion_reply: true    // risposte ai tuoi thread
+};
 
 function _notifPrefKey() {
   return currentUser ? `lh360_np_${currentUser.email.replace(/[^a-z0-9]/gi,'_')}` : null;
@@ -5550,12 +5861,69 @@ function isNotifEnabled(prefKey) {
 /* Aggiunge una notifica reale rispettando le preferenze */
 function addRealNotification(prefKey, icon, text) {
   if (!isNotifEnabled(prefKey)) return; // preferenza disabilitata → nessuna notifica
-  const n = { id: Date.now() + Math.random(), icon, text, time: 'Ora', unread: true };
+  const n = { id: Date.now() + Math.random(), icon, text, time: 'Ora', unread: true, prefKey };
   NOTIFICATIONS.unshift(n);
   updateNotifBadge();
   renderNotifDropdown();
   const np = document.getElementById('panel-notifications');
   if (np && np.classList.contains('active')) renderNotifications();
+  // Mostra popup bottom-right in qualunque pannello sia attivo
+  _showNotifPopup(icon, text);
+  // Persisti le notifiche localmente per resistere ai refresh
+  _saveNotifCache();
+}
+
+/* Popup notifica bottom-right — visibile in ogni sezione, più duraturo del toast standard */
+function _showNotifPopup(icon, text) {
+  const container = document.getElementById('toastContainer');
+  if (!container) return;
+  const popup = document.createElement('div');
+  popup.className = 'toast';
+  popup.style.cssText = 'border-left:2px solid var(--gold);background:var(--dark3);box-shadow:0 8px 32px rgba(0,0,0,0.7),0 0 0 1px rgba(212,175,55,0.15);';
+  popup.innerHTML = `
+    <div class="toast-icon gold">${icon}</div>
+    <div style="flex:1;min-width:0;">
+      <div style="font-size:0.62rem;letter-spacing:0.14em;text-transform:uppercase;color:var(--gold);margin-bottom:2px;">Notifica</div>
+      <div class="toast-text" style="font-size:0.78rem;">${text}</div>
+    </div>
+    <button class="toast-close" onclick="this.parentElement.remove()">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+    </button>`;
+  container.appendChild(popup);
+  setTimeout(() => { popup.classList.add('out'); setTimeout(() => popup.remove(), 300); }, 6000);
+}
+
+/* Cache notifiche su localStorage per persistenza cross-sessione */
+const NOTIF_CACHE_KEY = 'lh360_notif_cache_v1';
+function _saveNotifCache() {
+  try { localStorage.setItem(NOTIF_CACHE_KEY, JSON.stringify(NOTIFICATIONS.slice(0, 50))); } catch(_e) {}
+}
+function _loadNotifCache() {
+  try {
+    const raw = localStorage.getItem(NOTIF_CACHE_KEY);
+    if (!raw) return;
+    const arr = JSON.parse(raw);
+    if (!Array.isArray(arr) || arr.length === 0) return;
+    arr.forEach(n => {
+      // Rifissa time relativo
+      if (n.ts) n.time = _notifRelTime(n.ts);
+      if (!NOTIFICATIONS.some(x => x.id === n.id)) NOTIFICATIONS.push(n);
+    });
+    NOTIFICATIONS.sort((a,b) => (b.id||0) - (a.id||0));
+    updateNotifBadge();
+    renderNotifDropdown();
+  } catch(_e) {}
+}
+function _notifRelTime(ts) {
+  if (!ts) return 'Ora';
+  const diff = Date.now() - ts;
+  const m = Math.floor(diff / 60000);
+  const h = Math.floor(diff / 3600000);
+  const d = Math.floor(diff / 86400000);
+  if (m < 1) return 'Ora';
+  if (m < 60) return m + 'm fa';
+  if (h < 24) return h + 'h fa';
+  return d + 'g fa';
 }
 
 /* ── Statistiche attività utente ── */
@@ -5656,10 +6024,12 @@ function renderProfile() {
   const roleColor = role === 'team' ? 'var(--gold)' : role === 'founding' ? 'var(--green)' : 'var(--amber)';
 
   const notifToggles = [
-    ['Aggiornamenti progetto','Ricevi notifiche per i nuovi aggiornamenti','project_updates'],
-    ['Messaggi diretti','Notifiche per i tuoi messaggi','direct_messages'],
-    ['Nuovi listing','Avvisi per i nuovi listing disponibili','new_listings'],
-    ['Risposte ai tuoi post','Notifiche per le risposte','post_replies'],
+    ['Aggiornamenti progetto','Ricevi notifiche per i nuovi aggiornamenti del team','project_updates'],
+    ['Messaggi diretti','Notifiche per i messaggi privati ricevuti','direct_messages'],
+    ['Nuovi listing','Avvisi quando viene aggiunta una nuova proprietà','new_listings'],
+    ['Risposte ai tuoi post','Notifiche quando qualcuno commenta i tuoi post','post_replies'],
+    ['Nuove discussioni','Notifiche quando viene creata una nuova discussione','new_discussions'],
+    ['Risposte ai tuoi thread','Notifiche per le risposte nelle discussioni create da te','discussion_reply'],
   ];
 
   container.innerHTML = `
@@ -5971,6 +6341,10 @@ async function publishBroadcast() {
 
   showToast('gold','📢','Comunicazione pubblicata con successo!');
   logActivity('gold', `<strong>${currentUser.name}</strong> ha pubblicato un aggiornamento`);
+  // Scrivi su Supabase community_activity e aggiorna snapshot notifiche
+  _writeActivityToSupabase('gold', `<strong>Team LH360</strong> ha pubblicato: ${title}`);
+  // Aggiungi subito l'ID al set dei post noti (evita auto-notifica al team)
+  _lastKnownTeamPostIds.add(newPost.id);
   showPanel('feed', document.querySelector('.nav-item'));
   titleEl.value   = '';
   contentEl.value = '';
