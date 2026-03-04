@@ -1445,8 +1445,20 @@ body {
 /* ═══════════════════════════════════════════════
    TYPING INDICATOR
 ═══════════════════════════════════════════════ */
-.typing-indicator {
-  display: flex; align-items: flex-end; gap: 0.5rem;
+/* Typing dots nella lista conversazioni */
+.conv-typing-dots span {
+  display: inline-block;
+  animation: convTypingBounce 1.1s infinite ease-in-out;
+  font-style: normal;
+}
+.conv-typing-dots span:nth-child(1) { animation-delay: 0s; }
+.conv-typing-dots span:nth-child(2) { animation-delay: 0.2s; }
+.conv-typing-dots span:nth-child(3) { animation-delay: 0.4s; }
+@keyframes convTypingBounce {
+  0%, 60%, 100% { transform: translateY(0); opacity: 0.5; }
+  30% { transform: translateY(-3px); opacity: 1; }
+}
+.typing-indicator {  display: flex; align-items: flex-end; gap: 0.5rem;
   animation: msgIn 0.18s cubic-bezier(0.34,1.56,0.64,1) forwards;
 }
 .typing-dots {
@@ -2580,6 +2592,9 @@ let _typingTimer     = null;
 let _typingSentAt    = 0;
 let _msgLastSeen     = {};        // { partnerEmail: lastMsgId } per rilevare nuovi messaggi
 let _pollMsgCycle    = 0;         // contatore cicli polling per throttling lista conv
+let _msgCache        = {};        // { partnerEmail: [{...}] } — messaggi già caricati per evitare re-fetch
+let _typingByEmail   = {};        // { partnerEmail: bool } — stato "sta scrivendo" per lista conv
+let _activeListenPartner = null;  // email del partner per cui sbListenMessages è già attivo
 
 const NOTIFICATIONS = [];
 // Le notifiche vengono generate da eventi reali
@@ -2832,8 +2847,6 @@ function initApp() {
   renderDashboard();
   renderFeed();
   renderDiscussions();
-  // Le conversazioni vengono caricate da GAS (renderConversations mostrerà empty state finché non arrivano)
-  renderConversations();
   renderListings();
   renderSurveys();
   renderNotifications();
@@ -2844,7 +2857,12 @@ function initApp() {
   renderNotifDropdown();
   renderWeeklyChart();
 
-  // Forza lo stato corretto del badge notifiche al primo render:
+  // Pre-carica conversazioni dalla cache locale — zero latenza
+  const _initConvsCache = loadConvsCache();
+  if (_initConvsCache && _initConvsCache.length > 0) {
+    REAL_CONVS = _initConvsCache;
+  }
+  renderConversations();
   // notifCount è 0 e NOTIFICATIONS è vuoto → campanella priva di badge
   updateNotifBadge();
 
@@ -2924,7 +2942,13 @@ function showPanel(id, navEl) {
   if (id === 'notifications') { notifCount = 0; updateNotifBadge(); }
   if (id === 'messages') {
     unreadMsgs = 0; updateMsgBadge();
-    loadConversations();
+    // Carica conv solo se lista vuota o non ancora sincronizzata con Supabase
+    if (REAL_CONVS.length === 0) {
+      loadConversations();
+    } else {
+      // Lista già presente — sincronizza silenziosamente in background
+      loadConversations();
+    }
     // Supabase gestisce i messaggi in RT
     if (_sbReady) {
       sbListenConversations();
@@ -4087,6 +4111,10 @@ function renderConversations() {
     const isTeam = c.partnerRole === 'team';
     const onlineM = ONLINE_MEMBERS.find(m => (m.email && m.email.toLowerCase() === c.partnerEmail.toLowerCase()) || (m.name && c.partnerName && m.name.toLowerCase() === c.partnerName.toLowerCase()));
     const status = onlineM ? 'online' : 'offline';
+    const isTyping = !!_typingByEmail[c.partnerEmail.toLowerCase()];
+    const previewHtml = isTyping
+      ? `<div class="conv-preview" style="color:var(--gold);font-style:italic;">Sta scrivendo<span class="conv-typing-dots"><span>.</span><span>.</span><span>.</span></span></div>`
+      : `<div class="conv-preview">${c.lastMessage || '—'}</div>`;
     return `
     <div class="conv-item ${isActive ? 'active' : ''}" onclick="openConvByEmail('${c.partnerEmail}')">
       <div class="conv-avatar" style="${isTeam ? 'border-color:var(--gold-dim);color:var(--gold);' : ''}">
@@ -4095,7 +4123,7 @@ function renderConversations() {
       </div>
       <div class="conv-info">
         <div class="conv-name">${c.partnerName}</div>
-        <div class="conv-preview">${c.lastMessage || '—'}</div>
+        ${previewHtml}
       </div>
       <div class="conv-meta">
         <div class="conv-time">${formatMsgTime(c.lastTs)}</div>
@@ -4107,6 +4135,10 @@ function renderConversations() {
 
 /* ── Apri conversazione per email partner ── */
 async function openConvByEmail(partnerEmail) {
+  // Se si apre una conv diversa da quella attiva, resetta il tracking
+  if (_activeListenPartner && _activeListenPartner.toLowerCase() !== partnerEmail.toLowerCase()) {
+    _activeListenPartner = null;
+  }
   currentConvPartnerEmail = partnerEmail;
   const partnerInfo = getPartnerInfo(partnerEmail);
 
@@ -4155,23 +4187,16 @@ function openConv(id) {
   if (conv) openConvByEmail(conv.partnerEmail);
 }
 
-/* ── Carica messaggi di una conv ── */
+/* ── Carica messaggi di una conv (fallback GAS, non usato se Supabase è attivo) ── */
 async function loadChatMessages(partnerEmail) {
   const messagesEl = document.getElementById('chatMessages');
   if (!messagesEl) return;
   if (!GAS_URL) { messagesEl.innerHTML = '<div style="text-align:center;padding:2rem;color:var(--muted2);font-size:0.8rem;">Configura GAS_URL per la messaggistica reale.</div>'; return; }
 
-  // Mostra skeleton loader solo se la chat è vuota — zero latenza, nessun flash al rientro
-  const alreadyHasContent = messagesEl.children.length > 0 && !messagesEl.querySelector('.chat-skeleton');
-  if (!alreadyHasContent) {
-    messagesEl.innerHTML = `
-    <div class="chat-skeleton">
-      <div class="chat-skel-row"><div class="chat-skel-av"></div><div class="chat-skel-bubble"></div></div>
-      <div class="chat-skel-row sent"><div class="chat-skel-av"></div><div class="chat-skel-bubble"></div></div>
-      <div class="chat-skel-row"><div class="chat-skel-av"></div><div class="chat-skel-bubble"></div></div>
-      <div class="chat-skel-row sent"><div class="chat-skel-av"></div><div class="chat-skel-bubble"></div></div>
-      <div class="chat-skel-row"><div class="chat-skel-av"></div><div class="chat-skel-bubble"></div></div>
-    </div>`;
+  // Mostra subito dalla cache — zero latenza, nessun skeleton
+  const cachedMsgs = _msgCache[partnerEmail.toLowerCase()];
+  if (cachedMsgs && cachedMsgs.length > 0) {
+    renderChatMessages(cachedMsgs, partnerEmail);
   }
 
   try {
@@ -4251,7 +4276,16 @@ function renderChatMessages(messages, partnerEmail) {
 
   messagesEl.innerHTML = html;
   // Salva timestamp dell'ultimo messaggio per la logica del separatore data in appendMessageToChat
-  if (messages.length > 0) messagesEl.dataset.lastMsgTs = new Date(messages[messages.length-1].ts).getTime();
+  if (messages.length > 0) {
+    messagesEl.dataset.lastMsgTs = new Date(messages[messages.length-1].ts).getTime();
+    // Aggiorna cache in memoria (se non già aggiornata da sbListenMessages)
+    if (currentConvPartnerEmail) {
+      const cacheKey = currentConvPartnerEmail.toLowerCase();
+      if (!_msgCache[cacheKey] || _msgCache[cacheKey].length <= messages.length) {
+        _msgCache[cacheKey] = messages;
+      }
+    }
+  }
   messagesEl.scrollTop = messagesEl.scrollHeight;
 }
 
@@ -4343,10 +4377,27 @@ function epSearch(query) {
   }
   if (label) label.textContent = 'Risultati ricerca';
   document.querySelectorAll('.ep-cat').forEach(b => b.classList.remove('active'));
+  const q = query.toLowerCase().trim();
+  // Mappa parole chiave italiane/inglesi per ricerca emoji
+  const EMOJI_KEYWORDS = {
+    '😀':'felice sorriso happy','😂':'ridere laugh lol','😍':'amore love cuore','🥰':'amore love','😊':'sorriso smile','😭':'piangere cry triste sad','😡':'arrabbiato angry','🤔':'pensare think','😴':'dormire sleep','🤗':'abbraccio hug','😘':'bacio kiss','🎉':'festa party congratulazioni','🔥':'fuoco fire caldo','💯':'cento perfect ok','👍':'bene ok pollice up like','👎':'male pollice down dislike','❤️':'cuore amore love heart','💔':'cuore spezzato broken heart','🙏':'grazie preghiera please','👏':'applauso bravo clap','💪':'forza muscle strong','🎂':'torta compleanno birthday cake','🍕':'pizza cibo food','🍔':'hamburger burger','🍺':'birra beer','☕':'caffè coffee','🌹':'rosa flower fiore','🌟':'stella star','✨':'sparkle brillo shine','🎵':'musica music','🎮':'gioco game','⚽':'calcio football soccer','🏆':'trofeo trophy winner','🚀':'razzo rocket spazio','💻':'computer laptop pc','📱':'telefono phone mobile','🎁':'regalo gift','🔑':'chiave key','🌍':'mondo earth world','🇮🇹':'italia italy bandiera','🏠':'casa home house','🚗':'auto macchina car','✈️':'aereo plane volo flight','🌙':'luna moon notte','☀️':'sole sun giorno','🌈':'arcobaleno rainbow','❄️':'neve snow freddo cold','🌊':'onda wave mare sea','💎':'diamante diamond gemma','👑':'corona crown re king','🦁':'leone lion','🐶':'cane dog','🐱':'gatto cat','🌺':'fiore flower','💐':'fiori flowers bouquet','🍀':'trifoglio clover fortuna lucky','🎯':'obiettivo target','📸':'foto foto camera photo','🎤':'microfono mic cantare','🎸':'chitarra guitar musica','🥳':'festa party compleanno birthday','😎':'cool occhiali sunglasses','🤩':'wow star eyes amazed','😇':'angelo angel bene','🤑':'soldi money ricco rich','🤫':'silenzio shh secret','🤭':'oh sorpresa surprise','😬':'imbarazzo awkward','🙄':'occhi roll eyes annoyed','😤':'arrabbiato hmpf frustrated','😩':'esausto exhausted tired','😫':'stressato stressed','🤯':'mente esplosa mind blown','🥺':'ti prego please puppy eyes','😱':'sorpresa shock scared','😳':'imbarazzato embarrassed','😵':'stordito dizzy confused','🤢':'nauseato nausea sick','🤧':'starnuto sneeze malato','🤒':'febbre sick ill','🦊':'volpe fox','🐻':'orso bear','🐼':'panda','🐨':'koala','🐯':'tigre tiger','🐸':'rana frog','🐵':'scimmia monkey','🦋':'farfalla butterfly','🌸':'fiori ciliegio cherry blossom','🍎':'mela apple','🍓':'fragola strawberry','🍇':'uva grapes','🍦':'gelato ice cream','🍰':'torta cake','🍫':'cioccolato chocolate','🍬':'caramella candy'};
+  // Raccogli tutte le emoji
   const all = Object.values(EP_DATA).flat();
-  // Cerca per nome approssimativo tramite codepoint description (semplificato)
-  // Filtra visivamente: mostra tutte le emoji della query come substring
-  epRenderGrid(all.slice(0, 120)); // mostra subset per non pesare troppo
+  // Filtra: controlla se l'emoji ha keywords che contengono la query, oppure se l'emoji stessa corrisponde
+  const filtered = all.filter(em => {
+    const kw = EMOJI_KEYWORDS[em] || '';
+    return kw.toLowerCase().includes(q) || em === q;
+  });
+  if (filtered.length > 0) {
+    epRenderGrid(filtered);
+  } else {
+    // Fallback: mostra le prime 60 emoji di tutte le categorie se nessun match diretto
+    const fallback = all.filter(em => {
+      // Cerca anche per nome descrittivo approssimativo tramite il codice unicode
+      try { return em.includes(q); } catch { return false; }
+    }).slice(0, 60);
+    epRenderGrid(fallback.length > 0 ? fallback : [], fallback.length === 0 ? 'Nessun risultato per "' + query + '"' : null);
+  }
 }
 
 function toggleEmojiPicker() {
@@ -4715,7 +4766,25 @@ function sbListenMessages(partnerEmail) {
   if (!_sbReady || !currentUser || !partnerEmail) return;
   const cid = convId(currentUser.email, partnerEmail);
 
-  // Carica storico completo da Supabase
+  // Se la conv è già attiva (stesso partner), non ricaricare — mostra cache istantaneamente
+  if (_activeListenPartner && _activeListenPartner.toLowerCase() === partnerEmail.toLowerCase()) {
+    const cached = _msgCache[partnerEmail.toLowerCase()];
+    if (cached) {
+      removeTypingIndicator();
+      renderChatMessages(cached, partnerEmail);
+    }
+    return;
+  }
+  _activeListenPartner = partnerEmail;
+
+  // Mostra immediatamente dalla cache se disponibile — zero latenza
+  const cachedMsgs = _msgCache[partnerEmail.toLowerCase()];
+  if (cachedMsgs && cachedMsgs.length > 0) {
+    removeTypingIndicator();
+    renderChatMessages(cachedMsgs, partnerEmail);
+  }
+
+  // Carica storico completo da Supabase (aggiorna la cache)
   _sb.from('messages')
     .select('*')
     .eq('conv_id', cid)
@@ -4737,6 +4806,8 @@ function sbListenMessages(partnerEmail) {
           deletedFor:  m.deleted_for || []
         }));
       if (msgs.length > 0) _msgLastSeen[partnerEmail] = msgs[msgs.length - 1].id;
+      // Aggiorna cache in memoria
+      _msgCache[partnerEmail.toLowerCase()] = msgs;
       if (currentConvPartnerEmail &&
           currentConvPartnerEmail.toLowerCase() === partnerEmail.toLowerCase()) {
         removeTypingIndicator();
@@ -4756,7 +4827,12 @@ function sbListenMessages(partnerEmail) {
       if ((m.deleted_for || []).includes(currentUser.email.toLowerCase())) return;
       // Non duplicare messaggi già inviati da noi (già mostrati ottimisticamente)
       if (m.sender_email.toLowerCase() === currentUser.email.toLowerCase()) {
-        // Aggiorna solo lastTs nella lista conv
+        // Aggiorna cache e preview lista conv
+        const cacheKey = partnerEmail.toLowerCase();
+        if (_msgCache[cacheKey]) {
+          const alreadyCached = _msgCache[cacheKey].some(x => x.id === m.id);
+          if (!alreadyCached) _msgCache[cacheKey].push({ id: m.id, from: m.sender_email, fromName: m.sender_name, fromInitial: (m.sender_name||'?')[0].toUpperCase(), text: m.text||'', media_url: m.media_url||null, media_type: m.media_type||null, ts: m.created_at, deletedFor: m.deleted_for||[] });
+        }
         const conv = REAL_CONVS.find(c => c.partnerEmail.toLowerCase() === partnerEmail.toLowerCase());
         if (conv) { conv.lastMessage = m.text || '📎 Media'; conv.lastTs = m.created_at; renderConversations(); saveConvsCache(); }
         return;
@@ -4767,6 +4843,10 @@ function sbListenMessages(partnerEmail) {
         text: m.text || '', media_url: m.media_url || null, media_type: m.media_type || null,
         ts: m.created_at, deletedFor: m.deleted_for || []
       };
+      // Aggiorna cache in memoria
+      const cacheKey = partnerEmail.toLowerCase();
+      if (!_msgCache[cacheKey]) _msgCache[cacheKey] = [];
+      _msgCache[cacheKey].push(msg);
       appendMessageToChat(msg, false);
       // Aggiorna preview lista conv
       const conv = REAL_CONVS.find(c => c.partnerEmail.toLowerCase() === partnerEmail.toLowerCase());
@@ -4830,18 +4910,30 @@ function sbListenTyping(partnerEmail) {
       filter: `conv_id=eq.${cid}`
     }, (payload) => {
       const d = payload.new;
-      if (!d) { removeTypingIndicator(); return; }
+      if (!d) { _setTypingState(partnerEmail, false); return; }
       // Mostra solo il typing del partner, non il nostro
       if (d.user_email.toLowerCase() === currentUser.email.toLowerCase()) return;
       if (d.is_typing) {
         const age = Date.now() - new Date(d.updated_at).getTime();
-        if (age < 6000) showTypingIndicator();
-        else removeTypingIndicator();
+        _setTypingState(partnerEmail, age < 6000);
       } else {
-        removeTypingIndicator();
+        _setTypingState(partnerEmail, false);
       }
     }).subscribe();
   _sbChannels['typing'] = ch;
+}
+
+/* Aggiorna stato typing per email e aggiorna UI lista + chat */
+function _setTypingState(partnerEmail, isTyping) {
+  const key = partnerEmail.toLowerCase();
+  const changed = _typingByEmail[key] !== isTyping;
+  _typingByEmail[key] = isTyping;
+  // Aggiorna indicatore nella chat aperta
+  if (currentConvPartnerEmail && currentConvPartnerEmail.toLowerCase() === key) {
+    if (isTyping) showTypingIndicator(); else removeTypingIndicator();
+  }
+  // Aggiorna lista conversazioni solo se lo stato è cambiato
+  if (changed) renderConversations();
 }
 
 async function pollMessages() {
