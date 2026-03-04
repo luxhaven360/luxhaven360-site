@@ -3086,17 +3086,17 @@ function showPanel(id, navEl) {
   }
   if (id === 'messages') {
     unreadMsgs = 0; updateMsgBadge();
-    // Carica conv solo se lista vuota o non ancora sincronizzata con Supabase
+    // Renderizza subito dalla cache — nessuna latenza visiva
+    renderConversations();
+    // Carica conv da Supabase SOLO se la lista è vuota (primo accesso o cache scaduta)
     if (REAL_CONVS.length === 0) {
       loadConversations();
-    } else {
-      // Lista già presente — sincronizza silenziosamente in background
-      loadConversations();
     }
-    // Supabase gestisce i messaggi in RT
+    // Assicura che i canali RT siano attivi
     if (_sbReady) {
       sbListenConversations();
       if (currentConvPartnerEmail) {
+        // sbListenMessages gestisce il caso "canale vivo" senza double-fetch
         sbListenMessages(currentConvPartnerEmail);
         sbListenTyping(currentConvPartnerEmail);
       }
@@ -3105,11 +3105,8 @@ function showPanel(id, navEl) {
     }
   } else {
     stopMessagePolling();
-    // Rilascia i canali Supabase messaggistica quando esci dalla sezione
-    if (_sbReady) {
-      sbOff('messages');
-      sbOff('typing');
-    }
+    // I canali 'messages' e 'typing' restano vivi anche fuori dal pannello:
+    // continuano ad aggiornare _msgCache via RT INSERT.
   }
   if (id === 'dashboard') { renderActivityFeed(); renderFeedPreview(); loadDashboardStats(); }
   if (id === 'profile') {
@@ -4639,7 +4636,7 @@ function renderChatMessages(messages, partnerEmail) {
         ${!isSent ? `<div class="msg-avatar" style="${avatarStyle}${avatarVisible}">${avatarInitial}</div>` : ''}
         <div class="msg-bubble-wrap">
           ${mediaHtml}
-          ${msg.text ? `<div class="msg-bubble">${escapeHtml(msg.text)}</div>` : ''}
+          ${msg.text ? `<div class="msg-bubble" data-msg-id="${msg.id}">${escapeHtml(msg.text)}</div>` : ''}
           <div class="msg-time">${timeLabel}</div>
         </div>
         ${isSent ? `<div class="msg-avatar" style="${avatarStyle}${avatarVisible}">${avatarInitial}</div>` : ''}
@@ -5137,29 +5134,81 @@ function stopMessagePolling() {
 }
 
 /* ── Listener Supabase Realtime per i messaggi di una conversazione ── */
+/* ═══════════════════════════════════════════
+   sbListenMessages — architettura WhatsApp-like
+   ─────────────────────────────────────────
+   PRINCIPI:
+   1. Render immediato dalla cache (zero latenza visiva)
+   2. Il canale RT riceve INSERT → aggiunge a cache → appendMessageToChat (nessun re-render completo)
+   3. "Delta fetch" solo se rileviamo un gap (lastTs nel DB > lastTs in cache)
+   4. Il canale non viene mai distrutto su cambio pannello — solo su cambio partner
+   5. Re-subscribe solo se il canale è veramente morto (non se è solo stale)
+═══════════════════════════════════════════ */
 function sbListenMessages(partnerEmail) {
   if (!_sbReady || !currentUser || !partnerEmail) return;
-  const cid = convId(currentUser.email, partnerEmail);
+  const cid      = convId(currentUser.email, partnerEmail);
+  const cacheKey = partnerEmail.toLowerCase();
 
-  // Se la conv è già attiva (stesso partner), non ricaricare — mostra cache istantaneamente
-  if (_activeListenPartner && _activeListenPartner.toLowerCase() === partnerEmail.toLowerCase()) {
-    const cached = _msgCache[partnerEmail.toLowerCase()];
-    if (cached) {
-      removeTypingIndicator();
-      renderChatMessages(cached, partnerEmail);
-    }
-    return;
-  }
-  _activeListenPartner = partnerEmail;
-
-  // Mostra immediatamente dalla cache se disponibile — zero latenza
-  const cachedMsgs = _msgCache[partnerEmail.toLowerCase()];
+  // ── 1. Render immediato dalla cache ──────────────────────────────
+  const cachedMsgs = _msgCache[cacheKey];
   if (cachedMsgs && cachedMsgs.length > 0) {
     removeTypingIndicator();
     renderChatMessages(cachedMsgs, partnerEmail);
   }
 
-  // Carica storico completo da Supabase (aggiorna la cache)
+  // ── 2. Stessa conv, canale già vivo → solo delta-fetch silenzioso ─
+  const samePartner = _activeListenPartner &&
+    _activeListenPartner.toLowerCase() === cacheKey;
+  const channelAlive = !!_sbChannels['messages_' + cid];
+
+  if (samePartner && channelAlive) {
+    // Il canale RT è vivo: ha già ricevuto tutti gli INSERT mentre eravamo altrove.
+    // Facciamo solo un delta-fetch per recuperare eventuali messaggi persi
+    // durante brief network gaps (< 30s). Non ri-renderizziamo se nulla cambia.
+    const lastKnownTs = cachedMsgs && cachedMsgs.length > 0
+      ? cachedMsgs[cachedMsgs.length - 1].ts
+      : null;
+    if (lastKnownTs) {
+      _sb.from('messages')
+        .select('*')
+        .eq('conv_id', cid)
+        .gt('created_at', lastKnownTs)           // solo messaggi NUOVI
+        .order('created_at', { ascending: true })
+        .then(({ data }) => {
+          if (!data || data.length === 0) return; // nessun gap → nessun render
+          data
+            .filter(m => !(m.deleted_for||[]).includes(currentUser.email.toLowerCase()))
+            .forEach(m => {
+              const already = (_msgCache[cacheKey]||[]).some(x => x.id === m.id);
+              if (already) return;
+              const msg = _mapMsg(m);
+              if (!_msgCache[cacheKey]) _msgCache[cacheKey] = [];
+              _msgCache[cacheKey].push(msg);
+              appendMessageToChat(msg, msg.from.toLowerCase() === currentUser.email.toLowerCase());
+            });
+        });
+    }
+    return; // NON ri-sottoscriviamo, NON facciamo full-fetch
+  }
+
+  // ── 3. Cambio partner o canale morto → setup completo ────────────
+  _activeListenPartner = cacheKey;
+
+  // Distrugge SOLO il vecchio canale messaggi (non touching 'conversations')
+  const oldKey = 'messages_' + cid;
+  if (_sbChannels[oldKey]) {
+    try { _sbChannels[oldKey].unsubscribe(); } catch {}
+    delete _sbChannels[oldKey];
+  }
+  // Cerca e chiudi qualsiasi altro canale messaggi attivo
+  Object.keys(_sbChannels).forEach(k => {
+    if (k.startsWith('messages_') && k !== oldKey) {
+      try { _sbChannels[k].unsubscribe(); } catch {}
+      delete _sbChannels[k];
+    }
+  });
+
+  // Full fetch storico
   _sb.from('messages')
     .select('*')
     .eq('conv_id', cid)
@@ -5168,30 +5217,19 @@ function sbListenMessages(partnerEmail) {
     .then(({ data, error }) => {
       if (error) { console.warn('[SB msg load]', error.message); return; }
       const msgs = (data || [])
-        .filter(m => !(m.deleted_for || []).includes(currentUser.email.toLowerCase()))
-        .map(m => ({
-          id:          m.id,
-          from:        m.sender_email,
-          fromName:    m.sender_name,
-          fromInitial: (m.sender_name || '?')[0].toUpperCase(),
-          text:        m.text || '',
-          media_url:   m.media_url || null,
-          media_type:  m.media_type || null,
-          ts:          m.created_at,
-          deletedFor:  m.deleted_for || []
-        }));
+        .filter(m => !(m.deleted_for||[]).includes(currentUser.email.toLowerCase()))
+        .map(_mapMsg);
       if (msgs.length > 0) _msgLastSeen[partnerEmail] = msgs[msgs.length - 1].id;
-      // Aggiorna cache in memoria
-      _msgCache[partnerEmail.toLowerCase()] = msgs;
+      _msgCache[cacheKey] = msgs;
+      // Renderizza solo se questa conv è ancora quella aperta
       if (currentConvPartnerEmail &&
-          currentConvPartnerEmail.toLowerCase() === partnerEmail.toLowerCase()) {
+          currentConvPartnerEmail.toLowerCase() === cacheKey) {
         removeTypingIndicator();
         renderChatMessages(msgs, partnerEmail);
       }
     });
 
-  // Ascolta nuovi messaggi in RT
-  sbOff('messages');
+  // ── 4. Sottoscrizione RT INSERT ───────────────────────────────────
   const ch = _sb.channel('messages_' + cid)
     .on('postgres_changes', {
       event: 'INSERT', schema: 'public', table: 'messages',
@@ -5199,35 +5237,39 @@ function sbListenMessages(partnerEmail) {
     }, (payload) => {
       const m = payload.new;
       if (!m || (!m.text && !m.media_url)) return;
-      if ((m.deleted_for || []).includes(currentUser.email.toLowerCase())) return;
-      // Non duplicare messaggi già inviati da noi (già mostrati ottimisticamente)
-      if (m.sender_email.toLowerCase() === currentUser.email.toLowerCase()) {
-        // Aggiorna cache e preview lista conv
-        const cacheKey = partnerEmail.toLowerCase();
-        if (_msgCache[cacheKey]) {
-          const alreadyCached = _msgCache[cacheKey].some(x => x.id === m.id);
-          if (!alreadyCached) _msgCache[cacheKey].push({ id: m.id, from: m.sender_email, fromName: m.sender_name, fromInitial: (m.sender_name||'?')[0].toUpperCase(), text: m.text||'', media_url: m.media_url||null, media_type: m.media_type||null, ts: m.created_at, deletedFor: m.deleted_for||[] });
-        }
-        const conv = REAL_CONVS.find(c => c.partnerEmail.toLowerCase() === partnerEmail.toLowerCase());
-        if (conv) { conv.lastMessage = m.text || '📎 Media'; conv.lastTs = m.created_at; renderConversations(); saveConvsCache(); }
-        return;
-      }
-      const msg = {
-        id: m.id, from: m.sender_email, fromName: m.sender_name,
-        fromInitial: (m.sender_name || '?')[0].toUpperCase(),
-        text: m.text || '', media_url: m.media_url || null, media_type: m.media_type || null,
-        ts: m.created_at, deletedFor: m.deleted_for || []
-      };
-      // Aggiorna cache in memoria
-      const cacheKey = partnerEmail.toLowerCase();
+      if ((m.deleted_for||[]).includes(currentUser.email.toLowerCase())) return;
+
+      const isMine = m.sender_email.toLowerCase() === currentUser.email.toLowerCase();
       if (!_msgCache[cacheKey]) _msgCache[cacheKey] = [];
-      _msgCache[cacheKey].push(msg);
-      appendMessageToChat(msg, false);
-      // Preview lista conv (la notifica è gestita da sbListenConversations)
-      const conv = REAL_CONVS.find(c => c.partnerEmail.toLowerCase() === partnerEmail.toLowerCase());
-      if (conv) { conv.lastMessage = m.text || '📎 Media'; conv.lastTs = m.created_at; renderConversations(); saveConvsCache(); }
+      const already = _msgCache[cacheKey].some(x => x.id === m.id);
+      if (!already) _msgCache[cacheKey].push(_mapMsg(m));
+
+      // Aggiorna UI solo se la conv è aperta
+      if (currentConvPartnerEmail &&
+          currentConvPartnerEmail.toLowerCase() === cacheKey) {
+        if (!already) appendMessageToChat(_mapMsg(m), isMine);
+      }
+
+      // Preview lista conv
+      const conv = REAL_CONVS.find(c => c.partnerEmail.toLowerCase() === cacheKey);
+      if (conv) { conv.lastMessage = m.text||'📎 Media'; conv.lastTs = m.created_at; renderConversations(); saveConvsCache(); }
     }).subscribe();
-  _sbChannels['messages'] = ch;
+  _sbChannels['messages_' + cid] = ch;
+}
+
+/* Normalizza una riga Supabase in un oggetto messaggio */
+function _mapMsg(m) {
+  return {
+    id:          m.id,
+    from:        m.sender_email,
+    fromName:    m.sender_name,
+    fromInitial: (m.sender_name||'?')[0].toUpperCase(),
+    text:        m.text||'',
+    media_url:   m.media_url||null,
+    media_type:  m.media_type||null,
+    ts:          m.created_at,
+    deletedFor:  m.deleted_for||[]
+  };
 }
 
 /* ── Listener Supabase per lista conversazioni ──
@@ -6680,61 +6722,49 @@ function startPresenceSystem() {
   // ── Offline su chiusura tab/browser (sendBeacon — garantito)
   window.addEventListener('beforeunload', removePresenceSync);
 
-  // ── Offline/online su cambio visibilità tab / finestra minimizzata
+  // ── Gestione visibilità tab / finestra minimizzata
   window.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'hidden') {
+      // Finestra nascosta: aggiorna presenza a offline
       if (_sbReady && currentUser) {
-        _sb.from('presence').update({ online: false, updated_at: new Date().toISOString() })
-          .eq('email', currentUser.email.toLowerCase()).then(()=>{}).catch(()=>{});
+        _sb.from('presence')
+          .update({ online: false, updated_at: new Date().toISOString() })
+          .eq('email', currentUser.email.toLowerCase())
+          .then(()=>{}).catch(()=>{});
       }
     } else {
       // ── Finestra tornata visibile ──────────────────────────────────
-      // 1. Ripristina presenza
+      // Ripristina presenza
       sbSetPresence();
       if (_sbPresenceCh && currentUser) {
-        try { _sbPresenceCh.track({ email: currentUser.email.toLowerCase(), name: currentUser.name, initial: currentUser.initial, role: currentUser.role }); } catch(_e) {}
+        try { _sbPresenceCh.track({ email: currentUser.email.toLowerCase(), name: currentUser.name, initial: currentUser.initial, role: currentUser.role }); } catch {}
       }
 
       if (!_sbReady || !currentUser) return;
 
-      // 2. Re-fetch messaggi della conversazione attiva
-      //    I canali Supabase RT possono perdere eventi mentre la finestra è inattiva/minimizzata.
-      //    Un re-fetch garantisce che i messaggi arrivati nel frattempo siano sempre visibili.
+      // Il canale RT 'messages' NON viene distrutto su cambio pannello (vedi showPanel),
+      // quindi ha ricevuto tutti gli INSERT anche mentre la finestra era nascosta.
+      // NON facciamo re-fetch né re-subscribe: evita qualsiasi doppio caricamento.
+      //
+      // L'unica cosa che facciamo è: se la conv è aperta E ci sono messaggi in cache
+      // arrivati via RT ma non ancora renderizzati (perché il pannello non era visibile),
+      // ri-renderizziamo silenziosamente dalla cache senza nessuna richiesta di rete.
       if (currentConvPartnerEmail) {
-        const _visibCid = convId(currentUser.email, currentConvPartnerEmail);
-        _sb.from('messages')
-          .select('*')
-          .eq('conv_id', _visibCid)
-          .order('created_at', { ascending: true })
-          .limit(200)
-          .then(({ data, error }) => {
-            if (error || !data) return;
-            const refreshedMsgs = data
-              .filter(m => !(m.deleted_for || []).includes(currentUser.email.toLowerCase()))
-              .map(m => ({
-                id: m.id, from: m.sender_email, fromName: m.sender_name,
-                fromInitial: (m.sender_name || '?')[0].toUpperCase(),
-                text: m.text || '', media_url: m.media_url || null,
-                media_type: m.media_type || null, ts: m.created_at,
-                deletedFor: m.deleted_for || []
-              }));
-            const cacheKey = currentConvPartnerEmail.toLowerCase();
-            const prevCount = (_msgCache[cacheKey] || []).length;
-            _msgCache[cacheKey] = refreshedMsgs;
-            // Ri-renderizza solo se ci sono messaggi nuovi
-            if (refreshedMsgs.length !== prevCount) {
-              renderChatMessages(refreshedMsgs, currentConvPartnerEmail);
-            }
-          });
-
-        // 3. Riconnetti i canali RT (possono essere scaduti dopo lunga inattività)
-        _activeListenPartner = null; // forza re-subscribe
-        sbListenMessages(currentConvPartnerEmail);
-        sbListenTyping(currentConvPartnerEmail);
+        const cacheKey = currentConvPartnerEmail.toLowerCase();
+        const cached   = _msgCache[cacheKey];
+        const msgPanel = document.getElementById('panel-messages');
+        if (cached && msgPanel && msgPanel.classList.contains('active')) {
+          // Controlla se l'ultimo msg renderizzato è lo stesso dell'ultimo in cache
+          const chatEl    = document.getElementById('chatMessages');
+          const lastRendered   = chatEl ? chatEl.querySelector('[data-msg-id]:last-of-type') : null;
+          const lastRenderedId = lastRendered ? lastRendered.dataset.msgId : null;
+          const lastCached = cached[cached.length - 1];
+          if (lastCached && String(lastCached.id) !== String(lastRenderedId)) {
+            // Cache più aggiornata della UI → ri-renderizza da cache (zero network)
+            renderChatMessages(cached, currentConvPartnerEmail);
+          }
+        }
       }
-
-      // 4. Riconnetti il canale conversazioni (sempre)
-      sbListenConversations();
     }
   });
 
