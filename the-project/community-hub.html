@@ -3073,6 +3073,7 @@ function showPanel(id, navEl) {
     // Supabase gestisce i messaggi in RT
     if (_sbReady) {
       sbListenConversations();
+      sbListenInbox();  // listener globale per notifiche DM in arrivo
       if (currentConvPartnerEmail) {
         sbListenMessages(currentConvPartnerEmail);
         sbListenTyping(currentConvPartnerEmail);
@@ -4343,7 +4344,7 @@ async function loadConversations() {
 
   // Se Supabase è pronto, il listener sbListenConversations() gestisce gli aggiornamenti RT
   if (!GAS_URL || !currentUser) {
-    if (_sbReady) sbListenConversations();
+    if (_sbReady) { sbListenConversations(); sbListenInbox(); }
     return;
   }
   try {
@@ -4383,7 +4384,7 @@ async function loadConversations() {
   } catch(e) { console.warn('[Messages] loadConversations error:', e.message); }
 
   // Avvia il listener Supabase per aggiornamenti RT sulle conversazioni
-  if (_sbReady) sbListenConversations();
+  if (_sbReady) { sbListenConversations(); sbListenInbox(); }
 }
 
 /* ── Renderizza lista conversazioni ── */
@@ -5228,6 +5229,76 @@ function sbListenConversations() {
       }
     }).subscribe();
   _sbChannels['conversations'] = ch;
+}
+
+/* ── Listener globale DM in arrivo (inbox) ────────────────────────────────
+   Ascolta TUTTI i nuovi messaggi la cui conv_id contiene l'email dell'utente.
+   Supabase non supporta filtri LIKE su RT, quindi ascoltiamo tutti gli INSERT
+   e filtriamo lato client. Questo garantisce la notifica anche se l'utente
+   non ha mai aperto la conversazione con quel mittente.                    */
+function sbListenInbox() {
+  if (!_sbReady || !currentUser) return;
+  sbOff('inbox');
+
+  const myEmail = currentUser.email.toLowerCase();
+  const myKey   = emailKey(myEmail);  // forma usata nel conv_id (punti → _)
+
+  const ch = _sb.channel('inbox_' + myKey)
+    .on('postgres_changes', {
+      event: 'INSERT', schema: 'public', table: 'messages'
+    }, (payload) => {
+      const m = payload.new;
+      if (!m) return;
+      // Filtra: il messaggio deve appartenere a una conv che coinvolge noi
+      if (!m.conv_id || !m.conv_id.includes(myKey)) return;
+      // Ignora i messaggi che abbiamo inviato noi
+      if (!m.sender_email || m.sender_email.toLowerCase() === myEmail) return;
+      // Ignora se questo messaggio è già gestito da sbListenMessages (conv attiva)
+      const senderEmail = m.sender_email.toLowerCase();
+      const isActiveConv = _activeListenPartner &&
+        _activeListenPartner.toLowerCase() === senderEmail;
+      if (isActiveConv) return; // sbListenMessages lo gestisce già
+
+      // Notifica solo se la preferenza è abilitata
+      const inMsgPanel = document.getElementById('panel-messages')?.classList.contains('active');
+      const isViewingThisConv = inMsgPanel &&
+        currentConvPartnerEmail &&
+        currentConvPartnerEmail.toLowerCase() === senderEmail;
+      if (isViewingThisConv) return;
+
+      const senderName = m.sender_name ? m.sender_name.split(' ')[0] : 'un membro';
+      addRealNotification('direct_messages', '💬',
+        `Nuovo messaggio da <strong>${senderName}</strong>`);
+
+      // Aggiorna anche il badge messaggi e la lista conversazioni
+      let conv = REAL_CONVS.find(c => c.partnerEmail.toLowerCase() === senderEmail);
+      if (conv) {
+        conv.lastMessage = m.text || '📎 Media';
+        conv.lastTs = m.created_at;
+        conv.unread = (conv.unread || 0) + 1;
+      } else {
+        const info = getPartnerInfo(m.sender_email);
+        REAL_CONVS.unshift({
+          partnerEmail:   m.sender_email,
+          partnerName:    m.sender_name || info.name,
+          partnerInitial: (m.sender_name || info.name || '?')[0].toUpperCase(),
+          partnerRole:    info.role || '',
+          lastMessage:    m.text || '📎 Media',
+          lastTs:         m.created_at,
+          unread:         1
+        });
+      }
+      // Aggiorna badge
+      const totalUnread = REAL_CONVS.reduce((s, c) => s + (c.unread || 0), 0);
+      const msgBadge = document.querySelector('.nav-item[onclick*="messages"] .nav-badge');
+      if (msgBadge) {
+        if (totalUnread > 0) { msgBadge.textContent = totalUnread; msgBadge.classList.remove('hidden'); }
+        else { msgBadge.classList.add('hidden'); }
+      }
+      renderConversations();
+      saveConvsCache();
+    }).subscribe();
+  _sbChannels['inbox'] = ch;
 }
 
 /* ── Listener Supabase per typing indicator ── */
