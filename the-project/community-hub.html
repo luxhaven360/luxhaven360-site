@@ -2939,6 +2939,14 @@ function initApp() {
     REAL_CONVS = _initConvsCache;
   }
   renderConversations();
+
+  // Carica notifiche persistite da sessioni precedenti
+  const _storedNotifs = loadNotifStore();
+  if (_storedNotifs.length > 0) {
+    NOTIFICATIONS.length = 0;
+    _storedNotifs.forEach(n => NOTIFICATIONS.push(n));
+  }
+
   // notifCount è 0 e NOTIFICATIONS è vuoto → campanella priva di badge
   updateNotifBadge();
 
@@ -2946,7 +2954,7 @@ function initApp() {
   // Avvia presenza real-time: heartbeat immediato + timer + Firebase
   startPresenceSystem();
 
-  // Supabase: ascolta notifiche in tempo reale
+  // Supabase: ascolta notifiche in tempo reale (dalla tabella `notifications`)
   if (_sbReady && currentUser) {
     const notifKey = emailKey(currentUser.email);
     sbOff('notifications_rt');
@@ -2957,22 +2965,27 @@ function initApp() {
       }, (payload) => {
         const n = payload.new;
         if (!n || !n.text) return;
-        const alreadyIn = NOTIFICATIONS.some(x => x.id === n.id);
+        const alreadyIn = NOTIFICATIONS.some(x => String(x.id) === String(n.id));
         if (alreadyIn) return;
+        const prefKey = n.type || 'system';
+        if (!isNotifEnabled(prefKey)) return;
         const notif = {
           id:    n.id,
-          icon:  n.icon  || 'blue',
-          emoji: n.emoji || '🔔',
+          _ts:   n.created_at ? new Date(n.created_at).getTime() : Date.now(),
+          icon:  n.emoji || n.icon || '🔔',
+          type:  n.type || 'system',
           text:  n.text,
           time:  'Ora',
-          read:  false
+          unread: true
         };
         NOTIFICATIONS.unshift(notif);
-        notifCount++;
+        if (NOTIFICATIONS.length > 50) NOTIFICATIONS.length = 50;
+        saveNotifStore();
         updateNotifBadge();
         renderNotifDropdown();
         renderNotifications();
-        showToast(notif.icon, notif.emoji, notif.text);
+        showToast(n.color || 'gold', notif.icon, notif.text);
+        logActivity('gold', notif.text);
       }).subscribe();
     _sbChannels['notifications_rt'] = notifCh;
   }
@@ -3015,7 +3028,27 @@ function showPanel(id, navEl) {
   document.getElementById('headerTitle').textContent = titles[id] || id;
 
   // Clear badges when viewing
-  if (id === 'notifications') { notifCount = 0; updateNotifBadge(); }
+  if (id === 'notifications') { notifCount = 0; updateNotifBadge(); markAllRead(); }
+  if (id === 'feed') {
+    updateFeedBadge(0);
+    document.getElementById('feedBadge').classList.add('hidden');
+    // Aggiorna "visto" al timestamp più recente per non rimostrare badge
+    const seen = loadSeen();
+    if (FEED_POSTS.length > 0) {
+      const maxTs = Math.max(...FEED_POSTS.map(p => p.ts ? new Date(p.ts).getTime() : 0));
+      if (maxTs > 0) { seen.feed = maxTs; saveSeen(seen); }
+    }
+    // Avvia/riavvia il tracking lettura post quando il feed diventa visibile
+    requestAnimationFrame(() => initFeedReadTracking());
+  }
+  if (id === 'discussions') {
+    updateDiscBadge(0);
+    const seen = loadSeen();
+    if (DISCUSSIONS.length > 0) {
+      const maxTs = Math.max(...DISCUSSIONS.map(d => d.ts ? new Date(d.ts).getTime() : 0));
+      if (maxTs > 0) { seen.disc = maxTs; saveSeen(seen); }
+    }
+  }
   if (id === 'messages') {
     unreadMsgs = 0; updateMsgBadge();
     // Carica conv solo se lista vuota o non ancora sincronizzata con Supabase
@@ -3042,11 +3075,6 @@ function showPanel(id, navEl) {
       sbOff('messages');
       sbOff('typing');
     }
-  }
-  if (id === 'feed') {
-    document.getElementById('feedBadge').classList.add('hidden');
-    // Avvia/riavvia il tracking lettura post quando il feed diventa visibile
-    requestAnimationFrame(() => initFeedReadTracking());
   }
   if (id === 'dashboard') { renderActivityFeed(); renderFeedPreview(); loadDashboardStats(); }
   if (id === 'profile') {
@@ -3250,6 +3278,12 @@ function applyRemoteData(data) {
   }
 
   saveCommunityCache();
+
+  // ── Genera attività community dal dato reale ─────────────────────
+  generateCommunityActivity(data);
+
+  // ── Rileva nuovi contenuti e genera notifiche ────────────────────
+  detectAndNotify(data);
 
   // Re-renderizza solo i pannelli visibili
   const activePanel = document.querySelector('.panel.active');
@@ -3533,41 +3567,274 @@ function applyDashboardStats(data) {
    ACTIVITY LOG (localStorage-based)
 ═══════════════════════════════════════════ */
 const ACTIVITY_LOG_KEY = 'lh360_activity_log';
-const ACTIVITY_MAX     = 100;
+const ACTIVITY_MAX     = 200;
 const ACTIVITY_DAYS    = 14;
 
-function logActivity(dotColor, text) {
-  const entry = { dotColor, text, ts: Date.now() };
+/* ── "Visto l'ultima volta" per rilevare contenuti nuovi ── */
+function _seenKey() {
+  return currentUser ? `lh360_seen_${currentUser.email.replace(/[^a-z0-9]/gi,'_')}` : null;
+}
+function loadSeen() {
+  const k = _seenKey(); if (!k) return {};
+  try { const r = localStorage.getItem(k); return r ? JSON.parse(r) : {}; } catch { return {}; }
+}
+function saveSeen(obj) {
+  const k = _seenKey(); if (!k) return;
+  try { localStorage.setItem(k, JSON.stringify(obj)); } catch {}
+}
+
+/* ── Contatori badge feed/disc ── */
+let _unreadFeed = 0;
+let _unreadDisc = 0;
+
+function updateFeedBadge(n) {
+  _unreadFeed = n;
+  const b = document.getElementById('feedBadge');
+  if (!b) return;
+  if (n > 0) { b.textContent = n; b.classList.remove('hidden'); b.style.display = ''; }
+  else        { b.textContent = ''; b.classList.add('hidden'); b.style.display = 'none'; }
+}
+function updateDiscBadge(n) {
+  _unreadDisc = n;
+  const b = document.getElementById('discBadge');
+  if (!b) return;
+  if (n > 0) { b.textContent = n; b.classList.remove('hidden'); b.style.display = ''; }
+  else        { b.textContent = ''; b.classList.add('hidden'); b.style.display = 'none'; }
+}
+
+/* ── logActivity: scrive nel log locale persistente ── */
+function logActivity(dotColor, text, ts) {
+  const entry = { dotColor, text, ts: ts || Date.now() };
   try {
     const raw = localStorage.getItem(ACTIVITY_LOG_KEY);
     let log = raw ? JSON.parse(raw) : [];
+    // dedup: non inserire se esiste voce identica negli ultimi 2 minuti
+    const dup = log.find(e => e.text === text && (entry.ts - e.ts) < 120000);
+    if (dup) return;
     log.unshift(entry);
     if (log.length > ACTIVITY_MAX) log = log.slice(0, ACTIVITY_MAX);
     localStorage.setItem(ACTIVITY_LOG_KEY, JSON.stringify(log));
-  } catch(e) {}
-  // Aggiorna il feed se la dashboard è visibile
+  } catch {}
   const dashPanel = document.getElementById('panel-dashboard');
   if (dashPanel && dashPanel.classList.contains('active')) renderActivityFeed();
 }
 
+/* ── Genera attività dalla risposta GAS e le persiste nel log ── */
+function generateCommunityActivity(data) {
+  if (!data || !currentUser) return;
+  const cutoff = Date.now() - ACTIVITY_DAYS * 24 * 60 * 60 * 1000;
+
+  // Post del feed: ogni post è un'attività
+  if (Array.isArray(data.posts)) {
+    data.posts.forEach(p => {
+      const ts = p.ts ? new Date(p.ts).getTime() : null;
+      if (!ts || ts < cutoff) return;
+      const isTeam = p.role && p.role.toLowerCase().includes('team');
+      const dot = isTeam ? 'gold' : 'green';
+      const verb = isTeam ? 'ha pubblicato un aggiornamento' : 'ha pubblicato nel feed';
+      logActivity(dot, `<strong>${p.author}</strong> ${verb}`, ts);
+    });
+  }
+
+  // Discussioni: ogni thread è un'attività
+  if (Array.isArray(data.discussions)) {
+    data.discussions.forEach(d => {
+      const ts = d.ts ? new Date(d.ts).getTime() : null;
+      if (!ts || ts < cutoff) return;
+      logActivity('blue', `<strong>${d.author}</strong> ha avviato una nuova discussione`, ts);
+    });
+  }
+
+  // Risposte ai thread: ogni reply è un'attività
+  if (data.replies && typeof data.replies === 'object') {
+    Object.values(data.replies).forEach(replies => {
+      if (!Array.isArray(replies)) return;
+      replies.forEach(r => {
+        const ts = r.ts ? new Date(r.ts).getTime() : null;
+        if (!ts || ts < cutoff) return;
+        logActivity('amber', `<strong>${r.author}</strong> ha risposto in una discussione`, ts);
+      });
+    });
+  }
+
+  // Commenti ai post
+  if (Array.isArray(data.posts)) {
+    data.posts.forEach(p => {
+      if (!Array.isArray(p.commentsData)) return;
+      p.commentsData.forEach(c => {
+        const ts = c.ts ? new Date(c.ts).getTime() : null;
+        if (!ts || ts < cutoff) return;
+        logActivity('green', `<strong>${c.author}</strong> ha commentato nel feed`, ts);
+      });
+    });
+  }
+}
+
+/* ── Rileva contenuti nuovi e genera notifiche ── */
+function detectAndNotify(data) {
+  if (!data || !currentUser) return;
+  const seen  = loadSeen();
+  const prefs = loadNotifPrefs();
+  const now   = Date.now();
+  let seenChanged = false;
+  let newFeedPosts = 0;
+  let newDiscs = 0;
+
+  // ── Nuovi post del team (team_announce / project_updates) ──────────
+  if (Array.isArray(data.posts)) {
+    const lastSeenFeed = seen.feed || 0;
+    let maxFeedTs = lastSeenFeed;
+    data.posts.forEach(p => {
+      const ts = p.ts ? new Date(p.ts).getTime() : 0;
+      if (ts <= lastSeenFeed) return;
+      maxFeedTs = Math.max(maxFeedTs, ts);
+      const isTeam = p.role && p.role.toLowerCase().includes('team');
+      newFeedPosts++;
+      if (isTeam && prefs.team_announce !== false && prefs.project_updates !== false) {
+        const badge = p.type === 'exclusive' ? 'EXCL' : p.type === 'update' ? 'UPD' : 'NEWS';
+        _pushNotif('team_announce', '📢', `[${badge}] Il team ha pubblicato: <strong>${p.title}</strong>`, ts, 'update');
+      }
+    });
+    if (maxFeedTs > lastSeenFeed) { seen.feed = maxFeedTs; seenChanged = true; }
+    updateFeedBadge(lastSeenFeed === 0 ? 0 : newFeedPosts); // non mostrare badge al primo accesso assoluto
+  }
+
+  // ── Nuove discussioni ──────────────────────────────────────────────
+  if (Array.isArray(data.discussions)) {
+    const lastSeenDisc = seen.disc || 0;
+    let maxDiscTs = lastSeenDisc;
+    data.discussions.forEach(d => {
+      const ts = d.ts ? new Date(d.ts).getTime() : 0;
+      if (ts <= lastSeenDisc) return;
+      maxDiscTs = Math.max(maxDiscTs, ts);
+      if (d.author === currentUser.name) return; // skip: è mia
+      newDiscs++;
+      if (prefs.new_discussions !== false) {
+        _pushNotif('new_discussions', '💬', `<strong>${d.author}</strong> ha aperto una nuova discussione: <em>${d.title||''}</em>`, ts, 'reply');
+      }
+    });
+    if (maxDiscTs > lastSeenDisc) { seen.disc = maxDiscTs; seenChanged = true; }
+    updateDiscBadge(lastSeenDisc === 0 ? 0 : newDiscs);
+  }
+
+  // ── Risposte ai miei thread / commenti ────────────────────────────
+  if (data.replies && typeof data.replies === 'object') {
+    const lastSeenReplies = seen.replies || 0;
+    let maxReplyTs = lastSeenReplies;
+    // trova le discussioni mie
+    const myDiscIds = new Set((DISCUSSIONS || []).filter(d => d.author === currentUser.name).map(d => String(d.id)));
+    Object.entries(data.replies).forEach(([discId, replies]) => {
+      if (!Array.isArray(replies)) return;
+      const isMyDisc = myDiscIds.has(String(discId));
+      replies.forEach(r => {
+        const ts = r.ts ? new Date(r.ts).getTime() : 0;
+        if (ts <= lastSeenReplies) return;
+        maxReplyTs = Math.max(maxReplyTs, ts);
+        if (r.author === currentUser.name) return;
+        if (isMyDisc && prefs.disc_replies !== false) {
+          _pushNotif('disc_replies', '↩️', `<strong>${r.author}</strong> ha risposto alla tua discussione`, ts, 'reply');
+        }
+      });
+    });
+    if (maxReplyTs > lastSeenReplies) { seen.replies = maxReplyTs; seenChanged = true; }
+  }
+
+  // ── Risposte ai miei commenti nel feed ────────────────────────────
+  if (Array.isArray(data.posts)) {
+    const lastSeenComments = seen.comments || 0;
+    let maxCommentTs = lastSeenComments;
+    data.posts.forEach(p => {
+      if (!Array.isArray(p.commentsData)) return;
+      let iCommentedHere = false;
+      p.commentsData.forEach(c => {
+        if (c.author === currentUser.name) iCommentedHere = true;
+      });
+      p.commentsData.forEach(c => {
+        const ts = c.ts ? new Date(c.ts).getTime() : 0;
+        if (ts <= lastSeenComments) return;
+        maxCommentTs = Math.max(maxCommentTs, ts);
+        if (c.author === currentUser.name) return;
+        if (iCommentedHere && prefs.post_replies !== false) {
+          _pushNotif('post_replies', '💭', `<strong>${c.author}</strong> ha commentato in un post a cui hai partecipato`, ts, 'like');
+        }
+      });
+    });
+    if (maxCommentTs > lastSeenComments) { seen.comments = maxCommentTs; seenChanged = true; }
+  }
+
+  // ── Nuovi listing ─────────────────────────────────────────────────
+  if (Array.isArray(data.listings)) {
+    const lastSeenListing = seen.listings || 0;
+    let maxListTs = lastSeenListing;
+    data.listings.forEach(l => {
+      const ts = l.ts ? new Date(l.ts).getTime() : 0;
+      if (ts <= lastSeenListing) return;
+      maxListTs = Math.max(maxListTs, ts);
+      if (prefs.new_listings !== false) {
+        _pushNotif('new_listings', '🏠', `Nuovo listing esclusivo disponibile: <strong>${l.title||'Nuova proprietà'}</strong>`, ts, 'listing');
+      }
+    });
+    if (maxListTs > lastSeenListing) { seen.listings = maxListTs; seenChanged = true; }
+  }
+
+  if (seenChanged) saveSeen(seen);
+}
+
+/* ── Aggiunge notifica evitando duplicati e rispettando le prefs ── */
+function _pushNotif(prefKey, icon, text, ts, type) {
+  if (!isNotifEnabled(prefKey)) return;
+  // dedup: stessa combinazione text+ts già presente?
+  const alreadyIn = NOTIFICATIONS.some(n => n.text === text && Math.abs((n._ts||0) - ts) < 5000);
+  if (alreadyIn) return;
+  const n = {
+    id:   ts + Math.random(),
+    _ts:  ts,
+    icon,
+    text,
+    type: type || 'system',
+    time: formatTimeAgo(ts),
+    unread: true
+  };
+  NOTIFICATIONS.unshift(n);
+  // mantieni max 50 notifiche
+  if (NOTIFICATIONS.length > 50) NOTIFICATIONS.length = 50;
+  saveNotifStore();
+  updateNotifBadge();
+  renderNotifDropdown();
+  const np = document.getElementById('panel-notifications');
+  if (np && np.classList.contains('active')) renderNotifications();
+}
+
+/* ── Persiste NOTIFICATIONS in localStorage (per utente) ── */
+function _notifStoreKey() {
+  return currentUser ? `lh360_notifs_${currentUser.email.replace(/[^a-z0-9]/gi,'_')}` : null;
+}
+function saveNotifStore() {
+  const k = _notifStoreKey(); if (!k) return;
+  try { localStorage.setItem(k, JSON.stringify(NOTIFICATIONS.slice(0,50))); } catch {}
+}
+function loadNotifStore() {
+  const k = _notifStoreKey(); if (!k) return [];
+  try { const r = localStorage.getItem(k); return r ? JSON.parse(r) : []; } catch { return []; }
+}
+
 function formatTimeAgo(ts) {
   const diff = Date.now() - ts;
-  // FIX: timestamp leggermente nel futuro → mostra "Ora"
   if (diff < 0)  return 'Ora';
   const m = Math.floor(diff / 60000);
   const h = Math.floor(diff / 3600000);
   const d = Math.floor(diff / 86400000);
   if (m < 1)  return 'Ora';
-  if (m < 60) return m + 'm';
-  if (h < 24) return h + 'h';
-  return d + 'g';
+  if (m < 60) return m + 'm fa';
+  if (h < 24) return h + 'h fa';
+  return d + 'g fa';
 }
 
 /* ═══════════════════════════════════════════
-   RENDER ATTIVITÀ RECENTE (dinamico)
+   RENDER ATTIVITÀ RECENTE — da log reale + dati community
 ═══════════════════════════════════════════ */
 function clearActivityLog() {
-  try { localStorage.removeItem(ACTIVITY_LOG_KEY); } catch(e) {}
+  try { localStorage.removeItem(ACTIVITY_LOG_KEY); } catch {}
   renderActivityFeed();
   showToast('blue', '🗑️', 'Attività recente svuotata');
 }
@@ -3579,18 +3846,15 @@ function renderActivityFeed() {
   const cutoff = Date.now() - ACTIVITY_DAYS * 24 * 60 * 60 * 1000;
   let activities = [];
 
-  // Leggi dal log persistente
   try {
     const raw = localStorage.getItem(ACTIVITY_LOG_KEY);
     if (raw) {
       activities = JSON.parse(raw)
         .filter(e => e.ts >= cutoff)
-        .slice(0, 5)
-        .map(e => ({ dot: e.dotColor, text: e.text, time: formatTimeAgo(e.ts) }));
+        .sort((a, b) => b.ts - a.ts)
+        .slice(0, 8);
     }
-  } catch(e) {}
-
-  // Nessun seed statico — mostra solo attività reali del log persistente
+  } catch {}
 
   if (activities.length === 0) {
     act.innerHTML = '<div style="font-size:0.75rem;color:var(--muted2);text-align:center;padding:1rem 0;">Nessuna attività recente.</div>';
@@ -3599,9 +3863,9 @@ function renderActivityFeed() {
 
   act.innerHTML = activities.map(a => `
     <div class="activity-item">
-      <div class="activity-dot ${a.dot}"></div>
+      <div class="activity-dot ${a.dotColor}"></div>
       <div class="activity-text">${a.text}</div>
-      <div class="activity-time">${a.time}</div>
+      <div class="activity-time">${formatTimeAgo(a.ts)}</div>
     </div>
   `).join('');
 }
@@ -4924,6 +5188,15 @@ function sbListenMessages(partnerEmail) {
       if (!_msgCache[cacheKey]) _msgCache[cacheKey] = [];
       _msgCache[cacheKey].push(msg);
       appendMessageToChat(msg, false);
+      // Notifica messaggio privato ricevuto (se il pannello messaggi non è attivo)
+      const msgPanelActive = document.getElementById('panel-messages')?.classList.contains('active');
+      if (!msgPanelActive) {
+        const senderName = msg.fromName || msg.from;
+        addRealNotification('direct_messages', '✉️',
+          `<strong>${senderName}</strong> ti ha inviato un messaggio`, 'message');
+        logActivity('blue', `<strong>${senderName}</strong> ti ha inviato un messaggio privato`);
+        unreadMsgs++; updateMsgBadge();
+      }
       // Aggiorna preview lista conv
       const conv = REAL_CONVS.find(c => c.partnerEmail.toLowerCase() === partnerEmail.toLowerCase());
       if (conv) { conv.lastMessage = m.text || '📎 Media'; conv.lastTs = m.created_at; renderConversations(); saveConvsCache(); }
@@ -5454,9 +5727,19 @@ async function voteSurvey(surveyId, optionIndex) {
    RENDER NOTIFICATIONS
 ═══════════════════════════════════════════ */
 function renderNotifications() {
-  const colorMap = { message:'blue', update:'gold', like:'red', reply:'green', listing:'gold', system:'gold', event:'blue' };
+  const colorMap = {
+    update:'gold', team_announce:'gold', project_updates:'gold',
+    message:'blue', direct_messages:'blue',
+    reply:'green', disc_replies:'green', post_replies:'green', new_discussions:'green',
+    like:'red',
+    listing:'gold', new_listings:'gold',
+    system:'gold', event:'blue', new_members:'amber'
+  };
   const container = document.getElementById('notifsContainer');
   const markAllBtn = document.getElementById('markAllReadBtn');
+
+  // Aggiorna i timestamp relativi ogni volta che si renderizza
+  NOTIFICATIONS.forEach(n => { if (n._ts) n.time = formatTimeAgo(n._ts); });
 
   if (NOTIFICATIONS.length === 0) {
     if (markAllBtn) markAllBtn.style.display = 'none';
@@ -5486,6 +5769,15 @@ function renderNotifications() {
 
 function renderNotifDropdown() {
   const list = document.getElementById('notifDropdownList');
+  const colorMap = {
+    update:'gold', team_announce:'gold', project_updates:'gold',
+    message:'blue', direct_messages:'blue',
+    reply:'green', disc_replies:'green', post_replies:'green', new_discussions:'green',
+    like:'red', listing:'gold', new_listings:'gold', system:'gold', event:'blue'
+  };
+
+  // Aggiorna i timestamp relativi
+  NOTIFICATIONS.forEach(n => { if (n._ts) n.time = formatTimeAgo(n._ts); });
 
   if (NOTIFICATIONS.length === 0) {
     list.innerHTML = `
@@ -5496,9 +5788,9 @@ function renderNotifDropdown() {
     return;
   }
 
-  list.innerHTML = NOTIFICATIONS.slice(0,5).map(n => `
+  list.innerHTML = NOTIFICATIONS.slice(0,6).map(n => `
     <div class="notif-dropdown-item ${n.unread ? 'unread' : ''}" onclick="markNotifRead(${n.id}); toggleNotifDropdown();">
-      <div class="ndi-icon">${n.icon}</div>
+      <div class="ndi-icon" style="color:var(--${colorMap[n.type]||'gold'})">${n.icon}</div>
       <div class="ndi-text">
         ${n.text}
         <div class="ndi-time">${n.time}</div>
@@ -5520,6 +5812,7 @@ function markNotifRead(id) {
     updateNotifBadge();
     renderNotifications();
     renderNotifDropdown();
+    saveNotifStore();
   }
 }
 
@@ -5529,6 +5822,7 @@ function markAllRead() {
   updateNotifBadge();
   renderNotifications();
   renderNotifDropdown();
+  saveNotifStore();
   document.getElementById('notifDropdown').classList.remove('open');
   showToast('green', '✓', 'Tutte le notifiche segnate come lette.');
 }
@@ -5596,7 +5890,16 @@ function langCodeToName(code) {
 }
 
 /* ── Lettura/salvataggio preferenze notifiche ── */
-const NOTIF_PREF_DEFAULTS = { project_updates:true, direct_messages:true, new_listings:true, post_replies:false };
+const NOTIF_PREF_DEFAULTS = {
+  project_updates:  true,
+  direct_messages:  true,
+  new_listings:     true,
+  post_replies:     true,
+  new_discussions:  true,
+  disc_replies:     true,
+  team_announce:    true,
+  new_members:      false
+};
 
 function _notifPrefKey() {
   return currentUser ? `lh360_np_${currentUser.email.replace(/[^a-z0-9]/gi,'_')}` : null;
@@ -5624,14 +5927,8 @@ function isNotifEnabled(prefKey) {
 }
 
 /* Aggiunge una notifica reale rispettando le preferenze */
-function addRealNotification(prefKey, icon, text) {
-  if (!isNotifEnabled(prefKey)) return; // preferenza disabilitata → nessuna notifica
-  const n = { id: Date.now() + Math.random(), icon, text, time: 'Ora', unread: true };
-  NOTIFICATIONS.unshift(n);
-  updateNotifBadge();
-  renderNotifDropdown();
-  const np = document.getElementById('panel-notifications');
-  if (np && np.classList.contains('active')) renderNotifications();
+function addRealNotification(prefKey, icon, text, type) {
+  _pushNotif(prefKey, icon, text, Date.now(), type || 'system');
 }
 
 /* ── Statistiche attività utente ── */
@@ -5702,8 +5999,16 @@ function toggleNotifPref(el) {
   const prefs = loadNotifPrefs();
   prefs[prefKey] = newState;
   saveNotifPrefsLocal(prefs);
-  const labels = { project_updates:'aggiornamenti progetto', direct_messages:'messaggi diretti',
-                   new_listings:'nuovi listing', post_replies:'risposte ai post' };
+  const labels = {
+    project_updates:  'aggiornamenti del progetto',
+    direct_messages:  'messaggi diretti',
+    new_listings:     'nuovi listing',
+    post_replies:     'risposte ai post',
+    new_discussions:  'nuove discussioni',
+    disc_replies:     'risposte ai thread',
+    team_announce:    'annunci del team',
+    new_members:      'nuovi membri'
+  };
   showToast(newState ? 'green' : 'blue', newState ? '🔔' : '🔕',
     `Notifiche ${labels[prefKey]||prefKey} ${newState ? 'abilitate' : 'disabilitate'}.`);
 }
@@ -5732,10 +6037,14 @@ function renderProfile() {
   const roleColor = role === 'team' ? 'var(--gold)' : role === 'founding' ? 'var(--green)' : 'var(--amber)';
 
   const notifToggles = [
-    ['Aggiornamenti progetto','Ricevi notifiche per i nuovi aggiornamenti','project_updates'],
-    ['Messaggi diretti','Notifiche per i tuoi messaggi','direct_messages'],
-    ['Nuovi listing','Avvisi per i nuovi listing disponibili','new_listings'],
-    ['Risposte ai tuoi post','Notifiche per le risposte','post_replies'],
+    ['Aggiornamenti progetto',    'Annunci e aggiornamenti ufficiali del team',       'project_updates'],
+    ['Annunci del team',          'Notifiche per ogni comunicazione ufficiale',        'team_announce'],
+    ['Messaggi diretti',          'Ricevi notifiche per i messaggi privati',           'direct_messages'],
+    ['Nuovi listing esclusivi',   'Avvisi per i nuovi listing aggiunti al portfolio',  'new_listings'],
+    ['Risposte ai tuoi post',     'Notifiche quando qualcuno commenta dove hai scritto','post_replies'],
+    ['Nuove discussioni',         'Avvisi per le nuove discussioni aperte in community','new_discussions'],
+    ['Risposte ai thread',        'Notifiche per le risposte nelle tue discussioni',   'disc_replies'],
+    ['Nuovi membri',              'Avvisi quando un nuovo membro entra in community',  'new_members'],
   ];
 
   container.innerHTML = `
