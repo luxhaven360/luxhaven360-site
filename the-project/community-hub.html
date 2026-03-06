@@ -3506,6 +3506,9 @@ function initApp() {
   // Avvia ticker aggiornamento tempi relativi notifiche
   _startNotifTimeTicker();
 
+  // BUG FIX #1/#2: Carica rimozioni da Supabase (sincronizza _REMOVED_IDS dopo refresh)
+  setTimeout(() => _loadRemovalsFromSupabase(), 600);
+
   // BUG FIX #1: Carica attività globali da Supabase (sorgente condivisa per tutti gli utenti)
   setTimeout(() => _loadGlobalActivitiesFromSupabase(), 500);
 
@@ -3566,9 +3569,50 @@ function initApp() {
       }).subscribe();
     _sbChannels['community_activity'] = actCh;
 
+    // BUG FIX #1/#2: Ascolta rimozioni contenuti in tempo reale (globale per tutti)
+    sbOff('content_removals');
+    const removalsCh = _sb.channel('content_removals_rt')
+      .on('postgres_changes', {
+        event: 'INSERT', schema: 'public', table: 'content_removals'
+      }, (payload) => {
+        const r = payload.new;
+        if (!r || !r.source_type || !r.source_id) return;
+        // Evita di ri-processare rimozioni che abbiamo già applicato localmente
+        if (_REMOVED_IDS.has(`${r.source_type}:${r.source_id}`)) return;
+        // Applica la rimozione (aggiorna _REMOVED_IDS + UI)
+        _REMOVED_IDS.add(`${r.source_type}:${r.source_id}`);
+        const n = Number(r.source_id);
+        if (n) _REMOVED_IDS.add(`${r.source_type}:${n}`);
+        saveModData();
+        // Rimuovi dalla UI in tempo reale
+        if (r.source_type === 'post') {
+          const idx = FEED_POSTS.findIndex(p => p.id === n || p.id === r.source_id);
+          if (idx > -1) { FEED_POSTS.splice(idx, 1); renderFeed(); renderFeedPreview(); }
+        } else if (r.source_type === 'comment') {
+          FEED_POSTS.forEach(p => {
+            if (p.commentsData) {
+              const ci = p.commentsData.findIndex(c => c.id === r.source_id || c.id === n);
+              if (ci > -1) { p.commentsData.splice(ci, 1); p.comments = Math.max(0, (p.comments||1)-1); }
+            }
+          });
+          const feedPanel = document.getElementById('panel-feed');
+          if (feedPanel && feedPanel.classList.contains('active')) renderFeed();
+        } else if (r.source_type === 'thread') {
+          const idx = DISCUSSIONS.findIndex(d => d.id === n || d.id === r.source_id);
+          if (idx > -1) { DISCUSSIONS.splice(idx, 1); renderDiscussions(); }
+        } else if (r.source_type === 'reply') {
+          Object.keys(THREAD_MESSAGES).forEach(tid => {
+            const arr = THREAD_MESSAGES[tid];
+            const ri = arr.findIndex(m => m.id === r.source_id || m.id === n);
+            if (ri > -1) { arr.splice(ri, 1); if (currentThreadId) renderThreadMessages(currentThreadId); }
+          });
+        }
+        saveCommunityCache();
+      }).subscribe();
+    _sbChannels['content_removals'] = removalsCh;
+
     // BUG FIX #4: Ascolta segnalazioni in tempo reale (solo per il team)
-    if (currentUser && currentUser.role === 'team') {
-      sbOff('community_reports');
+    if (currentUser && currentUser.role === 'team') {      sbOff('community_reports');
       const reportsCh = _sb.channel('community_reports_rt')
         .on('postgres_changes', {
           event: 'INSERT', schema: 'public', table: 'community_reports'
@@ -4392,16 +4436,8 @@ function logActivity(dotColor, text) {
 }
 
 function formatTimeAgo(ts) {
-  const diff = Date.now() - ts;
-  // FIX: timestamp leggermente nel futuro → mostra "Ora"
-  if (diff < 0)  return 'Ora';
-  const m = Math.floor(diff / 60000);
-  const h = Math.floor(diff / 3600000);
-  const d = Math.floor(diff / 86400000);
-  if (m < 1)  return 'Ora';
-  if (m < 60) return m + 'm';
-  if (h < 24) return h + 'h';
-  return d + 'g';
+  // FIX #3: usa STESSO formato di _notifRelTime per evitare oscillazione "5m" ↔ "5m fa"
+  return _notifRelTime(ts);
 }
 
 /* ═══════════════════════════════════════════
@@ -4606,7 +4642,47 @@ async function _writeReportToSupabase(report) {
   } catch(_e) { /* silenzioso — tabella potrebbe non esistere */ }
 }
 
-/* ── BUG FIX #4: Carica segnalazioni da Supabase per il pannello Moderazione ── */
+/* ── BUG FIX #1/#2: Scrivi rimozione su Supabase (sincronizzazione globale) ── */
+async function _writeRemovalToSupabase(sourceType, sourceId) {
+  if (!_sbReady || !currentUser) return;
+  try {
+    await _sb.from('content_removals').insert({
+      source_type:  sourceType,
+      source_id:    String(sourceId),
+      removed_by:   currentUser.email.toLowerCase(),
+      created_at:   new Date().toISOString()
+    });
+  } catch(_e) { /* silenzioso — tabella potrebbe non esistere */ }
+}
+
+/* ── BUG FIX #2: Carica rimozioni persistenti da Supabase all'avvio ── */
+async function _loadRemovalsFromSupabase() {
+  if (!_sbReady) return;
+  try {
+    const { data, error } = await _sb
+      .from('content_removals')
+      .select('source_type, source_id')
+      .limit(500);
+    if (error || !Array.isArray(data)) return;
+    data.forEach(r => {
+      if (!r.source_type || !r.source_id) return;
+      _REMOVED_IDS.add(`${r.source_type}:${r.source_id}`);
+      const n = Number(r.source_id);
+      if (n) _REMOVED_IDS.add(`${r.source_type}:${n}`);
+    });
+  } catch(_e) {}
+}
+
+/* ── BUG FIX #2: Elimina segnalazione da Supabase dopo che è stata gestita ── */
+async function _deleteReportFromSupabase(reportId) {
+  if (!_sbReady) return;
+  try {
+    await _sb.from('community_reports')
+      .delete()
+      .eq('report_id', String(reportId));
+  } catch(_e) {}
+}
+
 async function _loadReportsFromSupabase() {
   if (!_sbReady) return;
   try {
@@ -8132,6 +8208,8 @@ function resolveReport(id, action) {
 
   REPORTS.splice(idx, 1);
   saveModData();
+  // BUG FIX #2: elimina la segnalazione da Supabase per evitare che ricompaia dopo refresh
+  _deleteReportFromSupabase(report.id);
   renderModeration();
 
   const modBadge = document.getElementById('modBadge');
@@ -9076,13 +9154,16 @@ function removeContentFromPlatform(sourceType, sourceId) {
   // Registra nel set persistente per filtrare dopo refresh
   _REMOVED_IDS.add(`${sourceType}:${sourceId}`);
   if (idNum) _REMOVED_IDS.add(`${sourceType}:${idNum}`);
+
+  // BUG FIX #1/#2: scrivi su Supabase per sincronizzazione globale e persistenza
+  _writeRemovalToSupabase(sourceType, sourceId);
+
   if (sourceType === 'post') {
     const idx = FEED_POSTS.findIndex(p => p.id === idNum || p.id === sourceId);
     if (idx > -1) { FEED_POSTS.splice(idx, 1); renderFeed(); renderFeedPreview(); }
     const el = document.getElementById('post-' + sourceId) || document.getElementById('post-' + idNum);
     if (el) el.remove();
   } else if (sourceType === 'comment') {
-    // Rimuovi commento da tutti i post
     FEED_POSTS.forEach(p => {
       if (p.commentsData) {
         const ci = p.commentsData.findIndex(c => c.id === sourceId || c.id === idNum);
@@ -9094,7 +9175,6 @@ function removeContentFromPlatform(sourceType, sourceId) {
     const idx = DISCUSSIONS.findIndex(d => d.id === idNum || d.id === sourceId);
     if (idx > -1) { DISCUSSIONS.splice(idx, 1); renderDiscussions(); }
   } else if (sourceType === 'reply') {
-    // Rimuovi risposta dal thread
     Object.keys(THREAD_MESSAGES).forEach(tid => {
       const arr = THREAD_MESSAGES[tid];
       const ri = arr.findIndex(m => m.id === sourceId || m.id === idNum);
