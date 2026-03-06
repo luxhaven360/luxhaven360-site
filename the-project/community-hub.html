@@ -2207,7 +2207,10 @@ mark.hl { background: rgba(212,175,55,0.22); color: var(--gold-light); border-ra
           <div class="notif-dropdown-list" id="notifDropdownList"></div>
         </div>
       </div>
-      <button class="header-btn" onclick="logout()">
+      <button class="header-btn" title="Torna alla pagina Community" onclick="window.location.href='../the-project/community.html'" style="color:var(--muted);">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9,22 9,12 15,12 15,22"/></svg>
+      </button>
+      <button class="header-btn" onclick="logout()" title="Esci">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/><polyline points="16,17 21,12 16,7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
       </button>
     </div>
@@ -3018,6 +3021,9 @@ let MOD_LOG = [];
 let BANNED_USERS = new Set();
 // Email degli utenti bannati
 
+// Set persistente degli ID contenuto rimosso — filtrato da FEED_POSTS, DISCUSSIONS ecc. dopo refresh
+let _REMOVED_IDS = new Set(); // formato: "sourceType:sourceId"
+
 let _modTabActive = 'reports'; // 'reports' | 'removed' | 'log'
 
 // Chiavi localStorage per persistenza moderazione
@@ -3025,6 +3031,7 @@ const MOD_REPORTS_KEY  = 'lh360_mod_reports';
 const MOD_REMOVED_KEY  = 'lh360_mod_removed';
 const MOD_LOG_KEY      = 'lh360_mod_log';
 const MOD_BANNED_KEY   = 'lh360_mod_banned';
+const MOD_REMOVED_IDS_KEY = 'lh360_mod_removed_ids';
 const SESSION_COUNT_KEY = 'lh360_sessions_today';
 const MSG_WEEKLY_KEY   = 'lh360_messages_weekly';
 
@@ -3045,6 +3052,7 @@ function saveModData() {
     localStorage.setItem(MOD_REMOVED_KEY, JSON.stringify(REMOVED_CONTENT));
     localStorage.setItem(MOD_LOG_KEY, JSON.stringify(MOD_LOG.slice(0, 200)));
     localStorage.setItem(MOD_BANNED_KEY, JSON.stringify([...BANNED_USERS]));
+    localStorage.setItem(MOD_REMOVED_IDS_KEY, JSON.stringify([..._REMOVED_IDS]));
   } catch(e) {}
 }
 
@@ -3058,6 +3066,8 @@ function loadModData() {
     if (l) MOD_LOG = JSON.parse(l);
     const b = localStorage.getItem(MOD_BANNED_KEY);
     if (b) BANNED_USERS = new Set(JSON.parse(b));
+    const ri = localStorage.getItem(MOD_REMOVED_IDS_KEY);
+    if (ri) _REMOVED_IDS = new Set(JSON.parse(ri));
   } catch(e) {}
 }
 
@@ -3918,19 +3928,21 @@ function applyRemoteData(data) {
   // Sempre sovrascrive — nessun fallback su dati statici
   if (data.hasOwnProperty('posts') && Array.isArray(data.posts)) {
     const likedSet = new Set(FEED_POSTS.filter(p => p.liked).map(p => p.id));
-    FEED_POSTS = data.posts.map(p => ({
-      ...p,
-      liked:       likedSet.has(p.id) || (p.likedBy && currentUser && p.likedBy.includes(currentUser.name)),
-      commentsData: p.commentsData || [],
-      // Preserva/inferisce isTeam per Ultimi Aggiornamenti
-      isTeam: p.isTeam || !!(p.role && (p.role.toLowerCase().includes('team') || p.role.toLowerCase().includes('admin') || p.role.toLowerCase().includes('fondatore') || p.role.toLowerCase().includes('founder')))
-    }));
+    FEED_POSTS = data.posts
+      .filter(p => !_REMOVED_IDS.has(`post:${p.id}`) && !_REMOVED_IDS.has(`post:${Number(p.id)}`))
+      .map(p => ({
+        ...p,
+        liked:       likedSet.has(p.id) || (p.likedBy && currentUser && p.likedBy.includes(currentUser.name)),
+        commentsData: (p.commentsData || []).filter(c => !_REMOVED_IDS.has(`comment:${c.id}`)),
+        // Preserva/inferisce isTeam per Ultimi Aggiornamenti
+        isTeam: p.isTeam || !!(p.role && (p.role.toLowerCase().includes('team') || p.role.toLowerCase().includes('admin') || p.role.toLowerCase().includes('fondatore') || p.role.toLowerCase().includes('founder')))
+      }));
   }
 
   // ── Discussioni ──────────────────────────────────────────────────
   // Sempre sovrascrive — se GAS risponde con array vuoto, DISCUSSIONS è [] (nessun fallback statico)
   if (data.hasOwnProperty('discussions') && Array.isArray(data.discussions)) {
-    DISCUSSIONS = data.discussions;
+    DISCUSSIONS = data.discussions.filter(d => !_REMOVED_IDS.has(`thread:${d.id}`) && !_REMOVED_IDS.has(`thread:${Number(d.id)}`));
   }
 
   // ── Listing Esclusivi ─────────────────────────────────────────────
@@ -4566,7 +4578,7 @@ function renderFeed() {
           <div class="post-author">${post.author}</div>
           <div class="post-role">${post.role}</div>
         </div>
-        <div class="post-time">${post.ts ? formatTimeAgo(new Date(post.ts).getTime()) : (post.time || 'Ora')}</div>
+        <div class="post-time">${(() => { const ts = post.ts ? new Date(post.ts).getTime() : 0; return ts ? `<span data-ts="${ts}">${_notifRelTime(ts)}</span>` : (post.time || 'Ora'); })()}</div>
       </div>
       <div class="post-body">
         <div class="post-type-tag ${post.type}">${post.type === 'update' ? '📢 Aggiornamento' : post.type === 'exclusive' ? '⭐ Contenuto Esclusivo' : '📰 Notizia'}</div>
@@ -4598,26 +4610,28 @@ function renderFeed() {
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 12v8a2 2 0 002 2h12a2 2 0 002-2v-8"/><polyline points="16,6 12,2 8,6"/><line x1="12" y1="2" x2="12" y2="15"/></svg>
           Condividi
         </button>
-        ${post.role !== 'team' && post.role !== 'Team' && post.initial !== 'L' && post.initial !== 'V' ? `
+        ${!post.isTeam ? `
         <button class="post-action-btn" style="color:var(--red);opacity:0.7;" onclick="reportContentById('post','${post.id}')">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/></svg>
           Segnala
         </button>` : ''}
       </div>
       <div class="post-comments" id="comments-${post.id}">
-        ${post.commentsData.map(c => `
+        ${post.commentsData.map(c => {
+            const cts = c.ts ? new Date(c.ts).getTime() : 0;
+            const ctimeStr = cts ? _notifRelTime(cts) : (c.time || 'Ora');
+            return `
           <div class="comment" id="comment-${c.id||''}">
             <div class="comment-avatar">${c.initial}</div>
             <div class="comment-bubble">
               <div class="comment-author">${c.author}</div>
               <div class="comment-text">${c.text}</div>
               <div class="comment-time" style="display:flex;align-items:center;justify-content:space-between;">
-                <span>${c.ts ? formatTimeAgo(new Date(c.ts).getTime()) : (c.time || "Ora")}</span>
+                <span ${cts ? `data-ts="${cts}"` : ''}>${ctimeStr}</span>
                 ${!c.isTeam ? `<button onclick="reportContentById('comment','${c.id || post.id + '_c_' + Math.random().toString(36).slice(2)}','${post.id}')" style="background:none;border:none;color:var(--red);opacity:0.6;cursor:pointer;font-size:0.62rem;padding:0;margin-left:0.3rem;">🚩 Segnala</button>` : ''}
               </div>
             </div>
-          </div>
-        `).join('')}
+          </div>`}).join('')}
         <div class="comment-input-row">
           <div class="comment-avatar" style="margin-top:0;">${currentUser.initial}</div>
           <input class="comment-input" placeholder="Scrivi un commento…" onkeydown="submitComment(event, ${post.id})"/>
@@ -4728,16 +4742,22 @@ function submitCommentBtn(postId, inputEl) {
 }
 
 function renderPostComments(post, container) {
-  const rows = post.commentsData.map(c => `
+  const rows = post.commentsData.map(c => {
+    const ts = c.ts ? new Date(c.ts).getTime() : 0;
+    const timeStr = ts ? _notifRelTime(ts) : (c.time || 'Ora');
+    return `
     <div class="comment">
       <div class="comment-avatar">${c.initial}</div>
       <div class="comment-bubble">
         <div class="comment-author">${c.author}</div>
         <div class="comment-text">${c.text}</div>
-        <div class="comment-time">${c.ts ? formatTimeAgo(new Date(c.ts).getTime()) : (c.time || "Ora")}</div>
+        <div class="comment-time" style="display:flex;align-items:center;justify-content:space-between;">
+          <span ${ts ? `data-ts="${ts}"` : ''}>${timeStr}</span>
+          ${!c.isTeam ? `<button onclick="reportContentById('comment','${c.id || post.id + '_c_' + Math.random().toString(36).slice(2)}','${post.id}')" style="background:none;border:none;color:var(--red);opacity:0.6;cursor:pointer;font-size:0.62rem;padding:0;margin-left:0.3rem;">🚩 Segnala</button>` : ''}
+        </div>
       </div>
-    </div>
-  `).join('');
+    </div>`;
+  }).join('');
   const inputRow = `
     <div class="comment-input-row">
       <div class="comment-avatar" style="margin-top:0;">${currentUser.initial}</div>
@@ -4773,7 +4793,7 @@ function renderDiscussions(filter) {
       </div>
       <div class="thread-footer">
         <div class="thread-last-reply">💬 <span>${d.lastReply}</span></div>
-        <div>${d.author} · ${d.ts ? formatTimeAgo(new Date(d.ts).getTime()) : (d.time || "Ora")}</div>
+        <div>${d.author} · ${(() => { const ts = d.ts ? new Date(d.ts).getTime() : 0; return ts ? `<span data-ts="${ts}">${_notifRelTime(ts)}</span>` : (d.time || 'Ora'); })()}</div>
       </div>
     </div>
   `).join('');
@@ -4807,7 +4827,7 @@ function openThread(id) {
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
       ${thread.views} visualizzazioni
     </span>
-    <span>✍️ ${thread.author} · ${thread.ts ? formatTimeAgo(new Date(thread.ts).getTime()) : (thread.time || "Ora")}</span>
+    <span>✍️ ${thread.author} · ${(() => { const ts = thread.ts ? new Date(thread.ts).getTime() : 0; return ts ? `<span data-ts="${ts}">${_notifRelTime(ts)}</span>` : (thread.time || 'Ora'); })()}</span>
   `;
 
   // Compose avatar
@@ -4839,7 +4859,7 @@ function renderThreadMessages(id) {
         <div class="thread-msg-header">
           <span class="thread-msg-author ${msg.isTeam ? 'team-author' : ''}">${msg.author}</span>
           <span class="thread-msg-role">${msg.role}</span>
-          <span class="thread-msg-time">${msg.ts ? formatTimeAgo(new Date(msg.ts).getTime()) : (msg.time || "Ora")}</span>
+          <span class="thread-msg-time">${(() => { const ts = msg.ts ? new Date(msg.ts).getTime() : 0; return ts ? `<span data-ts="${ts}">${_notifRelTime(ts)}</span>` : (msg.time || 'Ora'); })()}</span>
           ${!msg.isTeam ? `<button onclick="reportContentById('reply','reply_${idx}')" style="background:none;border:none;color:var(--red);opacity:0.5;cursor:pointer;font-size:0.62rem;margin-left:auto;">🚩 Segnala</button>` : ''}
         </div>
         <div class="thread-msg-text">${msg.text}</div>
@@ -4889,7 +4909,26 @@ async function submitThreadReply() {
   THREAD_MESSAGES[currentThreadId].push(newReply);
 
   const thread = DISCUSSIONS.find(d => d.id === currentThreadId);
-  if (thread) { thread.replies++; thread.lastReply = `${currentUser.name.split(' ')[0]} · Ora`; }
+  if (thread) {
+    thread.replies++;
+    thread.lastReply = `${currentUser.name.split(' ')[0]} · Ora`;
+    // Aggiorna il contatore risposte nell'header del thread overlay in tempo reale
+    const detailInfo = document.getElementById('threadDetailInfo');
+    if (detailInfo) {
+      const ts = thread.ts ? new Date(thread.ts).getTime() : 0;
+      detailInfo.innerHTML = `
+        <span>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
+          ${thread.replies} risposte
+        </span>
+        <span>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+          ${thread.views} visualizzazioni
+        </span>
+        <span>✍️ ${thread.author} · ${ts ? `<span data-ts="${ts}">${_notifRelTime(ts)}</span>` : (thread.time || 'Ora')}</span>
+      `;
+    }
+  }
 
   input.value = '';
   renderThreadMessages(currentThreadId);
@@ -4960,12 +4999,12 @@ async function submitNewThread() {
   const tempId = Date.now();
   DISCUSSIONS.unshift({
     id: tempId, category: cat, title,
-    author: shortName, time: 'Ora', replies: 0, views: 1, pinned: false,
+    author: shortName, time: 'Ora', ts: new Date().toISOString(), replies: 0, views: 1, pinned: false,
     lastReply: 'Nessuna risposta ancora'
   });
   THREAD_MESSAGES[tempId] = [{
     author: shortName, initial: currentUser.initial, role: currentUser.title,
-    isTeam: currentUser.role === 'team', time: 'Ora', text: body, isOp: true, reactions: []
+    isTeam: currentUser.role === 'team', time: 'Ora', ts: new Date().toISOString(), text: body, isOp: true, reactions: []
   }];
 
   closeNewThreadModal();
@@ -7298,15 +7337,18 @@ function markPostRead(postId) {
 function countUserComments() {
   if (!currentUser) return 0;
   const name = currentUser.name;
+  const shortName = name.split(' ')[0] + ' ' + (name.split(' ')[1]||'?')[0] + '.';
   let n = 0;
   FEED_POSTS.forEach(p => {
-    if (p.commentsData) n += p.commentsData.filter(c => c.author === name).length;
+    if (p.commentsData) n += p.commentsData.filter(c => c.author === name || c.author === shortName || (currentUser.email && c.email === currentUser.email)).length;
   });
   return n;
 }
 function countUserDiscussions() {
   if (!currentUser) return 0;
-  return DISCUSSIONS.filter(d => d.author === currentUser.name).length;
+  const name = currentUser.name;
+  const shortName = name.split(' ')[0] + ' ' + (name.split(' ')[1]||'?')[0] + '.';
+  return DISCUSSIONS.filter(d => d.author === name || d.author === shortName).length;
 }
 
 /* IntersectionObserver: marca i post come letti quando scorrono nella viewport */
@@ -7803,18 +7845,21 @@ function renderModeration() {
     if (REMOVED_CONTENT.length === 0) {
       tabContent = '<div style="text-align:center; padding:3rem; color:var(--muted); font-size:0.8rem;">Nessun contenuto rimosso.</div>';
     } else {
-      tabContent = REMOVED_CONTENT.map(r => `
+      tabContent = REMOVED_CONTENT.map(r => {
+        const ts = r.ts || 0;
+        const removedTimeStr = ts ? _notifRelTime(ts) : (r.removedAt || 'Ora');
+        return `
         <div class="report-card" style="border-left:3px solid rgba(200,80,106,0.4); opacity:0.85;">
           <div class="report-header">
             <span class="report-type" style="background:rgba(200,80,106,0.1);color:var(--red);">${r.type || 'Contenuto rimosso'}</span>
             <span style="font-size:0.7rem; color:var(--muted);">Rimosso da: <strong style="color:var(--light)">${r.removedBy}</strong></span>
-            <span style="font-size:0.7rem; color:var(--muted2); margin-left:auto;">${r.removedAt}</span>
+            <span style="font-size:0.7rem; color:var(--muted2); margin-left:auto;" ${ts ? `data-ts="${ts}"` : ''}>${removedTimeStr}</span>
           </div>
           <div style="font-size:0.72rem; color:var(--muted); margin-bottom:0.4rem;">🎯 ${r.target}</div>
           <div class="report-content" style="text-decoration:line-through; opacity:0.6;">${r.content}</div>
           <div style="font-size:0.68rem;color:var(--muted2);margin-top:0.4rem;">Autore: ${r.authorName}</div>
         </div>
-      `).join('');
+      `}).join('');
     }
   } else if (_modTabActive === 'log') {
     if (MOD_LOG.length === 0) {
@@ -7865,7 +7910,7 @@ function resolveReport(id, action) {
       authorName: report.authorName || report.target,
       authorEmail: report.authorEmail || '',
       removedBy: currentUser ? currentUser.name : 'Team',
-      removedAt: 'Ora',
+      removedAt: _notifRelTime(Date.now()),
       ts: Date.now(),
       sourceType: report.sourceType,
       sourceId: report.sourceId
@@ -8832,6 +8877,9 @@ function switchModTab(tab) {
 function removeContentFromPlatform(sourceType, sourceId) {
   if (!sourceId) return;
   const idNum = Number(sourceId);
+  // Registra nel set persistente per filtrare dopo refresh
+  _REMOVED_IDS.add(`${sourceType}:${sourceId}`);
+  if (idNum) _REMOVED_IDS.add(`${sourceType}:${idNum}`);
   if (sourceType === 'post') {
     const idx = FEED_POSTS.findIndex(p => p.id === idNum || p.id === sourceId);
     if (idx > -1) { FEED_POSTS.splice(idx, 1); renderFeed(); renderFeedPreview(); }
@@ -8857,6 +8905,7 @@ function removeContentFromPlatform(sourceType, sourceId) {
       if (ri > -1) { arr.splice(ri, 1); if (currentThreadId) renderThreadMessages(currentThreadId); }
     });
   }
+  saveCommunityCache();
 }
 
 function reportContent(sourceType, sourceId, authorName, authorEmail, contentText, isTeam) {
@@ -9224,6 +9273,7 @@ function saveModData() {
     localStorage.setItem(MOD_REMOVED_KEY, JSON.stringify(REMOVED_CONTENT));
     localStorage.setItem(MOD_LOG_KEY, JSON.stringify(MOD_LOG.slice(0, 200)));
     localStorage.setItem(MOD_BANNED_KEY, JSON.stringify([...BANNED_USERS]));
+    localStorage.setItem(MOD_REMOVED_IDS_KEY, JSON.stringify([..._REMOVED_IDS]));
   } catch(e) {}
 }
 
@@ -9237,6 +9287,8 @@ function loadModData() {
     if (l) MOD_LOG = JSON.parse(l);
     const b = localStorage.getItem(MOD_BANNED_KEY);
     if (b) BANNED_USERS = new Set(JSON.parse(b));
+    const ri = localStorage.getItem(MOD_REMOVED_IDS_KEY);
+    if (ri) _REMOVED_IDS = new Set(JSON.parse(ri));
   } catch(e) {}
 }
 
