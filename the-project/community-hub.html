@@ -3012,6 +3012,12 @@ let SURVEYS = [];
 let REPORTS = [];
 // Segnalazioni caricate dinamicamente — nessun valore statico
 
+/* ── Stato commenti aperti (bug fix: previene chiusura automatica) ── */
+let _openCommentIds = new Set(); // IDs dei post con commenti aperti
+
+/* ── Attività globali condivise (bug fix: stessa lista per tutti) ── */
+let GLOBAL_ACTIVITIES = []; // array in-memory condiviso via Supabase RT
+
 let REMOVED_CONTENT = [];
 // Contenuti rimossi dal team
 
@@ -3500,6 +3506,9 @@ function initApp() {
   // Avvia ticker aggiornamento tempi relativi notifiche
   _startNotifTimeTicker();
 
+  // BUG FIX #1: Carica attività globali da Supabase (sorgente condivisa per tutti gli utenti)
+  setTimeout(() => _loadGlobalActivitiesFromSupabase(), 500);
+
   // Simulate real-time activity
   // Avvia presenza real-time: heartbeat immediato + timer + Firebase
   startPresenceSystem();
@@ -3535,6 +3544,7 @@ function initApp() {
     _sbChannels['notifications_rt'] = notifCh;
 
     // Ascolta attività community in tempo reale (feed attività dashboard)
+    // BUG FIX #1: tutti gli utenti ricevono le stesse attività dal canale globale
     sbOff('community_activity');
     const actCh = _sb.channel('community_activity_rt')
       .on('postgres_changes', {
@@ -3542,11 +3552,54 @@ function initApp() {
       }, (payload) => {
         const a = payload.new;
         if (!a || !a.text) return;
+        // Evita duplicati: controlla se questa attività è già nell'array globale
+        const tsMs = a.created_at ? new Date(a.created_at).getTime() : Date.now();
+        const isDuplicate = GLOBAL_ACTIVITIES.some(g => g.text === a.text && Math.abs(g.ts - tsMs) < 5000);
+        if (isDuplicate) return;
         // Non mostrare l'attività dell'utente corrente (già loggata localmente)
         if (currentUser && a.user_email && a.user_email.toLowerCase() === currentUser.email.toLowerCase()) return;
-        logActivity(a.dot_color || 'blue', a.text);
+        // Aggiungi direttamente a GLOBAL_ACTIVITIES (non via logActivity per evitare riscrittura Supabase)
+        GLOBAL_ACTIVITIES.unshift({ dotColor: a.dot_color || 'blue', text: a.text, ts: tsMs });
+        if (GLOBAL_ACTIVITIES.length > ACTIVITY_MAX) GLOBAL_ACTIVITIES = GLOBAL_ACTIVITIES.slice(0, ACTIVITY_MAX);
+        const dashPanel = document.getElementById('panel-dashboard');
+        if (dashPanel && dashPanel.classList.contains('active')) renderActivityFeed();
       }).subscribe();
     _sbChannels['community_activity'] = actCh;
+
+    // BUG FIX #4: Ascolta segnalazioni in tempo reale (solo per il team)
+    if (currentUser && currentUser.role === 'team') {
+      sbOff('community_reports');
+      const reportsCh = _sb.channel('community_reports_rt')
+        .on('postgres_changes', {
+          event: 'INSERT', schema: 'public', table: 'community_reports'
+        }, (payload) => {
+          const r = payload.new;
+          if (!r) return;
+          const isDuplicate = REPORTS.some(rep => String(rep.id) === String(r.report_id || r.id));
+          if (isDuplicate) return;
+          REPORTS.unshift({
+            id:            r.report_id || r.id,
+            type:          r.type || '',
+            reporter:      r.reporter || '',
+            reporterEmail: r.reporter_email || '',
+            target:        r.target || '',
+            content:       r.content || '',
+            time:          'Ora',
+            ts:            r.created_at ? new Date(r.created_at).getTime() : Date.now(),
+            sourceType:    r.source_type || '',
+            sourceId:      r.source_id || '',
+            authorName:    r.author_name || '',
+            severity:      r.severity || 'medium',
+            isAuto:        false
+          });
+          const modBadge = document.getElementById('modBadge');
+          if (modBadge) { modBadge.textContent = REPORTS.length; modBadge.classList.remove('hidden'); }
+          const modPanel = document.getElementById('panel-moderation');
+          if (modPanel && modPanel.classList.contains('active')) renderModeration();
+          showToast('amber', '🚩', 'Nuova segnalazione ricevuta!');
+        }).subscribe();
+      _sbChannels['community_reports'] = reportsCh;
+    }
   }
 
   // Carica notifiche dalla cache locale (persistenza cross-sessione)
@@ -3598,7 +3651,8 @@ function navigateToFeed() {
 }
 
 function showPanel(id, navEl) {
-  // Blocca pannelli admin per ruoli non-team
+  // BUG FIX #2: Chiudi tutti i commenti aperti quando si cambia canale
+  _openCommentIds.clear();
   const adminPanels = ['broadcast', 'members', 'moderation', 'analytics'];
   if (adminPanels.includes(id) && currentUser && currentUser.role !== 'team') {
     showToast('red', '\uD83D\uDD12', 'Accesso non autorizzato.');
@@ -3729,7 +3783,8 @@ function showPanel(id, navEl) {
     clearInterval(window._analyticsPollTimer);
   }
   if (id === 'moderation' && currentUser && currentUser.role === 'team') {
-    renderModeration();
+    // BUG FIX #4: carica segnalazioni da Supabase prima di renderizzare
+    _loadReportsFromSupabase().then(() => renderModeration());
   }
   if (id === 'members' && currentUser && currentUser.role === 'team') {
     // Carica immediato + polling ogni 15s finché il pannello è aperto
@@ -3928,12 +3983,21 @@ function applyRemoteData(data) {
   // Sempre sovrascrive — nessun fallback su dati statici
   if (data.hasOwnProperty('posts') && Array.isArray(data.posts)) {
     const likedSet = new Set(FEED_POSTS.filter(p => p.liked).map(p => p.id));
+    // BUG FIX #3: preserva commenti locali ottimistici se più recenti del server
+    const localCommentsMap = {};
+    FEED_POSTS.forEach(p => { localCommentsMap[p.id] = p.commentsData || []; });
     FEED_POSTS = data.posts
       .filter(p => !_REMOVED_IDS.has(`post:${p.id}`) && !_REMOVED_IDS.has(`post:${Number(p.id)}`))
       .map(p => ({
         ...p,
         liked:       likedSet.has(p.id) || (p.likedBy && currentUser && p.likedBy.includes(currentUser.name)),
-        commentsData: (p.commentsData || []).filter(c => !_REMOVED_IDS.has(`comment:${c.id}`)),
+        commentsData: (() => {
+          const serverComments = (p.commentsData || []).filter(c => !_REMOVED_IDS.has(`comment:${c.id}`));
+          const localComments  = localCommentsMap[p.id] || [];
+          // Preserva commenti locali se il server ne ha meno (ottimistic update)
+          return localComments.length > serverComments.length ? localComments : serverComments;
+        })(),
+        comments: Math.max(p.comments || 0, (localCommentsMap[p.id] || []).length),
         // Preserva/inferisce isTeam per Ultimi Aggiornamenti
         isTeam: p.isTeam || !!(p.role && (p.role.toLowerCase().includes('team') || p.role.toLowerCase().includes('admin') || p.role.toLowerCase().includes('fondatore') || p.role.toLowerCase().includes('founder')))
       }));
@@ -3942,7 +4006,12 @@ function applyRemoteData(data) {
   // ── Discussioni ──────────────────────────────────────────────────
   // Sempre sovrascrive — se GAS risponde con array vuoto, DISCUSSIONS è [] (nessun fallback statico)
   if (data.hasOwnProperty('discussions') && Array.isArray(data.discussions)) {
-    DISCUSSIONS = data.discussions.filter(d => !_REMOVED_IDS.has(`thread:${d.id}`) && !_REMOVED_IDS.has(`thread:${Number(d.id)}`));
+    // BUG FIX #5: preserva lastReplyTs locale prima di sovrascrivere con dati server
+    const localDiscMap = {};
+    DISCUSSIONS.forEach(d => { if (d.lastReplyTs) localDiscMap[d.id] = d.lastReplyTs; });
+    DISCUSSIONS = data.discussions
+      .filter(d => !_REMOVED_IDS.has(`thread:${d.id}`) && !_REMOVED_IDS.has(`thread:${Number(d.id)}`))
+      .map(d => ({ ...d, lastReplyTs: localDiscMap[d.id] || d.lastReplyTs || null }));
   }
 
   // ── Listing Esclusivi ─────────────────────────────────────────────
@@ -4013,12 +4082,8 @@ function applyRemoteData(data) {
   if (pid === 'surveys')     renderSurveys();
   if (pid === 'listings')    renderListings();
   if (pid === 'dashboard')   {
-    // Se il log locale è vuoto, costruisci attività dai dati reali disponibili
-    try {
-      const raw = localStorage.getItem('lh360_activity_log');
-      const logEmpty = !raw || JSON.parse(raw).length === 0;
-      if (logEmpty) _buildActivityFromRealData();
-    } catch(_e) { _buildActivityFromRealData(); }
+    // BUG FIX #1: usa GLOBAL_ACTIVITIES come sorgente
+    if (GLOBAL_ACTIVITIES.length === 0) _buildActivityFromRealData();
     renderActivityFeed();
     renderFeedPreview();
   }
@@ -4106,14 +4171,11 @@ async function pollCommunityUpdates() {
       // Posts/discussions ogni 2 cicli (≈6s) — presenza aggiornata ogni ciclo (3s)
       if (_pollCycle % 2 === 0) {
         applyRemoteData(data);
-        // Se il dashboard è attivo, ricostruisci activity se log è scarso
+        // BUG FIX #1: usa GLOBAL_ACTIVITIES (non localStorage) per il feed attività
         const dashActive = document.getElementById('panel-dashboard')?.classList.contains('active');
         if (dashActive) {
-          try {
-            const raw = localStorage.getItem('lh360_activity_log');
-            const logLen = raw ? JSON.parse(raw).length : 0;
-            if (logLen < 3) _buildActivityFromRealData();
-          } catch(_e) {}
+          if (GLOBAL_ACTIVITIES.length === 0) _buildActivityFromRealData();
+          renderActivityFeed();
         }
       }
     }
@@ -4317,12 +4379,12 @@ const ACTIVITY_DAYS    = 14;
 
 function logActivity(dotColor, text) {
   const entry = { dotColor, text, ts: Date.now() };
+  // BUG FIX #1: usa array globale in-memoria invece di localStorage per sincronizzazione tra utenti
+  GLOBAL_ACTIVITIES.unshift(entry);
+  if (GLOBAL_ACTIVITIES.length > ACTIVITY_MAX) GLOBAL_ACTIVITIES = GLOBAL_ACTIVITIES.slice(0, ACTIVITY_MAX);
+  // Mantieni anche localStorage come fallback offline
   try {
-    const raw = localStorage.getItem(ACTIVITY_LOG_KEY);
-    let log = raw ? JSON.parse(raw) : [];
-    log.unshift(entry);
-    if (log.length > ACTIVITY_MAX) log = log.slice(0, ACTIVITY_MAX);
-    localStorage.setItem(ACTIVITY_LOG_KEY, JSON.stringify(log));
+    localStorage.setItem(ACTIVITY_LOG_KEY, JSON.stringify(GLOBAL_ACTIVITIES.slice(0, 20)));
   } catch(e) {}
   // Aggiorna il feed se la dashboard è visibile
   const dashPanel = document.getElementById('panel-dashboard');
@@ -4346,6 +4408,7 @@ function formatTimeAgo(ts) {
    RENDER ATTIVITÀ RECENTE (dinamico)
 ═══════════════════════════════════════════ */
 function clearActivityLog() {
+  GLOBAL_ACTIVITIES = [];
   try { localStorage.removeItem(ACTIVITY_LOG_KEY); } catch(e) {}
   renderActivityFeed();
   showToast('blue', '🗑️', 'Attività recente svuotata');
@@ -4356,20 +4419,11 @@ function renderActivityFeed() {
   if (!act) return;
 
   const cutoff = Date.now() - ACTIVITY_DAYS * 24 * 60 * 60 * 1000;
-  let activities = [];
-
-  // Leggi dal log persistente
-  try {
-    const raw = localStorage.getItem(ACTIVITY_LOG_KEY);
-    if (raw) {
-      activities = JSON.parse(raw)
-        .filter(e => e.ts >= cutoff)
-        .slice(0, 5)
-        .map(e => ({ dot: e.dotColor, text: e.text, time: formatTimeAgo(e.ts) }));
-    }
-  } catch(e) {}
-
-  // Nessun seed statico — mostra solo attività reali del log persistente
+  // BUG FIX #1: leggi da GLOBAL_ACTIVITIES (condiviso tra tutti gli utenti via Supabase RT)
+  const activities = GLOBAL_ACTIVITIES
+    .filter(e => e.ts >= cutoff)
+    .slice(0, 5)
+    .map(e => ({ dot: e.dotColor, text: e.text, time: formatTimeAgo(e.ts) }));
 
   if (activities.length === 0) {
     act.innerHTML = '<div style="font-size:0.75rem;color:var(--muted2);text-align:center;padding:1rem 0;">Nessuna attività recente.</div>';
@@ -4526,37 +4580,122 @@ async function _writeActivityToSupabase(dotColor, text) {
   } catch(_e) { /* silenzioso — tabella potrebbe non esistere, logActivity locale è sufficiente */ }
 }
 
-/* ── Inizializza attività dalla community real-data (all'avvio) ── */
-function _buildActivityFromRealData() {
-  const allActivities = [];
-  const now = Date.now();
+/* ── BUG FIX #4: Scrivi segnalazione su Supabase (visibile al team di moderazione) ── */
+async function _writeReportToSupabase(report) {
+  if (!_sbReady) return;
+  try {
+    await _sb.from('community_reports').insert({
+      report_id:      String(report.id),
+      type:           report.type || '',
+      reporter:       report.reporter || '',
+      reporter_email: report.reporterEmail || '',
+      target:         report.target || '',
+      content:        report.content || '',
+      source_type:    report.sourceType || '',
+      source_id:      String(report.sourceId || ''),
+      author_name:    report.authorName || '',
+      severity:       report.severity || 'medium',
+      created_at:     new Date().toISOString()
+    });
+  } catch(_e) { /* silenzioso — tabella potrebbe non esistere */ }
+}
 
-  // Ultimi post del team
-  FEED_POSTS
-    .filter(p => p.role && (p.role.toLowerCase().includes('team') || p.role.toLowerCase().includes('admin')))
-    .slice(0, 3)
-    .forEach(p => {
-      const authorName = (p.author || 'Team').split(' ')[0];
-      allActivities.push({
-        dotColor: 'gold',
-        text: `<strong>${authorName}</strong> ha pubblicato: ${p.title || 'un aggiornamento'}`,
-        ts: p.ts ? new Date(p.ts).getTime() : now - 3600000
+/* ── BUG FIX #4: Carica segnalazioni da Supabase per il pannello Moderazione ── */
+async function _loadReportsFromSupabase() {
+  if (!_sbReady) return;
+  try {
+    const { data, error } = await _sb
+      .from('community_reports')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(100);
+    if (!error && Array.isArray(data) && data.length > 0) {
+      // Merge: preserva REPORTS locali + aggiungi quelli da Supabase
+      const remoteReports = data.map(r => ({
+        id:            r.report_id || r.id,
+        type:          r.type || '',
+        reporter:      r.reporter || '',
+        reporterEmail: r.reporter_email || '',
+        target:        r.target || '',
+        content:       r.content || '',
+        time:          r.created_at ? _notifRelTime(new Date(r.created_at).getTime()) : 'Ora',
+        ts:            r.created_at ? new Date(r.created_at).getTime() : Date.now(),
+        sourceType:    r.source_type || '',
+        sourceId:      r.source_id || '',
+        authorName:    r.author_name || '',
+        severity:      r.severity || 'medium',
+        isAuto:        false
+      }));
+      // Evita duplicati tra reports locali e remoti
+      const localIds = new Set(REPORTS.map(r => String(r.id)));
+      remoteReports.forEach(r => {
+        if (!localIds.has(String(r.id))) REPORTS.push(r);
       });
-    });
+      REPORTS.sort((a, b) => (b.ts || 0) - (a.ts || 0));
+      // Aggiorna badge moderazione
+      const modBadge = document.getElementById('modBadge');
+      if (modBadge) {
+        modBadge.textContent = REPORTS.length;
+        if (REPORTS.length > 0) modBadge.classList.remove('hidden');
+      }
+    }
+  } catch(_e) {}
+}
 
-  // Ultime discussioni
-  DISCUSSIONS.slice(0, 3).forEach(d => {
-    const authorName = (d.author || 'Membro').split(' ')[0];
-    allActivities.push({
-      dotColor: 'blue',
-      text: `<strong>${authorName}</strong> ha avviato: ${d.title}`,
-      ts: now - 7200000
-    });
-  });
+/* ── Inizializza attività dalla community real-data (all'avvio) ── */
+/* ── Carica attività globali da Supabase all'avvio ── */
+async function _loadGlobalActivitiesFromSupabase() {
+  if (!_sbReady || !currentUser) {
+    // Fallback: carica da localStorage se Supabase non disponibile
+    try {
+      const raw = localStorage.getItem(ACTIVITY_LOG_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          GLOBAL_ACTIVITIES = parsed;
+          renderActivityFeed();
+        }
+      }
+    } catch(e) {}
+    return;
+  }
+  try {
+    const { data, error } = await _sb
+      .from('community_activity')
+      .select('dot_color, text, created_at')
+      .order('created_at', { ascending: false })
+      .limit(20);
+    if (!error && Array.isArray(data) && data.length > 0) {
+      const cutoff = Date.now() - ACTIVITY_DAYS * 24 * 60 * 60 * 1000;
+      // Merge con attività già locali, de-duplicando
+      const remoteActivities = data.map(a => ({
+        dotColor: a.dot_color || 'blue',
+        text: a.text,
+        ts: a.created_at ? new Date(a.created_at).getTime() : Date.now()
+      })).filter(a => a.ts >= cutoff);
+      // Sostituisci array globale con dati del server (singola sorgente di verità)
+      GLOBAL_ACTIVITIES = remoteActivities;
+      renderActivityFeed();
+    }
+  } catch(e) {}
+}
 
-  // Ordina per ts decrescente e prendi i 5 più recenti
-  allActivities.sort((a, b) => b.ts - a.ts);
-  allActivities.slice(0, 5).forEach(a => logActivity(a.dotColor, a.text));
+function _buildActivityFromRealData() {
+  // BUG FIX #1: disabilitato — le attività vengono caricate da Supabase (sorgente globale condivisa)
+  // Questo evita duplicati e garantisce la stessa lista per tutti gli utenti
+  if (GLOBAL_ACTIVITIES.length === 0) {
+    // Solo se Supabase non ha restituito dati, usa fallback da localStorage
+    try {
+      const raw = localStorage.getItem(ACTIVITY_LOG_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          GLOBAL_ACTIVITIES = parsed;
+          renderActivityFeed();
+        }
+      }
+    } catch(e) {}
+  }
 }
 
 
@@ -4644,7 +4783,14 @@ function renderFeed() {
     </div>`;
   }).join('');
   // Avvia tracking lettura post tramite IntersectionObserver
-  requestAnimationFrame(() => initFeedReadTracking());
+  requestAnimationFrame(() => {
+    initFeedReadTracking();
+    // BUG FIX #2: Ripristina sezioni commenti aperte dopo il re-render
+    _openCommentIds.forEach(postId => {
+      const el = document.getElementById('comments-' + postId);
+      if (el) el.classList.add('open');
+    });
+  });
 }
 
 function toggleLike(postId, btn) {
@@ -4681,7 +4827,14 @@ function toggleLike(postId, btn) {
 
 function toggleComments(postId) {
   const el = document.getElementById('comments-' + postId);
-  if (el) el.classList.toggle('open');
+  if (!el) return;
+  if (el.classList.contains('open')) {
+    el.classList.remove('open');
+    _openCommentIds.delete(postId);
+  } else {
+    el.classList.add('open');
+    _openCommentIds.add(postId);
+  }
 }
 
 function submitComment(e, postId) { if(e.key==='Enter') submitCommentBtn(postId, e.target); }
@@ -4711,6 +4864,8 @@ function submitCommentBtn(postId, inputEl) {
   if (commentsContainer) {
     renderPostComments(post, commentsContainer);
     commentsContainer.classList.add('open');
+    // BUG FIX #2/#3: Mantieni la sezione commenti aperta nel set
+    _openCommentIds.add(postId);
   }
   showToast('green', '💬', 'Commento pubblicato!');
   logActivity('green', `<strong>${currentUser.name.split(' ')[0]}</strong> ha commentato nel feed`);
@@ -4792,7 +4947,15 @@ function renderDiscussions(filter) {
         </div>
       </div>
       <div class="thread-footer">
-        <div class="thread-last-reply">💬 <span>${d.lastReply}</span></div>
+        <div class="thread-last-reply">💬 <span>${(() => {
+          if (!d.lastReplyTs && d.lastReply === 'Nessuna risposta ancora') return d.lastReply;
+          // BUG FIX #5: usa lastReplyTs per calcolare tempo relativo dinamicamente
+          if (d.lastReplyTs) {
+            const authorPart = d.lastReply ? d.lastReply.split(' · ')[0] : '';
+            return `${authorPart} · <span data-ts="${d.lastReplyTs}">${formatTimeAgo(d.lastReplyTs)}</span>`;
+          }
+          return d.lastReply;
+        })()}</span></div>
         <div>${d.author} · ${(() => { const ts = d.ts ? new Date(d.ts).getTime() : 0; return ts ? `<span data-ts="${ts}">${_notifRelTime(ts)}</span>` : (d.time || 'Ora'); })()}</div>
       </div>
     </div>
@@ -4810,6 +4973,9 @@ function openThread(id) {
   const thread = DISCUSSIONS.find(d => d.id === id);
   if (!thread) return;
   currentThreadId = id;
+
+  // BUG FIX #5: incrementa visualizzazioni solo quando un utente apre il thread
+  thread.views = (thread.views || 0) + 1;
 
   // Category tag
   const catLabels = { feedback:'Feedback', question:'Domanda', idea:'Idea', general:'Generale' };
@@ -4911,7 +5077,10 @@ async function submitThreadReply() {
   const thread = DISCUSSIONS.find(d => d.id === currentThreadId);
   if (thread) {
     thread.replies++;
-    thread.lastReply = `${currentUser.name.split(' ')[0]} · Ora`;
+    const replyTs = Date.now();
+    thread.lastReplyTs = replyTs;
+    // BUG FIX #5: usa timestamp per calcolare il tempo relativo dinamicamente
+    thread.lastReply = `${currentUser.name.split(' ')[0]} · ${formatTimeAgo(replyTs)}`;
     // Aggiorna il contatore risposte nell'header del thread overlay in tempo reale
     const detailInfo = document.getElementById('threadDetailInfo');
     if (detailInfo) {
@@ -4999,8 +5168,8 @@ async function submitNewThread() {
   const tempId = Date.now();
   DISCUSSIONS.unshift({
     id: tempId, category: cat, title,
-    author: shortName, time: 'Ora', ts: new Date().toISOString(), replies: 0, views: 1, pinned: false,
-    lastReply: 'Nessuna risposta ancora'
+    author: shortName, time: 'Ora', ts: new Date().toISOString(), replies: 0, views: 0, pinned: false,
+    lastReply: 'Nessuna risposta ancora', lastReplyTs: null
   });
   THREAD_MESSAGES[tempId] = [{
     author: shortName, initial: currentUser.initial, role: currentUser.title,
@@ -5046,7 +5215,7 @@ async function submitNewThread() {
   autoModerateText(title + ' ' + body, 'thread', String(tempId), shortName, currentUser.email);
 
   // Auto-open the new thread
-  setTimeout(() => openThread(newId), 200);
+  setTimeout(() => openThread(tempId), 200);
 }
 
 function switchTab(context, value, el) {
@@ -8932,6 +9101,8 @@ function reportContent(sourceType, sourceId, authorName, authorEmail, contentTex
   REPORTS.push(report);
   saveModData();
   addModLog('report', `${sourceType} di ${authorName}`, 'Segnalazione manuale da ' + shortName);
+  // BUG FIX #4: invia segnalazione a Supabase
+  _writeReportToSupabase(report);
   const modBadge = document.getElementById('modBadge');
   if (modBadge) { modBadge.textContent = REPORTS.length; modBadge.classList.remove('hidden'); }
   showToast('green','✓','Segnalazione inviata al team di moderazione.');
@@ -9561,6 +9732,8 @@ function submitReport() {
   REPORTS.push(report);
   saveModData();
   addModLog('report', `${sourceType} di ${authorName}`, `${category}${extraNote} — da ${shortName}`);
+  // BUG FIX #4: invia segnalazione a Supabase per sincronizzazione in tempo reale con il team
+  _writeReportToSupabase(report);
   const modBadge = document.getElementById('modBadge');
   if (modBadge) { modBadge.textContent = REPORTS.length; modBadge.classList.remove('hidden'); }
   showToast('green','✓','Segnalazione inviata al team di moderazione.');
