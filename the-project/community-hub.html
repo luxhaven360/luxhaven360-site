@@ -4645,8 +4645,7 @@ async function _loadReportsFromSupabase() {
 /* ── Inizializza attività dalla community real-data (all'avvio) ── */
 /* ── Carica attività globali da Supabase all'avvio ── */
 async function _loadGlobalActivitiesFromSupabase() {
-  if (!_sbReady || !currentUser) {
-    // Fallback: carica da localStorage se Supabase non disponibile
+  const _fallbackToLocal = () => {
     try {
       const raw = localStorage.getItem(ACTIVITY_LOG_KEY);
       if (raw) {
@@ -4657,27 +4656,34 @@ async function _loadGlobalActivitiesFromSupabase() {
         }
       }
     } catch(e) {}
-    return;
-  }
+  };
+
+  if (!_sbReady || !currentUser) { _fallbackToLocal(); return; }
+
   try {
     const { data, error } = await _sb
       .from('community_activity')
       .select('dot_color, text, created_at')
       .order('created_at', { ascending: false })
       .limit(20);
-    if (!error && Array.isArray(data) && data.length > 0) {
+    // Se la tabella non esiste (404) o altro errore → usa localStorage
+    if (error || !Array.isArray(data)) { _fallbackToLocal(); return; }
+    if (data.length > 0) {
       const cutoff = Date.now() - ACTIVITY_DAYS * 24 * 60 * 60 * 1000;
-      // Merge con attività già locali, de-duplicando
       const remoteActivities = data.map(a => ({
         dotColor: a.dot_color || 'blue',
         text: a.text,
         ts: a.created_at ? new Date(a.created_at).getTime() : Date.now()
       })).filter(a => a.ts >= cutoff);
-      // Sostituisci array globale con dati del server (singola sorgente di verità)
-      GLOBAL_ACTIVITIES = remoteActivities;
-      renderActivityFeed();
+      if (remoteActivities.length > 0) {
+        GLOBAL_ACTIVITIES = remoteActivities;
+        renderActivityFeed();
+        return;
+      }
     }
-  } catch(e) {}
+    // Nessun dato remoto → usa localStorage
+    _fallbackToLocal();
+  } catch(e) { _fallbackToLocal(); }
 }
 
 function _buildActivityFromRealData() {
