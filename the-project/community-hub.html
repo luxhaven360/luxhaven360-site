@@ -4504,14 +4504,18 @@ function _initContentSnapshots() {
 /* ── Rileva nuovi contenuti e genera notifiche reali ── */
 function _detectNewContentAndNotify(data) {
   // 1. Nuovi post del team → notifica project_updates
+  // NOTA: logActivity NON viene chiamato qui — l'attività viene scritta su Supabase
+  // dall'autore e ricevuta via RT dagli altri. Chiamare logActivity qui causerebbe duplicati.
   FEED_POSTS.forEach(p => {
     if (!p.role) return;
     const isTeam = p.isTeam || (p.role && (p.role.toLowerCase().includes('team') || p.role.toLowerCase().includes('admin') || p.role.toLowerCase().includes('fondatore') || p.role.toLowerCase().includes('founder')));
     if (isTeam && !_lastKnownTeamPostIds.has(p.id)) {
       _lastKnownTeamPostIds.add(p.id);
-      addRealNotification('project_updates', '📢',
-        `Nuovo aggiornamento del team: <strong>${p.title || 'Annuncio'}</strong>`);
-      logActivity('gold', `<strong>Team LH360</strong> ha pubblicato: ${p.title || 'un aggiornamento'}`);
+      // FIX #2: notifica solo se non è l'autore del post
+      if (!currentUser || !p.author || !p.author.includes(currentUser.name.split(' ')[0])) {
+        addRealNotification('project_updates', '📢',
+          `Nuovo aggiornamento del team: <strong>${p.title || 'Annuncio'}</strong>`);
+      }
       // Badge "New" nel Feed
       const fb = document.getElementById('feedNewBadge'); if (fb) fb.classList.remove('hidden');
     }
@@ -4522,11 +4526,11 @@ function _detectNewContentAndNotify(data) {
     if (!_lastKnownDiscIds.has(d.id)) {
       _lastKnownDiscIds.add(d.id);
       _lastKnownThreadReplies[d.id] = d.replies || 0;
-      // Non notificare se la discussione è dell'utente corrente (già sa che l'ha creata)
+      // FIX #2: non notificare l'autore della propria discussione
       if (currentUser && d.author !== currentUser.name) {
         addRealNotification('new_discussions', '💬',
           `Nuova discussione da <strong>${(d.author||'').split(' ')[0]}</strong>: ${d.title}`);
-        logActivity('blue', `<strong>${(d.author||'').split(' ')[0]}</strong> ha avviato: ${d.title}`);
+        // FIX #1: NON chiamare logActivity qui — l'attività arriva via Supabase RT dall'autore
         // Aggiorna badge discussioni nella sidebar
         const discBadge = document.getElementById('discBadge');
         if (discBadge) {
@@ -4553,12 +4557,14 @@ function _detectNewContentAndNotify(data) {
   }
 
   // 4. Nuovi listing → notifica new_listings
+  // FIX #1: rimosso logActivity — attività scritta su Supabase dall'autore e ricevuta via RT
   LISTINGS.forEach(l => {
     if (!_lastKnownListingIds.has(l.id)) {
       _lastKnownListingIds.add(l.id);
-      addRealNotification('new_listings', '🏠',
-        `Nuova proprietà disponibile: <strong>${l.name || l.city || 'Listing esclusivo'}</strong>`);
-      logActivity('gold', `Nuovo listing aggiunto: <strong>${l.name || l.city || 'Proprietà esclusiva'}</strong>`);
+      if (!currentUser || l.author !== currentUser.name) {
+        addRealNotification('new_listings', '🏠',
+          `Nuova proprietà disponibile: <strong>${l.name || l.city || 'Listing esclusivo'}</strong>`);
+      }
       // Mostra badge "New" nella sidebar
       const lb = document.getElementById('listingsNewBadge');
       if (lb) lb.classList.remove('hidden');
@@ -4980,8 +4986,15 @@ function openThread(id) {
   if (!thread) return;
   currentThreadId = id;
 
-  // BUG FIX #5: incrementa visualizzazioni solo quando un utente apre il thread
+  // FIX #3: incrementa visualizzazioni SOLO quando un utente apre effettivamente il thread
+  // Non conteggia la prima apertura automatica dell'autore (risolto rimuovendo auto-open)
   thread.views = (thread.views || 0) + 1;
+  // Aggiorna la lista discussioni con il nuovo contatore (senza re-render completo)
+  const threadEl = document.querySelector(`.discussion-thread[onclick="openThread(${id})"]`);
+  if (threadEl) {
+    const viewStat = threadEl.querySelectorAll('.thread-stat')[1];
+    if (viewStat) viewStat.lastChild.textContent = ' ' + thread.views;
+  }
 
   // Category tag
   const catLabels = { feedback:'Feedback', question:'Domanda', idea:'Idea', general:'Generale' };
@@ -5185,10 +5198,14 @@ async function submitNewThread() {
   closeNewThreadModal();
   renderDiscussions();
   showToast('gold', '✏️', 'Thread pubblicato con successo!');
-  logActivity('blue', `<strong>${currentUser.name.split(' ')[0]}</strong> ha avviato una nuova discussione`);
-  // Scrivi attività su Supabase
-  _writeActivityToSupabase('blue', `<strong>${currentUser.name.split(' ')[0]}</strong> ha avviato: ${title}`);
-  // Aggiungi al set dei disc noti (evita auto-notifica)
+
+  // FIX #1/#2: una sola scrittura attività su Supabase (niente logActivity locale che duplicherebbe)
+  // L'autore vede l'attività grazie a logActivity; gli altri la ricevono via Supabase RT
+  const _actText = `<strong>${currentUser.name.split(' ')[0]}</strong> ha avviato: ${title}`;
+  logActivity('blue', _actText);
+  _writeActivityToSupabase('blue', _actText);
+
+  // Aggiungi al set dei disc noti (evita auto-notifica all'autore)
   _lastKnownDiscIds.add(tempId);
 
   // Aggiorna contatore discussioni nel profilo in tempo reale
@@ -5206,22 +5223,26 @@ async function submitNewThread() {
       const data = await fetch(url).then(r => r.json());
       if (data.success && data.discussion) {
         // Sostituisci tempId con ID reale del server
+        const realId = data.discussion.id;
         const idx = DISCUSSIONS.findIndex(d => d.id === tempId);
-        if (idx !== -1) DISCUSSIONS[idx].id = data.discussion.id;
+        if (idx !== -1) DISCUSSIONS[idx].id = realId;
         const msgs = THREAD_MESSAGES[tempId];
         if (msgs) {
-          THREAD_MESSAGES[data.discussion.id] = msgs;
+          THREAD_MESSAGES[realId] = msgs;
           delete THREAD_MESSAGES[tempId];
         }
+        // FIX #2: aggiungi l'ID reale a _lastKnownDiscIds così il poll successivo
+        // non rileva questo thread come "nuovo" e non genera una notifica all'autore
+        _lastKnownDiscIds.add(realId);
+        _lastKnownDiscIds.delete(tempId);
         saveCommunityCache();
       }
     } catch(e) { console.warn('[NewThread] GAS error:', e.message); }
   }
   // Auto-moderation nuovo thread
   autoModerateText(title + ' ' + body, 'thread', String(tempId), shortName, currentUser.email);
-
-  // Auto-open the new thread
-  setTimeout(() => openThread(tempId), 200);
+  // FIX #3: rimosso l'auto-open del thread — evita incremento errato del contatore visualizzazioni
+  // L'utente può aprire il thread manualmente dalla lista Discussioni
 }
 
 function switchTab(context, value, el) {
