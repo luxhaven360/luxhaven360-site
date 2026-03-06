@@ -2379,7 +2379,7 @@ body {
 
         <div class="card" style="padding:0;overflow:hidden;">
           <div style="overflow-x:auto;">
-          <table class="admin-table" style="min-width:700px;">
+          <table class="admin-table" style="min-width:820px;">
             <thead>
               <tr>
                 <th class="col-membro">Membro</th>
@@ -4266,7 +4266,7 @@ function toggleLike(postId, btn) {
 
   // Persisti su GAS in background
   if (GAS_URL && currentUser) {
-    const url = `${GAS_URL}?action=toggle_post_like&postId=${postId}&userName=${encodeURIComponent(currentUser.name)}`;
+    const url = `${GAS_URL}?action=toggle_post_like&postId=${postId}&userName=${encodeURIComponent(currentUser.name)}&email=${encodeURIComponent(currentUser.email)}`;
     fetch(url).then(r => r.json()).then(data => {
       // Correggi con il dato reale dal server (in caso di race condition)
       if (data.success) {
@@ -4331,7 +4331,7 @@ function submitCommentBtn(postId, inputEl) {
   if (GAS_URL && currentUser) {
     const url = `${GAS_URL}?action=add_post_comment&postId=${postId}` +
       `&author=${encodeURIComponent(shortName)}&initial=${encodeURIComponent(currentUser.initial)}` +
-      `&text=${encodeURIComponent(text)}`;
+      `&text=${encodeURIComponent(text)}&email=${encodeURIComponent(currentUser.email)}`;
     fetch(url).catch(() => {});
   }
 }
@@ -4522,7 +4522,8 @@ async function submitThreadReply() {
       const url = `${GAS_URL}?action=add_reply` +
         `&discId=${currentThreadId}&author=${encodeURIComponent(shortName)}` +
         `&initial=${encodeURIComponent(currentUser.initial)}&role=${encodeURIComponent(currentUser.title)}` +
-        `&text=${encodeURIComponent(text)}&isTeam=${currentUser.role === 'team'}`;
+        `&text=${encodeURIComponent(text)}&isTeam=${currentUser.role === 'team'}` +
+        `&email=${encodeURIComponent(currentUser.email)}`;
       await fetch(url);
       saveCommunityCache();
     } catch(e) { console.warn('[Reply] GAS error:', e.message); }
@@ -4591,7 +4592,7 @@ async function submitNewThread() {
         `&category=${encodeURIComponent(cat)}&title=${encodeURIComponent(title)}` +
         `&body=${encodeURIComponent(body)}&author=${encodeURIComponent(shortName)}` +
         `&initial=${encodeURIComponent(currentUser.initial)}&role=${encodeURIComponent(currentUser.title)}` +
-        `&isTeam=${currentUser.role === 'team'}`;
+        `&isTeam=${currentUser.role === 'team'}&email=${encodeURIComponent(currentUser.email)}`;
       const data = await fetch(url).then(r => r.json());
       if (data.success && data.discussion) {
         // Sostituisci tempId con ID reale del server
@@ -6533,7 +6534,7 @@ async function voteSurvey(surveyId, optionIndex) {
   // Persisti su GAS
   if (GAS_URL && currentUser) {
     try {
-      const url = `${GAS_URL}?action=save_vote&surveyId=${surveyId}&optionIdx=${optionIndex}&userName=${encodeURIComponent(currentUser.name)}`;
+      const url = `${GAS_URL}?action=save_vote&surveyId=${surveyId}&optionIdx=${optionIndex}&userName=${encodeURIComponent(currentUser.name)}&email=${encodeURIComponent(currentUser.email)}`;
       await fetch(url);
     } catch(e) { console.warn('[Vote] GAS error:', e.message); }
   }
@@ -7150,9 +7151,10 @@ function renderMembersTable() {
     const level    = m.level || m.role || 'candidate';
     const name     = m.name  || m.display_name || '—';
     const initial  = m.initial || (name[0] || '?').toUpperCase();
-    const email    = m.email || '';
-    const joined   = m.joined || m.created_at ? _formatDate(m.joined || m.created_at) : '—';
-    const lastAct  = m.last || m.last_active ? _timeAgo(m.last || m.last_active) : '—';
+    const email       = m.email || '';
+    const joined      = (m.joined || m.created_at) ? _formatDate(m.joined || m.created_at) : '—';
+    const lastLogin   = m.last_login    ? _timeAgo(m.last_login)    : '—';
+    const lastActivity = m.last_activity ? _timeAgo(m.last_activity) : (m.last || m.last_active ? _timeAgo(m.last || m.last_active) : '—');
 
     // Presenza in tempo reale
     const onlineRec = ONLINE_MEMBERS.find(o =>
@@ -7195,7 +7197,7 @@ function renderMembersTable() {
       </td>
       <td><span class="level-pill ${level}">${levelLabel}</span></td>
       <td style="color:var(--muted2);font-size:0.75rem;">${joined}</td>
-      <td style="color:var(--muted2);font-size:0.75rem;">${lastAct}</td>
+      <td style="color:var(--muted2);font-size:0.75rem;">${lastActivity}</td>
       <td>
         <span style="display:inline-flex;align-items:center;gap:0.3rem;font-size:0.72rem;">
           <span style="width:7px;height:7px;border-radius:50%;background:${statusDot};flex-shrink:0;"></span>
@@ -7247,25 +7249,23 @@ async function promoteMember(emailEnc, nameEnc, btnEl) {
     // Aggiorna localmente
     const m = REAL_MEMBERS.find(m => m.email === email);
     if (m) { m.level = 'founding'; m.role = 'founding'; }
-    else {
-      const md = MEMBERS_DATA.find(m => m.name === name);
-      if (md) md.level = 'founding';
-    }
     renderMembersTable();
     showToast('gold','⭐',`${name} promosso a Founding Member!`);
     logActivity('gold', `<strong>${name}</strong> è diventato Founding Member`);
     _writeActivityToSupabase('gold', `<strong>${name}</strong> è diventato Founding Member`);
-    // Notifica al membro
+    // Notifica al membro (Supabase) — errori silenziosi
     if (_sbReady) {
-      await _sb.from('notifications').insert({
-        user_email: email.toLowerCase(),
-        icon: 'gold', emoji: '⭐',
-        text: `Congratulazioni! Sei stato promosso a <strong>Founding Member</strong> da ${currentUser?.name || 'il Founder'}.`,
-        created_at: new Date().toISOString(), unread: true
-      }).catch(()=>{});
+      try {
+        await _sb.from('notifications').insert({
+          user_email: email.toLowerCase(),
+          icon: 'gold', emoji: '⭐',
+          text: `Congratulazioni! Sei stato promosso a <strong>Founding Member</strong> da ${currentUser?.name || 'il Founder'}.`,
+          created_at: new Date().toISOString(), unread: true
+        });
+      } catch(_sbErr) { /* silenzioso — Supabase non critico per questa operazione */ }
     }
   } catch(e) {
-    if (btnEl) { btnEl.disabled = false; btnEl.textContent = '↑ Promuovi'; }
+    console.warn('[promoteMember]', e.message);
     showToast('red','⚠️','Errore durante la promozione.');
   }
 }
@@ -7281,23 +7281,23 @@ async function demoteMember(emailEnc, nameEnc, btnEl) {
     }
     const m = REAL_MEMBERS.find(m => m.email === email);
     if (m) { m.level = 'candidate'; m.role = 'candidate'; }
-    else {
-      const md = MEMBERS_DATA.find(m => m.name === name);
-      if (md) md.level = 'candidate';
-    }
     renderMembersTable();
     showToast('amber','↓',`${name} retrocesso a Candidate.`);
     logActivity('amber', `<strong>${name}</strong> è tornato Founder Candidate`);
+    _writeActivityToSupabase('amber', `<strong>${name}</strong> è tornato Founder Candidate`);
+    // Notifica al membro (Supabase) — errori silenziosi
     if (_sbReady) {
-      await _sb.from('notifications').insert({
-        user_email: email.toLowerCase(),
-        icon: 'amber', emoji: '📋',
-        text: `Il tuo livello è stato aggiornato a <strong>Founder Candidate</strong> da ${currentUser?.name || 'il Founder'}.`,
-        created_at: new Date().toISOString(), unread: true
-      }).catch(()=>{});
+      try {
+        await _sb.from('notifications').insert({
+          user_email: email.toLowerCase(),
+          icon: 'amber', emoji: '📋',
+          text: `Il tuo livello è stato aggiornato a <strong>Founder Candidate</strong> da ${currentUser?.name || 'il Founder'}.`,
+          created_at: new Date().toISOString(), unread: true
+        });
+      } catch(_sbErr) { /* silenzioso — Supabase non critico per questa operazione */ }
     }
   } catch(e) {
-    if (btnEl) { btnEl.disabled = false; btnEl.textContent = '↓ Retrocedi'; }
+    console.warn('[demoteMember]', e.message);
     showToast('red','⚠️','Errore durante la retrocessione.');
   }
 }
