@@ -3515,6 +3515,8 @@ function initApp() {
 
   // Carica attività globali da Supabase (sorgente condivisa per tutti gli utenti)
   setTimeout(() => _loadGlobalActivitiesFromSupabase(), 500);
+  // VIEWS: carica conteggi reali da Supabase (sorgente unica condivisa per tutti gli utenti)
+  setTimeout(() => _loadThreadViewsFromSupabase(), 700);
   // FIX #3: pulizia automatica attività > 14 giorni (solo una volta per sessione)
   const _actCleanKey = 'lh360_act_lastclean';
   const _lastClean = parseInt(localStorage.getItem(_actCleanKey) || '0', 10);
@@ -3623,6 +3625,33 @@ function initApp() {
         saveCommunityCache();
       }).subscribe();
     _sbChannels['content_removals'] = removalsCh;
+
+    // VIEWS: Ascolta nuove views dei thread in tempo reale (aggiorna contatore per tutti)
+    sbOff('thread_views');
+    const viewsCh = _sb.channel('thread_views_rt')
+      .on('postgres_changes', {
+        event: 'INSERT', schema: 'public', table: 'thread_views'
+      }, (payload) => {
+        const r = payload.new;
+        if (!r || !r.thread_id) return;
+        // Aggiorna il contatore in DISCUSSIONS per tutti gli utenti in tempo reale
+        const disc = DISCUSSIONS.find(d => String(d.id) === String(r.thread_id));
+        if (disc) {
+          disc.views = (disc.views || 0) + 1;
+          // Aggiorna il DOM direttamente senza re-render completo
+          const el = document.querySelector(`.discussion-thread[onclick="openThread(${disc.id})"]`);
+          if (el) {
+            const stats = el.querySelectorAll('.thread-stat');
+            if (stats[1]) stats[1].lastChild.textContent = ' ' + disc.views;
+          }
+          // Aggiorna anche il pannello dettaglio thread se aperto
+          if (currentThreadId && String(currentThreadId) === String(r.thread_id)) {
+            const viewsEl = document.querySelector('#threadDetailStats .thread-stat:nth-child(2)');
+            if (viewsEl) viewsEl.lastChild.textContent = ' ' + disc.views + ' visualizzazioni';
+          }
+        }
+      }).subscribe();
+    _sbChannels['thread_views'] = viewsCh;
 
     // BUG FIX #4: Ascolta segnalazioni in tempo reale (solo per il team)
     if (currentUser && currentUser.role === 'team') {      sbOff('community_reports');
@@ -3820,6 +3849,7 @@ function showPanel(id, navEl) {
     if (discBadge) { discBadge.textContent = '0'; discBadge.classList.add('hidden'); }
   }
   if (id === 'dashboard') { renderActivityFeed(); renderFeedPreview(); loadDashboardStats(); }
+  if (id === 'discussions') { _loadThreadViewsFromSupabase(); }
   if (id === 'profile') {
     // Rirenderi il profilo con statistiche aggiornate in tempo reale
     renderProfile();
@@ -4082,11 +4112,12 @@ function applyRemoteData(data) {
         const local = localDiscMap[String(d.id)] || {};
         const pendingKey = (d.title || '') + '|' + (d.author || '');
         const fromPending = pendingViewsMap[pendingKey];
-        // FIX views: se il thread era pending, usa views=0 (nessuno lo ha ancora aperto)
-        // Il server potrebbe restituire views>0 per altri motivi — non sovrascrivere con quel valore
+        // VIEWS: la sorgente di verità è Supabase (thread_views), non il server GAS
+        // Usa il valore locale (aggiornato da Supabase RT) e non sovrascriverlo col server GAS
+        // Per i thread pending, mantieni sempre 0 finché non ci sono views reali
         const finalViews = fromPending
-          ? Math.min(fromPending.views, d.views || 0)   // 0 se nessuno lo ha aperto
-          : Math.max(d.views || 0, local.views || 0);   // normale: usa il massimo locale/server
+          ? 0                    // thread appena creato: 0 views
+          : (local.views || 0);  // usa views locali sincronizzate da Supabase RT
         return {
           ...d,
           lastReplyTs: local.lastReplyTs || (fromPending && fromPending.lastReplyTs) || d.lastReplyTs || null,
@@ -4804,6 +4835,152 @@ async function _loadRemovalsFromSupabase() {
   } catch(_e) {}
 }
 
+/* ══════════════════════════════════════════════════════════════
+   THREAD VIEWS — Supabase come sorgente unica condivisa
+   Regole: 1 view per utente per thread; autore non conta
+══════════════════════════════════════════════════════════════ */
+
+async function _recordThreadView(threadId, threadAuthor) {
+  if (!_sbReady || !currentUser) return;
+
+  // Regola: l'autore del thread non genera views
+  const myShort = currentUser.name.split(' ')[0] + ' ' + (currentUser.name.split(' ')[1]||'?')[0] + '.';
+  if (threadAuthor === currentUser.name || threadAuthor === myShort) return;
+
+  // Regola: 1 view per utente per thread (controllo in-sessione)
+  const viewKey = String(threadId) + ':' + currentUser.email;
+  if (_viewedThreadIds.has(viewKey)) return;
+  _viewedThreadIds.add(viewKey);
+
+  try {
+    // Upsert: se esiste già (stesso thread_id + user_email) non inserisce di nuovo
+    const { data: existing } = await _sb
+      .from('thread_views')
+      .select('id')
+      .eq('thread_id', String(threadId))
+      .eq('user_email', currentUser.email.toLowerCase())
+      .limit(1);
+
+    if (existing && existing.length > 0) return; // già conteggiata in DB
+
+    await _sb.from('thread_views').insert({
+      thread_id:  String(threadId),
+      user_email: currentUser.email.toLowerCase(),
+      viewed_at:  new Date().toISOString()
+    });
+    // Non aggiorniamo views localmente qui — arriva via RT listener
+  } catch(_e) {}
+}
+
+async function _loadThreadViewsFromSupabase() {
+  if (!_sbReady) return;
+  try {
+    // Carica i conteggi aggregati: COUNT per thread_id
+    const { data, error } = await _sb
+      .from('thread_views')
+      .select('thread_id');
+    if (error || !Array.isArray(data)) return;
+
+    // Aggrega localmente
+    const counts = {};
+    data.forEach(r => {
+      counts[r.thread_id] = (counts[r.thread_id] || 0) + 1;
+    });
+
+    // Aggiorna DISCUSSIONS con i conteggi reali da Supabase
+    let changed = false;
+    DISCUSSIONS.forEach(d => {
+      const serverCount = counts[String(d.id)] || 0;
+      if (d.views !== serverCount) {
+        d.views = serverCount;
+        changed = true;
+      }
+    });
+    if (changed) renderDiscussions();
+
+    // Marca come già visti i thread che l'utente corrente ha già aperto
+    if (currentUser) {
+      const { data: myViews } = await _sb
+        .from('thread_views')
+        .select('thread_id')
+        .eq('user_email', currentUser.email.toLowerCase());
+      if (Array.isArray(myViews)) {
+        myViews.forEach(r => {
+          _viewedThreadIds.add(r.thread_id + ':' + currentUser.email);
+        });
+      }
+    }
+  } catch(_e) {}
+}
+
+/* ══════════════════════════════════════════════════════════════
+   THREAD VIEWS — Supabase come sorgente unica condivisa
+   Regole: 1 view per utente per thread; autore non conta
+══════════════════════════════════════════════════════════════ */
+
+async function _recordThreadView(threadId, threadAuthor) {
+  if (!_sbReady || !currentUser) return;
+
+  // Regola: l'autore del thread non genera views
+  const myShort = currentUser.name.split(' ')[0] + ' ' + (currentUser.name.split(' ')[1]||'?')[0] + '.';
+  if (threadAuthor === currentUser.name || threadAuthor === myShort) return;
+
+  // Regola: 1 view per utente per thread (controllo in-sessione rapido)
+  const viewKey = String(threadId) + ':' + currentUser.email;
+  if (_viewedThreadIds.has(viewKey)) return;
+  _viewedThreadIds.add(viewKey);
+
+  try {
+    // Controlla se la view esiste già su Supabase (per sessioni diverse)
+    const { data: existing } = await _sb
+      .from('thread_views')
+      .select('id')
+      .eq('thread_id', String(threadId))
+      .eq('user_email', currentUser.email.toLowerCase())
+      .limit(1);
+    if (existing && existing.length > 0) return; // già conteggiata
+
+    await _sb.from('thread_views').insert({
+      thread_id:  String(threadId),
+      user_email: currentUser.email.toLowerCase(),
+      viewed_at:  new Date().toISOString()
+    });
+  } catch(_e) {}
+}
+
+async function _loadThreadViewsFromSupabase() {
+  if (!_sbReady) return;
+  try {
+    const { data, error } = await _sb
+      .from('thread_views')
+      .select('thread_id');
+    if (error || !Array.isArray(data)) return;
+
+    // Aggrega: COUNT per thread_id
+    const counts = {};
+    data.forEach(r => { counts[r.thread_id] = (counts[r.thread_id] || 0) + 1; });
+
+    // Aggiorna DISCUSSIONS con i conteggi reali
+    let changed = false;
+    DISCUSSIONS.forEach(d => {
+      const c = counts[String(d.id)] || 0;
+      if (d.views !== c) { d.views = c; changed = true; }
+    });
+    if (changed) renderDiscussions();
+
+    // Marca i thread già visti dall'utente corrente in questa sessione
+    if (currentUser) {
+      const { data: myViews } = await _sb
+        .from('thread_views')
+        .select('thread_id')
+        .eq('user_email', currentUser.email.toLowerCase());
+      if (Array.isArray(myViews)) {
+        myViews.forEach(r => _viewedThreadIds.add(r.thread_id + ':' + currentUser.email));
+      }
+    }
+  } catch(_e) {}
+}
+
 /* ── BUG FIX #2: Elimina segnalazione da Supabase dopo che è stata gestita ── */
 async function _deleteReportFromSupabase(reportId) {
   if (!_sbReady) return;
@@ -5198,15 +5375,12 @@ function openThread(id) {
   if (!thread) return;
   currentThreadId = id;
 
-  // FIX #3: incrementa visualizzazioni SOLO quando un utente apre effettivamente il thread
-  // Non conteggia la prima apertura automatica dell'autore (risolto rimuovendo auto-open)
-  thread.views = (thread.views || 0) + 1;
-  // Aggiorna la lista discussioni con il nuovo contatore (senza re-render completo)
-  const threadEl = document.querySelector(`.discussion-thread[onclick="openThread(${id})"]`);
-  if (threadEl) {
-    const viewStat = threadEl.querySelectorAll('.thread-stat')[1];
-    if (viewStat) viewStat.lastChild.textContent = ' ' + thread.views;
-  }
+  // VIEWS: registra la view su Supabase (sorgente unica condivisa)
+  // - autore del thread → non conta
+  // - stesso utente già aperto → non conta (deduplica in-sessione + DB)
+  // - notifiche → non chiamano openThread, non generano views
+  // Il contatore si aggiorna per tutti via RT listener thread_views_rt
+  _recordThreadView(id, thread.author);
 
   // Category tag
   const catLabels = { feedback:'Feedback', question:'Domanda', idea:'Idea', general:'Generale' };
@@ -5470,7 +5644,7 @@ async function submitNewThread() {
           // Caso normale: sostituisci tempId con realId
           DISCUSSIONS[tempIdx].id = realId;
           DISCUSSIONS[tempIdx]._isPending = false;
-          DISCUSSIONS[tempIdx].views = 0; // FIX views: resetta a 0 — nessuno ha aperto il thread
+          DISCUSSIONS[tempIdx].views = 0; // views=0 al momento della conferma — Supabase RT aggiornerà
         }
 
         const msgs = THREAD_MESSAGES[tempId];
