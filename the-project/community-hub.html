@@ -5565,6 +5565,8 @@ function openThread(id) {
   // TYPING: avvia listener per questo thread
   _threadTypingUsers = {};
   _startThreadTypingListener(id);
+  // FIX: avvia listener Broadcast per risposte in tempo reale
+  _startThreadRepliesListener(id);
 
   // Category tag
   const catLabels = { feedback:'Feedback', question:'Domanda', idea:'Idea', general:'Generale' };
@@ -5639,6 +5641,9 @@ function renderThreadMessages(id) {
 function closeThread() {
   document.getElementById('threadOverlay').classList.remove('open');
   document.body.style.overflow = '';
+  // FIX: ferma listener typing e broadcast risposte quando si chiude il thread
+  _stopThreadTypingListener();
+  sbOff('thread_replies_rt');
   currentThreadId = null;
   document.getElementById('threadComposeInput').value = '';
 }
@@ -5657,17 +5662,33 @@ function handleThreadKey(e) {
 // Invia segnale "sto scrivendo" al thread corrente via Supabase
 async function _sendThreadTyping(isTyping) {
   if (!_sbReady || !currentUser || !currentThreadId) return;
-  const convKey = 'thread_' + currentThreadId;
+  const convKey  = 'thread_' + currentThreadId;
+  const email    = currentUser.email.toLowerCase();
+  const payload  = {
+    conv_id:    convKey,
+    user_email: email,
+    user_name:  currentUser.name.split(' ')[0] + ' ' + (currentUser.name.split(' ')[1]||'?')[0] + '.',
+    user_init:  currentUser.initial || currentUser.name[0] || '?',
+    is_typing:  isTyping,
+    updated_at: new Date().toISOString()
+  };
   try {
-    await _sb.from('typing').upsert({
-      conv_id:    convKey,
-      user_email: currentUser.email.toLowerCase(),
-      user_name:  currentUser.name.split(' ')[0] + ' ' + (currentUser.name.split(' ')[1]||'?')[0] + '.',
-      user_init:  currentUser.initial || currentUser.name[0] || '?',
-      is_typing:  isTyping,
-      updated_at: new Date().toISOString()
-    }, { onConflict: 'conv_id,user_email' });
-  } catch(_e) {}
+    // FIX: onConflict richiede un UNIQUE index esatto nel DB.
+    // Strategia robusta: prova upsert senza opzioni (usa PK), se fallisce
+    // esegui DELETE + INSERT per garantire sempre una sola riga per utente/conv.
+    const { error } = await _sb.from('typing').upsert(payload);
+    if (error) {
+      await _sb.from('typing').delete()
+        .eq('conv_id', convKey).eq('user_email', email);
+      await _sb.from('typing').insert(payload);
+    }
+  } catch(_e) {
+    try {
+      await _sb.from('typing').delete()
+        .eq('conv_id', convKey).eq('user_email', email);
+      await _sb.from('typing').insert(payload);
+    } catch(_e2) {}
+  }
 }
 
 // Avvia ascolto typing per il thread aperto corrente
@@ -5721,6 +5742,64 @@ function _stopThreadTypingListener() {
   // Comunica agli altri che non stai più scrivendo
   if (_threadTypingTimer) { clearTimeout(_threadTypingTimer); _threadTypingTimer = null; }
   _sendThreadTyping(false).catch(() => {});
+}
+
+/* ══════════════════════════════════════════════════════════════
+   THREAD REPLIES REALTIME LISTENER
+   - Usa Supabase Broadcast (nessuna tabella necessaria)
+   - Quando un utente pubblica una risposta, viene trasmessa
+     immediatamente a tutti gli utenti che hanno il thread aperto
+   - La risposta appare senza dover chiudere e riaprire il thread
+═══════════════════════════════════════════════════════════════ */
+function _startThreadRepliesListener(threadId) {
+  sbOff('thread_replies_rt');
+  if (!_sbReady || !threadId) return;
+
+  const ch = _sb.channel('thread_replies_' + threadId)
+    .on('broadcast', { event: 'new_reply' }, ({ payload }) => {
+      if (!payload || !payload.reply || payload.threadId !== currentThreadId) return;
+      // Ignora risposte inviate da questo utente stesso (già presenti via ottimistic update)
+      if (payload.reply.author && currentUser &&
+          payload.reply.author === (currentUser.name.split(' ')[0] + ' ' + (currentUser.name.split(' ')[1]||'?')[0] + '.')) return;
+
+      // Aggiungi la nuova risposta alla struttura dati locale
+      if (!THREAD_MESSAGES[currentThreadId]) THREAD_MESSAGES[currentThreadId] = [];
+      THREAD_MESSAGES[currentThreadId].push(payload.reply);
+
+      // Aggiorna il contatore risposte del thread
+      const thread = DISCUSSIONS.find(d => d.id === currentThreadId);
+      if (thread) {
+        thread.replies++;
+        thread.lastReplyTs = payload.reply.ts ? new Date(payload.reply.ts).getTime() : Date.now();
+        thread.lastReply   = `${payload.reply.author} · Ora`;
+      }
+
+      // Re-renderizza i messaggi e la lista discussioni in tempo reale
+      renderThreadMessages(currentThreadId);
+      renderDiscussions();
+
+      // Aggiorna il contatore nell'header del thread overlay
+      if (thread) {
+        const detailInfo = document.getElementById('threadDetailInfo');
+        if (detailInfo) {
+          const ts = thread.ts ? new Date(thread.ts).getTime() : 0;
+          detailInfo.innerHTML = `
+            <span>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
+              ${thread.replies} risposte
+            </span>
+            <span>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+              ${thread.views} visualizzazioni
+            </span>
+            <span>✍️ ${thread.author} · ${ts ? `<span data-ts="${ts}">${_notifRelTime(ts)}</span>` : (thread.time || 'Ora')}</span>
+          `;
+        }
+      }
+    })
+    .subscribe();
+
+  _sbChannels['thread_replies_rt'] = ch;
 }
 
 // Handler input textarea thread: invia typing con debounce
@@ -5792,6 +5871,13 @@ async function submitThreadReply() {
   // Ottimistic update
   if (!THREAD_MESSAGES[currentThreadId]) THREAD_MESSAGES[currentThreadId] = [];
   THREAD_MESSAGES[currentThreadId].push(newReply);
+
+  // FIX: trasmetti la nuova risposta in tempo reale a tutti gli utenti che hanno il thread aperto
+  if (_sbReady) {
+    _sb.channel('thread_replies_' + currentThreadId)
+      .send({ type: 'broadcast', event: 'new_reply', payload: { threadId: currentThreadId, reply: newReply } })
+      .catch(() => {});
+  }
 
   const thread = DISCUSSIONS.find(d => d.id === currentThreadId);
   if (thread) {
@@ -6770,7 +6856,15 @@ async function sendMessage() {
       last_message:    text,
       last_ts:         now,
       unread:          0
-    }, { onConflict: 'conv_id,user_email' }).then(({ error }) => { if (error) console.warn('[SB conv upsert]', error.message); });
+    }, { onConflict: 'conv_id,user_email' }).then(({ error }) => {
+      if (error) {
+        // FIX: fallback delete+insert se onConflict non trova unique index
+        const _cid = cid, _em = currentUser.email.toLowerCase();
+        _sb.from('conversations').delete().eq('conv_id', _cid).eq('user_email', _em).then(() => {
+          _sb.from('conversations').insert({ conv_id: _cid, user_email: _em, partner_email: currentConvPartnerEmail.toLowerCase(), partner_name: partnerInfo.name, partner_initial: partnerInfo.initial, partner_role: partnerInfo.role||'', last_message: text, last_ts: now, unread: 0 }).then(null, ()=>{});
+        }, ()=>{});
+      }
+    });
 
     // Upsert metadati conversazione per destinatario (unread++)
     _sb.from('conversations')
@@ -6791,7 +6885,18 @@ async function sendMessage() {
           last_ts:         now,
           unread:          currentUnread + 1
         }, { onConflict: 'conv_id,user_email' });
-      }).then(({ error } = {}) => { if (error) console.warn('[SB conv partner upsert]', error.message); });
+      }).then(({ error } = {}) => {
+        if (error) {
+          // FIX: fallback delete+insert se onConflict non trova unique index
+          const _cid = cid, _pem = currentConvPartnerEmail.toLowerCase();
+          _sb.from('conversations').select('unread').eq('conv_id', _cid).eq('user_email', _pem).maybeSingle().then(({ data: ex2 }) => {
+            const unread2 = ex2 ? (ex2.unread || 0) : 0;
+            _sb.from('conversations').delete().eq('conv_id', _cid).eq('user_email', _pem).then(() => {
+              _sb.from('conversations').insert({ conv_id: _cid, user_email: _pem, partner_email: currentUser.email.toLowerCase(), partner_name: currentUser.name, partner_initial: currentUser.initial, partner_role: currentUser.role||'', last_message: text, last_ts: now, unread: unread2 + 1 }).then(null, ()=>{});
+            }, ()=>{});
+          }, ()=>{});
+        }
+      });
   }
 
   // ── GAS: persistenza storica (fallback o doppio-salvataggio) ──
@@ -7265,31 +7370,25 @@ function sendTypingStatus(isTyping) {
 
   // Supabase: scrittura istantanea — zero latenza
   if (_sbReady) {
-    const cid = convId(currentUser.email, currentConvPartnerEmail);
+    const cid   = convId(currentUser.email, currentConvPartnerEmail);
+    const email = currentUser.email.toLowerCase();
+    const _sbTypingUpsert = (cid, email, val) => {
+      const row = { conv_id: cid, user_email: email, is_typing: val, updated_at: new Date().toISOString() };
+      // FIX: strategia robusta senza onConflict (evita 400 Bad Request se manca unique index)
+      _sb.from('typing').upsert(row).then(({ error }) => {
+        if (error) {
+          _sb.from('typing').delete().eq('conv_id', cid).eq('user_email', email)
+            .then(() => _sb.from('typing').insert(row).then(null, ()=>{}), ()=>{});
+        }
+      }, ()=>{});
+    };
     if (isTyping) {
-      _sb.from('typing').upsert({
-        conv_id:    cid,
-        user_email: currentUser.email.toLowerCase(),
-        is_typing:  true,
-        updated_at: new Date().toISOString()
-      }, { onConflict: 'conv_id,user_email' }).then(null, ()=>{});
+      _sbTypingUpsert(cid, email, true);
       // Auto-rimuovi dopo 5s di inattività
       if (_typingTimer) clearTimeout(_typingTimer);
-      _typingTimer = setTimeout(() => {
-        _sb.from('typing').upsert({
-          conv_id:    cid,
-          user_email: currentUser.email.toLowerCase(),
-          is_typing:  false,
-          updated_at: new Date().toISOString()
-        }, { onConflict: 'conv_id,user_email' }).then(null, ()=>{});
-      }, 5000);
+      _typingTimer = setTimeout(() => _sbTypingUpsert(cid, email, false), 5000);
     } else {
-      _sb.from('typing').upsert({
-        conv_id:    cid,
-        user_email: currentUser.email.toLowerCase(),
-        is_typing:  false,
-        updated_at: new Date().toISOString()
-      }, { onConflict: 'conv_id,user_email' }).then(null, ()=>{});
+      _sbTypingUpsert(cid, email, false);
     }
   } else {
     // Fallback GAS
@@ -7306,13 +7405,16 @@ function clearTypingStatus() {
   if (!currentConvPartnerEmail || !currentUser) return;
 
   if (_sbReady) {
-    const cid = convId(currentUser.email, currentConvPartnerEmail);
-    _sb.from('typing').upsert({
-      conv_id:    cid,
-      user_email: currentUser.email.toLowerCase(),
-      is_typing:  false,
-      updated_at: new Date().toISOString()
-    }, { onConflict: 'conv_id,user_email' }).then(null, ()=>{});
+    const cid   = convId(currentUser.email, currentConvPartnerEmail);
+    const email = currentUser.email.toLowerCase();
+    const row   = { conv_id: cid, user_email: email, is_typing: false, updated_at: new Date().toISOString() };
+    // FIX: strategia robusta senza onConflict
+    _sb.from('typing').upsert(row).then(({ error }) => {
+      if (error) {
+        _sb.from('typing').delete().eq('conv_id', cid).eq('user_email', email)
+          .then(() => _sb.from('typing').insert(row).then(null, ()=>{}), ()=>{});
+      }
+    }, ()=>{});
   } else {
     fetch(`${GAS_URL}?action=set_typing&email=${encodeURIComponent(currentUser.email)}&otherEmail=${encodeURIComponent(currentConvPartnerEmail)}&isTyping=false`).catch(()=>{});
   }
