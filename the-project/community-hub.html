@@ -4212,15 +4212,17 @@ function applyRemoteData(data) {
       const entry = _CONFIRMED_THREADS[confirmedId];
       if (entry.until < now) { delete _CONFIRMED_THREADS[confirmedId]; return; } // scaduto
       if (!serverIds.has(String(confirmedId))) {
-        // Il server non ha ancora questo thread → reinseriscilo
-        // Aggiorna l'oggetto disc con i dati locali più recenti
-        const localDisc = DISCUSSIONS.find(d => String(d.id) === String(confirmedId));
-        const discToInsert = localDisc || entry.disc;
-        if (!DISCUSSIONS.find(d => String(d.id) === String(confirmedId))) {
+        // Il server non ha ancora questo thread → proteggilo reinserendolo in cima
+        const discToInsert = entry.disc;
+        if (!discToInsert) { delete _CONFIRMED_THREADS[confirmedId]; return; } // disc non valido
+        // Verifica che non sia già in DISCUSSIONS (evita duplicati)
+        const alreadyIn = DISCUSSIONS.find(d => String(d.id) === String(confirmedId)
+          || ((d.title||'') === (discToInsert.title||'') && (d.author||'') === (discToInsert.author||'')));
+        if (!alreadyIn) {
           DISCUSSIONS.unshift(discToInsert);
         }
       } else {
-        // Il server ce l'ha → confirmed non serve più
+        // Il server ce l'ha → il thread è persistito correttamente, protezione non più necessaria
         delete _CONFIRMED_THREADS[confirmedId];
       }
     });
@@ -5766,7 +5768,6 @@ async function submitNewThread() {
 
         if (realIdxAlready !== -1 && tempIdx !== -1) {
           // FIX doppio thread: il polling ha già il realId → rimuovi il tempId duplicato
-          // Preserva le views locali (= 0, nessuno ha aperto il thread)
           DISCUSSIONS[realIdxAlready].views = Math.min(
             DISCUSSIONS[realIdxAlready].views || 0,
             DISCUSSIONS[tempIdx].views || 0
@@ -5776,8 +5777,27 @@ async function submitNewThread() {
           // Caso normale: sostituisci tempId con realId
           DISCUSSIONS[tempIdx].id = realId;
           DISCUSSIONS[tempIdx]._isPending = false;
-          DISCUSSIONS[tempIdx].views = 0; // views=0 al momento della conferma — Supabase RT aggiornerà
+          DISCUSSIONS[tempIdx].views = 0;
         }
+
+        // ── CHIAVE DEL FIX ──────────────────────────────────────────
+        // GAS ha confermato il thread, ma potrebbe impiegare 2-10s prima
+        // che il prossimo get_community_data lo includa nella risposta.
+        // _CONFIRMED_THREADS protegge il thread durante questa finestra:
+        // applyRemoteData (Phase B) lo reinserisce se il server non lo ha ancora.
+        const _confirmedDiscObj = DISCUSSIONS.find(d => d.id === realId)
+          || DISCUSSIONS.find(d => (d.title||'') === title && (d.author||'') === shortName);
+        if (_confirmedDiscObj) {
+          _confirmedDiscObj.id = realId; // assicura realId
+          _confirmedDiscObj._isPending = false;
+          // Proteggi per 60s — GAS ha sicuramente scritto sul foglio entro allora
+          _CONFIRMED_THREADS[realId] = {
+            disc:  _confirmedDiscObj,
+            until: Date.now() + 60000
+          };
+          setTimeout(() => { delete _CONFIRMED_THREADS[realId]; }, 60000);
+        }
+        // ────────────────────────────────────────────────────────────
 
         const msgs = THREAD_MESSAGES[tempId];
         if (msgs) {
