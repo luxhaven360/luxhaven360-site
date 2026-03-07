@@ -3513,8 +3513,17 @@ function initApp() {
   // BUG FIX #1/#2: Carica rimozioni da Supabase (sincronizza _REMOVED_IDS dopo refresh)
   setTimeout(() => _loadRemovalsFromSupabase(), 600);
 
-  // BUG FIX #1: Carica attività globali da Supabase (sorgente condivisa per tutti gli utenti)
+  // Carica attività globali da Supabase (sorgente condivisa per tutti gli utenti)
   setTimeout(() => _loadGlobalActivitiesFromSupabase(), 500);
+  // FIX #3: pulizia automatica attività > 14 giorni (solo una volta per sessione)
+  const _actCleanKey = 'lh360_act_lastclean';
+  const _lastClean = parseInt(localStorage.getItem(_actCleanKey) || '0', 10);
+  if (Date.now() - _lastClean > 24 * 60 * 60 * 1000) {
+    setTimeout(() => {
+      _cleanOldActivitiesFromSupabase();
+      try { localStorage.setItem(_actCleanKey, String(Date.now())); } catch(e) {}
+    }, 3000);
+  }
 
   // Simulate real-time activity
   // Avvia presenza real-time: heartbeat immediato + timer + Firebase
@@ -4443,16 +4452,33 @@ const ACTIVITY_LOG_KEY = 'lh360_activity_log';
 const ACTIVITY_MAX     = 100;
 const ACTIVITY_DAYS    = 14;
 
+function _activitySpamKey(text) {
+  // Estrae "autore + tipo azione" come chiave anti-spam (ignora titoli specifici)
+  // Esempio: "<strong>Luca</strong> ha commentato nel feed" → "luca_commentato_feed"
+  return text
+    .replace(/<[^>]+>/g, '')     // rimuovi HTML tags
+    .toLowerCase()
+    .replace(/[^a-z0-9àèìòù ]/g, '')
+    .trim()
+    .split(' ').slice(0, 5).join('_'); // usa solo le prime 5 parole come chiave
+}
+
 function logActivity(dotColor, text) {
-  const entry = { dotColor, text, ts: Date.now() };
-  // BUG FIX #1: usa array globale in-memoria invece di localStorage per sincronizzazione tra utenti
+  const now = Date.now();
+  // ANTI-SPAM: controlla se esiste già un'attività simile recente (stesso autore+tipo nei last 5min)
+  const spamKey = _activitySpamKey(text);
+  const isDuplicate = GLOBAL_ACTIVITIES.some(a => {
+    return _activitySpamKey(a.text) === spamKey && (now - a.ts) < ACTIVITY_SPAM_WINDOW;
+  });
+  if (isDuplicate) return; // ignora — già presente nel feed recente
+
+  const entry = { dotColor, text, ts: now };
   GLOBAL_ACTIVITIES.unshift(entry);
   if (GLOBAL_ACTIVITIES.length > ACTIVITY_MAX) GLOBAL_ACTIVITIES = GLOBAL_ACTIVITIES.slice(0, ACTIVITY_MAX);
   // Mantieni anche localStorage come fallback offline
   try {
     localStorage.setItem(ACTIVITY_LOG_KEY, JSON.stringify(GLOBAL_ACTIVITIES.slice(0, 20)));
   } catch(e) {}
-  // Aggiorna il feed se la dashboard è visibile
   const dashPanel = document.getElementById('panel-dashboard');
   if (dashPanel && dashPanel.classList.contains('active')) renderActivityFeed();
 }
@@ -4466,21 +4492,34 @@ function formatTimeAgo(ts) {
    RENDER ATTIVITÀ RECENTE (dinamico)
 ═══════════════════════════════════════════ */
 function clearActivityLog() {
-  GLOBAL_ACTIVITIES = [];
-  try { localStorage.removeItem(ACTIVITY_LOG_KEY); } catch(e) {}
+  // FIX: svuota solo per l'utente corrente — gli altri continuano a vedere le attività
+  if (!currentUser) return;
+  const clearKey = 'lh360_act_cleared_' + currentUser.email.replace(/[^a-z0-9]/gi, '_');
+  try { localStorage.setItem(clearKey, String(Date.now())); } catch(e) {}
   renderActivityFeed();
-  showToast('blue', '🗑️', 'Attività recente svuotata');
+  showToast('blue', '🗑️', 'Attività recente svuotata per te');
 }
 
 function renderActivityFeed() {
   const act = document.getElementById('dashActivity');
   if (!act) return;
 
-  const cutoff = Date.now() - ACTIVITY_DAYS * 24 * 60 * 60 * 1000;
-  // BUG FIX #1: leggi da GLOBAL_ACTIVITIES (condiviso tra tutti gli utenti via Supabase RT)
+  // FIX #1: legge la data di svuotamento per-utente
+  let userClearTs = 0;
+  if (currentUser) {
+    try {
+      const clearKey = 'lh360_act_cleared_' + currentUser.email.replace(/[^a-z0-9]/gi, '_');
+      const stored = localStorage.getItem(clearKey);
+      if (stored) userClearTs = parseInt(stored, 10) || 0;
+    } catch(e) {}
+  }
+
+  // FIX #3: mostra solo gli ultimi 7 giorni, max 5 eventi
+  const displayCutoff = Date.now() - ACTIVITY_DISPLAY_DAYS * 24 * 60 * 60 * 1000;
+
   const activities = GLOBAL_ACTIVITIES
-    .filter(e => e.ts >= cutoff)
-    .slice(0, 5)
+    .filter(e => e.ts >= displayCutoff && e.ts > userClearTs) // FIX #1: rispetta clear per-utente
+    .slice(0, ACTIVITY_DISPLAY_MAX)                           // FIX #3: max 5
     .map(e => ({ dot: e.dotColor, text: e.text, time: formatTimeAgo(e.ts) }));
 
   if (activities.length === 0) {
@@ -4634,6 +4673,23 @@ function _detectNewContentAndNotify(data) {
 async function _writeActivityToSupabase(dotColor, text) {
   if (!_sbReady || !currentUser) return;
   try {
+    // ANTI-SPAM su Supabase: controlla se esiste già un evento simile recente
+    const spamCutoff = new Date(Date.now() - ACTIVITY_SPAM_WINDOW).toISOString();
+    const { data: existing } = await _sb
+      .from('community_activity')
+      .select('id')
+      .eq('user_email', currentUser.email.toLowerCase())
+      .gte('created_at', spamCutoff)
+      .limit(5);
+    if (existing && existing.length > 0) {
+      // Controlla se c'è un'attività con chiave simile
+      const { data: recent } = await _sb
+        .from('community_activity')
+        .select('text')
+        .eq('user_email', currentUser.email.toLowerCase())
+        .gte('created_at', spamCutoff);
+      if (recent && recent.some(r => _activitySpamKey(r.text) === _activitySpamKey(text))) return;
+    }
     await _sb.from('community_activity').insert({
       user_email: currentUser.email.toLowerCase(),
       user_name:  currentUser.name,
@@ -4641,7 +4697,16 @@ async function _writeActivityToSupabase(dotColor, text) {
       text:       text,
       created_at: new Date().toISOString()
     });
-  } catch(_e) { /* silenzioso — tabella potrebbe non esistere, logActivity locale è sufficiente */ }
+  } catch(_e) {}
+}
+
+/* ── Pulizia automatica attività > 14 giorni su Supabase ── */
+async function _cleanOldActivitiesFromSupabase() {
+  if (!_sbReady) return;
+  try {
+    const cutoff = new Date(Date.now() - ACTIVITY_DB_DAYS * 24 * 60 * 60 * 1000).toISOString();
+    await _sb.from('community_activity').delete().lt('created_at', cutoff);
+  } catch(_e) {}
 }
 
 /* ── BUG FIX #4: Scrivi segnalazione su Supabase (visibile al team di moderazione) ── */
@@ -4767,11 +4832,14 @@ async function _loadGlobalActivitiesFromSupabase() {
   if (!_sbReady || !currentUser) { _fallbackToLocal(); return; }
 
   try {
+    // FIX #3: carica solo gli ultimi ACTIVITY_DB_DAYS giorni, limit ACTIVITY_MAX
+    const dbCutoff = new Date(Date.now() - ACTIVITY_DB_DAYS * 24 * 60 * 60 * 1000).toISOString();
     const { data, error } = await _sb
       .from('community_activity')
       .select('dot_color, text, created_at')
+      .gte('created_at', dbCutoff)
       .order('created_at', { ascending: false })
-      .limit(20);
+      .limit(ACTIVITY_MAX);
     // Se la tabella non esiste (404) o altro errore → usa localStorage
     if (error || !Array.isArray(data)) { _fallbackToLocal(); return; }
     if (data.length > 0) {
@@ -5292,8 +5360,18 @@ async function submitNewThread() {
     _isPending: true  // marker: thread non ancora confermato da GAS
   };
   DISCUSSIONS.unshift(_pendingDisc);
-  // BUG FIX #2: registra il thread pendente — applyRemoteData lo preserverà durante il polling
+  // FIX #4: registra il thread pendente — applyRemoteData lo preserverà durante il polling
   _PENDING_THREADS[tempId] = _pendingDisc;
+
+  // FIX #4: timeout di sicurezza — se GAS non risponde entro 45s, tratta il thread come confermato
+  // per evitare che rimanga bloccato come "pending" a tempo indeterminato
+  const _pendingTimeout = setTimeout(() => {
+    if (_PENDING_THREADS[tempId]) {
+      _PENDING_THREADS[tempId]._isPending = false;
+      delete _PENDING_THREADS[tempId];
+      // Il thread rimane in DISCUSSIONS con il tempId — sarà sostituito al prossimo poll
+    }
+  }, 45000);
   THREAD_MESSAGES[tempId] = [{
     author: shortName, initial: currentUser.initial, role: currentUser.title,
     isTeam: currentUser.role === 'team', time: 'Ora', ts: new Date().toISOString(), text: body, isOp: true, reactions: []
@@ -5338,13 +5416,18 @@ async function submitNewThread() {
           THREAD_MESSAGES[realId] = msgs;
           delete THREAD_MESSAGES[tempId];
         }
-        // Thread confermato: sposta da _PENDING_THREADS al set noti
+        // Thread confermato: cancella timeout di sicurezza e rimuovi da pending
+        clearTimeout(_pendingTimeout);
         delete _PENDING_THREADS[tempId];
         _lastKnownDiscIds.add(realId);
         _lastKnownDiscIds.delete(tempId);
         saveCommunityCache();
       }
-    } catch(e) { console.warn('[NewThread] GAS error:', e.message); }
+    } catch(e) {
+      console.warn('[NewThread] GAS error:', e.message);
+      // FIX #4: anche in caso di errore, il thread rimane in DISCUSSIONS grazie a _PENDING_THREADS
+      // Il timeout di sicurezza (45s) lo rilascerà automaticamente
+    }
   }
   // Auto-moderation nuovo thread
   autoModerateText(title + ' ' + body, 'thread', String(tempId), shortName, currentUser.email);
