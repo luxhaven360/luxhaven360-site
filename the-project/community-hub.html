@@ -4228,25 +4228,45 @@ function applyRemoteData(data) {
   // ── Post del feed ───────────────────────────────────────────────
   // Sempre sovrascrive — nessun fallback su dati statici
   if (data.hasOwnProperty('posts') && Array.isArray(data.posts)) {
+    // likedSet: post che l'utente ha già messo like localmente (ottimistic)
     const likedSet = new Set(FEED_POSTS.filter(p => p.liked).map(p => p.id));
+    // likesLocalMap: contatore like locale — da preservare se il server è ancora indietro.
+    // BUG LIKE 1→0→1: il polling porta dati server con likes=0 mentre GAS non ha ancora
+    // processato il like. likedSet preservava liked=true ma `...p` sovrascriveva likes con 0.
+    // Soluzione: se likedSet contiene il post E il server ha meno like del locale, mantieni
+    // il contatore locale finché il server non si aggiorna.
+    const likesLocalMap = {};
+    FEED_POSTS.forEach(p => { if (p.liked) likesLocalMap[p.id] = p.likes; });
     // BUG FIX #3: preserva commenti locali ottimistici se più recenti del server
     const localCommentsMap = {};
     FEED_POSTS.forEach(p => { localCommentsMap[p.id] = p.commentsData || []; });
     FEED_POSTS = data.posts
       .filter(p => !_REMOVED_IDS.has(`post:${p.id}`) && !_REMOVED_IDS.has(`post:${Number(p.id)}`))
-      .map(p => ({
-        ...p,
-        liked:       likedSet.has(p.id) || (p.likedBy && currentUser && p.likedBy.includes(currentUser.name)),
-        commentsData: (() => {
-          const serverComments = (p.commentsData || []).filter(c => !_REMOVED_IDS.has(`comment:${c.id}`));
-          const localComments  = localCommentsMap[p.id] || [];
-          // Preserva commenti locali se il server ne ha meno (ottimistic update)
-          return localComments.length > serverComments.length ? localComments : serverComments;
-        })(),
-        comments: Math.max(p.comments || 0, (localCommentsMap[p.id] || []).length),
-        // Preserva/inferisce isTeam per Ultimi Aggiornamenti
-        isTeam: p.isTeam || !!(p.role && (p.role.toLowerCase().includes('team') || p.role.toLowerCase().includes('admin') || p.role.toLowerCase().includes('fondatore') || p.role.toLowerCase().includes('founder')))
-      }));
+      .map(p => {
+        const localLiked = likedSet.has(p.id);
+        const serverLiked = !!(p.likedBy && currentUser && p.likedBy.includes(currentUser.name));
+        const finalLiked = localLiked || serverLiked;
+        // Se l'utente ha già messo like localmente ma il server non lo riflette ancora,
+        // mantieni il contatore locale per evitare l'oscillazione 1→0→1.
+        const serverLikesUpToDate = serverLiked || !localLiked;
+        const finalLikes = serverLikesUpToDate
+          ? p.likes
+          : Math.max(p.likes, likesLocalMap[p.id] || p.likes);
+        return {
+          ...p,
+          liked: finalLiked,
+          likes: finalLikes,
+          commentsData: (() => {
+            const serverComments = (p.commentsData || []).filter(c => !_REMOVED_IDS.has(`comment:${c.id}`));
+            const localComments  = localCommentsMap[p.id] || [];
+            // Preserva commenti locali se il server ne ha meno (ottimistic update)
+            return localComments.length > serverComments.length ? localComments : serverComments;
+          })(),
+          comments: Math.max(p.comments || 0, (localCommentsMap[p.id] || []).length),
+          // Preserva/inferisce isTeam per Ultimi Aggiornamenti
+          isTeam: p.isTeam || !!(p.role && (p.role.toLowerCase().includes('team') || p.role.toLowerCase().includes('admin') || p.role.toLowerCase().includes('fondatore') || p.role.toLowerCase().includes('founder')))
+        };
+      });
     // Aggiorna cache nomi autori team ricavati dai post (che hanno isTeam corretto)
     FEED_POSTS.forEach(p => {
       if (p.isTeam && p.author) _TEAM_AUTHORS.add(p.author.toLowerCase());
@@ -11212,4 +11232,3 @@ function reportContentById(sourceType, sourceId, parentId) {
 
 </body>
 </html>
-
