@@ -3798,6 +3798,22 @@ function initApp() {
           saveCommunityCache();
         }
       })
+      .on('broadcast', { event: 'update_survey_id' }, (payload) => {
+        // Aggiorna l'ID del sondaggio broadcast (tempId → realId) per evitare duplicato al polling
+        if (!payload || !payload.payload) return;
+        const { tempId, realId } = payload.payload;
+        if (!tempId || !realId) return;
+        const idx = SURVEYS.findIndex(s => s.id === tempId);
+        if (idx !== -1) {
+          SURVEYS[idx].id = realId;
+          _lastKnownSurveyIds.delete(tempId);
+          _lastKnownSurveyIds.add(realId);
+          _pendingSurveyIds.delete(tempId);
+          _pendingSurveyIds.add(realId);
+          setTimeout(() => _pendingSurveyIds.delete(realId), 60000);
+          saveCommunityCache();
+        }
+      })
       .on('broadcast', { event: 'new_survey' }, (payload) => {
         if (!payload || !payload.payload) return;
         const s = payload.payload;
@@ -4546,8 +4562,17 @@ function applyRemoteData(data) {
   // ── Sondaggi da GAS ──────────────────────────────────────────────
   if (Array.isArray(data.surveys)) {
     // Preserva sondaggi pubblicati ottimisticamente non ancora confermati da GAS.
-    const serverSurveyIds = new Set(data.surveys.map(s => s.id));
-    const pendingSurveys = SURVEYS.filter(s => _pendingSurveyIds.has(s.id) && !serverSurveyIds.has(s.id));
+    const serverSurveyIds  = new Set(data.surveys.map(s => s.id));
+    // Dedup contenuto: se un sondaggio pending ha lo stesso titolo+domanda di uno del server,
+    // significa che il server l'ha già ricevuto con realId → scarta la versione pending (tempId).
+    // Questo risolve il duplicato che compare lato utente quando il broadcast arriva
+    // prima che il polling GAS aggiorni l'ID (tempId ≠ realId → applyRemoteData li aggiunge entrambi).
+    const serverSurveyKeys = new Set(data.surveys.map(s => (s.title||'') + '|' + (s.question||s.desc||'')));
+    const pendingSurveys = SURVEYS.filter(s =>
+      _pendingSurveyIds.has(s.id) &&
+      !serverSurveyIds.has(s.id) &&
+      !serverSurveyKeys.has((s.title||'') + '|' + (s.question||s.desc||''))
+    );
     SURVEYS = [
       ...pendingSurveys,
       ...data.surveys.map(s => ({
@@ -4556,8 +4581,15 @@ function applyRemoteData(data) {
         desc: s.desc || s.question || ''
       }))
     ];
-    // Rimuovi dai pending i sondaggi che il server ha confermato
-    _pendingSurveyIds.forEach(id => { if (serverSurveyIds.has(id)) _pendingSurveyIds.delete(id); });
+    // Rimuovi dai pending i sondaggi che il server ha confermato (per ID o per contenuto)
+    _pendingSurveyIds.forEach(id => {
+      if (serverSurveyIds.has(id)) { _pendingSurveyIds.delete(id); return; }
+      // Se il sondaggio pending è già nel server per contenuto (ma con realId diverso) → rimuovilo
+      const s = SURVEYS.find(x => x.id === id);
+      if (s && serverSurveyKeys.has((s.title||'') + '|' + (s.question||s.desc||''))) {
+        _pendingSurveyIds.delete(id);
+      }
+    });
   }
 
   // ── Voti sondaggi ────────────────────────────────────────────────
@@ -9835,15 +9867,23 @@ async function publishSurvey() {
       ).then(r => r.json());
       // Sostituisci tempId con l'ID reale assegnato da GAS, rimuovi da pending
       if (gasData.success && gasData.survey && gasData.survey.id) {
+        const realId = gasData.survey.id;
         const idx = SURVEYS.findIndex(s => s.id === tempId);
-        if (idx !== -1) { SURVEYS[idx].id = gasData.survey.id; saveCommunityCache(); }
+        if (idx !== -1) { SURVEYS[idx].id = realId; saveCommunityCache(); }
         _pendingSurveyIds.delete(tempId);
-        _pendingSurveyIds.add(gasData.survey.id);
-        // GAS ha confermato: l'item è ora nel server, rimuovi dal pending
-        setTimeout(() => _pendingSurveyIds.delete(gasData.survey.id), 30000);
+        _pendingSurveyIds.add(realId);
+        // GAS ha confermato: notifica agli altri client del cambio ID per evitare duplicati
+        if (_sbReady) {
+          try {
+            _sb.channel('community_content_broadcast').send({
+              type: 'broadcast', event: 'update_survey_id', payload: { tempId, realId }
+            }).catch(() => {});
+          } catch(_e2) {}
+        }
+        setTimeout(() => _pendingSurveyIds.delete(realId), 60000);
       } else {
-        // GAS non ha confermato: mantieni nel pending a lungo per garantire visibilità
-        setTimeout(() => _pendingSurveyIds.delete(tempId), 120000);
+        // GAS non ha confermato: estendi protezione polling a 5 minuti
+        setTimeout(() => _pendingSurveyIds.delete(tempId), 300000);
       }
     } catch(_e) {}
   }
