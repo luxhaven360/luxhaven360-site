@@ -3519,6 +3519,8 @@ function initApp() {
   setTimeout(() => _loadGlobalActivitiesFromSupabase(), 500);
   // VIEWS: carica conteggi reali da Supabase (sorgente unica condivisa per tutti gli utenti)
   setTimeout(() => _loadThreadViewsFromSupabase(), 700);
+  // LAST REPLIES: carica timestamps ultima risposta da Supabase (risolve "Ora" congelato)
+  setTimeout(() => _loadThreadLastRepliesFromSupabase(), 900);
   // FIX #3: pulizia automatica attività > 14 giorni (solo una volta per sessione)
   const _actCleanKey = 'lh360_act_lastclean';
   const _lastClean = parseInt(localStorage.getItem(_actCleanKey) || '0', 10);
@@ -3654,6 +3656,33 @@ function initApp() {
         }
       }).subscribe();
     _sbChannels['thread_views'] = viewsCh;
+
+    // LAST REPLIES: Ascolta aggiornamenti timestamp ultima risposta in RT
+    // Risolve: "Ora" congelato per chi riceve la risposta via GAS senza timestamp
+    sbOff('thread_last_replies_rt');
+    const lastReplyCh = _sb.channel('thread_last_replies_rt')
+      .on('postgres_changes', {
+        event: '*', schema: 'public', table: 'thread_last_replies'
+      }, (payload) => {
+        const r = payload.new;
+        if (!r || !r.thread_id) return;
+        const disc = DISCUSSIONS.find(d => String(d.id) === String(r.thread_id));
+        if (!disc) return;
+        const ts = r.last_reply_ts ? new Date(r.last_reply_ts).getTime() : null;
+        if (!ts) return;
+        // Aggiorna lastReplyTs su tutti i client — calcolo relativo dinamico garantito
+        disc.lastReplyTs = ts;
+        disc.lastReply = (r.last_reply_author || '') + ' · ' + _notifRelTime(ts);
+        // Aggiorna il DOM direttamente nella lista Discussioni
+        const el = document.querySelector(`.discussion-thread[onclick="openThread(${disc.id})"]`);
+        if (el) {
+          const lastReplySpan = el.querySelector('.thread-last-reply span');
+          if (lastReplySpan) {
+            lastReplySpan.innerHTML = disc.lastReply;
+          }
+        }
+      }).subscribe();
+    _sbChannels['thread_last_replies_rt'] = lastReplyCh;
 
     // BUG FIX #4: Ascolta segnalazioni in tempo reale (solo per il team)
     if (currentUser && currentUser.role === 'team') {      sbOff('community_reports');
@@ -3851,7 +3880,7 @@ function showPanel(id, navEl) {
     if (discBadge) { discBadge.textContent = '0'; discBadge.classList.add('hidden'); }
   }
   if (id === 'dashboard') { renderActivityFeed(); renderFeedPreview(); loadDashboardStats(); }
-  if (id === 'discussions') { _loadThreadViewsFromSupabase(); }
+  if (id === 'discussions') { _loadThreadViewsFromSupabase(); _loadThreadLastRepliesFromSupabase(); }
   if (id === 'profile') {
     // Rirenderi il profilo con statistiche aggiornate in tempo reale
     renderProfile();
@@ -4120,10 +4149,30 @@ function applyRemoteData(data) {
         const finalViews = fromPending
           ? 0                    // thread appena creato: 0 views
           : (local.views || 0);  // usa views locali sincronizzate da Supabase RT
+
+        // LAST REPLY TS: Supabase è la fonte di verità per il timestamp ultima risposta
+        // local.lastReplyTs è già sincronizzato da RT listener thread_last_replies_rt
+        // Se usiamo il timestamp locale, ricalcoliamo lastReply come stringa dinamica
+        // e non usiamo mai la stringa "Ora" congelata che arriva da GAS
+        const finalLastReplyTs = local.lastReplyTs
+          || (fromPending && fromPending.lastReplyTs)
+          || (d.lastReplyTs ? new Date(d.lastReplyTs).getTime() : null)
+          || null;
+
+        // Ricalcola lastReply come stringa dinamica se abbiamo un timestamp affidabile
+        // Questo impedisce che la stringa "Ora" da GAS si congeli per l'autore del thread
+        let finalLastReply = d.lastReply || null;
+        if (finalLastReplyTs && local.lastReplyTs) {
+          // Abbiamo il timestamp da Supabase → ricalcola stringa (sarà sempre aggiornata)
+          const authorPart = (d.lastReply || '').split(' · ')[0] || '';
+          finalLastReply = authorPart ? authorPart + ' · ' + _notifRelTime(finalLastReplyTs) : null;
+        }
+
         return {
           ...d,
-          lastReplyTs: local.lastReplyTs || (fromPending && fromPending.lastReplyTs) || d.lastReplyTs || null,
-          views: finalViews
+          lastReplyTs: finalLastReplyTs,
+          lastReply:   finalLastReply,
+          views:       finalViews
         };
       });
 
@@ -4866,37 +4915,7 @@ async function _loadRemovalsFromSupabase() {
    Regole: 1 view per utente per thread; autore non conta
 ══════════════════════════════════════════════════════════════ */
 
-async function _recordThreadView(threadId, threadAuthor) {
-  if (!_sbReady || !currentUser) return;
 
-  // Regola: l'autore del thread non genera views
-  const myShort = currentUser.name.split(' ')[0] + ' ' + (currentUser.name.split(' ')[1]||'?')[0] + '.';
-  if (threadAuthor === currentUser.name || threadAuthor === myShort) return;
-
-  // Regola: 1 view per utente per thread (controllo in-sessione)
-  const viewKey = String(threadId) + ':' + currentUser.email;
-  if (_viewedThreadIds.has(viewKey)) return;
-  _viewedThreadIds.add(viewKey);
-
-  try {
-    // Upsert: se esiste già (stesso thread_id + user_email) non inserisce di nuovo
-    const { data: existing } = await _sb
-      .from('thread_views')
-      .select('id')
-      .eq('thread_id', String(threadId))
-      .eq('user_email', currentUser.email.toLowerCase())
-      .limit(1);
-
-    if (existing && existing.length > 0) return; // già conteggiata in DB
-
-    await _sb.from('thread_views').insert({
-      thread_id:  String(threadId),
-      user_email: currentUser.email.toLowerCase(),
-      viewed_at:  new Date().toISOString()
-    });
-    // Non aggiorniamo views localmente qui — arriva via RT listener
-  } catch(_e) {}
-}
 
 async function _loadThreadViewsFromSupabase() {
   if (!_sbReady) return;
@@ -4956,22 +4975,50 @@ async function _recordThreadView(threadId, threadAuthor) {
   if (_viewedThreadIds.has(viewKey)) return;
   _viewedThreadIds.add(viewKey);
 
+  // FIX BUG 1: aggiornamento ottimistico immediato del counter
+  // Non aspettiamo l'evento RT — aggiorniamo subito il DOM e DISCUSSIONS
+  const disc = DISCUSSIONS.find(d => String(d.id) === String(threadId));
+  if (disc) {
+    disc.views = (disc.views || 0) + 1;
+    // Aggiorna il DOM nella lista Discussioni senza re-render completo
+    const listEl = document.querySelector(`.discussion-thread[onclick="openThread(${disc.id})"]`);
+    if (listEl) {
+      const stats = listEl.querySelectorAll('.thread-stat');
+      if (stats[1]) stats[1].lastChild.textContent = ' ' + disc.views;
+    }
+    // Aggiorna anche il pannello dettaglio thread se aperto
+    const detailInfo = document.getElementById('threadDetailInfo');
+    if (detailInfo && String(currentThreadId) === String(threadId)) {
+      const repliesSpan = detailInfo.querySelector('span:first-child');
+      const viewsSpan = detailInfo.querySelector('span:nth-child(2)');
+      if (viewsSpan) viewsSpan.lastChild.textContent = ' ' + disc.views + ' visualizzazioni';
+    }
+  }
+
   try {
-    // Controlla se la view esiste già su Supabase (per sessioni diverse)
+    // Controlla se la view esiste già su Supabase (per sessioni diverse / refresh)
     const { data: existing } = await _sb
       .from('thread_views')
       .select('id')
       .eq('thread_id', String(threadId))
       .eq('user_email', currentUser.email.toLowerCase())
       .limit(1);
-    if (existing && existing.length > 0) return; // già conteggiata
-
+    if (existing && existing.length > 0) {
+      // Già conteggiata in DB (es. dopo refresh) — ripristina il counter
+      // perché l'ottimistico poteva aver aggiunto 1 di troppo
+      if (disc) disc.views = Math.max(0, (disc.views || 1) - 1);
+      return;
+    }
     await _sb.from('thread_views').insert({
       thread_id:  String(threadId),
       user_email: currentUser.email.toLowerCase(),
       viewed_at:  new Date().toISOString()
     });
-  } catch(_e) {}
+    // Il RT listener aggiornerà tutti gli altri utenti
+  } catch(_e) {
+    // In caso di errore, ripristina il counter ottimistico
+    if (disc) disc.views = Math.max(0, (disc.views || 1) - 1);
+  }
 }
 
 async function _loadThreadViewsFromSupabase() {
@@ -5004,6 +5051,58 @@ async function _loadThreadViewsFromSupabase() {
         myViews.forEach(r => _viewedThreadIds.add(r.thread_id + ':' + currentUser.email));
       }
     }
+  } catch(_e) {}
+}
+
+/* ══════════════════════════════════════════════
+   THREAD LAST REPLIES — timestamp condiviso via Supabase
+   Risolve: "Ora" congelato per l'autore del thread
+═══════════════════════════════════════════════ */
+async function _loadThreadLastRepliesFromSupabase() {
+  if (!_sbReady) return;
+  try {
+    const { data, error } = await _sb
+      .from('thread_last_replies')
+      .select('thread_id, last_reply_ts, last_reply_author');
+    if (error || !Array.isArray(data)) return;
+    let changed = false;
+    data.forEach(r => {
+      const disc = DISCUSSIONS.find(d => String(d.id) === String(r.thread_id));
+      if (!disc) return;
+      const ts = r.last_reply_ts ? new Date(r.last_reply_ts).getTime() : null;
+      if (ts && ts !== disc.lastReplyTs) {
+        disc.lastReplyTs = ts;
+        disc.lastReply = `${r.last_reply_author || ''} · ${_notifRelTime(ts)}`;
+        changed = true;
+      }
+    });
+    if (changed) renderDiscussions();
+  } catch(_e) {}
+}
+
+/* ══════════════════════════════════════════════
+   THREAD LAST REPLIES — timestamp condiviso via Supabase
+   Risolve: "Ora" congelato per l'autore del thread
+═══════════════════════════════════════════════ */
+async function _loadThreadLastRepliesFromSupabase() {
+  if (!_sbReady) return;
+  try {
+    const { data, error } = await _sb
+      .from('thread_last_replies')
+      .select('thread_id, last_reply_ts, last_reply_author');
+    if (error || !Array.isArray(data)) return;
+    let changed = false;
+    data.forEach(r => {
+      const disc = DISCUSSIONS.find(d => String(d.id) === String(r.thread_id));
+      if (!disc) return;
+      const ts = r.last_reply_ts ? new Date(r.last_reply_ts).getTime() : null;
+      if (ts && ts !== disc.lastReplyTs) {
+        disc.lastReplyTs = ts;
+        disc.lastReply = r.last_reply_author + ' · ' + _notifRelTime(ts);
+        changed = true;
+      }
+    });
+    if (changed) renderDiscussions();
   } catch(_e) {}
 }
 
@@ -5505,6 +5604,16 @@ async function submitThreadReply() {
     thread.lastReplyTs = replyTs;
     // BUG FIX #5: usa timestamp per calcolare il tempo relativo dinamicamente
     thread.lastReply = `${currentUser.name.split(' ')[0]} · ${formatTimeAgo(replyTs)}`;
+
+    // FIX BUG 2: salva lastReplyTs su Supabase per sincronizzare tutti gli utenti
+    // Senza questo, gli altri client ricevono via GAS solo la stringa "Ora" congelata
+    if (_sbReady) {
+      _sb.from('thread_last_replies').upsert({
+        thread_id:      String(currentThreadId),
+        last_reply_ts:  new Date(replyTs).toISOString(),
+        last_reply_author: currentUser.name.split(' ')[0]
+      }, { onConflict: 'thread_id' }).then(() => {}).catch(() => {});
+    }
     // Aggiorna il contatore risposte nell'header del thread overlay in tempo reale
     const detailInfo = document.getElementById('threadDetailInfo');
     if (detailInfo) {
