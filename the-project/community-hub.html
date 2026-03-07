@@ -2783,6 +2783,7 @@ mark.hl { background: rgba(212,175,55,0.22); color: var(--gold-light); border-ra
               </div>
             </div>
             <div class="form-actions">
+              <button class="btn-secondary" onclick="previewListing()" style="margin-right:0.5rem;">👁 Anteprima</button>
               <button class="btn-primary" onclick="publishListing()">Pubblica Listing</button>
             </div>
           </div>
@@ -2949,6 +2950,24 @@ mark.hl { background: rgba(212,175,55,0.22); color: var(--gold-light); border-ra
       👁 Questa è un'anteprima — la comunicazione non è ancora pubblicata
     </div>
     <div id="broadcastPreviewCard"></div>
+  </div>
+</div>
+
+<!-- LISTING PREVIEW MODAL -->
+<div id="listingPreviewOverlay" style="display:none; position:fixed; inset:0; z-index:1200; background:rgba(0,0,0,0.82); backdrop-filter:blur(6px); overflow-y:auto; padding:2rem 1rem;" onclick="if(event.target===this) closeListingPreview()">
+  <div style="max-width:480px; margin:0 auto; position:relative;">
+    <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:1.2rem;">
+      <div style="font-size:0.65rem; letter-spacing:0.18em; text-transform:uppercase; color:var(--gold);">👁 Anteprima Listing — Canale &ldquo;Listing Esclusivi&rdquo;</div>
+      <button onclick="closeListingPreview()" style="background:rgba(255,255,255,0.06); border:1px solid var(--border2); border-radius:6px; color:var(--muted); padding:0.35rem 0.8rem; font-size:0.72rem; cursor:pointer; font-family:var(--ff-ui);">✕ Chiudi</button>
+    </div>
+    <div style="font-size:0.7rem; color:var(--muted2); margin-bottom:1.2rem; padding:0.5rem 0.8rem; border:1px solid rgba(212,175,55,0.15); border-radius:6px; background:rgba(212,175,55,0.04);">
+      Questa è un'anteprima — il listing non è ancora pubblicato
+    </div>
+    <div id="listingPreviewCard"></div>
+    <div style="margin-top:1.2rem; display:flex; gap:0.75rem; justify-content:flex-end;">
+      <button onclick="closeListingPreview()" style="padding:0.6rem 1.2rem; border:1px solid var(--border2); border-radius:var(--radius); background:transparent; color:var(--muted); font-size:0.78rem; cursor:pointer; font-family:var(--ff-ui);">Modifica</button>
+      <button onclick="closeListingPreview(); publishListing();" style="padding:0.6rem 1.4rem; border-radius:var(--radius); background:linear-gradient(135deg,#C9A227,#D4AF37); color:var(--darker); font-size:0.78rem; font-weight:600; cursor:pointer; font-family:var(--ff-ui);">Pubblica Ora</button>
+    </div>
   </div>
 </div>
 
@@ -8395,14 +8414,25 @@ function renderListings() {
     </div>`;
 
   // Le listing vengono caricate esclusivamente da GAS (get_community_data → listings)
-  const listings = typeof LISTINGS !== 'undefined' ? LISTINGS : [];
+  const allListings = typeof LISTINGS !== 'undefined' ? LISTINGS : [];
+  const role = currentUser.role;
+
+  // ── Filtra per destinatario ──────────────────────────────────────────
+  // team vede tutto; founding vede 'all' e 'founding'; candidate vede 'all' e 'candidate'
+  const listings = allListings.filter(l => {
+    const r = l.recipient || 'all';
+    if (role === 'team') return true;
+    if (r === 'all') return true;
+    if (r === 'founding' && role === 'founding') return true;
+    if (r === 'candidate' && role === 'candidate') return true;
+    return false;
+  });
 
   if (listings.length === 0) {
     container.innerHTML = earlyAccessBanner + '<div style="text-align:center;padding:3rem 1rem;color:var(--muted2);font-size:0.82rem;">Nessuna proprietà disponibile al momento.<br>Il team aggiungerà presto le prime location esclusive.</div>';
     return;
   }
 
-  const role = currentUser.role;
   const candidateNotice = role === 'candidate' ? `
     <div class="listing-candidate-notice">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
@@ -8411,38 +8441,66 @@ function renderListings() {
 
   container.innerHTML = earlyAccessBanner + candidateNotice + `
     <div class="grid-3">
-      ${listings.map(l => `
+      ${listings.map(l => {
+        // ── Normalizza i campi per supportare sia il formato nuovo che quello legacy ──
+        const displayTitle = l.title || l.name || '';
+        // Estrai desc e price da text se non presenti come campi separati
+        let displayDesc  = l.desc || '';
+        let displayPrice = l.price || '';
+        if (!displayDesc && l.text) {
+          const priceSep = l.text.indexOf('\n\n💰 ');
+          displayDesc  = priceSep !== -1 ? l.text.substring(0, priceSep) : l.text;
+          displayPrice = priceSep !== -1 ? l.text.substring(priceSep + 4) : (l.price || '');
+        }
+        const displayCity  = l.city || l.location || '';
+        const displayTag   = l.tag  || '';
+        const displayUnit  = l.unit || '';
+        return `
         <div class="listing-card">
           <div class="listing-img${l.thumbnail ? ' has-thumb' : ''}">
             ${l.thumbnail
-              ? `<img src="${l.thumbnail}" alt="${l.name || 'Listing'}" loading="lazy"/>`
-              : `<div class="listing-img-text">${l.location || l.city || ''}</div>`}
-            ${l.tag ? `<div class="listing-exclusive-tag">${l.tag}</div>` : ''}
+              ? `<img src="${l.thumbnail}" alt="${displayTitle}" loading="lazy"/>`
+              : `<div class="listing-img-text">${displayCity}</div>`}
+            ${displayTag ? `<div class="listing-exclusive-tag">${displayTag}</div>` : ''}
           </div>
           <div class="listing-info">
-            <div class="listing-city">${l.city || ''}</div>
-            <div class="listing-name">${l.name || ''}</div>
-            <div class="listing-desc">${l.desc || ''}</div>
+            ${displayCity ? `<div class="listing-city">${displayCity}</div>` : ''}
+            <div class="listing-name">${displayTitle}</div>
+            ${displayDesc ? `<div class="listing-desc">${displayDesc}</div>` : ''}
           </div>
           <div class="listing-footer">
-            <div><div class="listing-price">${l.price || ''} <span class="listing-price-unit">${l.unit || '/notte'}</span></div></div>
+            <div>
+              ${displayPrice ? `<div class="listing-price">${displayPrice} <span class="listing-price-unit">${displayUnit}</span></div>` : ''}
+            </div>
             ${role === 'candidate'
               ? '<span class="listing-book-btn locked-btn"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display:inline;margin-right:4px;vertical-align:middle;"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>Solo Founding</span>'
               : '<button class="listing-book-btn" onclick="showToast(\'gold\',\'🏠\',\'Richiesta prenotazione inviata al team!\')">Prenota</button>'}
           </div>
-        </div>
-      `).join('')}
+        </div>`;
+      }).join('')}
     </div>`;
 }
 
 
 function renderSurveys() {
   const container = document.getElementById('surveysContainer');
-  if (SURVEYS.length === 0) {
+  const role = currentUser ? currentUser.role : 'candidate';
+
+  // ── Filtra per destinatario ──────────────────────────────────────────
+  const surveys = SURVEYS.filter(s => {
+    const r = s.recipient || 'all';
+    if (role === 'team') return true;
+    if (r === 'all') return true;
+    if (r === 'founding' && role === 'founding') return true;
+    if (r === 'candidate' && role === 'candidate') return true;
+    return false;
+  });
+
+  if (surveys.length === 0) {
     container.innerHTML = '<div style="text-align:center;padding:3rem 1rem;color:var(--muted2);font-size:0.82rem;">Nessun sondaggio attivo al momento.<br>Il team pubblicherà presto le prime votazioni.</div>';
     return;
   }
-  container.innerHTML = SURVEYS.map(s => `
+  container.innerHTML = surveys.map(s => `
     <div class="survey-card" id="survey-${s.id}">
       <div class="post-type-tag survey" style="margin-bottom:0.8rem;">📊 Sondaggio Attivo</div>
       <div class="survey-title">${s.title}</div>
@@ -9691,6 +9749,7 @@ async function publishListing() {
   var listingObj = {
     id: tempId, author: currentUser.name, initial: currentUser.initial, role: currentUser.title,
     type: "listing", time: "Ora", title: (catIcons[category]||"")+" "+title, text: postText,
+    desc: desc, price: price,
     locked: recipient==="candidate" ? "candidate" : (recipient==="founding" ? "founding" : ""),
     recipient: recipient, category: category, likes: 0, comments: 0,
     liked: false, commentsData: [], likedBy: [], ts: new Date().toISOString(),
@@ -9737,7 +9796,7 @@ async function publishListing() {
         role: currentUser.title,
         thumbnail: thumbnail || ''
       });
-      const gasData = await fetch(GAS_URL, { method: 'POST', body: gasBody }).then(r => r.json());
+      const gasData = await fetch(GAS_URL + '?action=publish_listing', { method: 'POST', body: gasBody }).then(r => r.json());
       // Sostituisci tempId con l'ID reale assegnato da GAS, rimuovi da pending
       if (gasData.success && gasData.listing && gasData.listing.id) {
         const idx = LISTINGS.findIndex(l => l.id === tempId);
@@ -9789,6 +9848,63 @@ function toggleSchedule(el, mode) {
 function closeBroadcastPreview() {
   const overlay = document.getElementById('broadcastPreviewOverlay');
   if (overlay) overlay.style.display = 'none';
+}
+
+function closeListingPreview() {
+  const overlay = document.getElementById('listingPreviewOverlay');
+  if (overlay) overlay.style.display = 'none';
+}
+
+function previewListing() {
+  const title   = (document.getElementById('listingTitle')?.value || '').trim();
+  const desc    = (document.getElementById('listingDesc')?.value  || '').trim();
+  const price   = (document.getElementById('listingPrice')?.value || '').trim();
+  const thumbSrc = document.getElementById('listingThumbImg')?.src || '';
+  const thumbnail = thumbSrc.startsWith('data:image/') ? thumbSrc : '';
+
+  if (!title && !desc) {
+    showToast('red', '⚠️', 'Inserisci almeno titolo o descrizione per l\'anteprima.');
+    return;
+  }
+
+  const catChip   = document.querySelector('[data-listing-cat].active');
+  const category  = catChip ? catChip.dataset.listingCat : 'real-estate';
+  const catIcons  = {'real-estate':'🏠','supercar':'🏎️','experience':'✨','shop':'🛍️','testdrive':'🚗','services':'💎'};
+  const fullTitle = (catIcons[category] || '') + ' ' + title;
+
+  const recipientChip  = document.querySelector('[data-listing-recipient].active');
+  const recipient      = recipientChip ? recipientChip.dataset.listingRecipient : 'all';
+  const recipientLabel = { all: 'Tutti i membri', founding: 'Solo Founding Members', candidate: 'Solo Founder Candidates' }[recipient] || 'Tutti i membri';
+
+  const card = document.getElementById('listingPreviewCard');
+  if (!card) return;
+
+  card.innerHTML = `
+    <div class="listing-card" style="max-width:100%; cursor:default;">
+      <div class="listing-img${thumbnail ? ' has-thumb' : ''}">
+        ${thumbnail
+          ? `<img src="${thumbnail}" alt="${fullTitle}" style="width:100%;height:100%;object-fit:cover;display:block;"/>`
+          : `<div class="listing-img-text" style="font-size:0.85rem;color:var(--muted2);display:flex;align-items:center;justify-content:center;height:100%;">${catIcons[category] || '🏠'}</div>`}
+        <div class="listing-exclusive-tag" style="position:absolute;top:0.7rem;left:0.7rem;">ESCLUSIVO</div>
+      </div>
+      <div class="listing-info">
+        <div class="listing-name" style="font-size:1.1rem;">${fullTitle}</div>
+        ${desc ? `<div class="listing-desc" style="margin-top:0.4rem;">${desc}</div>` : ''}
+      </div>
+      <div class="listing-footer">
+        <div>
+          ${price ? `<div class="listing-price">${price}</div>` : '<div style="font-size:0.75rem;color:var(--muted2);">Prezzo non specificato</div>'}
+        </div>
+        <button class="listing-book-btn" style="pointer-events:none;opacity:0.7;">Prenota</button>
+      </div>
+    </div>
+    <div style="margin-top:0.9rem; padding:0.55rem 0.85rem; border:1px solid var(--border2); border-radius:var(--radius); font-size:0.7rem; color:var(--muted2); display:flex; align-items:center; gap:0.5rem;">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>
+      Visibile a: <strong style="color:var(--gold);">${recipientLabel}</strong>
+    </div>`;
+
+  const overlay = document.getElementById('listingPreviewOverlay');
+  if (overlay) overlay.style.display = 'block';
 }
 
 function previewBroadcast() {
