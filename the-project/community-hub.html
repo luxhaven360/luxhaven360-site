@@ -5103,37 +5103,25 @@ async function _loadThreadViewsFromSupabase() {
 async function _recordThreadView(threadId, threadAuthor) {
   if (!_sbReady || !currentUser) return;
 
-  // Regola: l'autore del thread non genera views
+  // Regola: l'autore del thread non genera views (confronta sia nome completo che abbreviato)
   const myShort = currentUser.name.split(' ')[0] + ' ' + (currentUser.name.split(' ')[1]||'?')[0] + '.';
-  if (threadAuthor === currentUser.name || threadAuthor === myShort) return;
+  if ((threadAuthor||'')=== currentUser.name || (threadAuthor||'')=== myShort ||
+      (threadAuthor||''). toLowerCase() === currentUser.name.toLowerCase() ||
+      (threadAuthor||''). toLowerCase() === myShort.toLowerCase()) return;
 
-  // Regola: 1 view per utente per thread (controllo in-sessione rapido)
+  // Regola: 1 view per utente per thread (controllo in-sessione rapido).
+  // Se viewKey è già presente, la view è stata già registrata in questa sessione
+  // e il RT listener ha già aggiornato il contatore — nessuna azione necessaria.
   const viewKey = String(threadId) + ':' + currentUser.email;
   if (_viewedThreadIds.has(viewKey)) return;
-  _viewedThreadIds.add(viewKey);
 
-  // FIX BUG 1: aggiornamento ottimistico immediato del counter
-  // Non aspettiamo l'evento RT — aggiorniamo subito il DOM e DISCUSSIONS
-  const disc = DISCUSSIONS.find(d => String(d.id) === String(threadId));
-  if (disc) {
-    disc.views = (disc.views || 0) + 1;
-    // Aggiorna il DOM nella lista Discussioni senza re-render completo
-    const listEl = document.querySelector(`.discussion-thread[onclick="openThread(${disc.id})"]`);
-    if (listEl) {
-      const stats = listEl.querySelectorAll('.thread-stat');
-      if (stats[1]) stats[1].lastChild.textContent = ' ' + disc.views;
-    }
-    // Aggiorna anche il pannello dettaglio thread se aperto
-    const detailInfo = document.getElementById('threadDetailInfo');
-    if (detailInfo && String(currentThreadId) === String(threadId)) {
-      const repliesSpan = detailInfo.querySelector('span:first-child');
-      const viewsSpan = detailInfo.querySelector('span:nth-child(2)');
-      if (viewsSpan) viewsSpan.lastChild.textContent = ' ' + disc.views + ' visualizzazioni';
-    }
-  }
+  // IMPORTANTE: NON aggiornare il contatore localmente qui.
+  // Il RT listener su INSERT in thread_views è la sorgente unica di verità per gli
+  // incrementi locali. Fare un aggiornamento ottimistico qui E ricevere l'evento RT
+  // causava un doppio incremento (il bug: 1 apertura → contatore mostra 2).
 
   try {
-    // Controlla se la view esiste già su Supabase (per sessioni diverse / refresh)
+    // Controlla se la view esiste già in DB (es. sessione precedente / altro dispositivo)
     const { data: existing } = await _sb
       .from('thread_views')
       .select('id')
@@ -5141,20 +5129,21 @@ async function _recordThreadView(threadId, threadAuthor) {
       .eq('user_email', currentUser.email.toLowerCase())
       .limit(1);
     if (existing && existing.length > 0) {
-      // Già conteggiata in DB (es. dopo refresh) — ripristina il counter
-      // perché l'ottimistico poteva aver aggiunto 1 di troppo
-      if (disc) disc.views = Math.max(0, (disc.views || 1) - 1);
+      // View già in DB: marca in-sessione per evitare check futuri,
+      // ma NON incrementare il contatore (già corretto).
+      _viewedThreadIds.add(viewKey);
       return;
     }
+    // Inserisce la view → il RT listener si occuperà dell'incremento del contatore
     await _sb.from('thread_views').insert({
       thread_id:  String(threadId),
       user_email: currentUser.email.toLowerCase(),
       viewed_at:  new Date().toISOString()
     });
-    // Il RT listener aggiornerà tutti gli altri utenti
+    // Aggiunge alla cache in-sessione solo DOPO l'inserimento confermato
+    _viewedThreadIds.add(viewKey);
   } catch(_e) {
-    // In caso di errore, ripristina il counter ottimistico
-    if (disc) disc.views = Math.max(0, (disc.views || 1) - 1);
+    // In caso di errore non aggiorniamo nulla — nessun contatore da ripristinare
   }
 }
 
