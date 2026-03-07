@@ -4431,7 +4431,17 @@ function applyRemoteData(data) {
   const activePanel = document.querySelector('.panel.active');
   if (!activePanel) return;
   const pid = activePanel.id.replace('panel-', '');
-  if (pid === 'feed')        renderFeed();
+  if (pid === 'feed') {
+    // SOLUZIONE DEFINITIVA BUG COMMENTI: se l'utente sta scrivendo in una casella
+    // commento, NON ri-renderizzare il feed. Il DOM verrebbe distrutto cancellando
+    // il testo digitato e perdendo il focus. I dati aggiornati saranno applicati
+    // al prossimo ciclo di polling, quando l'utente non starà più scrivendo.
+    const focusedInput = document.activeElement;
+    const isTypingComment = focusedInput &&
+      focusedInput.classList.contains('comment-input') &&
+      focusedInput.closest('#feedContainer');
+    if (!isTypingComment) renderFeed();
+  }
   if (pid === 'discussions') renderDiscussions();
   if (pid === 'surveys')     renderSurveys();
   if (pid === 'listings')    renderListings();
@@ -4849,7 +4859,7 @@ function renderFeedPreview() {
     return `
     <div style="display:flex; gap:0.6rem; padding:0.5rem 0; border-bottom:1px solid var(--border2); cursor:pointer;" onclick="navigateToFeed()">
       <div style="font-size:0.7rem; letter-spacing:0.08em; text-transform:uppercase; padding:0.2rem 0.5rem; border-radius:10px; height:fit-content; flex-shrink:0;
-        ${p.type==='update' ? 'background:rgba(212,175,55,0.1);color:var(--gold)' : p.type==='exclusive' ? 'background:rgba(76,175,120,0.1);color:var(--green)' : 'background:rgba(91,142,212,0.1);color:var(--blue)'}">
+        ${p.type==='update' ? 'background:rgba(212,175,55,0.1);color:var(--gold)' : p.type==='exclusive' ? 'background:rgba(76,175,120,0.1);color:var(--green)' : p.type==='event' ? 'background:rgba(200,80,106,0.1);color:var(--red)' : 'background:rgba(91,142,212,0.1);color:var(--blue)'}">
         ${p.type==='update'?'UPD':p.type==='exclusive'?'EXCL':p.type==='event'?'EVT':'NEWS'}
       </div>
       <div style="min-width:0;">
@@ -11202,3 +11212,4 @@ function reportContentById(sourceType, sourceId, parentId) {
 
 </body>
 </html>
+
