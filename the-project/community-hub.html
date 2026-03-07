@@ -3148,6 +3148,7 @@ let _RESOLVED_REPORT_IDS = new Set();
 const MOD_RESOLVED_IDS_KEY = 'lh360_mod_resolved_ids';
 
 let _modTabActive = 'reports'; // 'reports' | 'removed' | 'log'
+let _activeDiscFilter = 'all'; // BUG FIX #3: tiene traccia del filtro attivo per le discussioni
 
 // Chiavi localStorage per persistenza moderazione
 const MOD_REPORTS_KEY  = 'lh360_mod_reports';
@@ -4285,6 +4286,14 @@ function applyRemoteData(data) {
 
         return {
           ...d,
+          // BUG FIX #1: calcola isTeam anche dal campo role (come per FEED_POSTS)
+          // senza questo, i thread del fondatore non hanno isTeam=true e il bottone segnala appare
+          isTeam: d.isTeam || !!(d.role && (
+            d.role.toLowerCase().includes('team') ||
+            d.role.toLowerCase().includes('admin') ||
+            d.role.toLowerCase().includes('fondatore') ||
+            d.role.toLowerCase().includes('founder')
+          )),
           lastReplyTs: finalLastReplyTs,
           lastReply:   finalLastReply,
           views:       finalViews
@@ -5564,7 +5573,12 @@ function renderPostComments(post, container) {
    RENDER DISCUSSIONS
 ═══════════════════════════════════════════ */
 function renderDiscussions(filter) {
-  const threads = filter && filter !== 'all' ? DISCUSSIONS.filter(d => d.category === filter) : DISCUSSIONS;
+  // BUG FIX #3: se filter non è passato, usa il filtro attivo memorizzato
+  // Senza questo, ogni chiamata a renderDiscussions() (es. dopo una risposta) resettava
+  // la lista mostrando tutti i thread, ignorando il tab selezionato dall'utente.
+  if (filter !== undefined) _activeDiscFilter = filter;
+  const activeFilter = _activeDiscFilter;
+  const threads = activeFilter && activeFilter !== 'all' ? DISCUSSIONS.filter(d => d.category === activeFilter) : DISCUSSIONS;
   const container = document.getElementById('discussionsContainer');
   if (threads.length === 0) {
     container.innerHTML = '<div style="text-align:center;padding:3rem 1rem;color:var(--muted2);font-size:0.82rem;">Nessuna discussione ancora.<br>Sii il primo a creare un thread!</div>';
@@ -6189,7 +6203,18 @@ async function submitThreadReply() {
 
   // Notifica il creatore del thread (se diverso dall'utente corrente)
   const _threadOwner = DISCUSSIONS.find(d => d.id === currentThreadId);
-  if (_threadOwner && _threadOwner.author !== currentUser.name) {
+  // BUG FIX #2: i thread usano shortName (es. "Luca A.") mentre currentUser.name è il nome completo
+  // (es. "Luca Amalfi"). Il confronto _threadOwner.author !== currentUser.name fallisce sempre
+  // perché confronta formato abbreviato vs formato completo → notifica inviata anche all'autore.
+  // Soluzione: confrontare anche con il nome abbreviato dell'utente corrente.
+  const _currentUserShort = currentUser.name.split(' ')[0] + ' ' + ((currentUser.name.split(' ')[1] || '?')[0]) + '.';
+  const _isAuthorReplying = _threadOwner && (
+    _threadOwner.author === currentUser.name ||
+    _threadOwner.author === _currentUserShort ||
+    _threadOwner.author.toLowerCase() === currentUser.name.toLowerCase() ||
+    _threadOwner.author.toLowerCase() === _currentUserShort.toLowerCase()
+  );
+  if (_threadOwner && !_isAuthorReplying) {
     // FIX BUG 2: scrivi notifica su Supabase per consegna in tempo reale
     if (_sbReady) {
       // FIX 2: I thread usano shortName ("Luca A."), REAL_MEMBERS ha nome completo ("Luca Amalfi")
