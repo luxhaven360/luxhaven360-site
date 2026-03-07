@@ -9574,7 +9574,7 @@ function addSurveyOption() {
   wrap.appendChild(inp);
 }
 
-function publishSurvey() {
+async function publishSurvey() {
   var title    = (document.getElementById("surveyTitle")?.value || "").trim();
   var question = (document.getElementById("surveyQuestion")?.value || "").trim();
   var options  = [...document.querySelectorAll("#surveyOptionsWrap input")].map(function(i){return i.value.trim();}).filter(Boolean);
@@ -9582,12 +9582,24 @@ function publishSurvey() {
   var expiry  = document.getElementById("surveyExpiry")?.value || null;
   var recipientChip = document.querySelector("[data-survey-recipient].active");
   var recipient = recipientChip ? recipientChip.dataset.surveyRecipient : "all";
-  var surveyObj = { id: Date.now(), type: "survey", title: title, desc: question, question: question, options: options.map(function(o){return {text:o,votes:0};}), total: 0, expiry: expiry, recipient: recipient, author: currentUser.name, initial: currentUser.initial, ts: new Date().toISOString(), voted: null };
-  if (typeof SURVEYS !== "undefined") SURVEYS.unshift(surveyObj);
+  var tempId = Date.now();
+  var surveyObj = { id: tempId, type: "survey", title: title, desc: question, question: question, options: options.map(function(o){return {text:o,votes:0};}), total: 0, expiry: expiry || null, recipient: recipient, author: currentUser.name, initial: currentUser.initial, ts: new Date().toISOString(), voted: null };
+  SURVEYS.unshift(surveyObj);
   saveCommunityCache();
-  if (typeof renderSurveys === "function") renderSurveys();
+  renderSurveys();
   logActivity('gold', '<strong>Team LH360</strong> ha pubblicato un sondaggio: ' + title);
-  if (typeof _writeActivityToSupabase === 'function') _writeActivityToSupabase('gold', '<strong>Team LH360</strong> ha pubblicato un sondaggio: ' + title);
+  _writeActivityToSupabase('gold', '<strong>Team LH360</strong> ha pubblicato un sondaggio: ' + title);
+  // Notifica RT via Supabase a tutti i membri per visibilità immediata
+  if (_sbReady) {
+    try {
+      await _sb.from('notifications').insert({
+        user_email: '__broadcast__',
+        icon: 'gold', emoji: '📊',
+        text: '<strong>Nuovo sondaggio</strong>: ' + title,
+        created_at: new Date().toISOString(), read: false
+      });
+    } catch(_e) {}
+  }
   var sb = document.getElementById('surveysNewBadge'); if (sb) sb.classList.remove('hidden');
   showToast("gold","📊","Sondaggio pubblicato con successo!");
   showPanel("surveys", document.querySelector('.nav-item[onclick*="surveys"]'));
@@ -9595,10 +9607,28 @@ function publishSurvey() {
   document.getElementById("surveyQuestion").value = "";
   document.getElementById("surveyExpiry").value = "";
   document.querySelectorAll("#surveyOptionsWrap input").forEach(function(inp, i){ inp.value=""; if(i>=2) inp.remove(); });
-  if (typeof GAS_URL !== "undefined" && GAS_URL) fetch(GAS_URL+"?action=publish_survey&title="+encodeURIComponent(title)+"&question="+encodeURIComponent(question)+"&options="+encodeURIComponent(JSON.stringify(options))+"&recipient="+encodeURIComponent(recipient)+"&author="+encodeURIComponent(currentUser.name)).catch(function(){});
+  // Persisti su GAS (con il nuovo action publish_survey che ora esiste)
+  if (GAS_URL) {
+    try {
+      const gasData = await fetch(GAS_URL + "?action=publish_survey" +
+        "&title=" + encodeURIComponent(title) +
+        "&question=" + encodeURIComponent(question) +
+        "&options=" + encodeURIComponent(JSON.stringify(options)) +
+        "&recipient=" + encodeURIComponent(recipient) +
+        "&author=" + encodeURIComponent(currentUser.name) +
+        "&initial=" + encodeURIComponent(currentUser.initial) +
+        (expiry ? "&expiry=" + encodeURIComponent(expiry) : '')
+      ).then(r => r.json());
+      // Sostituisci tempId con l'ID reale assegnato da GAS
+      if (gasData.success && gasData.survey && gasData.survey.id) {
+        const idx = SURVEYS.findIndex(s => s.id === tempId);
+        if (idx !== -1) { SURVEYS[idx].id = gasData.survey.id; saveCommunityCache(); }
+      }
+    } catch(_e) {}
+  }
 }
 
-function publishListing() {
+async function publishListing() {
   var title   = (document.getElementById("listingTitle")?.value || "").trim();
   var desc    = (document.getElementById("listingDesc")?.value || "").trim();
   var price   = (document.getElementById("listingPrice")?.value || "").trim();
@@ -9609,27 +9639,57 @@ function publishListing() {
   var recipient = recipientChip ? recipientChip.dataset.listingRecipient : "all";
   var catIcons = {"real-estate":"🏠","supercar":"🏎️","experience":"✨","shop":"🛍️","testdrive":"🚗","services":"💎"};
   var postText = price ? desc + "\n\n💰 " + price : desc;
-  var listingPost = { id: Date.now(), author: currentUser.name, initial: currentUser.initial, role: currentUser.title, type: "listing", time: "Ora", title: (catIcons[category]||"")+" "+title, text: postText, locked: recipient==="candidate" ? "candidate" : (recipient==="founding" ? "founding" : ""), recipient: recipient, category: category, likes: 0, comments: 0, liked: false, commentsData: [], likedBy: [], ts: new Date().toISOString() };
-  FEED_POSTS.unshift(listingPost);
-  // BUG-FIX: persisti subito in cache prima della chiamata GAS asincrona
+  var tempId = Date.now();
+  // FIX: il listing va in LISTINGS, NON in FEED_POSTS.
+  // Prima era inserito in FEED_POSTS → appariva nel Feed → scompariva al poll successivo (GAS non lo aveva).
+  var listingObj = {
+    id: tempId, author: currentUser.name, initial: currentUser.initial, role: currentUser.title,
+    type: "listing", time: "Ora", title: (catIcons[category]||"")+" "+title, text: postText,
+    locked: recipient==="candidate" ? "candidate" : (recipient==="founding" ? "founding" : ""),
+    recipient: recipient, category: category, likes: 0, comments: 0,
+    liked: false, commentsData: [], likedBy: [], ts: new Date().toISOString()
+  };
+  LISTINGS.unshift(listingObj);
   saveCommunityCache();
-  renderFeed(); renderFeedPreview();
+  renderListings();
+  logActivity('gold', '<strong>Team LH360</strong> ha pubblicato un listing: ' + title);
+  _writeActivityToSupabase('gold', '<strong>Team LH360</strong> ha pubblicato un listing: ' + title);
+  // Notifica RT via Supabase per visibilità immediata agli altri utenti
+  if (_sbReady) {
+    try {
+      await _sb.from('notifications').insert({
+        user_email: '__broadcast__',
+        icon: 'gold', emoji: '🏠',
+        text: '<strong>Nuovo listing esclusivo</strong>: ' + listingObj.title,
+        created_at: new Date().toISOString(), read: false
+      });
+    } catch(_e) {}
+  }
+  const lb = document.getElementById('listingsNewBadge'); if (lb) lb.classList.remove('hidden');
   showToast("gold","🏷️","Listing pubblicato con successo!");
-  showPanel("feed", document.querySelector('.nav-item[onclick*="feed"]'));
+  showPanel("listings", document.querySelector('.nav-item[onclick*="listings"]'));
   document.getElementById("listingTitle").value = "";
   document.getElementById("listingDesc").value  = "";
   document.getElementById("listingPrice").value = "";
-  if (typeof GAS_URL !== "undefined" && GAS_URL) {
-    fetch(GAS_URL+"?action=publish_listing&title="+encodeURIComponent(title)+"&desc="+encodeURIComponent(desc)+"&price="+encodeURIComponent(price)+"&category="+encodeURIComponent(category)+"&recipient="+encodeURIComponent(recipient)+"&author="+encodeURIComponent(currentUser.name))
-      .then(r => r.json())
-      .then(data => {
-        // BUG-FIX: sostituisci il tempId locale con l'ID reale assegnato da GAS
-        if (data && data.success && data.post && data.post.id) {
-          const idx = FEED_POSTS.findIndex(p => p.id === listingPost.id);
-          if (idx !== -1) { FEED_POSTS[idx].id = data.post.id; saveCommunityCache(); }
-        }
-      })
-      .catch(function(){});
+  // Persisti su GAS con il nuovo action publish_listing
+  if (GAS_URL) {
+    try {
+      const gasData = await fetch(GAS_URL + "?action=publish_listing" +
+        "&title=" + encodeURIComponent(title) +
+        "&desc=" + encodeURIComponent(desc) +
+        "&price=" + encodeURIComponent(price) +
+        "&category=" + encodeURIComponent(category) +
+        "&recipient=" + encodeURIComponent(recipient) +
+        "&author=" + encodeURIComponent(currentUser.name) +
+        "&initial=" + encodeURIComponent(currentUser.initial) +
+        "&role=" + encodeURIComponent(currentUser.title)
+      ).then(r => r.json());
+      // Sostituisci tempId con l'ID reale assegnato da GAS
+      if (gasData.success && gasData.listing && gasData.listing.id) {
+        const idx = LISTINGS.findIndex(l => l.id === tempId);
+        if (idx !== -1) { LISTINGS[idx].id = gasData.listing.id; saveCommunityCache(); }
+      }
+    } catch(_e) {}
   }
 }
 function toggleSchedule(el, mode) {
@@ -11235,4 +11295,3 @@ function reportContentById(sourceType, sourceId, parentId) {
 
 </body>
 </html>
-
