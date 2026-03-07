@@ -2091,7 +2091,7 @@ mark.hl { background: rgba(212,175,55,0.22); color: var(--gold-light); border-ra
 ══════════════════════════════════ */
 .mention-dropdown {
   position: absolute;
-  bottom: calc(100% + 6px);
+  bottom: 0;
   left: 0; right: 0;
   background: #1A1A1A;
   border: 1px solid rgba(212,175,55,0.25);
@@ -2951,12 +2951,12 @@ mark.hl { background: rgba(212,175,55,0.22); color: var(--gold-light); border-ra
     <div class="thread-detail-compose">
       <div class="thread-typing-bar" id="threadTypingBar" style="display:none"></div>
       <div class="thread-compose-label">La tua risposta</div>
+      <div style="position:relative;">
+        <div class="mention-dropdown" id="mentionDropdown"></div>
+      </div>
       <div class="thread-compose-row">
         <div class="thread-compose-avatar" id="threadComposeAvatar"></div>
-        <div style="position:relative;flex:1;min-width:0;">
-          <div class="mention-dropdown" id="mentionDropdown"></div>
-          <textarea class="thread-compose-input" id="threadComposeInput" placeholder="Scrivi la tua risposta…" onkeydown="handleThreadKey(event)" oninput="_onThreadTypingInput()" onkeydown="_onThreadComposeKeydown(event)"></textarea>
-        </div>
+        <textarea class="thread-compose-input" id="threadComposeInput" placeholder="Scrivi la tua risposta…" oninput="_onThreadTypingInput()" onkeydown="_onThreadComposeKeydown(event)"></textarea>
         <button class="thread-compose-send" onclick="submitThreadReply()">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22,2 15,22 11,13 2,9"/></svg>
         </button>
@@ -5860,13 +5860,50 @@ let _mentionSelIdx  = -1;        // indice elemento selezionato nel dropdown
 let _mentionVisible = false;
 
 // Converte @Name nel testo in chip cliccabili
+// Costruisce lista nomi noti (lunghezza desc) per match esatto multi-parola
+function _getMentionNames() {
+  const seen = new Set();
+  const names = [];
+  const addName = (m) => {
+    if (!m || !m.name) return;
+    const k = m.name.toLowerCase();
+    if (!seen.has(k)) { seen.add(k); names.push(m.name); }
+  };
+  (ONLINE_MEMBERS || []).forEach(addName);
+  (REAL_MEMBERS   || []).forEach(addName);
+  // Aggiungi anche autori dei messaggi del thread corrente
+  if (currentThreadId && THREAD_MESSAGES[currentThreadId]) {
+    THREAD_MESSAGES[currentThreadId].forEach(msg => {
+      if (msg.author) {
+        const k = msg.author.toLowerCase();
+        if (!seen.has(k)) { seen.add(k); names.push(msg.author); }
+      }
+    });
+  }
+  // Ordina per lunghezza decrescente → match nomi più lunghi per primi
+  return names.sort((a, b) => b.length - a.length);
+}
+
 function _renderMentions(text) {
   if (!text) return '';
-  // Escape HTML base, poi converte @Name in chip
   const escaped = text
     .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-  return escaped.replace(/@([A-Za-zÀ-ÿ][A-Za-zÀ-ÿ0-9 .]{1,30}?)(?=\s|$|[^A-Za-zÀ-ÿ0-9 .])/g,
-    (match, name) => `<span class="mention-chip" onclick="_scrollToMention('${name.replace(/'/g,"\'")}')" title="Vai alla menzione di ${name}">@${name}</span>`
+  
+  const knownNames = _getMentionNames();
+  if (knownNames.length === 0) {
+    // Fallback generico se lista membri non ancora caricata
+    return escaped.replace(/@([A-Za-zÀ-ÿ][A-Za-zÀ-ÿ0-9 .]{1,40}?)(?=$|[^A-Za-zÀ-ÿ0-9 .])/g,
+      (match, name) => `<span class="mention-chip" onclick="_scrollToMention('${name.trim().replace(/'/g,"\'")}')">@${name.trim()}</span>`
+    );
+  }
+  
+  // Costruisce alternazione regex con nomi noti, escaped, lunghezza desc
+  const escapedNames = knownNames.map(n =>
+    n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  );
+  const namePattern = new RegExp('@(' + escapedNames.join('|') + ')(?=$|\s|[^A-Za-zÀ-ÿ0-9])', 'g');
+  return escaped.replace(namePattern, (match, name) =>
+    `<span class="mention-chip" onclick="_scrollToMention('${name.replace(/'/g,"\'")}')">@${name}</span>`
   );
 }
 
@@ -5977,16 +6014,31 @@ function _onThreadComposeKeydown(e) {
 
 // Estrae menzioni uniche da un testo (max _MENTION_MAX)
 function _extractMentions(text) {
+  if (!text) return [];
   const found = [];
   const seen  = new Set();
-  const regex = /@([A-Za-zÀ-ÿ][A-Za-zÀ-ÿ0-9 .]{1,30}?)(?=\s|$|[^A-Za-zÀ-ÿ0-9 .])/g;
-  let m;
-  while ((m = regex.exec(text)) !== null && found.length < _MENTION_MAX) {
-    const name = m[1].trim();
-    if (!seen.has(name.toLowerCase())) {
-      seen.add(name.toLowerCase());
-      found.push(name);
+  const knownNames = _getMentionNames();
+  
+  const tryMatch = (pattern) => {
+    let m;
+    while ((m = pattern.exec(text)) !== null && found.length < _MENTION_MAX) {
+      const name = m[1].trim();
+      if (name && !seen.has(name.toLowerCase())) {
+        seen.add(name.toLowerCase());
+        found.push(name);
+      }
     }
+  };
+  
+  if (knownNames.length > 0) {
+    const escapedNames = knownNames.map(n => n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+    const namePattern = new RegExp('@(' + escapedNames.join('|') + ')(?=$|\s|[^A-Za-zÀ-ÿ0-9])', 'g');
+    tryMatch(namePattern);
+  }
+  // Fallback per nomi non in lista (es. nuovi utenti non ancora caricati)
+  if (found.length < _MENTION_MAX) {
+    const fallback = /@([A-Za-zÀ-ÿ][A-Za-zÀ-ÿ0-9 .]{1,40}?)(?=$|[^A-Za-zÀ-ÿ0-9 .])/g;
+    tryMatch(fallback);
   }
   return found;
 }
@@ -6143,13 +6195,17 @@ async function submitThreadReply() {
         m.name && m.name.toLowerCase() === (_threadOwner.author || '').toLowerCase()
       );
       if (_ownerMember && _ownerMember.email) {
+        // FIX 1: pref_key rimosso (colonna non nella tabella notifications)
         _sb.from('notifications').insert({
           user_email: _ownerMember.email.toLowerCase(),
-          icon: 'blue', emoji: '💬',
-          text: `<strong>${currentUser.name.split(' ')[0]}</strong> ha risposto nel tuo thread: <strong>${_threadOwner.title || 'discussione'}</strong>`,
-          created_at: new Date().toISOString(), unread: true,
-          pref_key: 'discussion_reply'
-        }).then(null, () => {});
+          icon:       'blue',
+          emoji:      '💬',
+          text:       `<strong>${currentUser.name.split(' ')[0]}</strong> ha risposto nel tuo thread: <strong>${_threadOwner.title || 'discussione'}</strong>`,
+          created_at: new Date().toISOString(),
+          unread:     true
+        }).then(({ error }) => {
+          if (error) console.warn('[thread reply notif]', error.message);
+        }, () => {});
       }
     }
     if (GAS_URL) {
@@ -6186,14 +6242,19 @@ async function submitThreadReply() {
         (REAL_MEMBERS   || []).find(m => m.name && m.name.toLowerCase() === mentionedName.toLowerCase()) ||
         (ONLINE_MEMBERS || []).find(m => m.name && m.name.toLowerCase() === mentionedName.toLowerCase());
       if (!_mentionedMember || !_mentionedMember.email) return;
+      // FIX 1: rimuovi pref_key (colonna inesistente → INSERT silenzioso)
+      // Controlla preferenza lato mittente (proxy conservativo) — il destinatario
+      // la controlla nel proprio listener. L'insert viene sempre tentato.
       _sb.from('notifications').insert({
         user_email:  _mentionedMember.email.toLowerCase(),
-        icon: 'gold', emoji: '💛',
-        text: `<strong>${currentUser.name.split(' ')[0]}</strong> ti ha menzionato nel thread: <strong>${_threadTitle}</strong>`,
+        icon:        'gold',
+        emoji:       '💛',
+        text:        `<strong>${currentUser.name.split(' ')[0]}</strong> ti ha menzionato nel thread: <strong>${_threadTitle}</strong>`,
         created_at:  new Date().toISOString(),
-        unread:      true,
-        pref_key:    'mention_reply'
-      }).then(null, () => {});
+        unread:      true
+      }).then(({ error }) => {
+        if (error) console.warn('[mention notif]', error.message);
+      }, () => {});
     });
   }
 
