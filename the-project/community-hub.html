@@ -4452,15 +4452,18 @@ function applyRemoteData(data) {
   if (!activePanel) return;
   const pid = activePanel.id.replace('panel-', '');
   if (pid === 'feed') {
-    // SOLUZIONE DEFINITIVA BUG COMMENTI: se l'utente sta scrivendo in una casella
-    // commento, NON ri-renderizzare il feed. Il DOM verrebbe distrutto cancellando
-    // il testo digitato e perdendo il focus. I dati aggiornati saranno applicati
-    // al prossimo ciclo di polling, quando l'utente non starà più scrivendo.
-    const focusedInput = document.activeElement;
+    // Blocca renderFeed se l'utente interagisce col feed — evita flash hover e reset commenti.
+    // Il re-render distrugge il DOM: il browser perde lo stato :hover sui pulsanti causando
+    // un flash visivo, e cancella il testo digitato nelle caselle commento.
+    // In entrambi i casi i dati aggiornati arriveranno al ciclo di polling successivo.
+    const feedContainer = document.getElementById('feedContainer');
+    const focusedInput  = document.activeElement;
     const isTypingComment = focusedInput &&
       focusedInput.classList.contains('comment-input') &&
       focusedInput.closest('#feedContainer');
-    if (!isTypingComment) renderFeed();
+    const isHoveringFeed = feedContainer &&
+      feedContainer.matches(':hover');
+    if (!isTypingComment && !isHoveringFeed) renderFeed();
   }
   if (pid === 'discussions') renderDiscussions();
   if (pid === 'surveys')     renderSurveys();
@@ -11232,3 +11235,4 @@ function reportContentById(sourceType, sourceId, parentId) {
 
 </body>
 </html>
+
