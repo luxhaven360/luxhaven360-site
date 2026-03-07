@@ -1066,6 +1066,8 @@ body {
   display: flex; align-items: center; justify-content: center;
   position: relative; overflow: hidden;
 }
+.listing-img.has-thumb { background: none; }
+.listing-img.has-thumb img { width:100%; height:100%; object-fit:cover; display:block; }
 .listing-img::after {
   content: ''; position: absolute;
   inset: 0;
@@ -2759,6 +2761,20 @@ mark.hl { background: rgba(212,175,55,0.22); color: var(--gold-light); border-ra
               <input class="form-input" id="listingPrice" placeholder="es. €2.500.000 · Disponibile subito"/>
             </div>
             <div class="form-group">
+              <label class="form-label">Miniatura (opzionale)</label>
+              <div style="display:flex;align-items:center;gap:0.8rem;">
+                <label for="listingThumbnail" style="cursor:pointer;display:flex;align-items:center;gap:0.5rem;background:var(--dark4);border:1px dashed var(--border);border-radius:var(--radius);padding:0.55rem 1rem;font-size:0.78rem;color:var(--muted2);transition:var(--transition);" onmouseover="this.style.borderColor='var(--gold)';this.style.color='var(--gold)'" onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--muted2)'">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21,15 16,10 5,21"/></svg>
+                  Carica immagine
+                </label>
+                <input type="file" id="listingThumbnail" accept="image/*" style="display:none;" onchange="previewListingThumb(this)"/>
+                <span id="listingThumbName" style="font-size:0.72rem;color:var(--muted2);">Nessun file selezionato</span>
+              </div>
+              <div id="listingThumbPreview" style="margin-top:0.6rem;display:none;">
+                <img id="listingThumbImg" src="" style="width:100%;max-height:140px;object-fit:cover;border-radius:var(--radius);border:1px solid var(--border);"/>
+              </div>
+            </div>
+            <div class="form-group">
               <label class="form-label">Destinatari</label>
               <div class="broadcast-target">
                 <div class="target-chip active" data-listing-recipient="all" onclick="toggleChipSingle(this,'listing-recipient')">Tutti i membri</div>
@@ -3115,6 +3131,8 @@ const NOTIFICATIONS = [];
 /* ── Stato interno per rilevare nuovi contenuti ── */
 let _lastKnownTeamPostIds   = new Set(); // IDs team post già noti → rileva nuovi annunci
 let _lastKnownListingIds    = new Set(); // IDs listing già noti  → rileva nuove proprietà
+let _pendingSurveyIds      = new Set(); // IDs sondaggi pubblicati localmente ma non ancora confermati da GAS
+let _pendingListingIds     = new Set(); // IDs listing pubblicati localmente ma non ancora confermati da GAS
 let _lastKnownDiscIds       = new Set(); // IDs discussioni note  → rileva nuovi thread
 let _lastKnownThreadReplies = {};        // { discId: replyCount } → rileva nuove risposte
 let _communityDataReady     = false;     // flag: primo caricamento completato
@@ -4390,7 +4408,14 @@ function applyRemoteData(data) {
 
   // ── Listing Esclusivi ─────────────────────────────────────────────
   if (Array.isArray(data.listings)) {
-    LISTINGS = data.listings;
+    // Preserva listing pubblicati ottimisticamente (non ancora confermati da GAS).
+    // Se il server non ha ancora l'item (polling arriva prima della risposta GAS),
+    // lo manteniamo localmente per evitare la sparizione immediata.
+    const serverListingIds = new Set(data.listings.map(l => l.id));
+    const pendingLocal = LISTINGS.filter(l => _pendingListingIds.has(l.id) && !serverListingIds.has(l.id));
+    LISTINGS = [...pendingLocal, ...data.listings];
+    // Rimuovi dai pending gli item che il server ha confermato
+    _pendingListingIds.forEach(id => { if (serverListingIds.has(id)) _pendingListingIds.delete(id); });
   }
 
   // ── Risposte thread ──────────────────────────────────────────────
@@ -4401,13 +4426,21 @@ function applyRemoteData(data) {
     });
   }
 
-  // ── Sondaggi da GAS (sovrascrive sempre — nessun fallback statico) ─
+  // ── Sondaggi da GAS ──────────────────────────────────────────────
   if (Array.isArray(data.surveys)) {
-    SURVEYS = data.surveys.map(s => ({
-      ...s,
-      total: s.total ?? (s.options ? s.options.reduce((sum, o) => sum + (o.votes || 0), 0) : 0),
-      desc: s.desc || s.question || ''
-    }));
+    // Preserva sondaggi pubblicati ottimisticamente non ancora confermati da GAS.
+    const serverSurveyIds = new Set(data.surveys.map(s => s.id));
+    const pendingSurveys = SURVEYS.filter(s => _pendingSurveyIds.has(s.id) && !serverSurveyIds.has(s.id));
+    SURVEYS = [
+      ...pendingSurveys,
+      ...data.surveys.map(s => ({
+        ...s,
+        total: s.total ?? (s.options ? s.options.reduce((sum, o) => sum + (o.votes || 0), 0) : 0),
+        desc: s.desc || s.question || ''
+      }))
+    ];
+    // Rimuovi dai pending i sondaggi che il server ha confermato
+    _pendingSurveyIds.forEach(id => { if (serverSurveyIds.has(id)) _pendingSurveyIds.delete(id); });
   }
 
   // ── Voti sondaggi ────────────────────────────────────────────────
@@ -8380,8 +8413,10 @@ function renderListings() {
     <div class="grid-3">
       ${listings.map(l => `
         <div class="listing-card">
-          <div class="listing-img">
-            <div class="listing-img-text">${l.location || l.city || ''}</div>
+          <div class="listing-img${l.thumbnail ? ' has-thumb' : ''}">
+            ${l.thumbnail
+              ? `<img src="${l.thumbnail}" alt="${l.name || 'Listing'}" loading="lazy"/>`
+              : `<div class="listing-img-text">${l.location || l.city || ''}</div>`}
             ${l.tag ? `<div class="listing-exclusive-tag">${l.tag}</div>` : ''}
           </div>
           <div class="listing-info">
@@ -9585,6 +9620,7 @@ async function publishSurvey() {
   var tempId = Date.now();
   var surveyObj = { id: tempId, type: "survey", title: title, desc: question, question: question, options: options.map(function(o){return {text:o,votes:0};}), total: 0, expiry: expiry || null, recipient: recipient, author: currentUser.name, initial: currentUser.initial, ts: new Date().toISOString(), voted: null };
   SURVEYS.unshift(surveyObj);
+  _pendingSurveyIds.add(tempId); // protegge da sovrascrittura polling prima di conferma GAS
   saveCommunityCache();
   renderSurveys();
   logActivity('gold', '<strong>Team LH360</strong> ha pubblicato un sondaggio: ' + title);
@@ -9619,10 +9655,17 @@ async function publishSurvey() {
         "&initial=" + encodeURIComponent(currentUser.initial) +
         (expiry ? "&expiry=" + encodeURIComponent(expiry) : '')
       ).then(r => r.json());
-      // Sostituisci tempId con l'ID reale assegnato da GAS
+      // Sostituisci tempId con l'ID reale assegnato da GAS, rimuovi da pending
       if (gasData.success && gasData.survey && gasData.survey.id) {
         const idx = SURVEYS.findIndex(s => s.id === tempId);
         if (idx !== -1) { SURVEYS[idx].id = gasData.survey.id; saveCommunityCache(); }
+        _pendingSurveyIds.delete(tempId);
+        _pendingSurveyIds.add(gasData.survey.id);
+        // GAS ha confermato: l'item è ora nel server, rimuovi dal pending
+        setTimeout(() => _pendingSurveyIds.delete(gasData.survey.id), 30000);
+      } else {
+        // GAS non ha confermato: mantieni nel pending a lungo per garantire visibilità
+        setTimeout(() => _pendingSurveyIds.delete(tempId), 120000);
       }
     } catch(_e) {}
   }
@@ -9633,6 +9676,9 @@ async function publishListing() {
   var desc    = (document.getElementById("listingDesc")?.value || "").trim();
   var price   = (document.getElementById("listingPrice")?.value || "").trim();
   if (!title || !desc) { showToast("red","⚠️","Compila titolo e descrizione."); return; }
+  // Leggi thumbnail come base64 (se caricata)
+  var thumbnail = document.getElementById("listingThumbImg")?.src || "";
+  if (!thumbnail.startsWith("data:image/")) thumbnail = "";
   var catChip  = document.querySelector("[data-listing-cat].active");
   var category = catChip ? catChip.dataset.listingCat : "real-estate";
   var recipientChip = document.querySelector("[data-listing-recipient].active");
@@ -9647,9 +9693,11 @@ async function publishListing() {
     type: "listing", time: "Ora", title: (catIcons[category]||"")+" "+title, text: postText,
     locked: recipient==="candidate" ? "candidate" : (recipient==="founding" ? "founding" : ""),
     recipient: recipient, category: category, likes: 0, comments: 0,
-    liked: false, commentsData: [], likedBy: [], ts: new Date().toISOString()
+    liked: false, commentsData: [], likedBy: [], ts: new Date().toISOString(),
+    thumbnail: thumbnail || ""
   };
   LISTINGS.unshift(listingObj);
+  _pendingListingIds.add(tempId); // protegge da sovrascrittura polling prima di conferma GAS
   saveCommunityCache();
   renderListings();
   logActivity('gold', '<strong>Team LH360</strong> ha pubblicato un listing: ' + title);
@@ -9671,27 +9719,57 @@ async function publishListing() {
   document.getElementById("listingTitle").value = "";
   document.getElementById("listingDesc").value  = "";
   document.getElementById("listingPrice").value = "";
+  const thumbInput = document.getElementById("listingThumbnail");
+  if (thumbInput) thumbInput.value = "";
+  const thumbName = document.getElementById("listingThumbName");
+  if (thumbName) thumbName.textContent = "Nessun file selezionato";
+  const thumbPreview = document.getElementById("listingThumbPreview");
+  if (thumbPreview) thumbPreview.style.display = "none";
   // Persisti su GAS con il nuovo action publish_listing
   if (GAS_URL) {
     try {
-      const gasData = await fetch(GAS_URL + "?action=publish_listing" +
-        "&title=" + encodeURIComponent(title) +
-        "&desc=" + encodeURIComponent(desc) +
-        "&price=" + encodeURIComponent(price) +
-        "&category=" + encodeURIComponent(category) +
-        "&recipient=" + encodeURIComponent(recipient) +
-        "&author=" + encodeURIComponent(currentUser.name) +
-        "&initial=" + encodeURIComponent(currentUser.initial) +
-        "&role=" + encodeURIComponent(currentUser.title)
-      ).then(r => r.json());
-      // Sostituisci tempId con l'ID reale assegnato da GAS
+      // Usa POST per gestire thumbnail base64 potenzialmente grande
+      const gasBody = new URLSearchParams({
+        action: 'publish_listing',
+        title, desc, price, category, recipient,
+        author: currentUser.name,
+        initial: currentUser.initial,
+        role: currentUser.title,
+        thumbnail: thumbnail || ''
+      });
+      const gasData = await fetch(GAS_URL, { method: 'POST', body: gasBody }).then(r => r.json());
+      // Sostituisci tempId con l'ID reale assegnato da GAS, rimuovi da pending
       if (gasData.success && gasData.listing && gasData.listing.id) {
         const idx = LISTINGS.findIndex(l => l.id === tempId);
         if (idx !== -1) { LISTINGS[idx].id = gasData.listing.id; saveCommunityCache(); }
+        _pendingListingIds.delete(tempId);
+        _pendingListingIds.add(gasData.listing.id);
+        setTimeout(() => _pendingListingIds.delete(gasData.listing.id), 30000);
+      } else {
+        setTimeout(() => _pendingListingIds.delete(tempId), 120000);
       }
     } catch(_e) {}
   }
 }
+function previewListingThumb(input) {
+  const file = input.files[0];
+  const nameEl    = document.getElementById('listingThumbName');
+  const previewEl = document.getElementById('listingThumbPreview');
+  const imgEl     = document.getElementById('listingThumbImg');
+  if (!file) {
+    if (nameEl) nameEl.textContent = 'Nessun file selezionato';
+    if (previewEl) previewEl.style.display = 'none';
+    return;
+  }
+  if (nameEl) nameEl.textContent = file.name.length > 30 ? file.name.substring(0,28)+'…' : file.name;
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    if (imgEl) imgEl.src = e.target.result;
+    if (previewEl) previewEl.style.display = 'block';
+  };
+  reader.readAsDataURL(file);
+}
+
 function toggleSchedule(el, mode) {
   // Usa parentElement per prendere il contenitore, non el stesso (che è già un div)
   const row = document.getElementById('scheduleChipsRow') || el.parentElement;
