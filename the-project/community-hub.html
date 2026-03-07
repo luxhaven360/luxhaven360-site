@@ -5668,50 +5668,53 @@ function handleThreadKey(e) {
 // Invia segnale "sto scrivendo" al thread corrente via Supabase
 // FIX DEFINITIVO: niente upsert (richiede unique index nel DB che potrebbe non esistere).
 // Strategia garantita: DELETE sulla riga esistente → INSERT nuova riga.
-async function _sendThreadTyping(isTyping) {
+/* ══════════════════════════════════════════════════════════════
+   THREAD TYPING — BROADCAST PURO (zero tabelle DB, zero 400)
+   Usa Supabase Realtime Broadcast: WebSocket diretto tra client.
+   Nessuna scrittura su DB → nessun errore REST.
+═══════════════════════════════════════════════════════════════ */
+
+// Invia segnale "sto scrivendo" via Broadcast al canale del thread
+function _sendThreadTyping(isTyping) {
   if (!_sbReady || !currentUser || !currentThreadId) return;
-  const convKey = 'thread_' + currentThreadId;
-  const email   = currentUser.email.toLowerCase();
-  try {
-    await _sb.from('typing').delete()
-      .eq('conv_id', convKey).eq('user_email', email);
-    await _sb.from('typing').insert({
-      conv_id:    convKey,
-      user_email: email,
-      user_name:  currentUser.name.split(' ')[0] + ' ' + (currentUser.name.split(' ')[1]||'?')[0] + '.',
-      user_init:  currentUser.initial || currentUser.name[0] || '?',
-      is_typing:  isTyping,
-      updated_at: new Date().toISOString()
-    });
-  } catch(_e) {}
+  const ch = _sbChannels['thread_typing'];
+  if (!ch) return;
+  const shortName = currentUser.name.split(' ')[0] + ' ' + (currentUser.name.split(' ')[1]||'?')[0] + '.';
+  ch.send({
+    type: 'broadcast',
+    event: 'typing',
+    payload: {
+      email:     currentUser.email.toLowerCase(),
+      name:      shortName,
+      initial:   currentUser.initial || currentUser.name[0] || '?',
+      is_typing: isTyping
+    }
+  }).catch(() => {});
 }
 
-// Avvia ascolto typing per il thread aperto corrente
+// Avvia ascolto typing per il thread aperto corrente (Broadcast, nessun DB)
 function _startThreadTypingListener(threadId) {
   sbOff('thread_typing');
   if (!_sbReady || !threadId) return;
-  const convKey = 'thread_' + threadId;
+
   const ch = _sb.channel('thread_typing_' + threadId)
-    .on('postgres_changes', {
-      event: '*', schema: 'public', table: 'typing',
-      filter: 'conv_id=eq.' + convKey
-    }, (payload) => {
-      const d = payload.new;
-      if (!d || !d.user_email) return;
+    .on('broadcast', { event: 'typing' }, ({ payload }) => {
+      if (!payload || !payload.email) return;
       // Ignora il proprio segnale
-      if (d.user_email.toLowerCase() === currentUser.email.toLowerCase()) return;
-      const age = Date.now() - new Date(d.updated_at).getTime();
-      if (d.is_typing && age < 6000) {
-        _threadTypingUsers[d.user_email] = {
-          name:    d.user_name || d.user_email.split('@')[0],
-          initial: d.user_init || (d.user_name || 'U')[0].toUpperCase(),
+      if (payload.email === currentUser.email.toLowerCase()) return;
+
+      if (payload.is_typing) {
+        _threadTypingUsers[payload.email] = {
+          name:    payload.name    || payload.email.split('@')[0],
+          initial: payload.initial || (payload.name || 'U')[0].toUpperCase(),
           ts:      Date.now()
         };
       } else {
-        delete _threadTypingUsers[d.user_email];
+        delete _threadTypingUsers[payload.email];
       }
       _renderThreadTypingBar();
-    }).subscribe();
+    })
+    .subscribe();
   _sbChannels['thread_typing'] = ch;
 
   // Cleanup periodico: rimuovi utenti fermi da > 6s
@@ -5730,13 +5733,13 @@ function _startThreadTypingListener(threadId) {
 
 // Ferma ascolto e pulizia quando si chiude il thread
 function _stopThreadTypingListener() {
+  // Notifica gli altri che non stai più scrivendo prima di disconnettersi
+  _sendThreadTyping(false);
   sbOff('thread_typing');
   clearInterval(_threadTypingCleanupInterval);
+  if (_threadTypingTimer) { clearTimeout(_threadTypingTimer); _threadTypingTimer = null; }
   _threadTypingUsers = {};
   _renderThreadTypingBar();
-  // Comunica agli altri che non stai più scrivendo
-  if (_threadTypingTimer) { clearTimeout(_threadTypingTimer); _threadTypingTimer = null; }
-  _sendThreadTyping(false).catch(() => {});
 }
 
 /* ══════════════════════════════════════════════════════════════
@@ -7240,7 +7243,6 @@ function sbListenTyping(partnerEmail) {
     }, (payload) => {
       const d = payload.new;
       if (!d) { _setTypingState(partnerEmail, false); return; }
-      // Mostra solo il typing del partner, non il nostro
       if (d.user_email.toLowerCase() === currentUser.email.toLowerCase()) return;
       if (d.is_typing) {
         const age = Date.now() - new Date(d.updated_at).getTime();
@@ -7363,25 +7365,21 @@ function sendTypingStatus(isTyping) {
   if (isTyping && now - _typingSentAt < 800) return; // throttle 800ms
   _typingSentAt = now;
 
-  // Supabase: scrittura istantanea — zero latenza
-  // FIX DEFINITIVO: DELETE → INSERT, niente upsert (evita 400 se manca unique index)
   if (_sbReady) {
-    const cid   = convId(currentUser.email, currentConvPartnerEmail);
+    const cid = convId(currentUser.email, currentConvPartnerEmail);
     const email = currentUser.email.toLowerCase();
-    const _sbTypingWrite = (v) => {
+    const _write = (v) => {
       const row = { conv_id: cid, user_email: email, is_typing: v, updated_at: new Date().toISOString() };
-      _sb.from('typing').delete().eq('conv_id', cid).eq('user_email', email)
-        .then(() => _sb.from('typing').insert(row).then(null, () => {}), () => {});
+      _sb.from('typing').upsert(row, { onConflict: 'conv_id,user_email' }).then(null, () => {});
     };
     if (isTyping) {
-      _sbTypingWrite(true);
+      _write(true);
       if (_typingTimer) clearTimeout(_typingTimer);
-      _typingTimer = setTimeout(() => _sbTypingWrite(false), 5000);
+      _typingTimer = setTimeout(() => _write(false), 5000);
     } else {
-      _sbTypingWrite(false);
+      _write(false);
     }
   } else {
-    // Fallback GAS
     fetch(`${GAS_URL}?action=set_typing&email=${encodeURIComponent(currentUser.email)}&otherEmail=${encodeURIComponent(currentConvPartnerEmail)}&isTyping=${isTyping}`).catch(() => {});
     if (_typingTimer) clearTimeout(_typingTimer);
     if (isTyping) {
@@ -7395,13 +7393,14 @@ function clearTypingStatus() {
   if (!currentConvPartnerEmail || !currentUser) return;
 
   if (_sbReady) {
-    const cid   = convId(currentUser.email, currentConvPartnerEmail);
+    const cid = convId(currentUser.email, currentConvPartnerEmail);
     const email = currentUser.email.toLowerCase();
-    // FIX DEFINITIVO: DELETE → INSERT, niente upsert
-    _sb.from('typing').delete().eq('conv_id', cid).eq('user_email', email)
-      .then(() => _sb.from('typing').insert({ conv_id: cid, user_email: email, is_typing: false, updated_at: new Date().toISOString() }).then(null, ()=>{}), ()=>{});
+    _sb.from('typing').upsert(
+      { conv_id: cid, user_email: email, is_typing: false, updated_at: new Date().toISOString() },
+      { onConflict: 'conv_id,user_email' }
+    ).then(null, () => {});
   } else {
-    fetch(`${GAS_URL}?action=set_typing&email=${encodeURIComponent(currentUser.email)}&otherEmail=${encodeURIComponent(currentConvPartnerEmail)}&isTyping=false`).catch(()=>{});
+    fetch(`${GAS_URL}?action=set_typing&email=${encodeURIComponent(currentUser.email)}&otherEmail=${encodeURIComponent(currentConvPartnerEmail)}&isTyping=false`).catch(() => {});
   }
 }
 
