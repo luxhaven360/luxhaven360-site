@@ -3659,20 +3659,24 @@ function initApp() {
         if (!n || !n.text) return;
         const alreadyIn = NOTIFICATIONS.some(x => x.id === n.id);
         if (alreadyIn) return;
+        const _nTs   = n.created_at ? new Date(n.created_at).getTime() : Date.now();
+        const _nIcon = n.icon || 'blue';
+        const _nEmoji = n.emoji || (_nIcon==='gold'?'💛':_nIcon==='green'?'✅':_nIcon==='red'?'⚠️':'💬');
         const notif = {
-          id:    n.id,
-          icon:  n.icon  || 'blue',
-          emoji: n.emoji || '🔔',
-          text:  n.text,
-          time:  'Ora',
-          read:  false
+          id:     n.id || (_nTs + Math.random()),
+          icon:   _nIcon,
+          emoji:  _nEmoji,
+          text:   n.text,
+          time:   _notifRelTime(_nTs),
+          ts:     _nTs,      // FIX 3: timestamp reale dal DB — risolve "01 gen"
+          unread: true       // FIX 1: campo letto da updateNotifBadge
         };
         NOTIFICATIONS.unshift(notif);
         notifCount++;
         updateNotifBadge();
         renderNotifDropdown();
         renderNotifications();
-        showToast(notif.icon, notif.emoji, notif.text);
+        showToast(notif.icon, notif.emoji || '🔔', notif.text);
       }).subscribe();
     _sbChannels['notifications_rt'] = notifCh;
 
@@ -6188,12 +6192,19 @@ async function submitThreadReply() {
   if (_threadOwner && _threadOwner.author !== currentUser.name) {
     // FIX BUG 2: scrivi notifica su Supabase per consegna in tempo reale
     if (_sbReady) {
-      // Cerca email del proprietario del thread in REAL_MEMBERS o ONLINE_MEMBERS
-      const _ownerMember = (REAL_MEMBERS || []).find(m =>
-        m.name && m.name.toLowerCase() === (_threadOwner.author || '').toLowerCase()
-      ) || (ONLINE_MEMBERS || []).find(m =>
-        m.name && m.name.toLowerCase() === (_threadOwner.author || '').toLowerCase()
-      );
+      // FIX 2: I thread usano shortName ("Luca A."), REAL_MEMBERS ha nome completo ("Luca Amalfi")
+      // Prova match esatto, poi match con shortName generato, poi match sul primo nome
+      const _ownerShort = (_threadOwner.author || '').toLowerCase();
+      const _mkShort = (m) => m.name
+        ? (m.name.split(' ')[0] + ' ' + (m.name.split(' ')[1] || '?')[0] + '.').toLowerCase()
+        : '';
+      const _mkFirst = (m) => m.name ? m.name.split(' ')[0].toLowerCase() : '';
+      const _ownerFirst = _ownerShort.split(' ')[0];
+      const _allMembers = [...(REAL_MEMBERS || []), ...(ONLINE_MEMBERS || [])];
+      const _ownerMember =
+        _allMembers.find(m => m.name && m.name.toLowerCase() === _ownerShort) ||
+        _allMembers.find(m => _mkShort(m) === _ownerShort) ||
+        _allMembers.find(m => m.email && _mkFirst(m) === _ownerFirst);
       if (_ownerMember && _ownerMember.email) {
         // FIX 1: pref_key rimosso (colonna non nella tabella notifications)
         _sb.from('notifications').insert({
@@ -6238,9 +6249,13 @@ async function submitThreadReply() {
       if (mentionedName.toLowerCase() === currentUser.name.toLowerCase() ||
           mentionedName.toLowerCase() === myShort.toLowerCase()) return;
       // Cerca email dell'utente menzionato
+      const _mAllMembers = [...(REAL_MEMBERS||[]), ...(ONLINE_MEMBERS||[])];
+      const _mMkShort = (m) => m.name
+        ? (m.name.split(' ')[0] + ' ' + (m.name.split(' ')[1]||'?')[0] + '.').toLowerCase()
+        : '';
       const _mentionedMember =
-        (REAL_MEMBERS   || []).find(m => m.name && m.name.toLowerCase() === mentionedName.toLowerCase()) ||
-        (ONLINE_MEMBERS || []).find(m => m.name && m.name.toLowerCase() === mentionedName.toLowerCase());
+        _mAllMembers.find(m => m.name && m.name.toLowerCase() === mentionedName.toLowerCase()) ||
+        _mAllMembers.find(m => _mMkShort(m) === mentionedName.toLowerCase());
       if (!_mentionedMember || !_mentionedMember.email) return;
       // FIX 1: rimuovi pref_key (colonna inesistente → INSERT silenzioso)
       // Controlla preferenza lato mittente (proxy conservativo) — il destinatario
@@ -8371,7 +8386,7 @@ function renderNotifications() {
     const timeLabel = ts ? _notifRelTime(ts) : (n.time || 'Ora');
     return `
     <div class="notif-item ${n.unread ? 'unread' : ''}" onclick="markNotifRead(${n.id})">
-      <div class="notif-icon ${colorMap[n.type] || 'gold'}">${n.icon}</div>
+      <div class="notif-icon ${n.icon || colorMap[n.type] || 'gold'}">${n.emoji || n.icon || '🔔'}</div>
       <div class="notif-content">
         <div class="notif-text">${n.text}</div>
         <div class="notif-time" data-ts="${ts}">${timeLabel}</div>
@@ -8399,7 +8414,7 @@ function renderNotifDropdown() {
     const timeLabel = ts ? _notifRelTime(ts) : (n.time || 'Ora');
     return `
     <div class="notif-dropdown-item ${n.unread ? 'unread' : ''}" onclick="markNotifRead(${n.id}); toggleNotifDropdown();">
-      <div class="ndi-icon">${n.icon}</div>
+      <div class="ndi-icon">${n.emoji || n.icon || '🔔'}</div>
       <div class="ndi-text">
         ${n.text}
         <div class="ndi-time" data-ts="${ts}">${timeLabel}</div>
@@ -8576,10 +8591,11 @@ function addRealNotification(prefKey, icon, text, senderEmail) {
   const n = {
     id:          nowTs + Math.random(),
     icon,
+    emoji:       icon === 'gold' ? '💛' : icon === 'green' ? '✅' : icon === 'red' ? '⚠️' : '💬',
     text,
-    time:        'Ora',       // stringa leggibile, aggiornata da _startNotifTimeTicker
-    ts:          nowTs,       // timestamp grezzo in ms per calcolo tempo relativo
-    read: false,
+    time:        'Ora',
+    ts:          nowTs,
+    unread:      true,   // FIX 1: campo letto da updateNotifBadge e renderNotif*
     prefKey,
     senderEmail: senderEmail ? senderEmail.toLowerCase() : null
   };
@@ -8589,7 +8605,7 @@ function addRealNotification(prefKey, icon, text, senderEmail) {
   const np = document.getElementById('panel-notifications');
   if (np && np.classList.contains('active')) renderNotifications();
   // Mostra popup bottom-right in qualunque pannello sia attivo
-  _showNotifPopup(icon, text, nowTs);
+  _showNotifPopup(n.emoji, text, nowTs);
   // Persisti le notifiche localmente per resistere ai refresh
   _saveNotifCache();
   // Avvia ticker aggiornamento tempi (se non già attivo)
@@ -8648,11 +8664,14 @@ function _loadNotifCache() {
     const arr = JSON.parse(raw);
     if (!Array.isArray(arr) || arr.length === 0) return;
     arr.forEach(n => {
-      // Retrocompatibilità: le notifiche vecchie non hanno ts → ricava da id (id = Date.now() + Math.random())
+      // Retrocompatibilità: le notifiche vecchie non hanno ts → ricava da id
       if (!n.ts && n.id) n.ts = Math.floor(n.id);
-      // Aggiorna la stringa tempo relativo usando il ts grezzo
       if (n.ts) n.time = _notifRelTime(n.ts);
       else if (!n.time) n.time = 'Ora';
+      // FIX 1c: normalizza campo unread — vecchie notifiche usavano read:false
+      if (n.unread === undefined) n.unread = (n.read === false);
+      // FIX 3: normalizza emoji — vecchie notifiche potrebbero non averla
+      if (!n.emoji) n.emoji = n.icon==='gold'?'💛':n.icon==='green'?'✅':n.icon==='red'?'⚠️':'💬';
       if (!NOTIFICATIONS.some(x => x.id === n.id)) NOTIFICATIONS.push(n);
     });
     NOTIFICATIONS.sort((a,b) => (b.id||0) - (a.id||0));
