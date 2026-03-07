@@ -3030,6 +3030,10 @@ let BANNED_USERS = new Set();
 // Set persistente degli ID contenuto rimosso — filtrato da FEED_POSTS, DISCUSSIONS ecc. dopo refresh
 let _REMOVED_IDS = new Set(); // formato: "sourceType:sourceId"
 
+let _PENDING_THREADS = {};
+let _RESOLVED_REPORT_IDS = new Set();
+const MOD_RESOLVED_IDS_KEY = 'lh360_mod_resolved_ids';
+
 let _modTabActive = 'reports'; // 'reports' | 'removed' | 'log'
 
 // Chiavi localStorage per persistenza moderazione
@@ -4048,14 +4052,32 @@ function applyRemoteData(data) {
   }
 
   // ── Discussioni ──────────────────────────────────────────────────
-  // Sempre sovrascrive — se GAS risponde con array vuoto, DISCUSSIONS è [] (nessun fallback statico)
   if (data.hasOwnProperty('discussions') && Array.isArray(data.discussions)) {
-    // BUG FIX #5: preserva lastReplyTs locale prima di sovrascrivere con dati server
+    // BUG FIX #5: preserva lastReplyTs locale
+    // BUG FIX #3: preserva views locali (mai azzerare contatori già incrementati)
     const localDiscMap = {};
-    DISCUSSIONS.forEach(d => { if (d.lastReplyTs) localDiscMap[d.id] = d.lastReplyTs; });
+    DISCUSSIONS.forEach(d => {
+      localDiscMap[String(d.id)] = { lastReplyTs: d.lastReplyTs || null, views: d.views || 0 };
+    });
     DISCUSSIONS = data.discussions
       .filter(d => !_REMOVED_IDS.has(`thread:${d.id}`) && !_REMOVED_IDS.has(`thread:${Number(d.id)}`))
-      .map(d => ({ ...d, lastReplyTs: localDiscMap[d.id] || d.lastReplyTs || null }));
+      .map(d => {
+        const local = localDiscMap[String(d.id)] || {};
+        return {
+          ...d,
+          lastReplyTs: local.lastReplyTs || d.lastReplyTs || null,
+          // BUG FIX #3: usa max tra views locale e server — server non deve azzerare views
+          views: Math.max(d.views || 0, local.views || 0)
+        };
+      });
+    // BUG FIX #2: reinserisci thread ottimistici pendenti non ancora confermati da GAS
+    // Evita che scompaiano durante il polling mentre GAS processa il salvataggio
+    const serverIds = new Set(DISCUSSIONS.map(d => String(d.id)));
+    Object.values(_PENDING_THREADS).forEach(pending => {
+      if (!serverIds.has(String(pending.id))) {
+        DISCUSSIONS.unshift(pending);
+      }
+    });
   }
 
   // ── Listing Esclusivi ─────────────────────────────────────────────
@@ -4708,9 +4730,11 @@ async function _loadReportsFromSupabase() {
         severity:      r.severity || 'medium',
         isAuto:        false
       }));
-      // Evita duplicati tra reports locali e remoti
+      // Evita duplicati tra reports locali e remoti + filtra quelli già risolti
       const localIds = new Set(REPORTS.map(r => String(r.id)));
       remoteReports.forEach(r => {
+        // BUG FIX #1: salta i report già gestiti (risolti/eliminati)
+        if (_RESOLVED_REPORT_IDS.has(String(r.id))) return;
         if (!localIds.has(String(r.id))) REPORTS.push(r);
       });
       REPORTS.sort((a, b) => (b.ts || 0) - (a.ts || 0));
@@ -5261,11 +5285,15 @@ async function submitNewThread() {
 
   // Ottimistic: aggiungi subito in locale
   const tempId = Date.now();
-  DISCUSSIONS.unshift({
+  const _pendingDisc = {
     id: tempId, category: cat, title,
     author: shortName, time: 'Ora', ts: new Date().toISOString(), replies: 0, views: 0, pinned: false,
-    lastReply: 'Nessuna risposta ancora', lastReplyTs: null
-  });
+    lastReply: 'Nessuna risposta ancora', lastReplyTs: null,
+    _isPending: true  // marker: thread non ancora confermato da GAS
+  };
+  DISCUSSIONS.unshift(_pendingDisc);
+  // BUG FIX #2: registra il thread pendente — applyRemoteData lo preserverà durante il polling
+  _PENDING_THREADS[tempId] = _pendingDisc;
   THREAD_MESSAGES[tempId] = [{
     author: shortName, initial: currentUser.initial, role: currentUser.title,
     isTeam: currentUser.role === 'team', time: 'Ora', ts: new Date().toISOString(), text: body, isOp: true, reactions: []
@@ -5301,14 +5329,17 @@ async function submitNewThread() {
         // Sostituisci tempId con ID reale del server
         const realId = data.discussion.id;
         const idx = DISCUSSIONS.findIndex(d => d.id === tempId);
-        if (idx !== -1) DISCUSSIONS[idx].id = realId;
+        if (idx !== -1) {
+          DISCUSSIONS[idx].id = realId;
+          DISCUSSIONS[idx]._isPending = false; // non più pendente
+        }
         const msgs = THREAD_MESSAGES[tempId];
         if (msgs) {
           THREAD_MESSAGES[realId] = msgs;
           delete THREAD_MESSAGES[tempId];
         }
-        // FIX #2: aggiungi l'ID reale a _lastKnownDiscIds così il poll successivo
-        // non rileva questo thread come "nuovo" e non genera una notifica all'autore
+        // Thread confermato: sposta da _PENDING_THREADS al set noti
+        delete _PENDING_THREADS[tempId];
         _lastKnownDiscIds.add(realId);
         _lastKnownDiscIds.delete(tempId);
         saveCommunityCache();
@@ -8208,6 +8239,9 @@ function resolveReport(id, action) {
 
   REPORTS.splice(idx, 1);
   saveModData();
+  // BUG FIX #1: segna la segnalazione come risolta — non verrà ricaricata da Supabase al refresh
+  _RESOLVED_REPORT_IDS.add(String(report.id));
+  saveModData(); // salva anche _RESOLVED_REPORT_IDS
   // BUG FIX #2: elimina la segnalazione da Supabase per evitare che ricompaia dopo refresh
   _deleteReportFromSupabase(report.id);
   renderModeration();
@@ -9552,6 +9586,7 @@ function saveModData() {
     localStorage.setItem(MOD_LOG_KEY, JSON.stringify(MOD_LOG.slice(0, 200)));
     localStorage.setItem(MOD_BANNED_KEY, JSON.stringify([...BANNED_USERS]));
     localStorage.setItem(MOD_REMOVED_IDS_KEY, JSON.stringify([..._REMOVED_IDS]));
+    localStorage.setItem(MOD_RESOLVED_IDS_KEY, JSON.stringify([..._RESOLVED_REPORT_IDS]));
   } catch(e) {}
 }
 
@@ -9567,6 +9602,8 @@ function loadModData() {
     if (b) BANNED_USERS = new Set(JSON.parse(b));
     const ri = localStorage.getItem(MOD_REMOVED_IDS_KEY);
     if (ri) _REMOVED_IDS = new Set(JSON.parse(ri));
+    const rr = localStorage.getItem(MOD_RESOLVED_IDS_KEY);
+    if (rr) _RESOLVED_REPORT_IDS = new Set(JSON.parse(rr));
   } catch(e) {}
 }
 
