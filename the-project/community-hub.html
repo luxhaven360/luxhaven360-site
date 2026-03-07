@@ -1861,6 +1861,66 @@ mark.hl { background: rgba(212,175,55,0.22); color: var(--gold-light); border-ra
 .thread-compose-send:hover { transform: scale(1.08); box-shadow: 0 6px 20px rgba(212,175,55,0.35); }
 .thread-compose-send svg { width: 16px; height: 16px; color: var(--darker); }
 
+/* ── Thread Typing Indicator ── */
+.thread-typing-bar {
+  display: flex; align-items: center; gap: 0.55rem;
+  padding: 0.3rem 1.2rem 0; min-height: 1.6rem;
+}
+.thread-typing-avatars { display: flex; align-items: center; }
+.thread-typing-avatar {
+  width: 22px; height: 22px; border-radius: 50%;
+  background: var(--gold); color: var(--darker);
+  font-size: 0.58rem; font-weight: 700;
+  display: flex; align-items: center; justify-content: center;
+  border: 1.5px solid var(--card-bg); margin-right: -6px; flex-shrink: 0;
+}
+.thread-typing-dots {
+  display: inline-flex; align-items: center; gap: 2px; margin-left: 8px;
+}
+.thread-typing-dot {
+  width: 4px; height: 4px; border-radius: 50%;
+  background: var(--gold); opacity: 0.8;
+  animation: typingBounce 1.1s infinite ease-in-out;
+}
+.thread-typing-dot:nth-child(1){animation-delay:0s}
+.thread-typing-dot:nth-child(2){animation-delay:.18s}
+.thread-typing-dot:nth-child(3){animation-delay:.36s}
+.thread-typing-text {
+  font-size: 0.7rem; color: var(--muted2); font-style: italic; margin-left: 4px;
+}
+
+/* ── Thread Typing Indicator ── */
+.thread-typing-bar {
+  display: flex; align-items: center; gap: 0.55rem;
+  padding: 0.45rem 1.2rem 0.1rem;
+  min-height: 1.8rem;
+}
+.thread-typing-avatars {
+  display: flex; align-items: center; gap: -4px;
+}
+.thread-typing-avatar {
+  width: 22px; height: 22px; border-radius: 50%;
+  background: var(--gold); color: var(--darker);
+  font-size: 0.58rem; font-weight: 700;
+  display: flex; align-items: center; justify-content: center;
+  border: 1.5px solid var(--card-bg);
+  margin-right: -6px; flex-shrink: 0;
+}
+.thread-typing-dots {
+  display: inline-flex; align-items: center; gap: 2px; margin-left: 2px;
+}
+.thread-typing-dot {
+  width: 4px; height: 4px; border-radius: 50%;
+  background: var(--gold); opacity: 0.8;
+  animation: typingBounce 1.1s infinite ease-in-out;
+}
+.thread-typing-dot:nth-child(1) { animation-delay: 0s; }
+.thread-typing-dot:nth-child(2) { animation-delay: 0.18s; }
+.thread-typing-dot:nth-child(3) { animation-delay: 0.36s; }
+.thread-typing-text {
+  font-size: 0.7rem; color: var(--muted2); font-style: italic; margin-left: 4px;
+}
+
 /* New thread modal */
 #newThreadModal {
   position: fixed; inset: 0; z-index: 6000;
@@ -2846,10 +2906,11 @@ mark.hl { background: rgba(212,175,55,0.22); color: var(--gold-light); border-ra
     </div>
     <div class="thread-detail-messages" id="threadDetailMessages"></div>
     <div class="thread-detail-compose">
+      <div class="thread-typing-bar" id="threadTypingBar" style="display:none"></div>
       <div class="thread-compose-label">La tua risposta</div>
       <div class="thread-compose-row">
         <div class="thread-compose-avatar" id="threadComposeAvatar"></div>
-        <textarea class="thread-compose-input" id="threadComposeInput" placeholder="Scrivi la tua risposta…" onkeydown="handleThreadKey(event)"></textarea>
+        <textarea class="thread-compose-input" id="threadComposeInput" placeholder="Scrivi la tua risposta…" onkeydown="handleThreadKey(event)" oninput="_onThreadTypingInput()"></textarea>
         <button class="thread-compose-send" onclick="submitThreadReply()">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22,2 15,22 11,13 2,9"/></svg>
         </button>
@@ -2991,6 +3052,10 @@ let currentConvPartnerEmail = null; // email del partner della conv aperta
 let _msgPollTimer    = null;
 let _typingTimer     = null;
 let _typingSentAt    = 0;
+// Thread typing: { email → { name, initial, ts } }
+let _threadTypingUsers = {};
+let _threadTypingTimer = null;
+let _threadTypingCleanupInterval = null;
 let _msgLastSeen     = {};        // { partnerEmail: lastMsgId } per rilevare nuovi messaggi
 let _pollMsgCycle    = 0;         // contatore cicli polling per throttling lista conv
 let _msgCache        = {};        // { partnerEmail: [{...}] } — messaggi già caricati per evitare re-fetch
@@ -5495,12 +5560,11 @@ function openThread(id) {
   if (!thread) return;
   currentThreadId = id;
 
-  // VIEWS: registra la view su Supabase (sorgente unica condivisa)
-  // - autore del thread → non conta
-  // - stesso utente già aperto → non conta (deduplica in-sessione + DB)
-  // - notifiche → non chiamano openThread, non generano views
-  // Il contatore si aggiorna per tutti via RT listener thread_views_rt
+  // VIEWS: registra la view su Supabase
   _recordThreadView(id, thread.author);
+  // TYPING: avvia listener per questo thread
+  _threadTypingUsers = {};
+  _startThreadTypingListener(id);
 
   // Category tag
   const catLabels = { feedback:'Feedback', question:'Domanda', idea:'Idea', general:'Generale' };
@@ -5583,10 +5647,140 @@ function handleThreadKey(e) {
   if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) submitThreadReply();
 }
 
+/* ══════════════════════════════════════════════════════════════
+   THREAD TYPING INDICATOR
+   - Usa tabella Supabase "typing" con conv_id = "thread_<threadId>"
+   - Mostra avatar + pallini per ogni utente che sta scrivendo
+   - Auto-cleanup dopo 6s di inattività
+═══════════════════════════════════════════════════════════════ */
+
+// Invia segnale "sto scrivendo" al thread corrente via Supabase
+async function _sendThreadTyping(isTyping) {
+  if (!_sbReady || !currentUser || !currentThreadId) return;
+  const convKey = 'thread_' + currentThreadId;
+  try {
+    await _sb.from('typing').upsert({
+      conv_id:    convKey,
+      user_email: currentUser.email.toLowerCase(),
+      user_name:  currentUser.name.split(' ')[0] + ' ' + (currentUser.name.split(' ')[1]||'?')[0] + '.',
+      user_init:  currentUser.initial || currentUser.name[0] || '?',
+      is_typing:  isTyping,
+      updated_at: new Date().toISOString()
+    }, { onConflict: 'conv_id,user_email' });
+  } catch(_e) {}
+}
+
+// Avvia ascolto typing per il thread aperto corrente
+function _startThreadTypingListener(threadId) {
+  sbOff('thread_typing');
+  if (!_sbReady || !threadId) return;
+  const convKey = 'thread_' + threadId;
+  const ch = _sb.channel('thread_typing_' + threadId)
+    .on('postgres_changes', {
+      event: '*', schema: 'public', table: 'typing',
+      filter: 'conv_id=eq.' + convKey
+    }, (payload) => {
+      const d = payload.new;
+      if (!d || !d.user_email) return;
+      // Ignora il proprio segnale
+      if (d.user_email.toLowerCase() === currentUser.email.toLowerCase()) return;
+      const age = Date.now() - new Date(d.updated_at).getTime();
+      if (d.is_typing && age < 6000) {
+        _threadTypingUsers[d.user_email] = {
+          name:    d.user_name || d.user_email.split('@')[0],
+          initial: d.user_init || (d.user_name || 'U')[0].toUpperCase(),
+          ts:      Date.now()
+        };
+      } else {
+        delete _threadTypingUsers[d.user_email];
+      }
+      _renderThreadTypingBar();
+    }).subscribe();
+  _sbChannels['thread_typing'] = ch;
+
+  // Cleanup periodico: rimuovi utenti fermi da > 6s
+  clearInterval(_threadTypingCleanupInterval);
+  _threadTypingCleanupInterval = setInterval(() => {
+    const now = Date.now();
+    let changed = false;
+    Object.keys(_threadTypingUsers).forEach(email => {
+      if (now - _threadTypingUsers[email].ts > 6000) {
+        delete _threadTypingUsers[email]; changed = true;
+      }
+    });
+    if (changed) _renderThreadTypingBar();
+  }, 2000);
+}
+
+// Ferma ascolto e pulizia quando si chiude il thread
+function _stopThreadTypingListener() {
+  sbOff('thread_typing');
+  clearInterval(_threadTypingCleanupInterval);
+  _threadTypingUsers = {};
+  _renderThreadTypingBar();
+  // Comunica agli altri che non stai più scrivendo
+  if (_threadTypingTimer) { clearTimeout(_threadTypingTimer); _threadTypingTimer = null; }
+  _sendThreadTyping(false).catch(() => {});
+}
+
+// Handler input textarea thread: invia typing con debounce
+function _onThreadTypingInput() {
+  if (!currentUser || !currentThreadId) return;
+  const now = Date.now();
+  // Invia "sto scrivendo" al massimo ogni 3s
+  if (now - (_threadTypingSentAt || 0) > 3000) {
+    _threadTypingSentAt = now;
+    _sendThreadTyping(true);
+  }
+  // Resetta timer di stop: dopo 4s di inattività invia is_typing=false
+  clearTimeout(_threadTypingTimer);
+  _threadTypingTimer = setTimeout(() => {
+    _sendThreadTyping(false);
+  }, 4000);
+}
+
+// Renderizza la barra typing sotto i messaggi
+function _renderThreadTypingBar() {
+  const bar = document.getElementById('threadTypingBar');
+  if (!bar) return;
+  const users = Object.values(_threadTypingUsers);
+  if (users.length === 0) { bar.style.display = 'none'; bar.innerHTML = ''; return; }
+
+  bar.style.display = 'flex';
+  const avatarsHtml = users.slice(0, 4).map(u =>
+    `<div class="thread-typing-avatar" title="${u.name}">${u.initial}</div>`
+  ).join('');
+
+  let label = '';
+  if (users.length === 1) label = users[0].name + ' sta scrivendo';
+  else if (users.length === 2) label = users[0].name + ' e ' + users[1].name + ' stanno scrivendo';
+  else label = users.length + ' persone stanno scrivendo';
+
+  bar.innerHTML = `
+    <div class="thread-typing-avatars">${avatarsHtml}</div>
+    <div class="thread-typing-dots">
+      <div class="thread-typing-dot"></div>
+      <div class="thread-typing-dot"></div>
+      <div class="thread-typing-dot"></div>
+    </div>
+    <span class="thread-typing-text">${label}</span>`;
+}
+
+let _threadTypingSentAt = 0;
+
 async function submitThreadReply() {
   const input = document.getElementById('threadComposeInput');
   const text  = input.value.trim();
   if (!text || !currentThreadId) return;
+
+  // FIX views: marca come già visto prima di inviare
+  if (currentUser) {
+    _viewedThreadIds.add(String(currentThreadId) + ':' + currentUser.email);
+  }
+  // TYPING: ferma indicatore — ho inviato, non sto più scrivendo
+  clearTimeout(_threadTypingTimer);
+  _threadTypingTimer = null;
+  _sendThreadTyping(false);
 
   const shortName = currentUser.name.split(' ')[0] + ' ' + (currentUser.name.split(' ')[1]||'?')[0] + '.';
   const newReply  = {
