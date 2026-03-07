@@ -3150,6 +3150,7 @@ const NOTIFICATIONS = [];
 /* ── Stato interno per rilevare nuovi contenuti ── */
 let _lastKnownTeamPostIds   = new Set(); // IDs team post già noti → rileva nuovi annunci
 let _lastKnownListingIds    = new Set(); // IDs listing già noti  → rileva nuove proprietà
+let _lastKnownSurveyIds     = new Set(); // IDs sondaggi già noti → rileva nuovi sondaggi
 let _pendingSurveyIds      = new Set(); // IDs sondaggi pubblicati localmente ma non ancora confermati da GAS
 let _pendingListingIds     = new Set(); // IDs listing pubblicati localmente ma non ancora confermati da GAS
 let _lastKnownDiscIds       = new Set(); // IDs discussioni note  → rileva nuovi thread
@@ -3727,6 +3728,104 @@ function initApp() {
         showToast(notif.icon, notif.emoji || '🔔', notif.text);
       }).subscribe();
     _sbChannels['notifications_rt'] = notifCh;
+
+    // ── Listener notifiche broadcast (user_email='__broadcast__') ──────────
+    // Il fondatore pubblica listing/sondaggi → inserisce una notifica con user_email='__broadcast__'
+    // Tutti gli utenti autenticati la ricevono qui e la mostrano nella campanella.
+    sbOff('broadcast_notif_rt');
+    const bcastNotifCh = _sb.channel('broadcast_notif_rt')
+      .on('postgres_changes', {
+        event: 'INSERT', schema: 'public', table: 'notifications',
+        filter: 'user_email=eq.__broadcast__'
+      }, (payload) => {
+        const n = payload.new;
+        if (!n || !n.text) return;
+        // Evita duplicati (il fondatore che pubblica ha già la notifica locale)
+        const alreadyIn = NOTIFICATIONS.some(x => x.text === n.text && Math.abs((x.ts || 0) - new Date(n.created_at).getTime()) < 10000);
+        if (alreadyIn) return;
+        const _nTs   = n.created_at ? new Date(n.created_at).getTime() : Date.now();
+        const _nIcon = n.icon || 'gold';
+        const _nEmoji = n.emoji || '🔔';
+        const notif = {
+          id:     n.id || (_nTs + Math.random()),
+          icon:   _nIcon,
+          emoji:  _nEmoji,
+          text:   n.text,
+          time:   _notifRelTime(_nTs),
+          ts:     _nTs,
+          unread: true
+        };
+        NOTIFICATIONS.unshift(notif);
+        notifCount++;
+        updateNotifBadge();
+        renderNotifDropdown();
+        const np = document.getElementById('panel-notifications');
+        if (np && np.classList.contains('active')) renderNotifications();
+        _showNotifPopup(_nEmoji, n.text, _nTs);
+        _saveNotifCache();
+        _startNotifTimeTicker();
+      }).subscribe();
+    _sbChannels['broadcast_notif_rt'] = bcastNotifCh;
+
+    // ── Canale Broadcast Supabase per sync istantaneo nuovi contenuti ──────
+    // Quando il fondatore pubblica listing/sondaggi, invia un messaggio effimero
+    // su questo canale → tutti i client aggiornano subito i loro dati (senza attendere il polling)
+    sbOff('community_content_rt');
+    const contentCh = _sb.channel('community_content_broadcast')
+      .on('broadcast', { event: 'new_listing' }, (payload) => {
+        if (!payload || !payload.payload) return;
+        const l = payload.payload;
+        // Controlla che non sia già presente (fondatore ha già ottimisticamente il listing)
+        if (LISTINGS.some(x => x.id === l.id || (x.title === l.title && Math.abs(new Date(x.ts).getTime() - new Date(l.ts).getTime()) < 5000))) return;
+        // Filtra per recipient
+        const role = currentUser ? currentUser.role : 'candidate';
+        const canSee = !l.recipient || l.recipient === 'all'
+          || (l.recipient === 'founding' && (role === 'founding' || role === 'team'))
+          || (l.recipient === 'candidate' && (role === 'candidate' || role === 'team'));
+        if (!canSee) return;
+        LISTINGS.unshift(l);
+        _lastKnownListingIds.add(l.id);
+        saveCommunityCache();
+        // Aggiorna UI se il pannello listings è aperto
+        const activePanel = document.querySelector('.panel.active');
+        if (activePanel && activePanel.id === 'panel-listings') {
+          renderListings();
+        } else {
+          const lb = document.getElementById('listingsNewBadge');
+          if (lb) lb.classList.remove('hidden');
+        }
+        addRealNotification('new_listings', '🏠',
+          `Nuova proprietà disponibile: <strong>${l.title || 'Listing esclusivo'}</strong>`);
+      })
+      .on('broadcast', { event: 'new_survey' }, (payload) => {
+        if (!payload || !payload.payload) return;
+        const s = payload.payload;
+        if (SURVEYS.some(x => x.id === s.id || (x.title === s.title && Math.abs(new Date(x.ts).getTime() - new Date(s.ts).getTime()) < 5000))) return;
+        // Filtra per recipient
+        const role = currentUser ? currentUser.role : 'candidate';
+        const canSee = !s.recipient || s.recipient === 'all'
+          || (s.recipient === 'founding' && (role === 'founding' || role === 'team'))
+          || (s.recipient === 'candidate' && (role === 'candidate' || role === 'team'));
+        if (!canSee) return;
+        SURVEYS.unshift({
+          ...s,
+          total: s.total ?? (s.options ? s.options.reduce((sum, o) => sum + (o.votes || 0), 0) : 0),
+          desc: s.desc || s.question || ''
+        });
+        _lastKnownSurveyIds.add(s.id);
+        saveCommunityCache();
+        const activePanel = document.querySelector('.panel.active');
+        if (activePanel && activePanel.id === 'panel-surveys') {
+          renderSurveys();
+        } else {
+          const sv = document.getElementById('surveysNewBadge');
+          if (sv) sv.classList.remove('hidden');
+        }
+        addRealNotification('new_surveys', '📊',
+          `Nuovo sondaggio: <strong>${s.title || 'Sondaggio'}</strong> — Partecipa ora!`);
+      })
+      .subscribe();
+    _sbChannels['community_content_rt'] = contentCh;
 
     // Ascolta attività community in tempo reale (feed attività dashboard)
     // BUG FIX #1: tutti gli utenti ricevono le stesse attività dal canale globale
@@ -4580,9 +4679,9 @@ async function initCommunityData() {
     renderRightPanel();
   }
 
-  // 3. Polling real-time ogni 3 secondi (presenza e notifiche) + 15s per contenuti pesanti
+  // 3. Polling real-time ogni 2 secondi (presenza e notifiche) + contenuti ogni 2 cicli (≈4s)
   if (_communityPollTimer) clearInterval(_communityPollTimer);
-  _communityPollTimer = setInterval(pollCommunityUpdates, 3 * 1000);
+  _communityPollTimer = setInterval(pollCommunityUpdates, 2 * 1000);
 }
 
 /* Polling leggero: solo metadati per evitare render inutili */
@@ -4607,7 +4706,7 @@ async function pollCommunityUpdates() {
         const notifPanel = document.getElementById('panel-notifications');
         if (notifPanel && notifPanel.classList.contains('active')) renderNotifications();
       }
-      // Posts/discussions ogni 2 cicli (≈6s) — presenza aggiornata ogni ciclo (3s)
+      // Posts/discussions ogni 2 cicli (≈4s) — presenza aggiornata ogni ciclo (2s)
       if (_pollCycle % 2 === 0) {
         applyRemoteData(data);
         // BUG FIX #1: usa GLOBAL_ACTIVITIES (non localStorage) per il feed attività
@@ -4960,6 +5059,7 @@ function _initContentSnapshots() {
     if (isTeam) _lastKnownTeamPostIds.add(p.id);
   });
   LISTINGS.forEach(l => _lastKnownListingIds.add(l.id));
+  SURVEYS.forEach(s  => _lastKnownSurveyIds.add(s.id));
   DISCUSSIONS.forEach(d => {
     _lastKnownDiscIds.add(d.id);
     _lastKnownThreadReplies[d.id] = d.replies || 0;
@@ -5035,13 +5135,47 @@ function _detectNewContentAndNotify(data) {
   LISTINGS.forEach(l => {
     if (!_lastKnownListingIds.has(l.id)) {
       _lastKnownListingIds.add(l.id);
+      // Controlla visibilità: mostra badge/notifica solo se l'utente ha accesso
+      const role = currentUser ? currentUser.role : 'candidate';
+      const canSee = !l.recipient || l.recipient === 'all'
+        || (l.recipient === 'founding' && (role === 'founding' || role === 'team'))
+        || (l.recipient === 'candidate' && (role === 'candidate' || role === 'team'));
+      if (!canSee) return;
       if (!currentUser || l.author !== currentUser.name) {
         addRealNotification('new_listings', '🏠',
-          `Nuova proprietà disponibile: <strong>${l.name || l.city || 'Listing esclusivo'}</strong>`);
+          `Nuova proprietà disponibile: <strong>${l.title || l.name || l.city || 'Listing esclusivo'}</strong>`);
       }
-      // Mostra badge "New" nella sidebar
-      const lb = document.getElementById('listingsNewBadge');
-      if (lb) lb.classList.remove('hidden');
+      // Mostra badge "New" nella sidebar solo se il pannello listing non è attivo
+      const activePanel = document.querySelector('.panel.active');
+      const listingsPanelActive = activePanel && activePanel.id === 'panel-listings';
+      if (!listingsPanelActive) {
+        const lb = document.getElementById('listingsNewBadge');
+        if (lb) lb.classList.remove('hidden');
+      }
+    }
+  });
+
+  // 5. Nuovi sondaggi → notifica + badge surveysNewBadge
+  SURVEYS.forEach(s => {
+    if (!_lastKnownSurveyIds.has(s.id)) {
+      _lastKnownSurveyIds.add(s.id);
+      // Controlla visibilità: rispetta impostazione recipient
+      const role = currentUser ? currentUser.role : 'candidate';
+      const canSee = !s.recipient || s.recipient === 'all'
+        || (s.recipient === 'founding' && (role === 'founding' || role === 'team'))
+        || (s.recipient === 'candidate' && (role === 'candidate' || role === 'team'));
+      if (!canSee) return;
+      if (!currentUser || s.author !== currentUser.name) {
+        addRealNotification('new_surveys', '📊',
+          `Nuovo sondaggio: <strong>${s.title || 'Sondaggio'}</strong> — Partecipa ora!`);
+      }
+      // Badge "New" nel canale Sondaggi solo se il pannello non è già aperto
+      const activePanel = document.querySelector('.panel.active');
+      const surveysPanelActive = activePanel && activePanel.id === 'panel-surveys';
+      if (!surveysPanelActive) {
+        const sv = document.getElementById('surveysNewBadge');
+        if (sv) sv.classList.remove('hidden');
+      }
     }
   });
 }
@@ -8738,6 +8872,7 @@ const NOTIF_PREF_DEFAULTS = {
   project_updates:  true,   // nuovi aggiornamenti dal team
   direct_messages:  true,   // messaggi privati
   new_listings:     true,   // nuove proprietà disponibili
+  new_surveys:      true,   // nuovi sondaggi pubblicati
   new_discussions:  true,   // nuove discussioni create
   discussion_reply: true,   // risposte ai tuoi thread
   mention_reply:    true    // menzioni nei thread
@@ -8953,7 +9088,7 @@ function toggleNotifPref(el) {
   prefs[prefKey] = newState;
   saveNotifPrefsLocal(prefs);
   const labels = { project_updates:'aggiornamenti progetto', direct_messages:'messaggi diretti',
-                   new_listings:'nuovi listing', discussion_reply:'risposte ai thread', mention_reply:'menzioni' };
+                   new_listings:'nuovi listing', new_surveys:'nuovi sondaggi', discussion_reply:'risposte ai thread', mention_reply:'menzioni' };
   showToast(newState ? 'green' : 'blue', newState ? '🔔' : '🔕',
     `Notifiche ${labels[prefKey]||prefKey} ${newState ? 'abilitate' : 'disabilitate'}.`);
 }
@@ -8985,6 +9120,7 @@ function renderProfile() {
     ['Aggiornamenti progetto','Ricevi notifiche per i nuovi aggiornamenti del team','project_updates'],
     ['Messaggi diretti','Notifiche per i messaggi privati ricevuti','direct_messages'],
     ['Nuovi listing','Avvisi quando viene aggiunta una nuova proprietà','new_listings'],
+    ['Nuovi sondaggi','Notifica quando viene pubblicato un nuovo sondaggio','new_surveys'],
     ['Nuove discussioni','Notifiche quando viene creata una nuova discussione','new_discussions'],
     ['Risposte ai tuoi thread','Notifiche per le risposte nelle discussioni create da te','discussion_reply'],
     ['Menzioni nei thread','Notifica quando qualcuno ti menziona in una discussione','mention_reply'],
@@ -9696,6 +9832,14 @@ async function publishSurvey() {
   }
   var sb = document.getElementById('surveysNewBadge'); if (sb) sb.classList.remove('hidden');
   showToast("gold","📊","Sondaggio pubblicato con successo!");
+  // ── Broadcast istantaneo: gli altri utenti ricevono il sondaggio senza attendere il polling ──
+  if (_sbReady) {
+    try {
+      _sb.channel('community_content_broadcast').send({
+        type: 'broadcast', event: 'new_survey', payload: surveyObj
+      }).catch(() => {});
+    } catch(_e) {}
+  }
   showPanel("surveys", document.querySelector('.nav-item[onclick*="surveys"]'));
   document.getElementById("surveyTitle").value = "";
   document.getElementById("surveyQuestion").value = "";
@@ -9774,6 +9918,14 @@ async function publishListing() {
   }
   const lb = document.getElementById('listingsNewBadge'); if (lb) lb.classList.remove('hidden');
   showToast("gold","🏷️","Listing pubblicato con successo!");
+  // ── Broadcast istantaneo: gli altri utenti ricevono il listing senza attendere il polling ──
+  if (_sbReady) {
+    try {
+      _sb.channel('community_content_broadcast').send({
+        type: 'broadcast', event: 'new_listing', payload: listingObj
+      }).catch(() => {});
+    } catch(_e) {}
+  }
   showPanel("listings", document.querySelector('.nav-item[onclick*="listings"]'));
   document.getElementById("listingTitle").value = "";
   document.getElementById("listingDesc").value  = "";
