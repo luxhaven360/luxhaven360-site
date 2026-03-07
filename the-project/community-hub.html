@@ -2086,6 +2086,49 @@ mark.hl { background: rgba(212,175,55,0.22); color: var(--gold-light); border-ra
 
 /* Badge disc per nuove discussioni */
 #discBadge:not(.hidden) { display: inline-flex; }
+/* ══════════════════════════════════
+   @MENTION SYSTEM
+══════════════════════════════════ */
+.mention-dropdown {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 0; right: 0;
+  background: #1A1A1A;
+  border: 1px solid rgba(212,175,55,0.25);
+  border-radius: 10px;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.7);
+  max-height: 180px;
+  overflow-y: auto;
+  z-index: 200;
+  display: none;
+}
+.mention-dropdown.open { display: block; }
+.mention-item {
+  display: flex; align-items: center; gap: 0.6rem;
+  padding: 0.55rem 0.85rem; cursor: pointer;
+  transition: background 0.15s; font-size: 0.78rem;
+}
+.mention-item:hover, .mention-item.selected { background: rgba(212,175,55,0.1); }
+.mention-avatar {
+  width: 26px; height: 26px; border-radius: 50%;
+  background: linear-gradient(135deg, var(--dark4), var(--dark5));
+  border: 1px solid rgba(212,175,55,0.2);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 0.65rem; font-weight: 600; flex-shrink: 0; color: var(--gold);
+}
+.mention-item-name { color: var(--light); font-weight: 500; }
+.mention-item-role { color: var(--muted2); font-size: 0.67rem; margin-left: auto; }
+.mention-chip {
+  display: inline; color: var(--gold); font-weight: 600;
+  cursor: pointer; border-radius: 3px; padding: 0 2px;
+  transition: background 0.15s;
+}
+.mention-chip:hover { background: rgba(212,175,55,0.15); text-decoration: underline; }
+.thread-message.mention-highlight { animation: mentionPulse 1.6s ease-out; }
+@keyframes mentionPulse {
+  0%   { background: rgba(212,175,55,0.15); }
+  100% { background: transparent; }
+}
 </style>
 
 <!-- ═══ FIREBASE REALTIME DATABASE SDK ═══ -->
@@ -2910,7 +2953,10 @@ mark.hl { background: rgba(212,175,55,0.22); color: var(--gold-light); border-ra
       <div class="thread-compose-label">La tua risposta</div>
       <div class="thread-compose-row">
         <div class="thread-compose-avatar" id="threadComposeAvatar"></div>
-        <textarea class="thread-compose-input" id="threadComposeInput" placeholder="Scrivi la tua risposta…" onkeydown="handleThreadKey(event)" oninput="_onThreadTypingInput()"></textarea>
+        <div style="position:relative;flex:1;min-width:0;">
+          <div class="mention-dropdown" id="mentionDropdown"></div>
+          <textarea class="thread-compose-input" id="threadComposeInput" placeholder="Scrivi la tua risposta…" onkeydown="handleThreadKey(event)" oninput="_onThreadTypingInput()" onkeydown="_onThreadComposeKeydown(event)"></textarea>
+        </div>
         <button class="thread-compose-send" onclick="submitThreadReply()">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22,2 15,22 11,13 2,9"/></svg>
         </button>
@@ -5616,6 +5662,8 @@ function renderThreadMessages(id) {
   messages.forEach((msg, idx) => {
     const div = document.createElement('div');
     div.className = `thread-message${msg.isOp ? ' op' : ''}`;
+    div.dataset.msgIdx = idx;
+    const safeText = _renderMentions(msg.text || '');
     div.innerHTML = `
       <div class="thread-msg-avatar ${msg.isTeam ? 'team' : ''}">${msg.initial}</div>
       <div class="thread-msg-body">
@@ -5625,7 +5673,7 @@ function renderThreadMessages(id) {
           <span class="thread-msg-time">${(() => { const ts = msg.ts ? new Date(msg.ts).getTime() : 0; return ts ? `<span data-ts="${ts}">${_notifRelTime(ts)}</span>` : (msg.time || 'Ora'); })()}</span>
           ${_canReport(msg.author, !!msg.isTeam) ? `<button onclick="reportContentById('reply','reply_${idx}')" style="background:none;border:none;color:var(--red);opacity:0.5;cursor:pointer;font-size:0.62rem;margin-left:auto;">🚩 Segnala</button>` : ''}
         </div>
-        <div class="thread-msg-text">${msg.text}</div>
+        <div class="thread-msg-text">${safeText}</div>
         <div class="thread-msg-reactions">
           ${(msg.reactions || []).map(r => `<div class="thread-reaction">${r}</div>`).join('')}
         </div>
@@ -5648,6 +5696,7 @@ function closeThread() {
   document.getElementById('threadOverlay').classList.remove('open');
   document.body.style.overflow = '';
   // FIX: ferma listener typing e broadcast risposte quando si chiude il thread
+  _hideMentionDropdown();
   _stopThreadTypingListener();
   sbOff('thread_replies_rt');
   currentThreadId = null;
@@ -5800,7 +5849,149 @@ function _startThreadRepliesListener(threadId) {
   _sbChannels['thread_replies_rt'] = ch;
 }
 
-// Handler input textarea thread: invia typing con debounce
+/* ══════════════════════════════════════════════════════════════
+   @MENTION SYSTEM — Thread
+   Broadcast puro: nessuna tabella DB necessaria
+═══════════════════════════════════════════════════════════════ */
+const _MENTION_MAX = 3;          // max menzioni per messaggio
+let _mentionQuery   = '';        // stringa dopo @ corrente
+let _mentionStart   = -1;        // posizione cursore dove è iniziato @
+let _mentionSelIdx  = -1;        // indice elemento selezionato nel dropdown
+let _mentionVisible = false;
+
+// Converte @Name nel testo in chip cliccabili
+function _renderMentions(text) {
+  if (!text) return '';
+  // Escape HTML base, poi converte @Name in chip
+  const escaped = text
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  return escaped.replace(/@([A-Za-zÀ-ÿ][A-Za-zÀ-ÿ0-9 .]{1,30}?)(?=\s|$|[^A-Za-zÀ-ÿ0-9 .])/g,
+    (match, name) => `<span class="mention-chip" onclick="_scrollToMention('${name.replace(/'/g,"\'")}')" title="Vai alla menzione di ${name}">@${name}</span>`
+  );
+}
+
+// Scroll fluido verso il messaggio che contiene la menzione più recente di un utente
+function _scrollToMention(name) {
+  const container = document.getElementById('threadDetailMessages');
+  if (!container) return;
+  const allMsgs = container.querySelectorAll('.thread-message');
+  // Cerca dal basso verso l'alto (messaggio più recente con la menzione)
+  let target = null;
+  for (let i = allMsgs.length - 1; i >= 0; i--) {
+    const chip = allMsgs[i].querySelector(`.mention-chip`);
+    if (chip && chip.textContent === '@' + name) { target = allMsgs[i]; break; }
+  }
+  if (!target) return;
+  target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  target.classList.remove('mention-highlight');
+  void target.offsetWidth; // force reflow
+  target.classList.add('mention-highlight');
+  setTimeout(() => target.classList.remove('mention-highlight'), 1600);
+}
+
+// Restituisce lista utenti suggeribili (online + real members, escluso se stesso)
+function _getMentionCandidates() {
+  const seen = new Set();
+  const candidates = [];
+  const myEmail = currentUser ? currentUser.email.toLowerCase() : '';
+  const addMember = (m) => {
+    if (!m || !m.name) return;
+    const key = (m.email || m.name).toLowerCase();
+    if (key === myEmail || seen.has(key)) return;
+    seen.add(key);
+    candidates.push({ name: m.name, initial: m.initial || m.name[0] || '?', role: m.role || m.level || '' });
+  };
+  (ONLINE_MEMBERS || []).forEach(addMember);
+  (REAL_MEMBERS   || []).forEach(addMember);
+  return candidates;
+}
+
+// Mostra dropdown menzioni filtrato per query
+function _showMentionDropdown(query) {
+  const dropdown = document.getElementById('mentionDropdown');
+  if (!dropdown) return;
+  const all = _getMentionCandidates();
+  const q = query.toLowerCase();
+  const filtered = q
+    ? all.filter(m => m.name.toLowerCase().includes(q)).slice(0, 6)
+    : all.slice(0, 6);
+  if (filtered.length === 0) { _hideMentionDropdown(); return; }
+
+  const roleLabel = (r) => r === 'team' ? 'Team' : r === 'founding' ? 'Founding' : 'Candidate';
+  dropdown.innerHTML = filtered.map((m, i) => `
+    <div class="mention-item${i === _mentionSelIdx ? ' selected' : ''}"
+         onclick="_selectMention('${m.name.replace(/'/g,"\'")}')">
+      <div class="mention-avatar">${m.initial}</div>
+      <span class="mention-item-name">${m.name}</span>
+      <span class="mention-item-role">${roleLabel(m.role)}</span>
+    </div>`).join('');
+  dropdown.classList.add('open');
+  _mentionVisible = true;
+}
+
+function _hideMentionDropdown() {
+  const dropdown = document.getElementById('mentionDropdown');
+  if (dropdown) dropdown.classList.remove('open');
+  _mentionVisible = false;
+  _mentionQuery = '';
+  _mentionStart = -1;
+  _mentionSelIdx = -1;
+}
+
+// Inserisce il nome selezionato nel textarea al posto di @query
+function _selectMention(name) {
+  const ta = document.getElementById('threadComposeInput');
+  if (!ta) return;
+  const val = ta.value;
+  const before = val.substring(0, _mentionStart);
+  const after  = val.substring(ta.selectionStart);
+  ta.value = before + '@' + name + ' ' + after;
+  const newPos = before.length + name.length + 2;
+  ta.setSelectionRange(newPos, newPos);
+  ta.focus();
+  _hideMentionDropdown();
+}
+
+// Naviga il dropdown con frecce e conferma con Enter/Tab
+function _onThreadComposeKeydown(e) {
+  // Delega anche a handleThreadKey per Ctrl+Enter
+  if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { submitThreadReply(); return; }
+  if (!_mentionVisible) return;
+  const dropdown = document.getElementById('mentionDropdown');
+  const items = dropdown ? dropdown.querySelectorAll('.mention-item') : [];
+  if (e.key === 'ArrowDown') {
+    e.preventDefault();
+    _mentionSelIdx = Math.min(_mentionSelIdx + 1, items.length - 1);
+    items.forEach((el, i) => el.classList.toggle('selected', i === _mentionSelIdx));
+  } else if (e.key === 'ArrowUp') {
+    e.preventDefault();
+    _mentionSelIdx = Math.max(_mentionSelIdx - 1, 0);
+    items.forEach((el, i) => el.classList.toggle('selected', i === _mentionSelIdx));
+  } else if ((e.key === 'Enter' || e.key === 'Tab') && _mentionSelIdx >= 0) {
+    e.preventDefault();
+    items[_mentionSelIdx]?.click();
+  } else if (e.key === 'Escape') {
+    _hideMentionDropdown();
+  }
+}
+
+// Estrae menzioni uniche da un testo (max _MENTION_MAX)
+function _extractMentions(text) {
+  const found = [];
+  const seen  = new Set();
+  const regex = /@([A-Za-zÀ-ÿ][A-Za-zÀ-ÿ0-9 .]{1,30}?)(?=\s|$|[^A-Za-zÀ-ÿ0-9 .])/g;
+  let m;
+  while ((m = regex.exec(text)) !== null && found.length < _MENTION_MAX) {
+    const name = m[1].trim();
+    if (!seen.has(name.toLowerCase())) {
+      seen.add(name.toLowerCase());
+      found.push(name);
+    }
+  }
+  return found;
+}
+
+// Handler input textarea thread: gestisce typing + rilevamento @
 function _onThreadTypingInput() {
   if (!currentUser || !currentThreadId) return;
   const now = Date.now();
@@ -5811,9 +6002,24 @@ function _onThreadTypingInput() {
   }
   // Resetta timer di stop: dopo 4s di inattività invia is_typing=false
   clearTimeout(_threadTypingTimer);
-  _threadTypingTimer = setTimeout(() => {
-    _sendThreadTyping(false);
-  }, 4000);
+  _threadTypingTimer = setTimeout(() => { _sendThreadTyping(false); }, 4000);
+
+  // ── @mention detection ──
+  const ta = document.getElementById('threadComposeInput');
+  if (!ta) return;
+  const val = ta.value;
+  const cursor = ta.selectionStart;
+  // Cerca se il cursore è subito dopo un @ in una parola non ancora terminata
+  const before = val.substring(0, cursor);
+  const atMatch = before.match(/@([A-Za-zÀ-ÿ0-9 .]*)$/);
+  if (atMatch) {
+    _mentionQuery = atMatch[1];
+    _mentionStart = cursor - atMatch[0].length;
+    _mentionSelIdx = -1;
+    _showMentionDropdown(_mentionQuery);
+  } else {
+    _hideMentionDropdown();
+  }
 }
 
 // Renderizza la barra typing sotto i messaggi
@@ -5858,6 +6064,10 @@ async function submitThreadReply() {
   clearTimeout(_threadTypingTimer);
   _threadTypingTimer = null;
   _sendThreadTyping(false);
+  // Chiudi dropdown menzione se aperto
+  _hideMentionDropdown();
+  // Estrai menzioni dal testo (max _MENTION_MAX)
+  const _mentions = _extractMentions(text);
 
   const shortName = currentUser.name.split(' ')[0] + ' ' + (currentUser.name.split(' ')[1]||'?')[0] + '.';
   const newReply  = {
@@ -5921,13 +6131,33 @@ async function submitThreadReply() {
   const _threadTitle = DISCUSSIONS.find(d => d.id === currentThreadId)?.title || 'una discussione';
   _writeActivityToSupabase('blue', `<strong>${currentUser.name.split(' ')[0]}</strong> ha risposto in: ${_threadTitle}`);
 
-  // Notifica il creatore del thread (se diverso dall'utente corrente) tramite GAS
+  // Notifica il creatore del thread (se diverso dall'utente corrente)
   const _threadOwner = DISCUSSIONS.find(d => d.id === currentThreadId);
-  if (_threadOwner && _threadOwner.author !== currentUser.name && GAS_URL) {
-    fetch(`${GAS_URL}?action=notify_thread_reply` +
-      `&threadId=${currentThreadId}&replier=${encodeURIComponent(currentUser.name)}` +
-      `&threadAuthor=${encodeURIComponent(_threadOwner.author)}&threadTitle=${encodeURIComponent(_threadOwner.title||'')}`
-    ).catch(() => {});
+  if (_threadOwner && _threadOwner.author !== currentUser.name) {
+    // FIX BUG 2: scrivi notifica su Supabase per consegna in tempo reale
+    if (_sbReady) {
+      // Cerca email del proprietario del thread in REAL_MEMBERS o ONLINE_MEMBERS
+      const _ownerMember = (REAL_MEMBERS || []).find(m =>
+        m.name && m.name.toLowerCase() === (_threadOwner.author || '').toLowerCase()
+      ) || (ONLINE_MEMBERS || []).find(m =>
+        m.name && m.name.toLowerCase() === (_threadOwner.author || '').toLowerCase()
+      );
+      if (_ownerMember && _ownerMember.email) {
+        _sb.from('notifications').insert({
+          user_email: _ownerMember.email.toLowerCase(),
+          icon: 'blue', emoji: '💬',
+          text: `<strong>${currentUser.name.split(' ')[0]}</strong> ha risposto nel tuo thread: <strong>${_threadOwner.title || 'discussione'}</strong>`,
+          created_at: new Date().toISOString(), unread: true,
+          pref_key: 'discussion_reply'
+        }).then(null, () => {});
+      }
+    }
+    if (GAS_URL) {
+      fetch(`${GAS_URL}?action=notify_thread_reply` +
+        `&threadId=${currentThreadId}&replier=${encodeURIComponent(currentUser.name)}` +
+        `&threadAuthor=${encodeURIComponent(_threadOwner.author)}&threadTitle=${encodeURIComponent(_threadOwner.title||'')}`
+      ).catch(() => {});
+    }
   }
 
   // Persisti su GAS
@@ -5942,6 +6172,31 @@ async function submitThreadReply() {
       saveCommunityCache();
     } catch(e) { console.warn('[Reply] GAS error:', e.message); }
   }
+  // Notifiche menzioni (@Name) — scrivi su Supabase per ogni utente menzionato
+  if (_sbReady && _mentions && _mentions.length > 0) {
+    const _currentThread = DISCUSSIONS.find(d => d.id === currentThreadId);
+    const _threadTitle   = _currentThread ? _currentThread.title : 'una discussione';
+    _mentions.forEach(mentionedName => {
+      // Evita auto-notifica
+      const myShort = currentUser.name.split(' ')[0] + ' ' + (currentUser.name.split(' ')[1]||'?')[0] + '.';
+      if (mentionedName.toLowerCase() === currentUser.name.toLowerCase() ||
+          mentionedName.toLowerCase() === myShort.toLowerCase()) return;
+      // Cerca email dell'utente menzionato
+      const _mentionedMember =
+        (REAL_MEMBERS   || []).find(m => m.name && m.name.toLowerCase() === mentionedName.toLowerCase()) ||
+        (ONLINE_MEMBERS || []).find(m => m.name && m.name.toLowerCase() === mentionedName.toLowerCase());
+      if (!_mentionedMember || !_mentionedMember.email) return;
+      _sb.from('notifications').insert({
+        user_email:  _mentionedMember.email.toLowerCase(),
+        icon: 'gold', emoji: '💛',
+        text: `<strong>${currentUser.name.split(' ')[0]}</strong> ti ha menzionato nel thread: <strong>${_threadTitle}</strong>`,
+        created_at:  new Date().toISOString(),
+        unread:      true,
+        pref_key:    'mention_reply'
+      }).then(null, () => {});
+    });
+  }
+
   // Auto-moderazione risposta thread
   autoModerateText(text, 'reply', `reply_${currentThreadId}_${Date.now()}`, shortName, currentUser.email);
   trackMessageSent();
@@ -8222,9 +8477,9 @@ const NOTIF_PREF_DEFAULTS = {
   project_updates:  true,   // nuovi aggiornamenti dal team
   direct_messages:  true,   // messaggi privati
   new_listings:     true,   // nuove proprietà disponibili
-  post_replies:     true,   // risposte ai tuoi commenti
   new_discussions:  true,   // nuove discussioni create
-  discussion_reply: true    // risposte ai tuoi thread
+  discussion_reply: true,   // risposte ai tuoi thread
+  mention_reply:    true    // menzioni nei thread
 };
 
 function _notifPrefKey() {
@@ -8433,7 +8688,7 @@ function toggleNotifPref(el) {
   prefs[prefKey] = newState;
   saveNotifPrefsLocal(prefs);
   const labels = { project_updates:'aggiornamenti progetto', direct_messages:'messaggi diretti',
-                   new_listings:'nuovi listing', post_replies:'risposte ai post' };
+                   new_listings:'nuovi listing', discussion_reply:'risposte ai thread', mention_reply:'menzioni' };
   showToast(newState ? 'green' : 'blue', newState ? '🔔' : '🔕',
     `Notifiche ${labels[prefKey]||prefKey} ${newState ? 'abilitate' : 'disabilitate'}.`);
 }
@@ -8465,9 +8720,9 @@ function renderProfile() {
     ['Aggiornamenti progetto','Ricevi notifiche per i nuovi aggiornamenti del team','project_updates'],
     ['Messaggi diretti','Notifiche per i messaggi privati ricevuti','direct_messages'],
     ['Nuovi listing','Avvisi quando viene aggiunta una nuova proprietà','new_listings'],
-    ['Risposte ai tuoi post','Notifiche quando qualcuno commenta i tuoi post','post_replies'],
     ['Nuove discussioni','Notifiche quando viene creata una nuova discussione','new_discussions'],
     ['Risposte ai tuoi thread','Notifiche per le risposte nelle discussioni create da te','discussion_reply'],
+    ['Menzioni nei thread','Notifica quando qualcuno ti menziona in una discussione','mention_reply'],
   ];
 
   container.innerHTML = `
