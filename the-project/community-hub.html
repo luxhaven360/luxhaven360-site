@@ -4062,28 +4062,59 @@ function applyRemoteData(data) {
 
   // ── Discussioni ──────────────────────────────────────────────────
   if (data.hasOwnProperty('discussions') && Array.isArray(data.discussions)) {
-    // BUG FIX #5: preserva lastReplyTs locale
-    // BUG FIX #3: preserva views locali (mai azzerare contatori già incrementati)
+    // Mappa locale: id → { lastReplyTs, views }
     const localDiscMap = {};
     DISCUSSIONS.forEach(d => {
       localDiscMap[String(d.id)] = { lastReplyTs: d.lastReplyTs || null, views: d.views || 0 };
     });
+
+    // FIX views: costruisce anche un mapping "title|author" → views per i thread pending
+    // Serve perché il server restituisce realId mentre il locale aveva tempId
+    const pendingViewsMap = {}; // "title|author" → { views, lastReplyTs }
+    Object.values(_PENDING_THREADS).forEach(p => {
+      const key = (p.title || '') + '|' + (p.author || '');
+      pendingViewsMap[key] = { views: p.views || 0, lastReplyTs: p.lastReplyTs || null };
+    });
+
     DISCUSSIONS = data.discussions
       .filter(d => !_REMOVED_IDS.has(`thread:${d.id}`) && !_REMOVED_IDS.has(`thread:${Number(d.id)}`))
       .map(d => {
         const local = localDiscMap[String(d.id)] || {};
+        const pendingKey = (d.title || '') + '|' + (d.author || '');
+        const fromPending = pendingViewsMap[pendingKey];
+        // FIX views: se il thread era pending, usa views=0 (nessuno lo ha ancora aperto)
+        // Il server potrebbe restituire views>0 per altri motivi — non sovrascrivere con quel valore
+        const finalViews = fromPending
+          ? Math.min(fromPending.views, d.views || 0)   // 0 se nessuno lo ha aperto
+          : Math.max(d.views || 0, local.views || 0);   // normale: usa il massimo locale/server
         return {
           ...d,
-          lastReplyTs: local.lastReplyTs || d.lastReplyTs || null,
-          // BUG FIX #3: usa max tra views locale e server — server non deve azzerare views
-          views: Math.max(d.views || 0, local.views || 0)
+          lastReplyTs: local.lastReplyTs || (fromPending && fromPending.lastReplyTs) || d.lastReplyTs || null,
+          views: finalViews
         };
       });
-    // BUG FIX #2: reinserisci thread ottimistici pendenti non ancora confermati da GAS
-    // Evita che scompaiano durante il polling mentre GAS processa il salvataggio
+
+    // FIX doppio thread: reinserisci i pending SOLO se il server non ha ancora quel thread
+    // "stesso thread" = stesso titolo + stesso autore (il server potrebbe averlo con realId diverso)
+    const serverTitleAuthors = new Set(DISCUSSIONS.map(d => (d.title||'') + '|' + (d.author||'')));
     const serverIds = new Set(DISCUSSIONS.map(d => String(d.id)));
-    Object.values(_PENDING_THREADS).forEach(pending => {
-      if (!serverIds.has(String(pending.id))) {
+
+    Object.keys(_PENDING_THREADS).forEach(tempId => {
+      const pending = _PENDING_THREADS[tempId];
+      const pendingKey = (pending.title || '') + '|' + (pending.author || '');
+      if (serverTitleAuthors.has(pendingKey)) {
+        // Il server ha già questo thread (confermato con realId) → rimuovi dal pending
+        // ed aggiungi l'ID del server a _lastKnownDiscIds per evitare notifiche spurie
+        const serverMatch = DISCUSSIONS.find(d =>
+          (d.title||'') + '|' + (d.author||'') === pendingKey
+        );
+        if (serverMatch) {
+          _lastKnownDiscIds.add(serverMatch.id);
+          _lastKnownDiscIds.delete(Number(tempId));
+        }
+        delete _PENDING_THREADS[tempId];
+      } else if (!serverIds.has(String(pending.id))) {
+        // Server non ha ancora questo thread → reinserisci il pending in cima
         DISCUSSIONS.unshift(pending);
       }
     });
@@ -4623,12 +4654,21 @@ function _detectNewContentAndNotify(data) {
   });
 
   // 2. Nuove discussioni → notifica new_discussions
+  // Genera shortName nel formato usato dai thread ("Luca A.") per confronto corretto
+  const _myShortName = currentUser
+    ? currentUser.name.split(' ')[0] + ' ' + (currentUser.name.split(' ')[1]||'?')[0] + '.'
+    : null;
+
   DISCUSSIONS.forEach(d => {
     if (!_lastKnownDiscIds.has(d.id)) {
       _lastKnownDiscIds.add(d.id);
       _lastKnownThreadReplies[d.id] = d.replies || 0;
-      // FIX #2: non notificare l'autore della propria discussione
-      if (currentUser && d.author !== currentUser.name) {
+      // FIX notifica: confronta sia con name completo che con shortName ("Luca A.")
+      // perché i thread vengono creati con shortName, non con il nome completo
+      const isOwnThread = currentUser && (
+        d.author === currentUser.name || d.author === _myShortName
+      );
+      if (!isOwnThread) {
         addRealNotification('new_discussions', '💬',
           `Nuova discussione da <strong>${(d.author||'').split(' ')[0]}</strong>: ${d.title}`);
         // FIX #1: NON chiamare logActivity qui — l'attività arriva via Supabase RT dall'autore
@@ -5408,23 +5448,37 @@ async function submitNewThread() {
         `&isTeam=${currentUser.role === 'team'}&email=${encodeURIComponent(currentUser.email)}`;
       const data = await fetch(url).then(r => r.json());
       if (data.success && data.discussion) {
-        // Sostituisci tempId con ID reale del server
         const realId = data.discussion.id;
-        const idx = DISCUSSIONS.findIndex(d => d.id === tempId);
-        if (idx !== -1) {
-          DISCUSSIONS[idx].id = realId;
-          DISCUSSIONS[idx]._isPending = false; // non più pendente
+        clearTimeout(_pendingTimeout);
+        delete _PENDING_THREADS[tempId];
+        _lastKnownDiscIds.add(realId);
+        _lastKnownDiscIds.delete(tempId);
+
+        // Controlla se il polling ha già inserito il thread con realId
+        const realIdxAlready = DISCUSSIONS.findIndex(d => d.id === realId);
+        const tempIdx = DISCUSSIONS.findIndex(d => d.id === tempId);
+
+        if (realIdxAlready !== -1 && tempIdx !== -1) {
+          // FIX doppio thread: il polling ha già il realId → rimuovi il tempId duplicato
+          // Preserva le views locali (= 0, nessuno ha aperto il thread)
+          DISCUSSIONS[realIdxAlready].views = Math.min(
+            DISCUSSIONS[realIdxAlready].views || 0,
+            DISCUSSIONS[tempIdx].views || 0
+          );
+          DISCUSSIONS.splice(tempIdx, 1);
+        } else if (tempIdx !== -1) {
+          // Caso normale: sostituisci tempId con realId
+          DISCUSSIONS[tempIdx].id = realId;
+          DISCUSSIONS[tempIdx]._isPending = false;
+          DISCUSSIONS[tempIdx].views = 0; // FIX views: resetta a 0 — nessuno ha aperto il thread
         }
+
         const msgs = THREAD_MESSAGES[tempId];
         if (msgs) {
           THREAD_MESSAGES[realId] = msgs;
           delete THREAD_MESSAGES[tempId];
         }
-        // Thread confermato: cancella timeout di sicurezza e rimuovi da pending
-        clearTimeout(_pendingTimeout);
-        delete _PENDING_THREADS[tempId];
-        _lastKnownDiscIds.add(realId);
-        _lastKnownDiscIds.delete(tempId);
+        renderDiscussions();
         saveCommunityCache();
       }
     } catch(e) {
