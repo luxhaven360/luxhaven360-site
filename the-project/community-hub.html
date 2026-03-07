@@ -2714,14 +2714,6 @@ mark.hl { background: rgba(212,175,55,0.22); color: var(--gold-light); border-ra
               <label class="form-label">Scadenza (opzionale)</label>
               <input class="form-input" type="datetime-local" id="surveyExpiry" style="width:auto;"/>
             </div>
-            <div class="form-group">
-              <label class="form-label">Destinatari</label>
-              <div class="broadcast-target">
-                <div class="target-chip active" data-survey-recipient="all" onclick="toggleChipSingle(this,'survey-recipient')">Tutti i membri</div>
-                <div class="target-chip" data-survey-recipient="founding" onclick="toggleChipSingle(this,'survey-recipient')">Founding Members</div>
-                <div class="target-chip" data-survey-recipient="candidate" onclick="toggleChipSingle(this,'survey-recipient')">Founder Candidates</div>
-              </div>
-            </div>
             <div class="form-actions">
               <button class="btn-primary" onclick="publishSurvey()">Pubblica Sondaggio</button>
             </div>
@@ -2772,14 +2764,6 @@ mark.hl { background: rgba(212,175,55,0.22); color: var(--gold-light); border-ra
               </div>
               <div id="listingThumbPreview" style="margin-top:0.6rem;display:none;">
                 <img id="listingThumbImg" src="" style="width:100%;max-height:140px;object-fit:cover;border-radius:var(--radius);border:1px solid var(--border);"/>
-              </div>
-            </div>
-            <div class="form-group">
-              <label class="form-label">Destinatari</label>
-              <div class="broadcast-target">
-                <div class="target-chip active" data-listing-recipient="all" onclick="toggleChipSingle(this,'listing-recipient')">Tutti i membri</div>
-                <div class="target-chip" data-listing-recipient="founding" onclick="toggleChipSingle(this,'listing-recipient')">Founding Members</div>
-                <div class="target-chip" data-listing-recipient="candidate" onclick="toggleChipSingle(this,'listing-recipient')">Founder Candidates</div>
               </div>
             </div>
             <div class="form-actions">
@@ -3740,10 +3724,12 @@ function initApp() {
       }, (payload) => {
         const n = payload.new;
         if (!n || !n.text) return;
-        // Evita duplicati (il fondatore che pubblica ha già la notifica locale)
-        const alreadyIn = NOTIFICATIONS.some(x => x.text === n.text && Math.abs((x.ts || 0) - new Date(n.created_at).getTime()) < 10000);
+        // Non mostrare notifiche all'autore del contenuto
+        if (currentUser && n.author_email && n.author_email.toLowerCase() === currentUser.email.toLowerCase()) return;
+        // Evita duplicati per contenuto+timestamp
+        const _nTs = n.created_at ? new Date(n.created_at).getTime() : Date.now();
+        const alreadyIn = NOTIFICATIONS.some(x => x.text === n.text && Math.abs((x.ts || 0) - _nTs) < 15000);
         if (alreadyIn) return;
-        const _nTs   = n.created_at ? new Date(n.created_at).getTime() : Date.now();
         const _nIcon = n.icon || 'gold';
         const _nEmoji = n.emoji || '🔔';
         const notif = {
@@ -3775,16 +3761,16 @@ function initApp() {
       .on('broadcast', { event: 'new_listing' }, (payload) => {
         if (!payload || !payload.payload) return;
         const l = payload.payload;
-        // Controlla che non sia già presente (fondatore ha già ottimisticamente il listing)
-        if (LISTINGS.some(x => x.id === l.id || (x.title === l.title && Math.abs(new Date(x.ts).getTime() - new Date(l.ts).getTime()) < 5000))) return;
-        // Filtra per recipient
-        const role = currentUser ? currentUser.role : 'candidate';
-        const canSee = !l.recipient || l.recipient === 'all'
-          || (l.recipient === 'founding' && (role === 'founding' || role === 'team'))
-          || (l.recipient === 'candidate' && (role === 'candidate' || role === 'team'));
-        if (!canSee) return;
+        // Skip se siamo l'autore (già aggiornato ottimisticamente)
+        if (currentUser && (l.author === currentUser.name || (l.author_email && l.author_email.toLowerCase() === currentUser.email.toLowerCase()))) return;
+        // Dedup: già presente per id o per contenuto+timestamp
+        if (LISTINGS.some(x => x.id === l.id || (x.title === l.title && Math.abs(new Date(x.ts||0).getTime() - new Date(l.ts||0).getTime()) < 8000))) return;
         LISTINGS.unshift(l);
         _lastKnownListingIds.add(l.id);
+        // ── PERSISTENZA: proteggi il listing dal polling che arriva prima di GAS ──
+        // Aggiungi a _pendingListingIds con timeout 5 minuti → applyRemoteData non lo cancellerà
+        _pendingListingIds.add(l.id);
+        setTimeout(() => _pendingListingIds.delete(l.id), 300000);
         saveCommunityCache();
         // Aggiorna UI se il pannello listings è aperto
         const activePanel = document.querySelector('.panel.active');
@@ -3794,25 +3780,39 @@ function initApp() {
           const lb = document.getElementById('listingsNewBadge');
           if (lb) lb.classList.remove('hidden');
         }
-        addRealNotification('new_listings', '🏠',
-          `Nuova proprietà disponibile: <strong>${l.title || 'Listing esclusivo'}</strong>`);
+        // NON chiamare addRealNotification qui — la notifica arriva già via bcastNotifCh
+      })
+      .on('broadcast', { event: 'update_listing_id' }, (payload) => {
+        // Aggiorna l'ID del listing broadcast (tempId → realId) per evitare sparizione al polling
+        if (!payload || !payload.payload) return;
+        const { tempId, realId } = payload.payload;
+        if (!tempId || !realId) return;
+        const idx = LISTINGS.findIndex(l => l.id === tempId);
+        if (idx !== -1) {
+          LISTINGS[idx].id = realId;
+          _lastKnownListingIds.delete(tempId);
+          _lastKnownListingIds.add(realId);
+          _pendingListingIds.delete(tempId);
+          _pendingListingIds.add(realId);
+          setTimeout(() => _pendingListingIds.delete(realId), 60000);
+          saveCommunityCache();
+        }
       })
       .on('broadcast', { event: 'new_survey' }, (payload) => {
         if (!payload || !payload.payload) return;
         const s = payload.payload;
-        if (SURVEYS.some(x => x.id === s.id || (x.title === s.title && Math.abs(new Date(x.ts).getTime() - new Date(s.ts).getTime()) < 5000))) return;
-        // Filtra per recipient
-        const role = currentUser ? currentUser.role : 'candidate';
-        const canSee = !s.recipient || s.recipient === 'all'
-          || (s.recipient === 'founding' && (role === 'founding' || role === 'team'))
-          || (s.recipient === 'candidate' && (role === 'candidate' || role === 'team'));
-        if (!canSee) return;
+        // Skip se siamo l'autore
+        if (currentUser && (s.author === currentUser.name || (s.author_email && s.author_email.toLowerCase() === currentUser.email.toLowerCase()))) return;
+        // Dedup
+        if (SURVEYS.some(x => x.id === s.id || (x.title === s.title && Math.abs(new Date(x.ts||0).getTime() - new Date(s.ts||0).getTime()) < 8000))) return;
         SURVEYS.unshift({
           ...s,
           total: s.total ?? (s.options ? s.options.reduce((sum, o) => sum + (o.votes || 0), 0) : 0),
           desc: s.desc || s.question || ''
         });
         _lastKnownSurveyIds.add(s.id);
+        _pendingSurveyIds.add(s.id);
+        setTimeout(() => _pendingSurveyIds.delete(s.id), 300000);
         saveCommunityCache();
         const activePanel = document.querySelector('.panel.active');
         if (activePanel && activePanel.id === 'panel-surveys') {
@@ -3821,8 +3821,7 @@ function initApp() {
           const sv = document.getElementById('surveysNewBadge');
           if (sv) sv.classList.remove('hidden');
         }
-        addRealNotification('new_surveys', '📊',
-          `Nuovo sondaggio: <strong>${s.title || 'Sondaggio'}</strong> — Partecipa ora!`);
+        // NON chiamare addRealNotification qui — la notifica arriva già via bcastNotifCh
       })
       .subscribe();
     _sbChannels['community_content_rt'] = contentCh;
@@ -5130,51 +5129,42 @@ function _detectNewContentAndNotify(data) {
     });
   }
 
-  // 4. Nuovi listing → notifica new_listings
-  // FIX #1: rimosso logActivity — attività scritta su Supabase dall'autore e ricevuta via RT
+  // 4. Nuovi listing → badge + notifica per non-autori (nessun filtro recipient — sempre globali)
   LISTINGS.forEach(l => {
     if (!_lastKnownListingIds.has(l.id)) {
       _lastKnownListingIds.add(l.id);
-      // Controlla visibilità: mostra badge/notifica solo se l'utente ha accesso
-      const role = currentUser ? currentUser.role : 'candidate';
-      const canSee = !l.recipient || l.recipient === 'all'
-        || (l.recipient === 'founding' && (role === 'founding' || role === 'team'))
-        || (l.recipient === 'candidate' && (role === 'candidate' || role === 'team'));
-      if (!canSee) return;
-      if (!currentUser || l.author !== currentUser.name) {
-        addRealNotification('new_listings', '🏠',
-          `Nuova proprietà disponibile: <strong>${l.title || l.name || l.city || 'Listing esclusivo'}</strong>`);
-      }
-      // Mostra badge "New" nella sidebar solo se il pannello listing non è attivo
+      // Badge "New" nel canale listing (anche per l'autore, ma non la notifica)
       const activePanel = document.querySelector('.panel.active');
       const listingsPanelActive = activePanel && activePanel.id === 'panel-listings';
       if (!listingsPanelActive) {
         const lb = document.getElementById('listingsNewBadge');
-        if (lb) lb.classList.remove('hidden');
+        if (lb && (!currentUser || l.author !== currentUser.name)) lb.classList.remove('hidden');
+      }
+      // Notifica solo per chi NON ha pubblicato il listing
+      const isAuthor = currentUser && (l.author === currentUser.name || (l.author_email && l.author_email.toLowerCase() === currentUser.email.toLowerCase()));
+      if (!isAuthor) {
+        addRealNotification('new_listings', '🏷️',
+          `Nuovo listing: <strong>${l.title || 'Listing esclusivo'}</strong>`);
       }
     }
   });
 
-  // 5. Nuovi sondaggi → notifica + badge surveysNewBadge
+  // 5. Nuovi sondaggi → badge + notifica per non-autori (nessun filtro recipient — sempre globali)
   SURVEYS.forEach(s => {
     if (!_lastKnownSurveyIds.has(s.id)) {
       _lastKnownSurveyIds.add(s.id);
-      // Controlla visibilità: rispetta impostazione recipient
-      const role = currentUser ? currentUser.role : 'candidate';
-      const canSee = !s.recipient || s.recipient === 'all'
-        || (s.recipient === 'founding' && (role === 'founding' || role === 'team'))
-        || (s.recipient === 'candidate' && (role === 'candidate' || role === 'team'));
-      if (!canSee) return;
-      if (!currentUser || s.author !== currentUser.name) {
-        addRealNotification('new_surveys', '📊',
-          `Nuovo sondaggio: <strong>${s.title || 'Sondaggio'}</strong> — Partecipa ora!`);
-      }
-      // Badge "New" nel canale Sondaggi solo se il pannello non è già aperto
+      // Badge "New" nel canale sondaggi
       const activePanel = document.querySelector('.panel.active');
       const surveysPanelActive = activePanel && activePanel.id === 'panel-surveys';
       if (!surveysPanelActive) {
         const sv = document.getElementById('surveysNewBadge');
-        if (sv) sv.classList.remove('hidden');
+        if (sv && (!currentUser || s.author !== currentUser.name)) sv.classList.remove('hidden');
+      }
+      // Notifica solo per chi NON ha pubblicato il sondaggio
+      const isAuthor = currentUser && (s.author === currentUser.name || (s.author_email && s.author_email.toLowerCase() === currentUser.email.toLowerCase()));
+      if (!isAuthor) {
+        addRealNotification('new_surveys', '📊',
+          `Nuovo sondaggio: <strong>${s.title || 'Sondaggio'}</strong> — Partecipa ora!`);
       }
     }
   });
@@ -8551,16 +8541,8 @@ function renderListings() {
   const allListings = typeof LISTINGS !== 'undefined' ? LISTINGS : [];
   const role = currentUser.role;
 
-  // ── Filtra per destinatario ──────────────────────────────────────────
-  // team vede tutto; founding vede 'all' e 'founding'; candidate vede 'all' e 'candidate'
-  const listings = allListings.filter(l => {
-    const r = l.recipient || 'all';
-    if (role === 'team') return true;
-    if (r === 'all') return true;
-    if (r === 'founding' && role === 'founding') return true;
-    if (r === 'candidate' && role === 'candidate') return true;
-    return false;
-  });
+  // Tutti i listing sono globali — nessun filtro per destinatario
+  const listings = allListings;
 
   if (listings.length === 0) {
     container.innerHTML = earlyAccessBanner + '<div style="text-align:center;padding:3rem 1rem;color:var(--muted2);font-size:0.82rem;">Nessuna proprietà disponibile al momento.<br>Il team aggiungerà presto le prime location esclusive.</div>';
@@ -8620,15 +8602,8 @@ function renderSurveys() {
   const container = document.getElementById('surveysContainer');
   const role = currentUser ? currentUser.role : 'candidate';
 
-  // ── Filtra per destinatario ──────────────────────────────────────────
-  const surveys = SURVEYS.filter(s => {
-    const r = s.recipient || 'all';
-    if (role === 'team') return true;
-    if (r === 'all') return true;
-    if (r === 'founding' && role === 'founding') return true;
-    if (r === 'candidate' && role === 'candidate') return true;
-    return false;
-  });
+  // Tutti i sondaggi sono globali — nessun filtro per destinatario
+  const surveys = SURVEYS;
 
   if (surveys.length === 0) {
     container.innerHTML = '<div style="text-align:center;padding:3rem 1rem;color:var(--muted2);font-size:0.82rem;">Nessun sondaggio attivo al momento.<br>Il team pubblicherà presto le prime votazioni.</div>';
@@ -9809,10 +9784,10 @@ async function publishSurvey() {
   var options  = [...document.querySelectorAll("#surveyOptionsWrap input")].map(function(i){return i.value.trim();}).filter(Boolean);
   if (!title || !question || options.length < 2) { showToast("red","⚠️","Compila titolo, domanda e almeno 2 opzioni."); return; }
   var expiry  = document.getElementById("surveyExpiry")?.value || null;
-  var recipientChip = document.querySelector("[data-survey-recipient].active");
-  var recipient = recipientChip ? recipientChip.dataset.surveyRecipient : "all";
+  // Sondaggi sempre globali — nessun filtro destinatari
+  var recipient = "all";
   var tempId = Date.now();
-  var surveyObj = { id: tempId, type: "survey", title: title, desc: question, question: question, options: options.map(function(o){return {text:o,votes:0};}), total: 0, expiry: expiry || null, recipient: recipient, author: currentUser.name, initial: currentUser.initial, ts: new Date().toISOString(), voted: null };
+  var surveyObj = { id: tempId, type: "survey", title: title, desc: question, question: question, options: options.map(function(o){return {text:o,votes:0};}), total: 0, expiry: expiry || null, recipient: "all", author: currentUser.name, author_email: currentUser.email, initial: currentUser.initial, ts: new Date().toISOString(), voted: null };
   SURVEYS.unshift(surveyObj);
   _pendingSurveyIds.add(tempId); // protegge da sovrascrittura polling prima di conferma GAS
   saveCommunityCache();
@@ -9824,8 +9799,9 @@ async function publishSurvey() {
     try {
       await _sb.from('notifications').insert({
         user_email: '__broadcast__',
+        author_email: currentUser.email,
         icon: 'gold', emoji: '📊',
-        text: '<strong>Nuovo sondaggio</strong>: ' + title,
+        text: '<strong>Nuovo sondaggio</strong>: ' + title + ' — Partecipa ora!',
         created_at: new Date().toISOString(), read: false
       });
     } catch(_e) {}
@@ -9883,19 +9859,18 @@ async function publishListing() {
   if (!thumbnail.startsWith("data:image/")) thumbnail = "";
   var catChip  = document.querySelector("[data-listing-cat].active");
   var category = catChip ? catChip.dataset.listingCat : "real-estate";
-  var recipientChip = document.querySelector("[data-listing-recipient].active");
-  var recipient = recipientChip ? recipientChip.dataset.listingRecipient : "all";
+  // Listing sempre globali — nessun filtro destinatari
+  var recipient = "all";
   var catIcons = {"real-estate":"🏠","supercar":"🏎️","experience":"✨","shop":"🛍️","testdrive":"🚗","services":"💎"};
   var postText = price ? desc + "\n\n💰 " + price : desc;
   var tempId = Date.now();
   // FIX: il listing va in LISTINGS, NON in FEED_POSTS.
   // Prima era inserito in FEED_POSTS → appariva nel Feed → scompariva al poll successivo (GAS non lo aveva).
   var listingObj = {
-    id: tempId, author: currentUser.name, initial: currentUser.initial, role: currentUser.title,
+    id: tempId, author: currentUser.name, author_email: currentUser.email, initial: currentUser.initial, role: currentUser.title,
     type: "listing", time: "Ora", title: (catIcons[category]||"")+" "+title, text: postText,
     desc: desc, price: price,
-    locked: recipient==="candidate" ? "candidate" : (recipient==="founding" ? "founding" : ""),
-    recipient: recipient, category: category, likes: 0, comments: 0,
+    locked: "", recipient: "all", category: category, likes: 0, comments: 0,
     liked: false, commentsData: [], likedBy: [], ts: new Date().toISOString(),
     thumbnail: thumbnail || ""
   };
@@ -9910,8 +9885,9 @@ async function publishListing() {
     try {
       await _sb.from('notifications').insert({
         user_email: '__broadcast__',
-        icon: 'gold', emoji: '🏠',
-        text: '<strong>Nuovo listing esclusivo</strong>: ' + listingObj.title,
+        author_email: currentUser.email,
+        icon: 'gold', emoji: '🏷️',
+        text: '<strong>Nuovo listing</strong>: ' + listingObj.title,
         created_at: new Date().toISOString(), read: false
       });
     } catch(_e) {}
@@ -9951,13 +9927,23 @@ async function publishListing() {
       const gasData = await fetch(GAS_URL + '?action=publish_listing', { method: 'POST', body: gasBody }).then(r => r.json());
       // Sostituisci tempId con l'ID reale assegnato da GAS, rimuovi da pending
       if (gasData.success && gasData.listing && gasData.listing.id) {
+        const realId = gasData.listing.id;
         const idx = LISTINGS.findIndex(l => l.id === tempId);
-        if (idx !== -1) { LISTINGS[idx].id = gasData.listing.id; saveCommunityCache(); }
+        if (idx !== -1) { LISTINGS[idx].id = realId; saveCommunityCache(); }
         _pendingListingIds.delete(tempId);
-        _pendingListingIds.add(gasData.listing.id);
-        setTimeout(() => _pendingListingIds.delete(gasData.listing.id), 30000);
+        _pendingListingIds.add(realId);
+        setTimeout(() => _pendingListingIds.delete(realId), 60000);
+        // Notifica agli altri client del cambio ID (tempId → realId) per evitare sparizione al polling
+        if (_sbReady) {
+          try {
+            _sb.channel('community_content_broadcast').send({
+              type: 'broadcast', event: 'update_listing_id', payload: { tempId, realId }
+            }).catch(() => {});
+          } catch(_e2) {}
+        }
       } else {
-        setTimeout(() => _pendingListingIds.delete(tempId), 120000);
+        // GAS non ha confermato: estendi protezione polling a 5 minuti
+        setTimeout(() => _pendingListingIds.delete(tempId), 300000);
       }
     } catch(_e) {}
   }
@@ -10024,10 +10010,6 @@ function previewListing() {
   const catIcons  = {'real-estate':'🏠','supercar':'🏎️','experience':'✨','shop':'🛍️','testdrive':'🚗','services':'💎'};
   const fullTitle = (catIcons[category] || '') + ' ' + title;
 
-  const recipientChip  = document.querySelector('[data-listing-recipient].active');
-  const recipient      = recipientChip ? recipientChip.dataset.listingRecipient : 'all';
-  const recipientLabel = { all: 'Tutti i membri', founding: 'Solo Founding Members', candidate: 'Solo Founder Candidates' }[recipient] || 'Tutti i membri';
-
   const card = document.getElementById('listingPreviewCard');
   if (!card) return;
 
@@ -10050,9 +10032,9 @@ function previewListing() {
         <button class="listing-book-btn" style="pointer-events:none;opacity:0.7;">Prenota</button>
       </div>
     </div>
-    <div style="margin-top:0.9rem; padding:0.55rem 0.85rem; border:1px solid var(--border2); border-radius:var(--radius); font-size:0.7rem; color:var(--muted2); display:flex; align-items:center; gap:0.5rem;">
+    <div style="margin-top:0.9rem; padding:0.55rem 0.85rem; border:1px solid rgba(212,175,55,0.15); border-radius:var(--radius); font-size:0.7rem; color:var(--muted2); display:flex; align-items:center; gap:0.5rem;">
       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>
-      Visibile a: <strong style="color:var(--gold);">${recipientLabel}</strong>
+      Visibile a: <strong style="color:var(--gold);">Tutti i membri</strong>
     </div>`;
 
   const overlay = document.getElementById('listingPreviewOverlay');
