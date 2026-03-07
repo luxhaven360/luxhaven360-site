@@ -3031,6 +3031,8 @@ let BANNED_USERS = new Set();
 let _REMOVED_IDS = new Set(); // formato: "sourceType:sourceId"
 
 let _PENDING_THREADS = {};
+let _CONFIRMED_THREADS = {};   // thread confermati da GAS ma non ancora nel poll server
+let _viewedThreadIds = new Set(); // thread già aperti dall'utente in questa sessione
 let _RESOLVED_REPORT_IDS = new Set();
 const MOD_RESOLVED_IDS_KEY = 'lh360_mod_resolved_ids';
 
@@ -5061,6 +5063,8 @@ async function _loadReportsFromSupabase() {
 /* ── Inizializza attività dalla community real-data (all'avvio) ── */
 /* ── Carica attività globali da Supabase all'avvio ── */
 async function _loadGlobalActivitiesFromSupabase() {
+  // Fallback localStorage — usato SOLO se Supabase non è raggiungibile (errore di rete)
+  // NON viene usato quando Supabase restituisce array vuoto: quello è lo stato reale del DB
   const _fallbackToLocal = () => {
     try {
       const raw = localStorage.getItem(ACTIVITY_LOG_KEY);
@@ -5074,10 +5078,10 @@ async function _loadGlobalActivitiesFromSupabase() {
     } catch(e) {}
   };
 
+  // Se Supabase non è pronto, usa localStorage come fallback temporaneo
   if (!_sbReady || !currentUser) { _fallbackToLocal(); return; }
 
   try {
-    // FIX #3: carica solo gli ultimi ACTIVITY_DB_DAYS giorni, limit ACTIVITY_MAX
     const dbCutoff = new Date(Date.now() - ACTIVITY_DB_DAYS * 24 * 60 * 60 * 1000).toISOString();
     const { data, error } = await _sb
       .from('community_activity')
@@ -5085,42 +5089,33 @@ async function _loadGlobalActivitiesFromSupabase() {
       .gte('created_at', dbCutoff)
       .order('created_at', { ascending: false })
       .limit(ACTIVITY_MAX);
-    // Se la tabella non esiste (404) o altro errore → usa localStorage
-    if (error || !Array.isArray(data)) { _fallbackToLocal(); return; }
-    if (data.length > 0) {
-      const cutoff = Date.now() - ACTIVITY_DAYS * 24 * 60 * 60 * 1000;
-      const remoteActivities = data.map(a => ({
+
+    // Solo errore di rete/tabella → fallback localStorage
+    if (error) { _fallbackToLocal(); return; }
+
+    // Supabase ha risposto correttamente — il suo risultato è la fonte di verità
+    // Anche se l'array è vuoto (DB svuotato), si rispetta quel valore
+    if (Array.isArray(data)) {
+      GLOBAL_ACTIVITIES = data.map(a => ({
         dotColor: a.dot_color || 'blue',
         text: a.text,
         ts: a.created_at ? new Date(a.created_at).getTime() : Date.now()
-      })).filter(a => a.ts >= cutoff);
-      if (remoteActivities.length > 0) {
-        GLOBAL_ACTIVITIES = remoteActivities;
-        renderActivityFeed();
-        return;
-      }
+      }));
+      // Aggiorna anche localStorage con i dati reali (per coerenza in caso di successivi fallback)
+      try { localStorage.setItem(ACTIVITY_LOG_KEY, JSON.stringify(GLOBAL_ACTIVITIES.slice(0, 20))); } catch(e) {}
+      renderActivityFeed();
     }
-    // Nessun dato remoto → usa localStorage
+  } catch(e) {
+    // Solo errore di rete reale → usa localStorage
     _fallbackToLocal();
-  } catch(e) { _fallbackToLocal(); }
+  }
 }
 
 function _buildActivityFromRealData() {
-  // BUG FIX #1: disabilitato — le attività vengono caricate da Supabase (sorgente globale condivisa)
-  // Questo evita duplicati e garantisce la stessa lista per tutti gli utenti
-  if (GLOBAL_ACTIVITIES.length === 0) {
-    // Solo se Supabase non ha restituito dati, usa fallback da localStorage
-    try {
-      const raw = localStorage.getItem(ACTIVITY_LOG_KEY);
-      if (raw) {
-        const parsed = JSON.parse(raw);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          GLOBAL_ACTIVITIES = parsed;
-          renderActivityFeed();
-        }
-      }
-    } catch(e) {}
-  }
+  // Disabilitato: Supabase è la fonte di verità per le attività.
+  // Il localStorage non viene mai usato come fallback per evitare
+  // incoerenze tra account diversi (stale cache).
+  // Le attività vengono sempre caricate da _loadGlobalActivitiesFromSupabase().
 }
 
 
