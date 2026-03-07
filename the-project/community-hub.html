@@ -5529,7 +5529,7 @@ function renderDiscussions(filter) {
         <div class="thread-meta">
           <div class="thread-stat"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg> ${d.replies}</div>
           <div class="thread-stat"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg> ${d.views}</div>
-          ${!d.isTeam ? `<button onclick="event.stopPropagation();reportContentById('thread','${d.id}')" style="background:none;border:none;color:var(--red);opacity:0.5;cursor:pointer;font-size:0.62rem;padding:2px 5px;">🚩</button>` : ''}
+          ${!d.isTeam ? `<button onclick="event.stopPropagation();reportContentById('thread','${d.id}')" style="background:none;border:none;color:var(--red);opacity:0.5;cursor:pointer;font-size:0.62rem;padding:2px 5px;" class="report-btn-thread" data-author="${d.author||''}" data-isteam="${!!d.isTeam}">🚩</button>` : ''}
         </div>
       </div>
       <div class="thread-footer">
@@ -5546,6 +5546,12 @@ function renderDiscussions(filter) {
       </div>
     </div>
   `).join('');
+  // Applica regola segnalazioni: nascondi bottone 🚩 se l'utente è l'autore del thread
+  container.querySelectorAll('.report-btn-thread').forEach(btn => {
+    if (!_canReport(btn.dataset.author, btn.dataset.isteam === 'true')) {
+      btn.style.display = 'none';
+    }
+  });
 }
 
 /* ═══════════════════════════════════════════
@@ -5617,7 +5623,7 @@ function renderThreadMessages(id) {
           <span class="thread-msg-author ${msg.isTeam ? 'team-author' : ''}">${msg.author}</span>
           <span class="thread-msg-role">${msg.role}</span>
           <span class="thread-msg-time">${(() => { const ts = msg.ts ? new Date(msg.ts).getTime() : 0; return ts ? `<span data-ts="${ts}">${_notifRelTime(ts)}</span>` : (msg.time || 'Ora'); })()}</span>
-          ${!msg.isTeam ? `<button onclick="reportContentById('reply','reply_${idx}')" style="background:none;border:none;color:var(--red);opacity:0.5;cursor:pointer;font-size:0.62rem;margin-left:auto;">🚩 Segnala</button>` : ''}
+          ${_canReport(msg.author, !!msg.isTeam) ? `<button onclick="reportContentById('reply','reply_${idx}')" style="background:none;border:none;color:var(--red);opacity:0.5;cursor:pointer;font-size:0.62rem;margin-left:auto;">🚩 Segnala</button>` : ''}
         </div>
         <div class="thread-msg-text">${msg.text}</div>
         <div class="thread-msg-reactions">
@@ -5660,35 +5666,24 @@ function handleThreadKey(e) {
 ═══════════════════════════════════════════════════════════════ */
 
 // Invia segnale "sto scrivendo" al thread corrente via Supabase
+// FIX DEFINITIVO: niente upsert (richiede unique index nel DB che potrebbe non esistere).
+// Strategia garantita: DELETE sulla riga esistente → INSERT nuova riga.
 async function _sendThreadTyping(isTyping) {
   if (!_sbReady || !currentUser || !currentThreadId) return;
-  const convKey  = 'thread_' + currentThreadId;
-  const email    = currentUser.email.toLowerCase();
-  const payload  = {
-    conv_id:    convKey,
-    user_email: email,
-    user_name:  currentUser.name.split(' ')[0] + ' ' + (currentUser.name.split(' ')[1]||'?')[0] + '.',
-    user_init:  currentUser.initial || currentUser.name[0] || '?',
-    is_typing:  isTyping,
-    updated_at: new Date().toISOString()
-  };
+  const convKey = 'thread_' + currentThreadId;
+  const email   = currentUser.email.toLowerCase();
   try {
-    // FIX: onConflict richiede un UNIQUE index esatto nel DB.
-    // Strategia robusta: prova upsert senza opzioni (usa PK), se fallisce
-    // esegui DELETE + INSERT per garantire sempre una sola riga per utente/conv.
-    const { error } = await _sb.from('typing').upsert(payload);
-    if (error) {
-      await _sb.from('typing').delete()
-        .eq('conv_id', convKey).eq('user_email', email);
-      await _sb.from('typing').insert(payload);
-    }
-  } catch(_e) {
-    try {
-      await _sb.from('typing').delete()
-        .eq('conv_id', convKey).eq('user_email', email);
-      await _sb.from('typing').insert(payload);
-    } catch(_e2) {}
-  }
+    await _sb.from('typing').delete()
+      .eq('conv_id', convKey).eq('user_email', email);
+    await _sb.from('typing').insert({
+      conv_id:    convKey,
+      user_email: email,
+      user_name:  currentUser.name.split(' ')[0] + ' ' + (currentUser.name.split(' ')[1]||'?')[0] + '.',
+      user_init:  currentUser.initial || currentUser.name[0] || '?',
+      is_typing:  isTyping,
+      updated_at: new Date().toISOString()
+    });
+  } catch(_e) {}
 }
 
 // Avvia ascolto typing per il thread aperto corrente
@@ -7369,30 +7364,25 @@ function sendTypingStatus(isTyping) {
   _typingSentAt = now;
 
   // Supabase: scrittura istantanea — zero latenza
+  // FIX DEFINITIVO: DELETE → INSERT, niente upsert (evita 400 se manca unique index)
   if (_sbReady) {
     const cid   = convId(currentUser.email, currentConvPartnerEmail);
     const email = currentUser.email.toLowerCase();
-    const _sbTypingUpsert = (cid, email, val) => {
-      const row = { conv_id: cid, user_email: email, is_typing: val, updated_at: new Date().toISOString() };
-      // FIX: strategia robusta senza onConflict (evita 400 Bad Request se manca unique index)
-      _sb.from('typing').upsert(row).then(({ error }) => {
-        if (error) {
-          _sb.from('typing').delete().eq('conv_id', cid).eq('user_email', email)
-            .then(() => _sb.from('typing').insert(row).then(null, ()=>{}), ()=>{});
-        }
-      }, ()=>{});
+    const _sbTypingWrite = (v) => {
+      const row = { conv_id: cid, user_email: email, is_typing: v, updated_at: new Date().toISOString() };
+      _sb.from('typing').delete().eq('conv_id', cid).eq('user_email', email)
+        .then(() => _sb.from('typing').insert(row).then(null, () => {}), () => {});
     };
     if (isTyping) {
-      _sbTypingUpsert(cid, email, true);
-      // Auto-rimuovi dopo 5s di inattività
+      _sbTypingWrite(true);
       if (_typingTimer) clearTimeout(_typingTimer);
-      _typingTimer = setTimeout(() => _sbTypingUpsert(cid, email, false), 5000);
+      _typingTimer = setTimeout(() => _sbTypingWrite(false), 5000);
     } else {
-      _sbTypingUpsert(cid, email, false);
+      _sbTypingWrite(false);
     }
   } else {
     // Fallback GAS
-    fetch(`${GAS_URL}?action=set_typing&email=${encodeURIComponent(currentUser.email)}&otherEmail=${encodeURIComponent(currentConvPartnerEmail)}&isTyping=${isTyping}`).catch(()=>{});
+    fetch(`${GAS_URL}?action=set_typing&email=${encodeURIComponent(currentUser.email)}&otherEmail=${encodeURIComponent(currentConvPartnerEmail)}&isTyping=${isTyping}`).catch(() => {});
     if (_typingTimer) clearTimeout(_typingTimer);
     if (isTyping) {
       _typingTimer = setTimeout(() => clearTypingStatus(), 4000);
@@ -7407,14 +7397,9 @@ function clearTypingStatus() {
   if (_sbReady) {
     const cid   = convId(currentUser.email, currentConvPartnerEmail);
     const email = currentUser.email.toLowerCase();
-    const row   = { conv_id: cid, user_email: email, is_typing: false, updated_at: new Date().toISOString() };
-    // FIX: strategia robusta senza onConflict
-    _sb.from('typing').upsert(row).then(({ error }) => {
-      if (error) {
-        _sb.from('typing').delete().eq('conv_id', cid).eq('user_email', email)
-          .then(() => _sb.from('typing').insert(row).then(null, ()=>{}), ()=>{});
-      }
-    }, ()=>{});
+    // FIX DEFINITIVO: DELETE → INSERT, niente upsert
+    _sb.from('typing').delete().eq('conv_id', cid).eq('user_email', email)
+      .then(() => _sb.from('typing').insert({ conv_id: cid, user_email: email, is_typing: false, updated_at: new Date().toISOString() }).then(null, ()=>{}), ()=>{});
   } else {
     fetch(`${GAS_URL}?action=set_typing&email=${encodeURIComponent(currentUser.email)}&otherEmail=${encodeURIComponent(currentConvPartnerEmail)}&isTyping=false`).catch(()=>{});
   }
@@ -9981,8 +9966,28 @@ function removeContentFromPlatform(sourceType, sourceId) {
   saveCommunityCache();
 }
 
+/* ══════════════════════════════════════════════════════════════
+   REGOLA SEGNALAZIONI — logica centralizzata
+   Un contenuto può essere segnalato SOLO se:
+   1. L'autore NON ha ruolo Team
+   2. L'utente corrente NON è l'autore del contenuto
+═══════════════════════════════════════════════════════════════ */
+function _canReport(authorName, isTeamContent) {
+  if (isTeamContent) return false;                         // regola 3: team non segnalabile
+  if (!currentUser) return false;
+  // Confronta nome abbreviato (es. "Luca A.") con quello dell'autore
+  const myShort = currentUser.name.split(' ')[0] + ' ' + (currentUser.name.split(' ')[1] || '?')[0] + '.';
+  if (!authorName) return true;
+  // Confronto case-insensitive sul nome abbreviato
+  if (myShort.toLowerCase() === authorName.toLowerCase()) return false;  // regola 1: no auto-segnalazione
+  // Confronto anche su nome completo nel caso in cui authorName sia il nome completo
+  if (currentUser.name.toLowerCase() === authorName.toLowerCase()) return false;
+  return true;
+}
+
 function reportContent(sourceType, sourceId, authorName, authorEmail, contentText, isTeam) {
   if (isTeam) { showToast('red','⚠','Non puoi segnalare contenuti del team.'); return; }
+  if (!_canReport(authorName, isTeam)) { showToast('amber','ℹ','Non puoi segnalare questo contenuto.'); return; }
   const alreadyReported = REPORTS.some(r => r.sourceId === sourceId && r.sourceType === sourceType && r.reporterEmail === (currentUser ? currentUser.email : ''));
   if (alreadyReported) { showToast('amber','ℹ','Hai già segnalato questo contenuto.'); return; }
   const shortName = currentUser ? currentUser.name.split(' ')[0] + ' ' + ((currentUser.name.split(' ')[1]||'?')[0]) + '.' : 'Utente';
@@ -10649,12 +10654,47 @@ function submitReport() {
 
 // Override reportContentById to open the modal instead of reporting directly
 function reportContentById(sourceType, sourceId, parentId) {
-  // Quick check: can we even report this?
+  // Regola centralizzata: nessuna segnalazione se isTeam o se l'utente è l'autore
+  let authorName = '', isTeamContent = false;
+
   if (sourceType === 'post') {
     const post = FEED_POSTS.find(p => String(p.id) === String(sourceId));
     if (!post) { showToast('amber','ℹ','Contenuto non trovato.'); return; }
-    if (post.role && post.role.toLowerCase().includes('team')) { showToast('red','⚠','Non puoi segnalare contenuti del team.'); return; }
+    isTeamContent = !!(post.role && post.role.toLowerCase().includes('team'));
+    authorName = post.author || '';
+
+  } else if (sourceType === 'comment') {
+    let found = null;
+    const pidNum = parentId ? String(parentId) : null;
+    FEED_POSTS.forEach(p => {
+      if (!pidNum || String(p.id) === pidNum) {
+        (p.commentsData || []).forEach(c => {
+          if (!found && (String(c.id) === sourceId || sourceId.startsWith(String(p.id)+'_c_'))) found = c;
+        });
+      }
+    });
+    if (found) { isTeamContent = !!found.isTeam; authorName = found.author || ''; }
+
+  } else if (sourceType === 'thread') {
+    const disc = DISCUSSIONS.find(d => String(d.id) === String(sourceId));
+    if (!disc) { showToast('amber','ℹ','Discussione non trovata.'); return; }
+    isTeamContent = !!disc.isTeam;
+    authorName = disc.author || '';
+
+  } else if (sourceType === 'reply') {
+    const idx = parseInt((sourceId || '').replace('reply_', ''), 10);
+    if (currentThreadId && THREAD_MESSAGES[currentThreadId]) {
+      const msg = THREAD_MESSAGES[currentThreadId][idx];
+      if (msg) { isTeamContent = !!msg.isTeam; authorName = msg.author || ''; }
+    }
   }
+
+  if (!_canReport(authorName, isTeamContent)) {
+    if (isTeamContent) showToast('red','⚠','Non puoi segnalare contenuti del team.');
+    else showToast('amber','ℹ','Non puoi segnalare un contenuto che hai pubblicato tu.');
+    return;
+  }
+
   openReportModal(sourceType, sourceId, parentId);
 }
 
