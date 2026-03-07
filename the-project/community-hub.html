@@ -4125,8 +4125,7 @@ function applyRemoteData(data) {
         };
       });
 
-    // FIX doppio thread: reinserisci i pending SOLO se il server non ha ancora quel thread
-    // "stesso thread" = stesso titolo + stesso autore (il server potrebbe averlo con realId diverso)
+    // Fase A: gestisci _PENDING_THREADS (thread non ancora confermati da GAS)
     const serverTitleAuthors = new Set(DISCUSSIONS.map(d => (d.title||'') + '|' + (d.author||'')));
     const serverIds = new Set(DISCUSSIONS.map(d => String(d.id)));
 
@@ -4134,19 +4133,44 @@ function applyRemoteData(data) {
       const pending = _PENDING_THREADS[tempId];
       const pendingKey = (pending.title || '') + '|' + (pending.author || '');
       if (serverTitleAuthors.has(pendingKey)) {
-        // Il server ha già questo thread (confermato con realId) → rimuovi dal pending
-        // ed aggiungi l'ID del server a _lastKnownDiscIds per evitare notifiche spurie
+        // Server ha già il thread con realId → promuovi da pending a confirmed
         const serverMatch = DISCUSSIONS.find(d =>
           (d.title||'') + '|' + (d.author||'') === pendingKey
         );
         if (serverMatch) {
           _lastKnownDiscIds.add(serverMatch.id);
           _lastKnownDiscIds.delete(Number(tempId));
+          // Promuovi a confirmed per proteggerlo ancora qualche ciclo
+          if (!_CONFIRMED_THREADS[serverMatch.id]) {
+            _CONFIRMED_THREADS[serverMatch.id] = { disc: serverMatch, until: Date.now() + 20000 };
+            setTimeout(() => { delete _CONFIRMED_THREADS[serverMatch.id]; }, 20000);
+          }
         }
         delete _PENDING_THREADS[tempId];
       } else if (!serverIds.has(String(pending.id))) {
-        // Server non ha ancora questo thread → reinserisci il pending in cima
+        // Server non ha ancora questo thread → reinserisci in cima
         DISCUSSIONS.unshift(pending);
+      }
+    });
+
+    // Fase B: gestisci _CONFIRMED_THREADS (thread confermati da GAS ma non ancora nel server poll)
+    // Questo è il fix per la race condition principale: GAS risponde ma il successivo
+    // get_community_data non ha ancora la riga nel foglio → thread scompare
+    const now = Date.now();
+    Object.keys(_CONFIRMED_THREADS).forEach(confirmedId => {
+      const entry = _CONFIRMED_THREADS[confirmedId];
+      if (entry.until < now) { delete _CONFIRMED_THREADS[confirmedId]; return; } // scaduto
+      if (!serverIds.has(String(confirmedId))) {
+        // Il server non ha ancora questo thread → reinseriscilo
+        // Aggiorna l'oggetto disc con i dati locali più recenti
+        const localDisc = DISCUSSIONS.find(d => String(d.id) === String(confirmedId));
+        const discToInsert = localDisc || entry.disc;
+        if (!DISCUSSIONS.find(d => String(d.id) === String(confirmedId))) {
+          DISCUSSIONS.unshift(discToInsert);
+        }
+      } else {
+        // Il server ce l'ha → confirmed non serve più
+        delete _CONFIRMED_THREADS[confirmedId];
       }
     });
   }
@@ -5585,9 +5609,13 @@ async function submitNewThread() {
   // per evitare che rimanga bloccato come "pending" a tempo indeterminato
   const _pendingTimeout = setTimeout(() => {
     if (_PENDING_THREADS[tempId]) {
-      _PENDING_THREADS[tempId]._isPending = false;
+      const _timedOutDisc = _PENDING_THREADS[tempId];
+      _timedOutDisc._isPending = false;
       delete _PENDING_THREADS[tempId];
-      // Il thread rimane in DISCUSSIONS con il tempId — sarà sostituito al prossimo poll
+      // Proteggi il thread anche dopo il timeout — resterà visibile
+      // GAS potrebbe averlo salvato senza che la risposta sia arrivata
+      _CONFIRMED_THREADS[tempId] = { disc: _timedOutDisc, until: Date.now() + 60000 };
+      setTimeout(() => { delete _CONFIRMED_THREADS[tempId]; }, 60000);
     }
   }, 45000);
   THREAD_MESSAGES[tempId] = [{
