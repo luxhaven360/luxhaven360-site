@@ -561,13 +561,12 @@ window.I18N_TRANSLATIONS['de'] = {
   'survey.voice_subtitle':                 'Deine Stimme trägt zur Entwicklung des Projekts bei.',
 };
 Object.assign(window.I18N_TRANSLATIONS['de'], {
-  'time.now':'Jetzt','time.min_ago':'{n}Min','time.hour_ago':'{n}Std','time.day_ago':'{n}T','time.yesterday':'Gestern',
-  'feed.type.update':'📢 Update','feed.type.exclusive':'⭐ Exklusiver Inhalt','feed.type.event':'📅 Veranstaltung','feed.type.news':'📰 Neuigkeit',
+  'time.now':'Jetzt','time.min_ago':'{n}Min','time.hour_ago_short':'{n}Std','time.day_ago_short':'{n}T','feed.type.update':'📢 Update','feed.type.exclusive':'⭐ Exklusiver Inhalt','feed.type.event':'📅 Veranstaltung','feed.type.news':'📰 Neuigkeit',
   'feed.locked_msg':'Dieser Inhalt ist für <strong style="color:var(--gold)">Founding Members</strong> reserviert. Upgrade durchführen, um Zugang zu erhalten.',
   'feed.locked_btn':'Als Founding Member freischalten','feed.like':'Gefällt mir','feed.liked':'Gefällt',
   'feed.comment_btn':'Kommentieren','feed.share':'Teilen','feed.report':'Melden',
   'feed.comment_placeholder':'Kommentar schreiben…','feed.like_toast':'Dir gefällt der Beitrag!',
-  'feed.empty':'Keine Updates verfügbar.','feed.empty_sub':'Das Team wird bald den ersten Inhalt veröffentlichen.',
+  'feed.empty_updates':'Keine Updates verfügbar.','feed.empty_sub':'Das Team wird bald den ersten Inhalt veröffentlichen.',
   'feed.activity_cleared':'Letzte Aktivität für dich geleert',
   'survey.active_tag':'📊 Aktive Umfrage','survey.vote_cta':'Abstimmen, um Ergebnisse zu sehen','survey.voted':'✓ Bereits abgestimmt',
   'survey.total_one':'{n} Stimme gesamt','survey.total':'{n} Stimmen gesamt',
