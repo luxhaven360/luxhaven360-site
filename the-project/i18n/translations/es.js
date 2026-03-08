@@ -701,4 +701,30 @@ window.I18N_TRANSLATIONS['es'] = {
   // ─── ENCUESTAS ─────────────────────────────────────────
   'survey.voice_subtitle':           'Tu voz contribuye al desarrollo del proyecto.',
 
+  // ─── CHIAVI AGGIUNTIVE (inline + dinamiche) ──────────────────
+  'broadcast.content_placeholder':   'Escribe el contenido de la comunicación…',
+  'broadcast.title_placeholder':     'Título de la comunicación…',
+  'comment.submitted_toast':         '¡Comentario publicado!',
+  'disc.cat.feedback':               'Feedback',
+  'disc.cat.general':                'General',
+  'disc.cat.idea':                   'Idea',
+  'disc.cat.question':               'Pregunta',
+  'disc.empty':                      'Todavía no hay discusiones.',
+  'disc.empty_hint':                 '¡Sé el primero en crear un hilo!',
+  'disc.no_replies':                 'Todavía no hay respuestas',
+  'form.email_placeholder':          'correo@dominio.com',
+  'form.password_placeholder':       '••••••••',
+  'members.search_placeholder':      'Buscar miembro…',
+  'messages.attach':                 'Adjuntar archivo',
+  'messages.emoji':                  'Emoji',
+  'messages.search_conv':            'Buscar conversaciones…',
+  'messages.write_placeholder':      'Escribe un mensaje…',
+  'nav.back_community':              'Volver a la página de la Comunidad',
+  'thread.body_placeholder':         'Describe el tema, haz una pregunta o comparte tu idea…',
+  'thread.no_messages':              '¡Todavía no hay mensajes. Sé el primero en responder!',
+  'thread.replies_divider':          'Respuestas',
+  'thread.title_placeholder':        'Escribe un título claro y descriptivo…',
+  'thread.write_reply':              'Escribe tu respuesta…',
+  'dash.position_label':             'Posición',
+
 };
