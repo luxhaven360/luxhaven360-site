@@ -3976,7 +3976,7 @@ function initApp() {
           // non '#threadDetailStats .thread-stat:nth-child(2)' (ID inesistente).
           if (currentThreadId && String(currentThreadId) === String(r.thread_id)) {
             const viewsEl = document.querySelector('#threadDetailInfo span:nth-child(2)');
-            if (viewsEl) viewsEl.childNodes[viewsEl.childNodes.length - 1].textContent = ' ' + disc.views + ' visualizzazioni';
+            if (viewsEl) viewsEl.childNodes[viewsEl.childNodes.length - 1].textContent = ' ' + _pl(disc.views||0, 'visualizzazione', 'visualizzazioni');
           }
         }
       }).subscribe();
@@ -4275,7 +4275,10 @@ function renderDashboard() {
     // Legge posti rimasti dall'elemento già aggiornato da loadDashboardStats
     const spotsEl = document.getElementById('dashStatRemainingSpots');
     const hasRealData = spotsEl && !spotsEl.querySelector('[style*="animation"]');
-    const remainingText = hasRealData ? ((spotsEl.textContent.split('/')[0] || '').trim() + ' rimasti') : '… rimasti';
+    const rawNum = hasRealData ? parseInt((spotsEl.textContent.split('/')[0] || '').trim(), 10) : null;
+    const remainingText = rawNum !== null && !isNaN(rawNum)
+      ? _pl(rawNum, 'rimasto', 'rimasti')
+      : '… rimasti';
 
     fc.innerHTML = `
       <div style="display:flex; gap:1.5rem; flex-wrap:wrap; margin-bottom:0.8rem;">
@@ -5006,7 +5009,8 @@ function applyDashboardStats(data) {
 
   const spotsLabelEl = document.getElementById('dashStatRemainingLabel');
   if (spotsLabelEl) {
-    spotsLabelEl.textContent = remaining === 0 ? 'Tutti i posti esauriti' : 'Slot disponibili';
+    spotsLabelEl.textContent = remaining === 0 ? 'Tutti i posti esauriti'
+      : remaining === 1 ? 'Slot disponibile' : 'Slot disponibili';
     spotsLabelEl.className = `stat-change ${remaining < 20 ? 'up' : 'neutral'}`;
   }
 
@@ -5016,12 +5020,12 @@ function applyDashboardStats(data) {
   const rpRemaining = document.getElementById('rpStatusRemaining');
   if (rpBooked)    rpBooked.textContent = `${totalBooked} / ${maxF}`;
   if (rpBar)       rpBar.style.width    = `${pct}%`;
-  if (rpRemaining) rpRemaining.textContent = `${remaining} posti ancora disponibili`;
+  if (rpRemaining) rpRemaining.textContent = _pl(remaining, 'posto ancora disponibile', 'posti ancora disponibili');
 
   // ── Aggiorna Founder Status Card (per candidati) ──────────
   // Aggiorna il campo "Posti Disponibili" nella founder status card senza re-render completo
   const fsrEl = document.getElementById('founderStatusRemainingSpots');
-  if (fsrEl) fsrEl.textContent = `${remaining} rimasti`;
+  if (fsrEl) fsrEl.textContent = _pl(remaining, 'rimasto', 'rimasti');
 }
 
 /* ═══════════════════════════════════════════
@@ -5071,6 +5075,16 @@ function logActivity(dotColor, text) {
 function formatTimeAgo(ts) {
   // FIX #3: usa STESSO formato di _notifRelTime per evitare oscillazione "5m" ↔ "5m fa"
   return _notifRelTime(ts);
+}
+
+/* ── Pluralizzazione italiana ──────────────────────────────────────────
+   _pl(n, singolare, plurale)
+   Esempi:
+     _pl(1, 'voto totale', 'voti totali')   → "1 voto totale"
+     _pl(3, 'voto totale', 'voti totali')   → "3 voti totali"
+   Se plurale non specificato, aggiunge 'i' al posto di 'e/o' finale.  */
+function _pl(n, sing, plur) {
+  return n + '\u00a0' + (n === 1 ? sing : (plur || sing));
 }
 
 /* ═══════════════════════════════════════════
@@ -5990,8 +6004,8 @@ function renderDiscussions(filter) {
         <span class="thread-category ${d.category}">${d.category === 'feedback' ? 'Feedback' : d.category === 'question' ? 'Domanda' : d.category === 'idea' ? 'Idea' : 'Generale'}</span>
         <div class="thread-title">${d.title}</div>
         <div class="thread-meta">
-          <div class="thread-stat"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg> ${d.replies}</div>
-          <div class="thread-stat"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg> ${d.views}</div>
+          <div class="thread-stat" title="${d.replies === 1 ? '1 risposta' : (d.replies||0) + ' risposte'}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg> ${d.replies}</div>
+          <div class="thread-stat" title="${d.views === 1 ? '1 visualizzazione' : (d.views||0) + ' visualizzazioni'}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg> ${d.views}</div>
           ${!_isThreadTeam(d) ? `<button onclick="event.stopPropagation();reportContentById('thread','${d.id}')" style="background:none;border:none;color:var(--red);opacity:0.5;cursor:pointer;font-size:0.62rem;padding:2px 5px;" class="report-btn-thread" data-author="${d.author||''}" data-isteam="${_isThreadTeam(d)}">🚩</button>` : ''}
         </div>
       </div>
@@ -6047,11 +6061,11 @@ function openThread(id) {
   document.getElementById('threadDetailInfo').innerHTML = `
     <span>
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
-      ${thread.replies} risposte
+      ${_pl(thread.replies||0, 'risposta', 'risposte')}
     </span>
     <span>
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
-      ${thread.views} visualizzazioni
+      ${_pl(thread.views||0, 'visualizzazione', 'visualizzazioni')}
     </span>
     <span>✍️ ${thread.author} · ${(() => { const ts = thread.ts ? new Date(thread.ts).getTime() : 0; return ts ? `<span data-ts="${ts}">${_notifRelTime(ts)}</span>` : (thread.time || 'Ora'); })()}</span>
   `;
@@ -6250,11 +6264,11 @@ function _startThreadRepliesListener(threadId) {
           detailInfo.innerHTML = `
             <span>
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
-              ${thread.replies} risposte
+              ${_pl(thread.replies||0, 'risposta', 'risposte')}
             </span>
             <span>
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
-              ${thread.views} visualizzazioni
+              ${_pl(thread.views||0, 'visualizzazione', 'visualizzazioni')}
             </span>
             <span>✍️ ${thread.author} · ${ts ? `<span data-ts="${ts}">${_notifRelTime(ts)}</span>` : (thread.time || 'Ora')}</span>
           `;
@@ -6580,11 +6594,11 @@ async function submitThreadReply() {
       detailInfo.innerHTML = `
         <span>
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
-          ${thread.replies} risposte
+          ${_pl(thread.replies||0, 'risposta', 'risposte')}
         </span>
         <span>
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
-          ${thread.views} visualizzazioni
+          ${_pl(thread.views||0, 'visualizzazione', 'visualizzazioni')}
         </span>
         <span>✍️ ${thread.author} · ${ts ? `<span data-ts="${ts}">${_notifRelTime(ts)}</span>` : (thread.time || 'Ora')}</span>
       `;
@@ -8780,7 +8794,7 @@ function renderSurveys() {
         </div>`;
       }).join('')}
       <div class="survey-footer">
-        <span>${s.total || 0} voti totali</span>
+        <span>${_pl(s.total || 0, 'voto totale', 'voti totali')}</span>
         ${s.voted ? '<span class="text-gold">✓ Hai già votato</span>' : '<span>Vota per vedere i risultati</span>'}
       </div>
     </div>
@@ -11295,7 +11309,7 @@ function renderAnalytics() {
   if (discEl) discEl.textContent = DISCUSSIONS.length;
   const discChangeEl = document.getElementById('analyticsDiscussionsChange');
   const totalReplies = DISCUSSIONS.reduce((a,d)=>a+(d.replies||0),0);
-  if (discChangeEl) { discChangeEl.className='stat-change neutral'; discChangeEl.textContent = `${totalReplies} risposte totali`; }
+  if (discChangeEl) { discChangeEl.className='stat-change neutral'; discChangeEl.textContent = _pl(totalReplies, 'risposta totale', 'risposte totali'); }
 
   // ── Segnalazioni ────────────────────────────────────
   const repEl = document.getElementById('analyticsReports');
@@ -11615,7 +11629,7 @@ function _execSearch(q) {
         <div class="sr-icon" style="background:rgba(91,142,212,0.12)">💬</div>
         <div class="sr-body">
           <div class="sr-title">${_hlText(d.title||'Thread', q)}</div>
-          <div class="sr-meta">${_hlText(d.author||'', q)} · ${d.replies||0} risposte · ${d.category||''}</div>
+          <div class="sr-meta">${_hlText(d.author||'', q)} · ${_pl(d.replies||0, 'risposta', 'risposte')} · ${d.category||''}</div>
         </div>
         <span class="sr-badge" style="background:rgba(91,142,212,0.12);color:var(--blue)">THREAD</span>
       </div>`).join('');
