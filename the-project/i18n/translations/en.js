@@ -508,6 +508,29 @@ window.I18N_TRANSLATIONS['en'] = {
   'profile.notif_mentions':     'Thread mentions',
   'profile.notif_mentions_desc':'Notification when someone mentions you in a discussion',
 
+
+
+  // ─── HARDCODED KEYS – TO BE USED IN HTML ───────────────────────────
+  'dash.card_active_members':              'ACTIVE MEMBERS',
+  'dash.card_project_updates':             'PROJECT UPDATES',
+  'dash.card_founding_spots':              'FOUNDING MEMBER SPOTS',
+  'dash.last_30_days':                     'Last 30 days',
+  'dash.slots_available':                  'Available slots',
+  'dash.latest_updates':                   'LATEST UPDATES',
+  'dash.view_all':                         'View all →',
+  'dash.founder_status':                   'FOUNDER STATUS',
+  'sidebar.upcoming_events':               'UPCOMING EVENTS',
+  'sidebar.no_events':                     'No events at the moment',
+  'sidebar.project_status':                'PROJECT STATUS',
+  'sidebar.confirmed_spots':               'Confirmed spots',
+  'sidebar.spots_still_avail':             '{n} spots still available',
+  'page.feed_title':                       'Updates Feed',
+  'page.listings_title':                   'Exclusive Listings',
+  'page.messages_title':                   'Messages',
+  'page.surveys_title':                    'Surveys & Feedback',
+  'feed.news_subtitle':                    'News, announcements and exclusive updates from the team.',
+  'listing.access_subtitle':               'Early access to available properties.',
+  'survey.voice_subtitle':                 'Your voice contributes to the development of the project.',
 };
 Object.assign(window.I18N_TRANSLATIONS['en'], {
   'time.now':'Now','time.min_ago':'{n}m ago','time.hour_ago':'{n}h ago','time.day_ago':'{n}d ago','time.yesterday':'Yesterday',
