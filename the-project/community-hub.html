@@ -3676,6 +3676,16 @@ function initApp() {
     }, 3000);
   }
 
+  // Pulizia automatica notifiche scadute da Supabase (una volta al giorno)
+  const _notifCleanKey = 'lh360_notif_lastclean';
+  const _lastNotifClean = parseInt(localStorage.getItem(_notifCleanKey) || '0', 10);
+  if (Date.now() - _lastNotifClean > 24 * 60 * 60 * 1000) {
+    setTimeout(async () => {
+      await _cleanOldNotificationsFromSupabase();
+      try { localStorage.setItem(_notifCleanKey, String(Date.now())); } catch(e) {}
+    }, 5000);
+  }
+
   // Simulate real-time activity
   // Avvia presenza real-time: heartbeat immediato + timer + Firebase
   startPresenceSystem();
@@ -4802,8 +4812,10 @@ async function pollCommunityUpdates() {
       if (Array.isArray(data.events)) applyEventsData(data.events);
       // Notifiche in tempo reale
       if (Array.isArray(data.notifications)) {
+        // Applica filtro TTL: non mostrare notifiche scadute (lette >7g o non lette >30g)
+        const validNotifs = _filterExpiredNotifications(data.notifications);
         NOTIFICATIONS.length = 0;
-        data.notifications.forEach(n => NOTIFICATIONS.push(n));
+        validNotifs.forEach(n => NOTIFICATIONS.push(n));
         notifCount = NOTIFICATIONS.filter(n => n.unread).length;
         updateNotifBadge();
         renderNotifDropdown();
@@ -5315,6 +5327,43 @@ async function _cleanOldActivitiesFromSupabase() {
     const cutoff = new Date(Date.now() - ACTIVITY_DB_DAYS * 24 * 60 * 60 * 1000).toISOString();
     await _sb.from('community_activity').delete().lt('created_at', cutoff);
   } catch(_e) {}
+}
+
+/* ── Pulizia automatica notifiche scadute da Supabase ──────────────────
+   Eseguita una volta al giorno da qualsiasi client autenticato.
+   Rimuove:
+   - notifiche lette da più di 7 giorni  (lette = read: true)
+   - notifiche non lette da più di 30 giorni (qualsiasi utente)
+   Questo mantiene la tabella notifications leggera nel tempo.          */
+async function _cleanOldNotificationsFromSupabase() {
+  if (!_sbReady) return;
+  try {
+    const now = Date.now();
+    // Cutoff per notifiche lette: 7 giorni fa
+    const readCutoff   = new Date(now - NOTIF_TTL_READ_MS).toISOString();
+    // Cutoff per notifiche non lette: 30 giorni fa
+    const unreadCutoff = new Date(now - NOTIF_TTL_UNREAD_MS).toISOString();
+
+    // 1. Elimina notifiche lette (read=true) create da più di 7 giorni
+    await _sb.from('notifications')
+      .delete()
+      .eq('read', true)
+      .lt('created_at', readCutoff);
+
+    // 2. Elimina notifiche non lette create da più di 30 giorni
+    await _sb.from('notifications')
+      .delete()
+      .eq('read', false)
+      .lt('created_at', unreadCutoff);
+
+    // 3. Rimuovi anche le notifiche broadcast (__broadcast__) più vecchie di 7 giorni
+    //    (sono notifiche di sistema già consegnate — non servono più)
+    await _sb.from('notifications')
+      .delete()
+      .eq('user_email', '__broadcast__')
+      .lt('created_at', readCutoff);
+
+  } catch(_e) { /* silenzioso — la pulizia è best-effort */ }
 }
 
 /* ── BUG FIX #4: Scrivi segnalazione su Supabase (visibile al team di moderazione) ── */
@@ -8918,7 +8967,8 @@ function _markConvReadForNotif(n) {
 function markNotifRead(id) {
   const n = NOTIFICATIONS.find(n => n.id === id);
   if (n && n.unread) {
-    n.unread = false;
+    n.unread  = false;
+    n.read_at = Date.now(); // timestamp di lettura — usato per TTL 7 giorni
     updateNotifBadge();
     renderNotifications();
     renderNotifDropdown();
@@ -8929,10 +8979,12 @@ function markNotifRead(id) {
 }
 
 function markAllRead() {
+  const nowTs = Date.now();
   NOTIFICATIONS.forEach(n => {
     if (n.unread) {
-      n.unread = false;
-      _markConvReadForNotif(n); // sincronizza badge + server per ogni notifica DM
+      n.unread  = false;
+      n.read_at = nowTs; // timestamp di lettura per TTL
+      _markConvReadForNotif(n);
     }
   });
   notifCount = 0;
@@ -9120,8 +9172,36 @@ function _startNotifTimeTicker() {
 
 /* Cache notifiche su localStorage per persistenza cross-sessione */
 const NOTIF_CACHE_KEY = 'lh360_notif_cache_v1';
+const NOTIF_TTL_READ_MS   = 7  * 24 * 60 * 60 * 1000; // 7 giorni per notifiche lette
+const NOTIF_TTL_UNREAD_MS = 30 * 24 * 60 * 60 * 1000; // 30 giorni per notifiche non lette
+
+/* Filtra le notifiche scadute in base alle regole TTL:
+   - lette   → rimosse dopo 7 giorni dalla lettura (read_at) o dalla creazione (ts)
+   - non lette → rimosse dopo 30 giorni dalla creazione (ts) */
+function _filterExpiredNotifications(arr) {
+  const now = Date.now();
+  return arr.filter(n => {
+    const created = n.ts || 0;
+    if (!n.unread) {
+      // Notifica letta: usa read_at se disponibile, altrimenti ts
+      const readAt = n.read_at || created;
+      return (now - readAt) < NOTIF_TTL_READ_MS;
+    } else {
+      // Notifica non letta: basato su data creazione
+      return (now - created) < NOTIF_TTL_UNREAD_MS;
+    }
+  });
+}
 function _saveNotifCache() {
-  try { localStorage.setItem(NOTIF_CACHE_KEY, JSON.stringify(NOTIFICATIONS.slice(0, 50))); } catch(_e) {}
+  try {
+    const filtered = _filterExpiredNotifications(NOTIFICATIONS);
+    // Sincronizza NOTIFICATIONS in-memory rimuovendo le scadute
+    if (filtered.length < NOTIFICATIONS.length) {
+      NOTIFICATIONS.length = 0;
+      filtered.forEach(n => NOTIFICATIONS.push(n));
+    }
+    localStorage.setItem(NOTIF_CACHE_KEY, JSON.stringify(filtered.slice(0, 50)));
+  } catch(_e) {}
 }
 function _loadNotifCache() {
   try {
@@ -9129,7 +9209,9 @@ function _loadNotifCache() {
     if (!raw) return;
     const arr = JSON.parse(raw);
     if (!Array.isArray(arr) || arr.length === 0) return;
-    arr.forEach(n => {
+    // Applica filtro TTL prima di caricare — le notifiche scadute non devono mai apparire
+    const valid = _filterExpiredNotifications(arr);
+    valid.forEach(n => {
       // Retrocompatibilità: le notifiche vecchie non hanno ts → ricava da id
       if (!n.ts && n.id) n.ts = Math.floor(n.id);
       if (n.ts) n.time = _notifRelTime(n.ts);
