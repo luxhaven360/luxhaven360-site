@@ -456,6 +456,29 @@ window.I18N_TRANSLATIONS['es'] = {
   'profile.notif_mentions':     'Menciones en hilos',
   'profile.notif_mentions_desc':'Notificación cuando alguien te menciona en una discusión',
 
+
+
+  // ─── CLAVES HARDCODEADAS – PARA USAR EN EL HTML ───────────────────
+  'dash.card_active_members':              'MIEMBROS ACTIVOS',
+  'dash.card_project_updates':             'ACTUALIZACIONES DEL PROYECTO',
+  'dash.card_founding_spots':              'PLAZAS FOUNDING MEMBER',
+  'dash.last_30_days':                     'Últimos 30 días',
+  'dash.slots_available':                  'Plazas disponibles',
+  'dash.latest_updates':                   'ÚLTIMAS ACTUALIZACIONES',
+  'dash.view_all':                         'Ver todo →',
+  'dash.founder_status':                   'ESTADO FOUNDER',
+  'sidebar.upcoming_events':               'PRÓXIMOS EVENTOS',
+  'sidebar.no_events':                     'No hay eventos por el momento',
+  'sidebar.project_status':                'ESTADO DEL PROYECTO',
+  'sidebar.confirmed_spots':               'Plazas confirmadas',
+  'sidebar.spots_still_avail':             '{n} plazas aún disponibles',
+  'page.feed_title':                       'Feed de actualizaciones',
+  'page.listings_title':                   'Anuncios Exclusivos',
+  'page.messages_title':                   'Mensajes',
+  'page.surveys_title':                    'Encuestas & Feedback',
+  'feed.news_subtitle':                    'Novedades, anuncios y actualizaciones exclusivas del equipo.',
+  'listing.access_subtitle':               'Acceso anticipado a las propiedades disponibles.',
+  'survey.voice_subtitle':                 'Tu voz contribuye al desarrollo del proyecto.',
 };
 Object.assign(window.I18N_TRANSLATIONS['es'], {
   'time.now':'Ahora','time.min_ago':'{n}min','time.hour_ago':'{n}h','time.day_ago':'{n}d','time.yesterday':'Ayer',
