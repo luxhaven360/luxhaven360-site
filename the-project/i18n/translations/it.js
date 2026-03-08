@@ -89,7 +89,7 @@ window.I18N_TRANSLATIONS['it'] = {
   'post.edit':                       'Modifica',
   'post.delete':                     'Elimina',
   'post.pin':                        'Metti in evidenza',
-  'post.unpin':                      'Rimuovi dall\\'evidenza',
+  'post.unpin':                      'Rimuovi dall\'evidenza',
   'post.translate':                  'Traduci',
   'post.show_original':              'Mostra originale',
   'post.translated_from':            'Tradotto da {lang}',
@@ -160,7 +160,7 @@ window.I18N_TRANSLATIONS['it'] = {
   'modal.cancel':                    'Annulla',
   'modal.save':                      'Salva',
   'modal.delete.title':              'Elimina contenuto',
-  'modal.delete.message':            'Sei sicuro di voler eliminare questo contenuto? L\\'azione non può essere annullata.',
+  'modal.delete.message':            'Sei sicuro di voler eliminare questo contenuto? L\'azione non può essere annullata.',
   'modal.report.title':              'Segnala contenuto',
   'modal.report.reason':             'Motivo della segnalazione',
   'modal.report.placeholder':        'Descrivi il problema...',
@@ -188,7 +188,7 @@ window.I18N_TRANSLATIONS['it'] = {
   'form.characters_left':            '{count} caratteri rimanenti',
   'form.max_length':                 'Limite massimo: {max} caratteri',
   'form.image.upload':               'Carica immagine',
-  'form.image.drag':                 'Trascina un\\'immagine qui o clicca per caricare',
+  'form.image.drag':                 'Trascina un\'immagine qui o clicca per caricare',
   'form.image.formats':              'PNG, JPG, GIF fino a {size}MB',
   'form.invalid':                    'Il modulo contiene errori',
   'form.success':                    'Contenuto pubblicato con successo!',
@@ -348,7 +348,7 @@ window.I18N_TRANSLATIONS['it'] = {
   'mod.promote_error':               'Errore durante la promozione.',
   'mod.demote_error':                'Errore durante la retrocessione.',
   'mod.warn_required':               'Scrivi un messaggio prima di inviare.',
-  'mod.warn_error':                  'Errore nell\\'invio dell\\'avviso.',
+  'mod.warn_error':                  'Errore nell\'invio dell\'avviso.',
   'mod.warn_sent':                   'Avviso inviato a {name}.',
   'mod.user_banned':                 'Utente {name} bannato.',
   'mod.user_generic':                'utente',
@@ -407,7 +407,7 @@ window.I18N_TRANSLATIONS['it'] = {
   'event.date_required':             'La data è obbligatoria.',
   'event.no_events':                 'Nessun evento creato.',
   // ─── POST ──────────────────────────────────────────────
-  'post.preview_required':           'Inserisci almeno titolo o contenuto per l\\'anteprima.',
+  'post.preview_required':           'Inserisci almeno titolo o contenuto per l\'anteprima.',
   'post.schedule_required':          'Inserisci data e ora di pubblicazione.',
   'post.date_passed':                'La data selezionata è già passata.',
   'post.compressed':                 'Compressa: {size}',
@@ -503,7 +503,7 @@ window.I18N_TRANSLATIONS['it'] = {
   'feed.type.exclusive':             '⭐ Contenuto Esclusivo',
   'feed.type.event':                 '📅 Evento',
   'feed.type.news':                  '📰 Notizia',
-  'feed.locked_msg':                 'Questo contenuto è riservato ai <strong style="color:var(--gold)">Founding Members</strong>. Effettua l\\'upgrade per accedere.',
+  'feed.locked_msg':                 'Questo contenuto è riservato ai <strong style="color:var(--gold)">Founding Members</strong>. Effettua l\'upgrade per accedere.',
   'feed.locked_btn':                 'Sblocca come Founding Member',
   'feed.like':                       'Mi piace',
   'feed.liked':                      'Liked',
@@ -578,7 +578,7 @@ window.I18N_TRANSLATIONS['it'] = {
   'notif.enabled':                   'abilitate',
   'notif.disabled':                  'disabilitate',
   // ─── LISTING ───────────────────────────────────────────
-  'listing.booking_reserved':        'Le prenotazioni anticipate sono riservate ai <strong>Founding Members</strong>. Effettua l\\'upgrade per accedere.',
+  'listing.booking_reserved':        'Le prenotazioni anticipate sono riservate ai <strong>Founding Members</strong>. Effettua l\'upgrade per accedere.',
   // ─── ANALYTICS ─────────────────────────────────────────
   'analytics.engagement_rate':       'Engagement Rate',
   'analytics.messages_7d':           'Messaggi (7gg)',
@@ -626,7 +626,7 @@ window.I18N_TRANSLATIONS['it'] = {
   'listings.subtitle':               'Accesso anticipato alle proprietà disponibili prima del lancio pubblico.',
   // ─── LOGIN ─────────────────────────────────────────────
   'login.btn':                       'Accedi alla Community',
-  'login.desc':                      'Area riservata ai membri della Community LuxHaven360. L\\'accesso è consentito solo ai membri registrati.',
+  'login.desc':                      'Area riservata ai membri della Community LuxHaven360. L\'accesso è consentito solo ai membri registrati.',
   'login.error':                     'Credenziali non valide. Riprova.',
   'login.lost_credentials':          'Hai perso le credenziali?',
   'login.subtitle':                  'Community Hub — Members Only',
@@ -642,7 +642,7 @@ window.I18N_TRANSLATIONS['it'] = {
   // ─── MESSAGGI ──────────────────────────────────────────
   'messages.select_conv':            'Seleziona una conversazione',
   // ─── MODERAZIONE ───────────────────────────────────────
-  'mod.subtitle':                    'Gestisci segnalazioni e monitora l\\'attività della Community.',
+  'mod.subtitle':                    'Gestisci segnalazioni e monitora l\'attività della Community.',
   // ─── NAVIGAZIONE ───────────────────────────────────────
   'nav.analytics':                   'Analytics',
   'nav.broadcast':                   'Comunicazioni',
@@ -700,5 +700,31 @@ window.I18N_TRANSLATIONS['it'] = {
   'listing.access_subtitle':         'Accesso anticipato alle proprietà disponibili.',
   // ─── SONDAGGI ──────────────────────────────────────────
   'survey.voice_subtitle':           'La tua voce contribuisce allo sviluppo del progetto.',
+
+  // ─── CHIAVI AGGIUNTIVE (inline + dinamiche) ──────────────────
+  'broadcast.content_placeholder':   'Scrivi il contenuto della comunicazione…',
+  'broadcast.title_placeholder':     'Titolo della comunicazione…',
+  'comment.submitted_toast':         'Commento pubblicato!',
+  'disc.cat.feedback':               'Feedback',
+  'disc.cat.general':                'Generale',
+  'disc.cat.idea':                   'Idea',
+  'disc.cat.question':               'Domanda',
+  'disc.empty':                      'Nessuna discussione ancora.',
+  'disc.empty_hint':                 'Sii il primo a creare un thread!',
+  'disc.no_replies':                 'Nessuna risposta ancora',
+  'form.email_placeholder':          'email@dominio.com',
+  'form.password_placeholder':       '••••••••',
+  'members.search_placeholder':      'Cerca membro…',
+  'messages.attach':                 'Allega file',
+  'messages.emoji':                  'Emoji',
+  'messages.search_conv':            'Cerca conversazioni…',
+  'messages.write_placeholder':      'Scrivi un messaggio…',
+  'nav.back_community':              'Torna alla pagina Community',
+  'thread.body_placeholder':         'Descrivi l\'argomento, fai una domanda o condividi la tua idea…',
+  'thread.no_messages':              'Nessun messaggio ancora. Sii il primo a rispondere!',
+  'thread.replies_divider':          'Risposte',
+  'thread.title_placeholder':        'Scrivi un titolo chiaro e descrittivo…',
+  'thread.write_reply':              'Scrivi la tua risposta…',
+  'dash.position_label':             'Posizione',
 
 };
