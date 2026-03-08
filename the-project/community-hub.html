@@ -3731,6 +3731,11 @@ function initApp() {
         const _nTs = n.created_at ? new Date(n.created_at).getTime() : Date.now();
         const alreadyIn = NOTIFICATIONS.some(x => x.text === n.text && Math.abs((x.ts || 0) - _nTs) < 15000);
         if (alreadyIn) return;
+        // Rispetta preferenze notifiche: ricava il prefKey dal testo
+        const _prefKey = n.text.includes('sondaggio') ? 'new_surveys'
+          : n.text.includes('listing') ? 'new_listings'
+          : 'project_updates';
+        if (!isNotifEnabled(_prefKey)) return;
         const _nIcon = n.icon || 'gold';
         const _nEmoji = n.emoji || '🔔';
         const notif = {
@@ -3799,6 +3804,22 @@ function initApp() {
           saveCommunityCache();
         }
       })
+      .on('broadcast', { event: 'vote_update' }, (payload) => {
+        // Aggiornamento voti in tempo reale: un utente ha votato → aggiorna il conteggio per tutti
+        if (!payload || !payload.payload) return;
+        const { surveyId, options, total } = payload.payload;
+        if (!surveyId || !options) return;
+        const s = SURVEYS.find(x => x.id === surveyId);
+        if (!s) return;
+        // Aggiorna opzioni e totale solo se non abbiamo già un voto locale più recente
+        if (!_localVotes.has(surveyId)) {
+          options.forEach((o, i) => { if (s.options[i]) s.options[i].votes = o.votes; });
+          s.total = total;
+          saveCommunityCache();
+          const activePanel = document.querySelector('.panel.active');
+          if (activePanel && activePanel.id === 'panel-surveys') renderSurveys();
+        }
+      })
       .on('broadcast', { event: 'update_survey_id' }, (payload) => {
         // Aggiorna l'ID del sondaggio broadcast (tempId → realId) per evitare duplicato al polling
         if (!payload || !payload.payload) return;
@@ -3838,7 +3859,18 @@ function initApp() {
           const sv = document.getElementById('surveysNewBadge');
           if (sv) sv.classList.remove('hidden');
         }
-        // NON chiamare addRealNotification qui — la notifica arriva già via bcastNotifCh
+        // ── Notifica via broadcast channel (canale affidabile, non dipende da DB insert) ──
+        // La notifica non passa dal bcastNotifCh DB perché la colonna author_email potrebbe
+        // non esistere nel DB Supabase → l'insert fallisce silenziosamente → nessun trigger.
+        // Qui la notifica è garantita per tutti i client online al momento della pubblicazione.
+        if (isNotifEnabled('new_surveys')) {
+          const notifText = `Nuovo sondaggio: <strong>${s.title || 'Sondaggio'}</strong> — Partecipa ora!`;
+          // Dedup con bcastNotifCh: controlla se la notifica è già arrivata via DB
+          const alreadyNotified = NOTIFICATIONS.some(n => n.text && n.text.includes(s.title || '') && (Date.now() - (n.ts || 0)) < 15000);
+          if (!alreadyNotified) {
+            addRealNotification('new_surveys', '📊', notifText);
+          }
+        }
       })
       .subscribe();
     _sbChannels['community_content_rt'] = contentCh;
@@ -8655,7 +8687,7 @@ function renderListings() {
             </div>
             ${role === 'candidate'
               ? '<span class="listing-book-btn locked-btn"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display:inline;margin-right:4px;vertical-align:middle;"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>Solo Founding</span>'
-              : '<button class="listing-book-btn" onclick="showToast(\'gold\',\'🏠\',\'Richiesta prenotazione inviata al team!\')">Prenota</button>'}
+              : `<button class="listing-book-btn" onclick="bookListing(${l.id},'${(l.title||'').replace(/'/g,"\\'")}')">Prenota</button>`}
           </div>
         </div>`;
       }).join('')}
@@ -8696,6 +8728,43 @@ function renderSurveys() {
   `).join('');
 }
 
+/* ── Prenotazione listing (Founding Member) ─────────────────────────── */
+async function bookListing(listingId, listingTitle) {
+  if (!currentUser) { showToast('red','⚠️','Devi essere autenticato per prenotare.'); return; }
+  if (currentUser.role === 'candidate') { showToast('red','🔒','Le prenotazioni anticipate sono riservate ai Founding Members.'); return; }
+
+  showToast('gold','🏠','Prenotazione in corso…');
+
+  // 1. Salva su GAS (foglio "Prenotazioni Listing")
+  try {
+    const gasUrl = `${GAS_URL}?action=book_listing`
+      + `&listingId=${encodeURIComponent(listingId)}`
+      + `&listingTitle=${encodeURIComponent(listingTitle)}`
+      + `&userName=${encodeURIComponent(currentUser.name)}`
+      + `&userEmail=${encodeURIComponent(currentUser.email)}`
+      + `&userRole=${encodeURIComponent(currentUser.role || '')}`;
+    const gasRes = await fetch(gasUrl).then(r => r.json()).catch(() => null);
+    if (!gasRes || !gasRes.success) {
+      console.warn('[bookListing] GAS non ha confermato:', gasRes);
+    }
+  } catch(e) { console.warn('[bookListing] GAS error:', e.message); }
+
+  // 2. Notifica Supabase al team (user_email = fondatore)
+  if (_sbReady) {
+    try {
+      await _sb.from('notifications').insert({
+        user_email:   'fondatore@luxhaven360.com',
+        author_email: currentUser.email,
+        icon: 'gold', emoji: '📋',
+        text: `<strong>${currentUser.name}</strong> ha prenotato il listing: <strong>${listingTitle}</strong>`,
+        created_at: new Date().toISOString(), read: false
+      });
+    } catch(e) { console.warn('[bookListing] Supabase notif error:', e.message); }
+  }
+
+  showToast('green','✅','Prenotazione inviata! Il team ti contatterà a breve.');
+}
+
 async function voteSurvey(surveyId, optionIndex) {
   const s = SURVEYS.find(s => s.id === surveyId);
   if (!s || s.voted) return;
@@ -8714,6 +8783,19 @@ async function voteSurvey(surveyId, optionIndex) {
   renderSurveys();
   showToast('green', '✓', 'Voto registrato! Grazie per il tuo feedback.');
   saveCommunityCache();
+
+  // ── Broadcast RT: aggiorna immediatamente tutti gli altri utenti presenti ──
+  if (_sbReady) {
+    try {
+      _sb.channel('community_content_broadcast').send({
+        type: 'broadcast', event: 'vote_update', payload: {
+          surveyId: surveyId,
+          options:  s.options.map(o => ({ text: o.text, votes: o.votes })),
+          total:    s.total
+        }
+      }).catch(() => {});
+    } catch(_e) {}
+  }
 
   // Persisti su GAS
   if (GAS_URL && currentUser) {
