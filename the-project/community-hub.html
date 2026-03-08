@@ -2160,10 +2160,9 @@ mark.hl { background: rgba(212,175,55,0.22); color: var(--gold-light); border-ra
     border-radius: 30px;
     color: rgba(212,175,55,0.72);
     font-family: var(--ff-ui, 'Raleway', sans-serif);
-    font-size: 0.62rem;
-    font-weight: 600;
-    letter-spacing: 0.09em;
-    text-transform: uppercase;
+    font-size: 0.64rem;
+    font-weight: 500;
+    letter-spacing: 0.03em;
     cursor: pointer;
     transition: background 0.22s, border-color 0.22s, color 0.22s, box-shadow 0.22s, transform 0.15s;
     white-space: nowrap;
@@ -2222,8 +2221,7 @@ mark.hl { background: rgba(212,175,55,0.22); color: var(--gold-light); border-ra
     gap: 0.3rem;
     font-size: 0.62rem;
     color: rgba(212,175,55,0.4);
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
+    letter-spacing: 0.02em;
     margin-top: 0.3rem;
     cursor: pointer;
     transition: color 0.15s;
@@ -2242,10 +2240,9 @@ mark.hl { background: rgba(212,175,55,0.22); color: var(--gold-light); border-ra
     border-radius: 30px;
     color: rgba(212,175,55,0.72);
     font-family: var(--ff-ui, 'Raleway', sans-serif);
-    font-size: 0.62rem;
-    font-weight: 600;
-    letter-spacing: 0.09em;
-    text-transform: uppercase;
+    font-size: 0.64rem;
+    font-weight: 500;
+    letter-spacing: 0.03em;
     cursor: pointer;
     transition: background 0.22s, border-color 0.22s, color 0.22s, box-shadow 0.22s, transform 0.15s;
     white-space: nowrap;
@@ -7130,6 +7127,7 @@ function renderFeed() {
     // Processa contenuti utente traducibili (aggiunge pulsante "Traduci" se lingua UI ≠ it)
     if (window.ContentTranslator && window.I18n && I18n.getCurrentLanguage() !== 'it') {
       ContentTranslator.processNewContent(container);
+      _lxCleanDupCtBtns(container);
     }
   });
 }
@@ -7332,6 +7330,7 @@ function renderDiscussions(filter) {
   // Processa titoli thread traducibili (auto-translate o pulsante)
   if (window.ContentTranslator && window.I18n && I18n.getCurrentLanguage() !== 'it') {
     ContentTranslator.processNewContent(container);
+    _lxCleanDupCtBtns(container);
   }
 }
 
@@ -7363,7 +7362,9 @@ function openThread(id) {
   document.getElementById('threadDetailTitle').innerHTML = `<span data-content-id="disc-detail-title-${thread.id}" data-translatable="true" data-content-lang="${thread.lang||'it'}">${thread.title}</span>${_lxTranslateWrap('disc-detail-title-'+thread.id, thread.lang||'it')}`;
   // Processa auto-translate del titolo del thread nel dettaglio
   if (window.ContentTranslator && window.I18n && I18n.getCurrentLanguage() !== 'it') {
-    ContentTranslator.processNewContent(document.getElementById('threadDetailTitle'));
+    const titleEl = document.getElementById('threadDetailTitle');
+    ContentTranslator.processNewContent(titleEl);
+    _lxCleanDupCtBtns(titleEl);
   }
   document.getElementById('threadDetailInfo').innerHTML = `
     <span>
@@ -7431,6 +7432,7 @@ function renderThreadMessages(id) {
   // Processa contenuti traducibili del thread
   if (window.ContentTranslator && window.I18n && I18n.getCurrentLanguage() !== 'it') {
     ContentTranslator.processNewContent(container);
+    _lxCleanDupCtBtns(container);
   }
 }
 
@@ -13172,6 +13174,27 @@ function reportContentById(sourceType, sourceId, parentId) {
 }
 
 
+
+/* ── LX Translate: rimuove pulsanti CT duplicati da elementi già gestiti da lx-translate-wrap ── */
+function _lxCleanDupCtBtns(container) {
+  // ContentTranslator inserisce il suo wrapper `.afterend` dell'elemento [data-translatable].
+  // Se quell'elemento ha già un .lx-translate-wrap fratello successivo,
+  // il wrapper CT finisce tra i due → va rimosso per evitare il doppio pulsante.
+  container.querySelectorAll('[data-translatable="true"]').forEach(el => {
+    let node = el.nextElementSibling;
+    while (node) {
+      if (node.classList.contains('lx-translate-wrap')) break; // fine zona da controllare
+      const next = node.nextElementSibling;
+      if (node.querySelector && (
+            node.querySelector('.ct-translate-btn') ||
+            node.querySelector('.ct-original-btn')
+          )) {
+        node.remove();
+      }
+      node = next;
+    }
+  });
+}
 
 /* ── LX Translate: pulsante Traduci inline (robusto al re-render) ── */
 const _lxTranslateCache = {};   // contentId → { original, translated }
