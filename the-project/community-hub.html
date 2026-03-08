@@ -3817,7 +3817,10 @@ function initApp() {
           s.total = total;
           saveCommunityCache();
           const activePanel = document.querySelector('.panel.active');
-          if (activePanel && activePanel.id === 'panel-surveys') renderSurveys();
+          if (activePanel && activePanel.id === 'panel-surveys') {
+            const sc = document.getElementById('surveysContainer');
+            if (!sc || !sc.matches(':hover')) renderSurveys();
+          }
         }
       })
       .on('broadcast', { event: 'update_survey_id' }, (payload) => {
@@ -4711,7 +4714,14 @@ function applyRemoteData(data) {
     if (!isTypingComment && !isHoveringFeed) renderFeed();
   }
   if (pid === 'discussions') renderDiscussions();
-  if (pid === 'surveys')     renderSurveys();
+  if (pid === 'surveys') {
+    // Blocca renderSurveys se l'utente sta interagendo con le opzioni — evita flash hover.
+    // Il re-render distrugge il DOM: il browser perde lo stato :hover sull'opzione su cui
+    // l'utente ha il cursore, causando un lampeggio visivo dopo ogni ciclo di polling (2s).
+    const surveysContainer = document.getElementById('surveysContainer');
+    const isHoveringSurveys = surveysContainer && surveysContainer.matches(':hover');
+    if (!isHoveringSurveys) renderSurveys();
+  }
   if (pid === 'listings')    renderListings();
   if (pid === 'dashboard')   {
     // BUG FIX #1: usa GLOBAL_ACTIVITIES come sorgente
