@@ -456,6 +456,29 @@ window.I18N_TRANSLATIONS['fr'] = {
   'profile.notif_mentions':     'Mentions dans les fils',
   'profile.notif_mentions_desc':'Notification lorsque quelqu\'un vous mentionne dans une discussion',
 
+
+
+  // ─── CLÉS CODÉES EN DUR – À UTILISER DANS LE HTML ─────────────────
+  'dash.card_active_members':              'MEMBRES ACTIFS',
+  'dash.card_project_updates':             'MISES À JOUR DU PROJET',
+  'dash.card_founding_spots':              'PLACES FOUNDING MEMBER',
+  'dash.last_30_days':                     '30 derniers jours',
+  'dash.slots_available':                  'Places disponibles',
+  'dash.latest_updates':                   'DERNIÈRES MISES À JOUR',
+  'dash.view_all':                         'Voir tout →',
+  'dash.founder_status':                   'STATUT FOUNDER',
+  'sidebar.upcoming_events':               'PROCHAINS ÉVÉNEMENTS',
+  'sidebar.no_events':                     'Aucun événement pour le moment',
+  'sidebar.project_status':                'ÉTAT DU PROJET',
+  'sidebar.confirmed_spots':               'Places confirmées',
+  'sidebar.spots_still_avail':             '{n} places encore disponibles',
+  'page.feed_title':                       'Fil d\'actualités',
+  'page.listings_title':                   'Annonces Exclusives',
+  'page.messages_title':                   'Messages',
+  'page.surveys_title':                    'Sondages & Retours',
+  'feed.news_subtitle':                    'Actualités, annonces et mises à jour exclusives de l\'équipe.',
+  'listing.access_subtitle':               'Accès anticipé aux propriétés disponibles.',
+  'survey.voice_subtitle':                 'Votre voix contribue au développement du projet.',
 };
 Object.assign(window.I18N_TRANSLATIONS['fr'], {
   'time.now':'Maintenant','time.min_ago':'{n}min','time.hour_ago':'{n}h','time.day_ago':'{n}j','time.yesterday':'Hier',
