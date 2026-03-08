@@ -701,4 +701,30 @@ window.I18N_TRANSLATIONS['de'] = {
   // ─── UMFRAGEN ──────────────────────────────────────────
   'survey.voice_subtitle':           'Deine Stimme trägt zur Entwicklung des Projekts bei.',
 
+  // ─── CHIAVI AGGIUNTIVE (inline + dinamiche) ──────────────────
+  'broadcast.content_placeholder':   'Inhalt der Mitteilung schreiben…',
+  'broadcast.title_placeholder':     'Titel der Mitteilung…',
+  'comment.submitted_toast':         'Kommentar veröffentlicht!',
+  'disc.cat.feedback':               'Feedback',
+  'disc.cat.general':                'Allgemein',
+  'disc.cat.idea':                   'Idee',
+  'disc.cat.question':               'Frage',
+  'disc.empty':                      'Noch keine Diskussionen.',
+  'disc.empty_hint':                 'Sei der Erste, der einen Thread erstellt!',
+  'disc.no_replies':                 'Noch keine Antworten',
+  'form.email_placeholder':          'email@domain.de',
+  'form.password_placeholder':       '••••••••',
+  'members.search_placeholder':      'Mitglied suchen…',
+  'messages.attach':                 'Datei anhängen',
+  'messages.emoji':                  'Emoji',
+  'messages.search_conv':            'Gespräche suchen…',
+  'messages.write_placeholder':      'Schreibe eine Nachricht…',
+  'nav.back_community':              'Zurück zur Community-Seite',
+  'thread.body_placeholder':         'Beschreibe das Thema, stelle eine Frage oder teile deine Idee…',
+  'thread.no_messages':              'Noch keine Nachrichten. Sei der Erste, der antwortet!',
+  'thread.replies_divider':          'Antworten',
+  'thread.title_placeholder':        'Schreibe einen klaren, beschreibenden Titel…',
+  'thread.write_reply':              'Schreibe deine Antwort…',
+  'dash.position_label':             'Position',
+
 };
