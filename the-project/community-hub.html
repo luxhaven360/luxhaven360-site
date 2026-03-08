@@ -3138,6 +3138,10 @@ let _lastKnownSurveyIds     = new Set(); // IDs sondaggi già noti → rileva nu
 let _pendingSurveyIds      = new Set(); // IDs sondaggi pubblicati localmente ma non ancora confermati da GAS
 let _pendingListingIds     = new Set(); // IDs listing pubblicati localmente ma non ancora confermati da GAS
 let _localVotes            = new Map(); // { surveyId → { optionIndex, votes[], total } } — preserva voti locali attraverso i cicli di polling
+// Secondo livello di protezione: track voti della sessione corrente.
+// NON viene mai cancellato dal polling — solo dalla conferma definitiva del server (voters list).
+// Garantisce che il voto non sparisca visivamente tra un ciclo di polling e l'altro.
+const _sessionVotedSurveys = new Map(); // surveyId → { optionIndex, options:number[], total:number }
 let _lastKnownDiscIds       = new Set(); // IDs discussioni note  → rileva nuovi thread
 let _lastKnownThreadReplies = {};        // { discId: replyCount } → rileva nuove risposte
 let _communityDataReady     = false;     // flag: primo caricamento completato
@@ -4644,46 +4648,85 @@ function applyRemoteData(data) {
   // ── Voti sondaggi ────────────────────────────────────────────────
   if (data.votes && typeof data.votes === 'object') {
     SURVEYS.forEach(s => {
-      const key = 'survey_' + s.id;
+      const key       = 'survey_' + s.id;
+      const localVote = _localVotes.get(s.id);
+      const sessionVote = _sessionVotedSurveys.get(s.id);
+
       if (data.votes[key]) {
         const v = data.votes[key];
-        // Aggiorna conteggi opzioni dal server
-        Object.keys(v.options || {}).forEach(idx => {
-          if (s.options[idx]) s.options[idx].votes = v.options[idx];
-        });
-        s.total = s.options.reduce((sum, o) => sum + o.votes, 0);
-        if (currentUser && v.voters && v.voters.includes(currentUser.name)) {
+        const serverHasVote = currentUser && v.voters && v.voters.includes(currentUser.name);
+
+        if (serverHasVote) {
+          // ── SERVER HA CONFERMATO IL VOTO: usa i conteggi server come fonte di verità ──
+          Object.keys(v.options || {}).forEach(idx => {
+            if (s.options[idx]) s.options[idx].votes = v.options[idx];
+          });
+          s.total  = s.options.reduce((sum, o) => sum + o.votes, 0);
           s.voted  = true;
-          // Ricostruisce myVote dall'indice con il voto più alto per questo utente
-          // (GAS non restituisce quale opzione ha scelto, ma possiamo cercarlo in _localVotes)
-          const local = _localVotes.get(s.id);
-          if (local) { s.myVote = local.optionIndex; _localVotes.delete(s.id); }
+          s.myVote = localVote   ? localVote.optionIndex
+                   : sessionVote ? sessionVote.optionIndex
+                   : s.myVote;
+          // Pulizia: il server ha confermato — non servono più i lock locali
+          if (localVote)   _localVotes.delete(s.id);
+          if (sessionVote) _sessionVotedSurveys.delete(s.id);
+        } else {
+          // ── SERVER NON HA ANCORA SALVATO IL VOTO: applica conteggi altri utenti ──
+          // poi sovrapponi il voto locale dell'utente corrente
+          Object.keys(v.options || {}).forEach(idx => {
+            if (s.options[idx]) s.options[idx].votes = v.options[idx];
+          });
+          s.total = s.options.reduce((sum, o) => sum + o.votes, 0);
+
+          // Ripristina con _localVotes se presente (voto ottimistico a breve termine)
+          if (localVote) {
+            s.voted  = true;
+            s.myVote = localVote.optionIndex;
+            if (localVote.options && localVote.options.length === s.options.length) {
+              // Usa conteggi locali (includono già il voto corrente)
+              localVote.options.forEach((votes, i) => { if (s.options[i]) s.options[i].votes = votes; });
+              s.total = localVote.total;
+            }
+          } else if (sessionVote) {
+            // Fallback sessione: voto locale non più in _localVotes ma non ancora confermato
+            s.voted  = true;
+            s.myVote = sessionVote.optionIndex;
+            if (sessionVote.options && sessionVote.options.length === s.options.length) {
+              sessionVote.options.forEach((votes, i) => { if (s.options[i]) s.options[i].votes = votes; });
+              s.total = sessionVote.total;
+            }
+          }
         }
-      }
-      // ── Ripristino voti ottimistici non ancora confermati da GAS ──
-      // Se l'utente ha votato ma GAS non l'ha ancora persisto (race condition con polling 2s),
-      // il voto risulterebbe azzerato. _localVotes preserva lo stato voted tra i cicli di polling.
-      if (!s.voted && _localVotes.has(s.id)) {
-        const local = _localVotes.get(s.id);
-        s.voted   = true;
-        s.myVote  = local.optionIndex;
-        // Ripristina i conteggi ottimistici: usa i valori locali se il server non ha ancora il voto
-        if (local.options && local.options.length === s.options.length) {
-          local.options.forEach((votes, i) => { if (s.options[i]) s.options[i].votes = votes; });
-          s.total = local.total;
+      } else {
+        // ── NESSUN DATO VOTI DAL SERVER per questo sondaggio ──
+        if (localVote) {
+          s.voted  = true;
+          s.myVote = localVote.optionIndex;
+          if (localVote.options && localVote.options.length === s.options.length) {
+            localVote.options.forEach((votes, i) => { if (s.options[i]) s.options[i].votes = votes; });
+            s.total = localVote.total;
+          }
+        } else if (sessionVote) {
+          s.voted  = true;
+          s.myVote = sessionVote.optionIndex;
+          if (sessionVote.options && sessionVote.options.length === s.options.length) {
+            sessionVote.options.forEach((votes, i) => { if (s.options[i]) s.options[i].votes = votes; });
+            s.total = sessionVote.total;
+          }
         }
       }
     });
   } else {
-    // GAS non ha restituito dati sui voti: ripristina comunque i voti locali pending
+    // ── GAS non ha restituito dati voti — ripristina da lock locali ──
     SURVEYS.forEach(s => {
-      if (!s.voted && _localVotes.has(s.id)) {
-        const local = _localVotes.get(s.id);
+      const localVote   = _localVotes.get(s.id);
+      const sessionVote = _sessionVotedSurveys.get(s.id);
+      const vote = localVote || sessionVote;
+      if (!s.voted && vote) {
         s.voted  = true;
-        s.myVote = local.optionIndex;
-        if (local.options && local.options.length === s.options.length) {
-          local.options.forEach((votes, i) => { if (s.options[i]) s.options[i].votes = votes; });
-          s.total = local.total;
+        s.myVote = vote.optionIndex;
+        if (vote.options && vote.options.length === s.options.length) {
+          vote.options.forEach((votes, i) => { if (s.options[i]) s.options[i].votes = votes; });
+          s.total = vote.total;
         }
       }
     });
@@ -8853,6 +8896,13 @@ async function voteSurvey(surveyId, optionIndex) {
     options: s.options.map(o => o.votes),
     total:   s.total
   });
+  // Secondo livello: session-scoped, non viene mai cancellato dal polling
+  // — solo dalla conferma esplicita del server. Previene qualsiasi flash visivo.
+  _sessionVotedSurveys.set(surveyId, {
+    optionIndex,
+    options: s.options.map(o => o.votes),
+    total:   s.total
+  });
   renderSurveys();
   showToast('green', '✓', 'Voto registrato! Grazie per il tuo feedback.');
   saveCommunityCache();
@@ -8879,7 +8929,10 @@ async function voteSurvey(surveyId, optionIndex) {
       // GAS ha confermato → il prossimo polling restituirà il voto nell'elenco voters
       // Possiamo tenere _localVotes ancora per 30s come safety net (viene rimosso in applyRemoteData)
       if (result && result.success) {
-        setTimeout(() => _localVotes.delete(surveyId), 30000);
+        setTimeout(() => {
+          _localVotes.delete(surveyId);
+          _sessionVotedSurveys.delete(surveyId);
+        }, 30000);
       }
       // Se GAS non conferma, _localVotes rimane indefinitamente → il voto non sparirà mai
     } catch(e) { console.warn('[Vote] GAS error:', e.message); }
