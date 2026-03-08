@@ -1,0 +1,468 @@
+/**
+ * TRADUZIONI ITALIANE — LINGUA BASE
+ * community-hub.html | i18n System v1.0
+ *
+ * Struttura chiavi:
+ *   nav.*         → Navigazione
+ *   sidebar.*     → Barra laterale
+ *   feed.*        → Feed principale
+ *   post.*        → Azioni sui post
+ *   comment.*     → Sezione commenti
+ *   profile.*     → Profilo utente
+ *   modal.*       → Finestre modali
+ *   form.*        → Campi modulo
+ *   btn.*         → Pulsanti generici
+ *   badge.*       → Badge e tag
+ *   status.*      → Messaggi di stato
+ *   time.*        → Formati temporali
+ *   error.*       → Messaggi di errore
+ *   empty.*       → Stati vuoti
+ *   notification.*→ Notifiche
+ *   search.*      → Ricerca
+ *   settings.*    → Impostazioni
+ *   lang.*        → Selezione lingua
+ */
+
+window.I18N_TRANSLATIONS = window.I18N_TRANSLATIONS || {};
+window.I18N_TRANSLATIONS['it'] = {
+
+  // ─── NAVIGAZIONE ───────────────────────────────────────────────
+  'nav.home':               'Home',
+  'nav.community':          'Community',
+  'nav.hub':                'Community Hub',
+  'nav.explore':            'Esplora',
+  'nav.trending':           'In Tendenza',
+  'nav.notifications':      'Notifiche',
+  'nav.messages':           'Messaggi',
+  'nav.profile':            'Profilo',
+  'nav.settings':           'Impostazioni',
+  'nav.logout':             'Esci',
+  'nav.login':              'Accedi',
+  'nav.register':           'Registrati',
+  'nav.back':               'Indietro',
+
+  // ─── SIDEBAR ───────────────────────────────────────────────────
+  'sidebar.online_members': 'Membri Online',
+  'sidebar.popular_topics': 'Argomenti Popolari',
+  'sidebar.recent_activity':'Attività Recente',
+  'sidebar.suggested':      'Suggeriti per te',
+  'sidebar.categories':     'Categorie',
+  'sidebar.tags':           'Tag',
+  'sidebar.pinned':         'In evidenza',
+  'sidebar.rules':          'Regole della Community',
+  'sidebar.moderators':     'Moderatori',
+  'sidebar.about':          'Informazioni',
+  'sidebar.members_count':  '{count} membri',
+  'sidebar.online_count':   '{count} online',
+  'sidebar.view_all':       'Vedi tutti',
+  'sidebar.collapse':       'Comprimi',
+  'sidebar.expand':         'Espandi',
+
+  // ─── FEED ──────────────────────────────────────────────────────
+  'feed.title':             'Community Hub',
+  'feed.subtitle':          'Esplora, condividi, discuti',
+  'feed.new_post':          'Nuovo Post',
+  'feed.write_post':        'Scrivi qualcosa...',
+  'feed.whats_new':         'Novità',
+  'feed.sort_by':           'Ordina per',
+  'feed.sort.latest':       'Più recenti',
+  'feed.sort.popular':      'Più popolari',
+  'feed.sort.trending':     'In tendenza',
+  'feed.sort.unanswered':   'Senza risposta',
+  'feed.filter':            'Filtra',
+  'feed.filter.all':        'Tutti',
+  'feed.filter.following':  'Seguiti',
+  'feed.filter.mine':       'Miei post',
+  'feed.load_more':         'Carica altri',
+  'feed.loading':           'Caricamento in corso...',
+  'feed.end':               'Hai raggiunto la fine del feed',
+  'feed.refresh':           'Aggiorna',
+  'feed.new_available':     '{count} nuovi post disponibili',
+  'feed.empty':             'Nessun post in questa sezione',
+  'feed.empty.subtitle':    'Sii il primo a pubblicare qualcosa!',
+
+  // ─── POST ──────────────────────────────────────────────────────
+  'post.like':              'Mi piace',
+  'post.unlike':            'Rimuovi Mi piace',
+  'post.comment':           'Commenta',
+  'post.share':             'Condividi',
+  'post.save':              'Salva',
+  'post.unsave':            'Rimuovi dai salvati',
+  'post.report':            'Segnala',
+  'post.edit':              'Modifica',
+  'post.delete':            'Elimina',
+  'post.pin':               'Metti in evidenza',
+  'post.unpin':             'Rimuovi dall\'evidenza',
+  'post.translate':         'Traduci',
+  'post.show_original':     'Mostra originale',
+  'post.translated_from':   'Tradotto da {lang}',
+  'post.original_lang':     'Testo originale ({lang})',
+  'post.replies':           '{count} risposte',
+  'post.reply_one':         '1 risposta',
+  'post.likes':             '{count} Mi piace',
+  'post.views':             '{count} visualizzazioni',
+  'post.by':                'Di {author}',
+  'post.edited':            'Modificato',
+  'post.deleted':           'Questo post è stato eliminato',
+  'post.read_more':         'Leggi tutto',
+  'post.show_less':         'Mostra meno',
+  'post.copy_link':         'Copia link',
+  'post.link_copied':       'Link copiato!',
+  'post.type.text':         'Testo',
+  'post.type.image':        'Immagine',
+  'post.type.video':        'Video',
+  'post.type.link':         'Link',
+  'post.type.poll':         'Sondaggio',
+  'post.type.discussion':   'Discussione',
+
+  // ─── COMMENTI ──────────────────────────────────────────────────
+  'comment.title':          'Commenti',
+  'comment.write':          'Scrivi un commento...',
+  'comment.reply':          'Rispondi',
+  'comment.edit':           'Modifica',
+  'comment.delete':         'Elimina',
+  'comment.report':         'Segnala',
+  'comment.like':           'Mi piace',
+  'comment.translate':      'Traduci',
+  'comment.show_original':  'Mostra originale',
+  'comment.load_more':      'Carica altri commenti',
+  'comment.show_replies':   'Mostra {count} risposte',
+  'comment.hide_replies':   'Nascondi risposte',
+  'comment.empty':          'Nessun commento ancora. Inizia la conversazione!',
+  'comment.deleted':        'Commento eliminato',
+  'comment.edited':         'Modificato',
+  'comment.reply_to':       'Risposta a {user}',
+  'comment.best':           'Miglior risposta',
+  'comment.submit':         'Pubblica',
+  'comment.cancel':         'Annulla',
+  'comment.count':          '{count} commenti',
+  'comment.count_one':      '1 commento',
+
+  // ─── PROFILO ───────────────────────────────────────────────────
+  'profile.follow':         'Segui',
+  'profile.unfollow':       'Smetti di seguire',
+  'profile.following':      'Stai seguendo',
+  'profile.followers':      'Follower',
+  'profile.following_count':'Seguiti',
+  'profile.posts':          'Post',
+  'profile.joined':         'Iscritto il {date}',
+  'profile.last_seen':      'Ultima visita: {time}',
+  'profile.online':         'Online',
+  'profile.offline':        'Offline',
+  'profile.edit_profile':   'Modifica Profilo',
+  'profile.send_message':   'Invia Messaggio',
+  'profile.block':          'Blocca',
+  'profile.report':         'Segnala utente',
+  'profile.bio_empty':      'Nessuna biografia disponibile',
+  'profile.posts_empty':    'Nessun post ancora',
+  'profile.level':          'Livello {level}',
+  'profile.reputation':     'Reputazione: {score}',
+  'profile.badges':         'Badge',
+  'profile.contributions':  'Contributi',
+
+  // ─── MODALI ────────────────────────────────────────────────────
+  'modal.close':            'Chiudi',
+  'modal.confirm':          'Conferma',
+  'modal.cancel':           'Annulla',
+  'modal.save':             'Salva',
+  'modal.delete.title':     'Elimina contenuto',
+  'modal.delete.message':   'Sei sicuro di voler eliminare questo contenuto? L\'azione non può essere annullata.',
+  'modal.report.title':     'Segnala contenuto',
+  'modal.report.reason':    'Motivo della segnalazione',
+  'modal.report.placeholder':'Descrivi il problema...',
+  'modal.report.submit':    'Invia segnalazione',
+  'modal.share.title':      'Condividi',
+  'modal.share.copy':       'Copia link',
+  'modal.share.copied':     'Copiato!',
+  'modal.image.title':      'Immagine',
+  'modal.confirm.yes':      'Sì, conferma',
+  'modal.confirm.no':       'No, annulla',
+
+  // ─── FORM ──────────────────────────────────────────────────────
+  'form.required':          'Campo obbligatorio',
+  'form.optional':          'Facoltativo',
+  'form.title':             'Titolo',
+  'form.title.placeholder': 'Inserisci un titolo...',
+  'form.content':           'Contenuto',
+  'form.content.placeholder':'Scrivi il tuo post...',
+  'form.category':          'Categoria',
+  'form.category.select':   'Seleziona una categoria',
+  'form.tags':              'Tag',
+  'form.tags.placeholder':  'Aggiungi tag...',
+  'form.submit':            'Pubblica',
+  'form.draft':             'Salva bozza',
+  'form.preview':           'Anteprima',
+  'form.characters_left':   '{count} caratteri rimanenti',
+  'form.max_length':        'Limite massimo: {max} caratteri',
+  'form.image.upload':      'Carica immagine',
+  'form.image.drag':        'Trascina un\'immagine qui o clicca per caricare',
+  'form.image.formats':     'PNG, JPG, GIF fino a {size}MB',
+  'form.invalid':           'Il modulo contiene errori',
+  'form.success':           'Contenuto pubblicato con successo!',
+
+  // ─── PULSANTI GENERICI ─────────────────────────────────────────
+  'btn.submit':             'Invia',
+  'btn.cancel':             'Annulla',
+  'btn.save':               'Salva',
+  'btn.delete':             'Elimina',
+  'btn.edit':               'Modifica',
+  'btn.close':              'Chiudi',
+  'btn.back':               'Indietro',
+  'btn.next':               'Avanti',
+  'btn.previous':           'Precedente',
+  'btn.confirm':            'Conferma',
+  'btn.apply':              'Applica',
+  'btn.reset':              'Ripristina',
+  'btn.load_more':          'Carica altri',
+  'btn.see_all':            'Vedi tutto',
+  'btn.try_again':          'Riprova',
+  'btn.copy':               'Copia',
+
+  // ─── BADGE ─────────────────────────────────────────────────────
+  'badge.new':              'Nuovo',
+  'badge.hot':              'Hot',
+  'badge.featured':         'In evidenza',
+  'badge.solved':           'Risolto',
+  'badge.official':         'Ufficiale',
+  'badge.mod':              'Moderatore',
+  'badge.admin':            'Admin',
+  'badge.verified':         'Verificato',
+  'badge.top_contributor':  'Top Contributor',
+  'badge.pinned':           'In evidenza',
+
+  // ─── STATUS ────────────────────────────────────────────────────
+  'status.loading':         'Caricamento...',
+  'status.saving':          'Salvataggio...',
+  'status.saved':           'Salvato',
+  'status.error':           'Si è verificato un errore',
+  'status.success':         'Operazione completata',
+  'status.updated':         'Aggiornato',
+  'status.deleted':         'Eliminato',
+  'status.posted':          'Pubblicato',
+  'status.translating':     'Traduzione in corso...',
+  'status.translated':      'Tradotto',
+
+  // ─── TEMPO ─────────────────────────────────────────────────────
+  'time.just_now':          'Proprio ora',
+  'time.minutes_ago':       '{count} minuti fa',
+  'time.minute_ago':        '1 minuto fa',
+  'time.hours_ago':         '{count} ore fa',
+  'time.hour_ago':          '1 ora fa',
+  'time.days_ago':          '{count} giorni fa',
+  'time.day_ago':           'ieri',
+  'time.weeks_ago':         '{count} settimane fa',
+  'time.week_ago':          '1 settimana fa',
+  'time.months_ago':        '{count} mesi fa',
+  'time.month_ago':         '1 mese fa',
+  'time.years_ago':         '{count} anni fa',
+  'time.year_ago':          '1 anno fa',
+  'time.today':             'Oggi',
+  'time.yesterday':         'Ieri',
+
+  // ─── ERRORI ────────────────────────────────────────────────────
+  'error.generic':          'Qualcosa è andato storto. Riprova più tardi.',
+  'error.network':          'Errore di rete. Controlla la connessione.',
+  'error.not_found':        'Contenuto non trovato.',
+  'error.unauthorized':     'Non sei autorizzato a eseguire questa azione.',
+  'error.forbidden':        'Accesso negato.',
+  'error.server':           'Errore del server. Riprova più tardi.',
+  'error.translation':      'Traduzione non disponibile.',
+  'error.too_long':         'Il testo è troppo lungo.',
+  'error.empty':            'Il campo non può essere vuoto.',
+  'error.invalid_format':   'Formato non valido.',
+  'error.upload_failed':    'Caricamento fallito. Riprova.',
+
+  // ─── STATI VUOTI ───────────────────────────────────────────────
+  'empty.feed':             'Nessun post da mostrare',
+  'empty.feed.hint':        'Segui altri utenti o esplora le categorie',
+  'empty.notifications':    'Nessuna notifica',
+  'empty.messages':         'Nessun messaggio',
+  'empty.search':           'Nessun risultato per "{query}"',
+  'empty.search.hint':      'Prova con termini diversi',
+  'empty.comments':         'Ancora nessun commento',
+  'empty.members':          'Nessun membro trovato',
+  'empty.posts':            'Nessun post ancora',
+  'empty.following':        'Non stai seguendo nessuno',
+  'empty.followers':        'Nessun follower ancora',
+  'empty.saved':            'Nessun contenuto salvato',
+
+  // ─── NOTIFICHE ─────────────────────────────────────────────────
+  'notification.liked_post':         '{user} ha messo Mi piace al tuo post',
+  'notification.commented_post':     '{user} ha commentato il tuo post',
+  'notification.replied_comment':    '{user} ha risposto al tuo commento',
+  'notification.followed_you':       '{user} ha iniziato a seguirti',
+  'notification.mentioned_you':      '{user} ti ha menzionato',
+  'notification.post_featured':      'Il tuo post è stato messo in evidenza',
+  'notification.new_message':        'Nuovo messaggio da {user}',
+  'notification.mark_read':          'Segna come letto',
+  'notification.mark_all_read':      'Segna tutti come letti',
+  'notification.clear_all':          'Cancella tutte',
+  'notification.count':              '{count} notifiche non lette',
+  'notification.count_one':          '1 notifica non letta',
+
+  // ─── RICERCA ───────────────────────────────────────────────────
+  'search.placeholder':     'Cerca nella community...',
+  'search.button':          'Cerca',
+  'search.results':         'Risultati per "{query}"',
+  'search.results_count':   '{count} risultati trovati',
+  'search.filter.all':      'Tutto',
+  'search.filter.posts':    'Post',
+  'search.filter.users':    'Utenti',
+  'search.filter.topics':   'Argomenti',
+  'search.recent':          'Ricerche recenti',
+  'search.clear':           'Cancella',
+  'search.no_results':      'Nessun risultato trovato',
+
+  // ─── IMPOSTAZIONI ──────────────────────────────────────────────
+  'settings.title':         'Impostazioni',
+  'settings.language':      'Lingua',
+  'settings.theme':         'Tema',
+  'settings.theme.light':   'Chiaro',
+  'settings.theme.dark':    'Scuro',
+  'settings.theme.auto':    'Automatico',
+  'settings.notifications': 'Notifiche',
+  'settings.privacy':       'Privacy',
+  'settings.account':       'Account',
+  'settings.save':          'Salva impostazioni',
+  'settings.saved':         'Impostazioni salvate',
+
+  // ─── LINGUA ────────────────────────────────────────────────────
+  'lang.select':            'Seleziona lingua',
+  'lang.current':           'Lingua attuale',
+  'lang.it':                'Italiano',
+  'lang.en':                'English',
+  'lang.fr':                'Français',
+  'lang.de':                'Deutsch',
+  'lang.es':                'Español',
+  'lang.auto_detect':       'Rilevamento automatico',
+  'lang.translate_content': 'Traduci contenuti automaticamente',
+  'lang.show_original':     'Mostra sempre testo originale',
+  'lang.saved':             'Lingua salvata: {lang}',
+
+  // ─── SONDAGGI ──────────────────────────────────────────────────
+  'poll.vote':              'Vota',
+  'poll.results':           'Risultati',
+  'poll.votes':             '{count} voti',
+  'poll.vote_one':          '1 voto',
+  'poll.ends_in':           'Termina tra {time}',
+  'poll.ended':             'Sondaggio chiuso',
+  'poll.your_vote':         'Il tuo voto',
+  'poll.total':             'Totale: {count} voti',
+
+  // ─── MODERAZIONE ───────────────────────────────────────────────
+  'mod.reported':           'Contenuto segnalato',
+  'mod.under_review':       'In revisione',
+  'mod.removed':            'Contenuto rimosso',
+  'mod.reason':             'Motivo: {reason}',
+  'mod.report.spam':        'Spam',
+  'mod.report.offensive':   'Contenuto offensivo',
+  'mod.report.inappropriate':'Contenuto inappropriato',
+  'mod.report.misinformation': 'Informazioni false',
+  'mod.report.harassment':  'Molestia',
+  'mod.report.other':       'Altro',
+  'mod.report.ignored':     'Segnalazione ignorata.',
+  'mod.content_removed':    'Contenuto rimosso con successo.',
+  'mod.promote_ok':         '{name} promosso a Founding Member!',
+  'mod.demote_ok':          '{name} retrocesso a Candidate.',
+  'mod.promote_error':      'Errore durante la promozione.',
+  'mod.demote_error':       'Errore durante la retrocessione.',
+  'mod.warn_required':      'Scrivi un messaggio prima di inviare.',
+  'mod.warn_error':         'Errore nell\'invio dell\'avviso.',
+  'mod.warn_sent':          'Avviso inviato a {name}.',
+  'mod.user_banned':        'Utente {name} bannato.',
+  'mod.user_generic':       'utente',
+  'mod.no_members':         'Nessun membro trovato.',
+
+  // ─── TYPING INDICATOR ──────────────────────────────────────────
+  'typing.one':             '{name} sta scrivendo',
+  'typing.two':             '{name1} e {name2} stanno scrivendo',
+  'typing.many':            '{count} persone stanno scrivendo',
+
+  // ─── THREAD ────────────────────────────────────────────────────
+  'thread.reply_sent':      'Risposta pubblicata con successo!',
+  'thread.published':       'Thread pubblicato con successo!',
+  'thread.title_required':  'Inserisci un titolo per il thread.',
+  'thread.body_required':   'Inserisci il messaggio iniziale.',
+
+  // ─── MESSAGGI DIRETTI ──────────────────────────────────────────
+  'msg.empty':              'Nessun messaggio ancora.<br>Inizia la conversazione!',
+  'msg.select_conv':        'Seleziona una conversazione',
+  'msg.typing':             'Sta scrivendo',
+  'msg.session_expired':    'Sessione scaduta. Ricarica la pagina.',
+  'msg.no_conv':            'Nessuna conversazione aperta.',
+  'msg.sending_media':      'Invio media…',
+  'msg.media_error':        'Errore upload media',
+  'msg.format_unsupported': 'Formato non supportato. Usa immagini o video.',
+  'msg.compressing':        'Compressione immagine…',
+  'msg.preparing_video':    'Preparazione video…',
+  'msg.file_error':         'Errore nella preparazione del file.',
+  'msg.load_error':         'Errore caricamento messaggi.',
+  'msg.config_gas':         'Configura GAS_URL per la messaggistica reale.',
+
+  // ─── NOTIFICHE ─────────────────────────────────────────────────
+  'notif.all_read':         'Tutte le notifiche segnate come lette.',
+
+  // ─── LISTING ───────────────────────────────────────────────────
+  'listing.auth_required':  'Devi essere autenticato per prenotare.',
+  'listing.booking_restricted': 'Le prenotazioni anticipate sono riservate ai Founding Members.',
+  'listing.booking_progress':'Prenotazione in corso…',
+  'listing.booking_sent':   'Prenotazione inviata! Il team ti contatterà a breve.',
+  'listing.no_properties':  'Nessuna proprietà disponibile al momento.<br>Il team aggiungerà presto le prime location esclusive.',
+  'listing.published':      'Listing pubblicato con successo!',
+  'listing.required_fields':'Compila titolo e descrizione.',
+
+  // ─── SONDAGGI ──────────────────────────────────────────────────
+  'poll.voted_ok':          'Voto registrato! Grazie per il tuo feedback.',
+  'survey.published':       'Sondaggio pubblicato con successo!',
+  'survey.required_fields': 'Compila titolo, domanda e almeno 2 opzioni.',
+  'survey.no_surveys':      'Nessun sondaggio attivo al momento.<br>Il team pubblicherà presto le prime votazioni.',
+
+  // ─── COMUNICAZIONI ─────────────────────────────────────────────
+  'comms.published':        'Comunicazione pubblicata con successo!',
+
+  // ─── EVENTI ────────────────────────────────────────────────────
+  'event.created':          'Evento creato con successo!',
+  'event.deleted':          'Evento eliminato.',
+  'event.ended':            'Evento terminato.',
+  'event.ended_local':      'Evento terminato localmente.',
+  'event.completed':        'Evento completato.',
+  'event.completed_local':  'Evento completato localmente.',
+  'event.update_error':     'Errore aggiornamento evento.',
+  'event.delete_error':     'Errore eliminazione evento.',
+  'event.title_required':   'Il titolo è obbligatorio.',
+  'event.date_required':    'La data è obbligatoria.',
+  'event.no_events':        'Nessun evento creato.',
+
+  // ─── POST / FORM ───────────────────────────────────────────────
+  'post.preview_required':  'Inserisci almeno titolo o contenuto per l\'anteprima.',
+  'post.schedule_required': 'Inserisci data e ora di pubblicazione.',
+  'post.date_passed':       'La data selezionata è già passata.',
+  'post.compressed':        'Compressa: {size}',
+  'post.video_ready':       'Video pronto: {size}',
+  'form.required_fields':   'Compila tutti i campi obbligatori.',
+  'form.no_file':           'Nessun file selezionato',
+
+  // ─── REPORT ────────────────────────────────────────────────────
+  'report.submit_ok':       'Segnalazione inviata al team di moderazione.',
+  'report.already':         'Hai già segnalato questo contenuto.',
+  'report.team_content':    'Non puoi segnalare contenuti del team.',
+  'report.own_content':     'Non puoi segnalare questo contenuto.',
+  'report.own_content_detail': 'Non puoi segnalare un contenuto che hai pubblicato tu.',
+  'report.not_found':       'Contenuto non trovato.',
+  'report.comment_not_found':'Commento non trovato.',
+  'report.thread_not_found':'Discussione non trovata.',
+  'report.reply_not_found': 'Risposta non trovata.',
+  'report.select_reason':   'Seleziona un motivo.',
+
+  // ─── RICERCA ───────────────────────────────────────────────────
+  'search.hint':            'Inizia a digitare per cercare nella Community.',
+  'search.results_label':   'Risultati ricerca',
+
+  // ─── UPGRADE ───────────────────────────────────────────────────
+  'upgrade.sent':           'Richiesta upgrade inviata al fondatore!',
+  'upgrade.request_sent':   'Richiesta inviata! Il team ti contatterà.',
+
+  // ─── ERRORI EXTRA ──────────────────────────────────────────────
+  'error.unknown':          'sconosciuto',
+
+};
