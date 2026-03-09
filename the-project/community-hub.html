@@ -2139,9 +2139,11 @@ mark.hl { background: rgba(212,175,55,0.22); color: var(--gold-light); border-ra
     align-items: center;
     margin-top: 0.35rem;
   }
-  /* Spazio aggiuntivo nel dettaglio thread */
+  /* Nel dettaglio thread: riga separata con spazio visivo dal titolo */
   .thread-detail-title .lx-translate-wrap {
-    margin-top: 0.55rem;
+    display: block;
+    margin-top: 0.5rem;
+    margin-bottom: 0.1rem;
   }
 
   .lx-translate-btn {
@@ -2160,7 +2162,7 @@ mark.hl { background: rgba(212,175,55,0.22); color: var(--gold-light); border-ra
     text-decoration-color: rgba(245,245,245,0.2);
     text-underline-offset: 2px;
     cursor: pointer;
-    transition: color 0.18s, text-decoration-color 0.18s;
+    /* NO transition: evita il lampeggio causato dai re-render periodici */
     white-space: nowrap;
     user-select: none;
     line-height: 1;
@@ -2170,7 +2172,6 @@ mark.hl { background: rgba(212,175,55,0.22); color: var(--gold-light); border-ra
     text-decoration-color: rgba(245,245,245,0.45);
   }
   .lx-translate-btn:active { opacity: 0.65; }
-  /* Nasconde l'icona SVG nel link sottolineato */
   .lx-translate-btn svg { display: none; }
   .lx-translate-btn.loading {
     opacity: 0.45;
@@ -2189,7 +2190,6 @@ mark.hl { background: rgba(212,175,55,0.22); color: var(--gold-light); border-ra
     text-underline-offset: 2px;
     margin-top: 0.3rem;
     cursor: pointer;
-    transition: color 0.15s, text-decoration-color 0.15s;
   }
   .lx-translate-restored:hover {
     color: rgba(245,245,245,0.65);
@@ -2212,7 +2212,7 @@ mark.hl { background: rgba(212,175,55,0.22); color: var(--gold-light); border-ra
     text-decoration-color: rgba(245,245,245,0.2);
     text-underline-offset: 2px;
     cursor: pointer;
-    transition: color 0.18s, text-decoration-color 0.18s;
+    /* NO transition */
     white-space: nowrap;
     margin-top: 0.35rem;
   }
@@ -5274,6 +5274,13 @@ function initApp() {
       if (document.getElementById('panel-analytics')?.classList.contains('active')) renderAnalytics();
       // Ritraduce i contenuti utente già visibili nella nuova lingua
       if (window.ContentTranslator) ContentTranslator.onUserLanguageChange(_newLang);
+      // Cancella cache traduzioni lx-translate (lingua cambiata → vecchie traduzioni non valide)
+      Object.keys(_lxTranslateCache).forEach(k => delete _lxTranslateCache[k]);
+      // Aggiorna visibilità pulsanti Translate in base a auto-translate
+      setTimeout(() => {
+        _lxUpdateTranslateVisibility(document.getElementById('feedContainer'));
+        _lxUpdateTranslateVisibility(document.getElementById('discussionsContainer'));
+      }, 100);
     });
   }
 
@@ -5980,9 +5987,23 @@ function applyRemoteData(data) {
       focusedInput.closest('#feedContainer');
     const isHoveringFeed = feedContainer &&
       feedContainer.matches(':hover');
-    if (!isTypingComment && !isHoveringFeed) renderFeed();
+    if (!isTypingComment && !isHoveringFeed) {
+      renderFeed();
+      _lxRestoreTranslations(document.getElementById('feedContainer'));
+      _lxUpdateTranslateVisibility(document.getElementById('feedContainer'));
+    }
   }
-  if (pid === 'discussions') renderDiscussions();
+  if (pid === 'discussions') {
+    // Blocca renderDiscussions se l'utente ha il cursore sopra — evita lampeggio hover
+    // e reset delle traduzioni già attive. I dati aggiornati arrivano al ciclo successivo.
+    const discsContainer = document.getElementById('discussionsContainer');
+    const isHoveringDiscs = discsContainer && discsContainer.matches(':hover');
+    if (!isHoveringDiscs) {
+      renderDiscussions();
+      _lxRestoreTranslations(document.getElementById('discussionsContainer'));
+      _lxUpdateTranslateVisibility(document.getElementById('discussionsContainer'));
+    }
+  }
   if (pid === 'surveys') {
     // Blocca renderSurveys se l'utente sta interagendo con le opzioni — evita flash hover.
     // Il re-render distrugge il DOM: il browser perde lo stato :hover sull'opzione su cui
@@ -7095,6 +7116,9 @@ function renderFeed() {
     if (window.I18n && I18n.getCurrentLanguage() !== 'it') {
       _lxAutoTranslateTitlesIn(container);
     }
+    // Ripristina traduzioni attive dalla cache e aggiorna visibilità pulsanti
+    _lxRestoreTranslations(container);
+    _lxUpdateTranslateVisibility(container);
   });
 }
 
@@ -7297,6 +7321,9 @@ function renderDiscussions(filter) {
   if (window.I18n && I18n.getCurrentLanguage() !== 'it') {
     _lxAutoTranslateTitlesIn(container);
   }
+  // Ripristina traduzioni attive dalla cache e aggiorna visibilità pulsanti
+  _lxRestoreTranslations(container);
+  _lxUpdateTranslateVisibility(container);
 }
 
 /* ═══════════════════════════════════════════
@@ -13137,7 +13164,49 @@ function reportContentById(sourceType, sourceId, parentId) {
 
 
 
-/* ── LX Translate: auto-traduce i titoli gestiti da lx-translate-wrap se auto-translate è attivo ── */
+/* ── LX Translate: ripristina traduzioni attive dopo un re-render ── */
+function _lxRestoreTranslations(container) {
+  if (!container) return;
+  Object.entries(_lxTranslateCache).forEach(([contentId, cached]) => {
+    if (!cached || !cached.translated) return;
+    const el = container.querySelector(`[data-content-id="${CSS.escape(contentId)}"]`);
+    if (!el || el.dataset.lxTranslated === '1') return;
+    const wrap = el.nextElementSibling;
+    if (!wrap || !wrap.classList.contains('lx-translate-wrap')) return;
+    const btn = wrap.querySelector('.lx-translate-btn');
+    if (!btn) return;
+    el.textContent = cached.translated;
+    el.dataset.lxTranslated = '1';
+    btn.innerHTML = _lxTranslateBtnInner('restore');
+  });
+}
+
+/* ── LX Translate: mostra/nasconde i pulsanti in base all'auto-translate ── */
+function _lxUpdateTranslateVisibility(container) {
+  if (!container) return;
+  const autoOn = !!(window.ContentTranslator && ContentTranslator.getAutoTranslateSetting && ContentTranslator.getAutoTranslateSetting());
+  container.querySelectorAll('.lx-translate-wrap').forEach(wrap => {
+    wrap.style.display = autoOn ? 'none' : '';
+  });
+}
+
+/* ── Patch ContentTranslator.setAutoTranslate: aggiorna visibilità pulsanti ── */
+(function _patchCTAutoTranslate() {
+  function tryPatch() {
+    if (!window.ContentTranslator || !ContentTranslator.setAutoTranslate) {
+      setTimeout(tryPatch, 300);
+      return;
+    }
+    const orig = ContentTranslator.setAutoTranslate.bind(ContentTranslator);
+    ContentTranslator.setAutoTranslate = function(enabled) {
+      orig(enabled);
+      // Aggiorna visibilità pulsanti Translate in tutti i container
+      _lxUpdateTranslateVisibility(document.getElementById('feedContainer'));
+      _lxUpdateTranslateVisibility(document.getElementById('discussionsContainer'));
+    };
+  }
+  tryPatch();
+})();
 function _lxAutoTranslateTitlesIn(container) {
   if (!window.ContentTranslator || !ContentTranslator.getAutoTranslateSetting) return;
   if (!ContentTranslator.getAutoTranslateSetting()) return;
