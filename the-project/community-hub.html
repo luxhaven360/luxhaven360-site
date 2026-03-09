@@ -7348,7 +7348,7 @@ function renderFeed() {
               <div class="comment-time" style="display:flex;align-items:center;justify-content:space-between;">
                 <span ${cts ? `data-ts="${cts}"` : ''}>${ctimeStr}</span>
                 <div style="display:flex;align-items:center;gap:0.5rem;">
-                  ${window.I18n && I18n.getCurrentLanguage() !== (c.lang || 'it') ? `<button class="comment-translate-btn" onclick="event.stopPropagation();_commentTranslate(this,'comment-${c.id||''}','${c.lang||'it'}')" style="background:none;border:none;color:var(--muted2);cursor:pointer;font-size:0.62rem;padding:0;text-decoration:underline;text-underline-offset:2px;">${_lxTranslateBtnInner('translate')}</button>` : ''}
+                  ${window.I18n && I18n.getCurrentLanguage() !== (c.lang || 'it') ? `<button class="comment-translate-btn" onclick="event.stopPropagation();_commentTranslate(this,'comment-${c.id||''}','${c.lang||'it'}')" style="background:none;border:none;color:var(--muted2);cursor:pointer;font-size:0.62rem;padding:0;text-decoration:underline;text-underline-offset:2px;white-space:nowrap;">${_commentTranslateBtnLabel('translate')}</button>` : ''}
                   ${!c.isTeam ? `<button onclick="reportContentById('comment','${c.id || post.id + '_c_' + Math.random().toString(36).slice(2)}','${post.id}')" style="background:none;border:none;color:var(--red);opacity:0.6;cursor:pointer;font-size:0.62rem;padding:0;">🚩 ${I18n.t('feed.report')}</button>` : ''}
                 </div>
               </div>
@@ -7506,7 +7506,7 @@ function renderPostComments(post, container) {
         <div class="comment-time" style="display:flex;align-items:center;justify-content:space-between;">
           <span ${ts ? `data-ts="${ts}"` : ''}>${timeStr}</span>
           <div style="display:flex;align-items:center;gap:0.5rem;">
-            ${window.I18n && I18n.getCurrentLanguage() !== (c.lang || 'it') ? `<button class="comment-translate-btn" onclick="event.stopPropagation();_commentTranslate(this,'comment-${c.id||''}','${c.lang||'it'}')" style="background:none;border:none;color:var(--muted2);cursor:pointer;font-size:0.62rem;padding:0;text-decoration:underline;text-underline-offset:2px;">${_lxTranslateBtnInner('translate')}</button>` : ''}
+            ${window.I18n && I18n.getCurrentLanguage() !== (c.lang || 'it') ? `<button class="comment-translate-btn" onclick="event.stopPropagation();_commentTranslate(this,'comment-${c.id||''}','${c.lang||'it'}')" style="background:none;border:none;color:var(--muted2);cursor:pointer;font-size:0.62rem;padding:0;text-decoration:underline;text-underline-offset:2px;white-space:nowrap;">${_commentTranslateBtnLabel('translate')}</button>` : ''}
             ${!c.isTeam ? `<button onclick="reportContentById('comment','${c.id || post.id + '_c_' + Math.random().toString(36).slice(2)}','${post.id}')" style="background:none;border:none;color:var(--red);opacity:0.6;cursor:pointer;font-size:0.62rem;padding:0;">🚩 ${I18n.t('feed.report')}</button>` : ''}
           </div>
         </div>
@@ -13827,7 +13827,7 @@ function _lxRestoreTranslations(container) {
       const btn = bubble.querySelector('.comment-translate-btn');
       el.innerHTML = cached.translated;
       el.dataset.lxTranslated = '1';
-      if (btn) btn.innerHTML = _lxTranslateBtnInner('restore');
+      if (btn) btn.textContent = _commentTranslateBtnLabel('restore');
       return;
     }
 
@@ -14049,6 +14049,17 @@ async function _lxTranslate(btn, contentId, sourceLang) {
   }
 }
 
+/* Testo-only per i pulsanti traduzione nei commenti (niente SVG) */
+function _commentTranslateBtnLabel(state) {
+  const lang = (window.I18n && I18n.getCurrentLanguage) ? I18n.getCurrentLanguage() : 'en';
+  const labels = {
+    translate: { it:'Traduci', en:'Translate', de:'Übersetzen', fr:'Traduire', es:'Traducir' },
+    restore:   { it:'Originale', en:'Show original', de:'Original', fr:'Original', es:'Original' },
+    loading:   { it:'…', en:'…', de:'…', fr:'…', es:'…' },
+  };
+  return (labels[state] || labels.translate)[lang] || labels[state]['en'];
+}
+
 function _lxTranslateBtnInner(state) {
   const lang = (window.I18n && I18n.getCurrentLanguage) ? I18n.getCurrentLanguage() : 'en';
   const labels = {
@@ -14086,7 +14097,7 @@ async function _commentTranslate(btn, contentId, sourceLang) {
       target.innerHTML = cached.original;
       target.dataset.lxTranslated = '0';
     }
-    btn.innerHTML = _lxTranslateBtnInner('translate');
+    btn.textContent = _commentTranslateBtnLabel('translate');
     return;
   }
 
@@ -14095,17 +14106,17 @@ async function _commentTranslate(btn, contentId, sourceLang) {
     const cached = _lxTranslateCache[contentId];
     target.innerHTML = cached.translated;
     target.dataset.lxTranslated = '1';
-    btn.innerHTML = _lxTranslateBtnInner('restore');
+    btn.textContent = _commentTranslateBtnLabel('restore');
     return;
   }
 
   // Chiama API
-  btn.innerHTML = _lxTranslateBtnInner('loading');
+  btn.textContent = _commentTranslateBtnLabel('loading');
   btn.classList.add('loading');
   try {
     const originalHTML = target.innerHTML;
     const originalText = target.textContent.trim();
-    if (!originalText) { btn.classList.remove('loading'); btn.innerHTML = _lxTranslateBtnInner('translate'); return; }
+    if (!originalText) { btn.classList.remove('loading'); btn.textContent = _commentTranslateBtnLabel('translate'); return; }
     const from = sourceLang || 'it';
     const url = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(originalText)}&langpair=${from}|${targetLang}`;
     const res = await fetch(url);
@@ -14116,13 +14127,13 @@ async function _commentTranslate(btn, contentId, sourceLang) {
       target.innerHTML = translated;
       target.dataset.lxTranslated = '1';
       btn.classList.remove('loading');
-      btn.innerHTML = _lxTranslateBtnInner('restore');
+      btn.textContent = _commentTranslateBtnLabel('restore');
     } else {
       throw new Error('API error');
     }
   } catch(e) {
     btn.classList.remove('loading');
-    btn.innerHTML = _lxTranslateBtnInner('translate');
+    btn.textContent = _commentTranslateBtnLabel('translate');
   }
 }
 
