@@ -656,6 +656,7 @@ window.I18N_TRANSLATIONS['de'] = {
   'nav.surveys':                     'Umfragen & Feedback',
   // ─── BENACHRICHTIGUNGEN ────────────────────────────────
   'notif.center_title':              'Benachrichtigungszentrum',
+  'notif.popup_label':               'BENACHRICHTIGUNG',
   // ─── RECHTES PANEL ─────────────────────────────────────
   'rp.project_status':               'Projektstatus',
   'rp.spots_confirmed':              'Bestätigte Plätze',
