@@ -13239,7 +13239,7 @@ function _lxUpdateTranslateVisibility(container) {
     ContentTranslator.setAutoTranslate = function(enabled) {
       orig(enabled);
 
-      const containers = [
+      const allContainers = [
         document.getElementById('feedContainer'),
         document.getElementById('discussionsContainer'),
         document.getElementById('threadDetailTitle'),
@@ -13249,60 +13249,86 @@ function _lxUpdateTranslateVisibility(container) {
       if (enabled) {
         // ── AUTO-TRANSLATE ATTIVATO ───────────────────────────────────────
         // 1. Nascondi tutti i pulsanti lx-translate
-        containers.forEach(_lxUpdateTranslateVisibility);
+        allContainers.forEach(_lxUpdateTranslateVisibility);
 
         // 2. Traduci subito i titoli (lx) con la lingua corrente
         const currentLang = window.I18n ? I18n.getCurrentLanguage() : 'it';
         if (currentLang && currentLang !== 'it') {
-          const titleContainers = [
+          [
             document.getElementById('feedContainer'),
             document.getElementById('discussionsContainer'),
             document.getElementById('threadDetailTitle'),
-          ];
-          titleContainers.forEach(c => { if (c) _lxAutoTranslateTitlesIn(c); });
+          ].forEach(c => { if (c) _lxAutoTranslateTitlesIn(c); });
         }
 
-        // 3. Traduci subito i contenuti CT (risposte, post body) già nel DOM
+        // 3. Traduci subito i contenuti CT (body) già nel DOM
         if (window.ContentTranslator && window.I18n) {
-          const ctContainers = [
+          [
             document.getElementById('feedContainer'),
             document.getElementById('threadDetailMessages'),
-          ];
-          ctContainers.forEach(c => {
+          ].forEach(c => {
             if (c) ContentTranslator.processNewContent(c);
           });
         }
 
       } else {
         // ── AUTO-TRANSLATE DISATTIVATO ────────────────────────────────────
-        // Mostra i pulsanti lx-translate in tutti i container
-        containers.forEach(c => {
-          if (!c) return;
-          c.querySelectorAll('.lx-translate-wrap').forEach(wrap => {
-            wrap.style.display = '';
-          });
-        });
 
-        // Mostra anche i pulsanti CT (content-translator) nei thread messages
-        const threadMsgs = document.getElementById('threadDetailMessages');
-        if (threadMsgs) {
-          threadMsgs.querySelectorAll('[data-translatable="true"]').forEach(el => {
-            // Se CT ha già aggiunto il suo wrapper con pulsanti, rendilo visibile
-            const next = el.nextElementSibling;
-            if (next && (next.classList.contains('ct-btn-row') || next.querySelector('.ct-translate-btn'))) {
-              next.style.display = '';
+        // 1. Ripristina tutti i titoli lx-translate: testo originale + btn "Translate"
+        _lxRestoreAllToOriginal(allContainers);
+
+        // 2. Ripristina tutti i contenuti CT (body text): testo originale + rimuovi wrapper
+        allContainers.forEach(container => {
+          if (!container) return;
+          container.querySelectorAll('[data-translatable="true"]').forEach(el => {
+            // Ripristina testo originale via CT API
+            if (ContentTranslator.restoreOriginal) ContentTranslator.restoreOriginal(el);
+            // Rimuovi wrapper pulsanti CT lasciato dall'auto-translate
+            const actions = el.nextElementSibling;
+            if (actions && actions.classList.contains('ct-actions')) {
+              actions.remove();
             }
           });
-          // Se CT non ha ancora processato questo container, fallo ora per aggiungere i pulsanti
-          if (window.ContentTranslator && window.I18n && I18n.getCurrentLanguage() !== 'it') {
-            ContentTranslator.processNewContent(threadMsgs);
+          // Ri-aggiungi pulsanti "Translate" manuali (auto=false)
+          if (window.I18n && I18n.getCurrentLanguage() !== 'it') {
+            ContentTranslator.processNewContent(container);
           }
-        }
+        });
+
+        // 3. Mostra i pulsanti lx-translate
+        allContainers.forEach(c => {
+          if (!c) return;
+          c.querySelectorAll('.lx-translate-wrap').forEach(w => { w.style.display = ''; });
+        });
       }
     };
   }
   tryPatch();
 })();
+
+/* ── Ripristina tutti i titoli lx-translate al testo originale ── */
+function _lxRestoreAllToOriginal(containers) {
+  containers.forEach(container => {
+    if (!container) return;
+    container.querySelectorAll('[data-lx-translated="1"], [data-content-id]').forEach(el => {
+      if (el.dataset.lxTranslated !== '1') return;
+      const contentId = el.dataset.contentId;
+      const cached = contentId ? _lxTranslateCache[contentId] : null;
+      if (cached && cached.original) {
+        el.textContent = cached.original;
+      }
+      el.dataset.lxTranslated = '0';
+      // Reimposta il pulsante su "Translate"
+      const wrap = el.nextElementSibling;
+      if (wrap && wrap.classList.contains('lx-translate-wrap')) {
+        const btn = wrap.querySelector('.lx-translate-btn');
+        if (btn) btn.innerHTML = _lxTranslateBtnInner('translate');
+      }
+    });
+  });
+  // Svuota la cache — così le prossime traduzioni manuali ripartono pulite
+  Object.keys(_lxTranslateCache).forEach(k => delete _lxTranslateCache[k]);
+}
 function _lxAutoTranslateTitlesIn(container) {
   if (!window.ContentTranslator || !ContentTranslator.getAutoTranslateSetting) return;
   if (!ContentTranslator.getAutoTranslateSetting()) return;
