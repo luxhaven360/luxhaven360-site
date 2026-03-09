@@ -5412,13 +5412,9 @@ function initApp() {
         if (_openThread) {
           const _titleEl = document.getElementById('threadDetailTitle');
           if (_titleEl) {
-            _titleEl.innerHTML = `<span data-content-id="disc-detail-title-${_openThread.id}" data-content-lang="${_openThread.lang||'it'}">${_openThread.title}</span>${_lxTranslateWrap('disc-detail-title-'+_openThread.id, _openThread.lang||'it')}`;
-            if (_newLang !== (_openThread.lang || 'it')) {
-              _lxAutoTranslateTitlesIn(_titleEl);
-            }
-            _lxUpdateTranslateVisibility(_titleEl);
+            _titleEl.innerHTML = `<span data-content-id="disc-detail-title-${_openThread.id}" data-content-lang="${_openThread.lang||'it'}">${_openThread.title}</span>`;
           }
-          // Aggiorna visibilità pulsante Traduci thread
+          // Aggiorna visibilità e stato del pulsante globale "Traduci thread"
           const _tRow = document.getElementById('threadTranslateRow');
           if (_tRow) {
             _tRow.style.display = (_newLang !== 'it') ? '' : 'none';
@@ -6166,9 +6162,17 @@ function applyRemoteData(data) {
     // l'utente ha il cursore, causando un lampeggio visivo dopo ogni ciclo di polling (2s).
     const surveysContainer = document.getElementById('surveysContainer');
     const isHoveringSurveys = surveysContainer && surveysContainer.matches(':hover');
-    if (!isHoveringSurveys) renderSurveys();
+    if (!isHoveringSurveys) {
+      renderSurveys();
+      _lxRestoreTranslations(surveysContainer);
+      _lxUpdateTranslateVisibility(surveysContainer);
+    }
   }
-  if (pid === 'listings')    renderListings();
+  if (pid === 'listings') {
+    renderListings();
+    _lxRestoreTranslations(document.getElementById('listingsContainer'));
+    _lxUpdateTranslateVisibility(document.getElementById('listingsContainer'));
+  }
   if (pid === 'dashboard')   {
     // BUG FIX #1: usa GLOBAL_ACTIVITIES come sorgente
     if (GLOBAL_ACTIVITIES.length === 0) _buildActivityFromRealData();
@@ -6559,16 +6563,30 @@ function renderActivityFeed() {
     return;
   }
 
-  act.innerHTML = activities.map(a => `
+  const curLang = window.I18n ? I18n.getCurrentLanguage() : 'it';
+  act.innerHTML = activities.map((a, i) => `
     <div class="activity-item">
       <div class="activity-dot ${a.dot}"></div>
-      <div class="activity-text" data-translatable="true" data-content-lang="it">${a.text}</div>
+      <div class="activity-text" data-act-idx="${i}" data-orig-html="${a.text.replace(/"/g,'&quot;')}">${a.text}</div>
       <div class="activity-time">${a.time}</div>
     </div>
-  `).join('') + (window.I18n && I18n.getCurrentLanguage() !== 'it' ? `
-    <div style="margin-top:0.4rem; text-align:right;">
-      <button class="lx-translate-btn" onclick="event.stopPropagation();_lxTranslateActivities(this)">${_lxTranslateBtnInner('translate')}</button>
+  `).join('') + (curLang !== 'it' ? `
+    <div style="margin-top:0.5rem; text-align:right;">
+      <button id="actTranslateBtn" class="lx-translate-btn" onclick="event.stopPropagation();_lxTranslateActivities(this)"></button>
     </div>` : '');
+
+  // Ripristina stato pulsante e testi se le attività erano già tradotte
+  if (_actTranslated) {
+    const btn = document.getElementById('actTranslateBtn');
+    if (btn) btn.innerHTML = _lxTranslateBtnInner('restore');
+    act.querySelectorAll('.activity-text[data-act-idx]').forEach(el => {
+      const orig = el.getAttribute('data-orig-html') || el.innerHTML;
+      if (_actTransMap[orig]) { el.innerHTML = _actTransMap[orig]; }
+    });
+  } else {
+    const btn = document.getElementById('actTranslateBtn');
+    if (btn) btn.innerHTML = _lxTranslateBtnInner('translate');
+  }
 }
 
 /* ═══════════════════════════════════════════
@@ -6595,6 +6613,7 @@ function renderFeedPreview() {
     return;
   }
 
+  const curLang = window.I18n ? I18n.getCurrentLanguage() : 'it';
   feedList.innerHTML = teamPosts.map(p => {
     const ts = p.ts ? new Date(p.ts).getTime() : 0;
     const timeStr = ts ? _notifRelTime(ts) : (p.time || 'Ora');
@@ -6605,12 +6624,27 @@ function renderFeedPreview() {
         ${p.type==='update'?'UPD':p.type==='exclusive'?'EXCL':p.type==='event'?'EVT':'NEWS'}
       </div>
       <div style="min-width:0; flex:1;">
-        <div data-content-id="fp-title-${p.id}" data-content-lang="${p.lang||'it'}" style="font-size:0.78rem; color:var(--light); font-weight:500; line-height:1.4; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${p.title}</div>
+        <div data-fp-id="${p.id}" data-orig-title="${(p.title||'').replace(/"/g,'&quot;')}" style="font-size:0.78rem; color:var(--light); font-weight:500; line-height:1.4; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${p.title}</div>
         <div style="font-size:0.65rem; color:var(--muted2); margin-top:2px;" ${ts ? `data-ts="${ts}"` : ''}>${timeStr}</div>
-        ${_lxTranslateWrap('fp-title-'+p.id, p.lang||'it')}
       </div>
     </div>
-  `}).join('');
+  `}).join('') + (curLang !== 'it' ? `
+    <div style="margin-top:0.5rem; text-align:right;">
+      <button id="fpTranslateBtn" class="lx-translate-btn" onclick="event.stopPropagation();_lxTranslateFeedPreview(this)"></button>
+    </div>` : '');
+
+  // Ripristina stato pulsante e titoli se già tradotti
+  if (_fpTranslated) {
+    const btn = document.getElementById('fpTranslateBtn');
+    if (btn) btn.innerHTML = _lxTranslateBtnInner('restore');
+    feedList.querySelectorAll('[data-fp-id]').forEach(el => {
+      const pid = el.getAttribute('data-fp-id');
+      if (_fpTransMap[pid]) el.textContent = _fpTransMap[pid];
+    });
+  } else {
+    const btn = document.getElementById('fpTranslateBtn');
+    if (btn) btn.innerHTML = _lxTranslateBtnInner('translate');
+  }
 }
 
 /* ── Inizializza snapshot contenuti (primo caricamento — no notifiche) ── */
@@ -7199,14 +7233,15 @@ function renderFeed() {
       </div>
       <div class="post-body">
         <div class="post-type-tag ${post.type}">${post.type === 'update' ? I18n.t('feed.type.update') : post.type === 'exclusive' ? I18n.t('feed.type.exclusive') : post.type === 'event' ? I18n.t('feed.type.event') : I18n.t('feed.type.news')}</div>
-        <div class="post-title" data-content-id="post-title-${post.id}" data-content-lang="${post.lang||'it'}">${post.title}</div>${_lxTranslateWrap('post-title-'+post.id, post.lang||'it')}
+        <div class="post-title" data-content-id="post-title-${post.id}" data-content-lang="${post.lang||'it'}">${post.title}</div>
         ${isLocked ? `
           <div class="post-locked">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>
             ${I18n.t('feed.locked_msg')}
           </div>
           <button class="upgrade-btn" onclick="requestFoundingUpgrade(${post.id})">${I18n.t('feed.locked_btn')}</button>
-        ` : `<div class="post-text" data-translatable="true" data-content-lang="${post.lang || 'it'}" data-content-id="post-${post.id}">${post.text}</div>`}
+        ` : `<div class="post-text" data-content-id="post-body-${post.id}" data-content-lang="${post.lang || 'it'}">${post.text}</div>
+        ${window.I18n && I18n.getCurrentLanguage() !== (post.lang||'it') ? `<button class="lx-translate-btn" onclick="event.stopPropagation();_lxTranslatePost(this,${post.id})" data-post-id="${post.id}">${_lxTranslateBtnInner('translate')}</button>` : ''}`}
       </div>
       ${!isLocked ? `
       <div class="reaction-bar" id="reaction-bar-${post.id}">
@@ -7511,7 +7546,7 @@ function openThread(id) {
     <span class="thread-category ${thread.category}">${I18n.t('disc.cat.' + thread.category) || thread.category}</span>
     ${thread.pinned ? `<span class="thread-pinned">📌 ${I18n.t('badge.pinned')}</span>` : ''}
   `;
-  document.getElementById('threadDetailTitle').innerHTML = `<span data-content-id="disc-detail-title-${thread.id}" data-content-lang="${thread.lang||'it'}">${thread.title}</span>${_lxTranslateWrap('disc-detail-title-'+thread.id, thread.lang||'it')}`;
+  document.getElementById('threadDetailTitle').innerHTML = `<span data-content-id="disc-detail-title-${thread.id}" data-content-lang="${thread.lang||'it'}">${thread.title}</span>`;
   // Auto-traduce il titolo del thread nel dettaglio se lingua UI ≠ it
   if (window.I18n && I18n.getCurrentLanguage() !== 'it') {
     _lxAutoTranslateTitlesIn(document.getElementById('threadDetailTitle'));
@@ -7577,7 +7612,7 @@ function renderThreadMessages(id) {
           <span class="thread-msg-time">${(() => { const ts = msg.ts ? new Date(msg.ts).getTime() : 0; return ts ? `<span data-ts="${ts}">${_notifRelTime(ts)}</span>` : (msg.time || I18n.t('time.now')); })()}</span>
           ${_canReport(msg.author, !!msg.isTeam) ? `<button onclick="reportContentById('reply','reply_${idx}')" style="background:none;border:none;color:var(--red);opacity:0.5;cursor:pointer;font-size:0.62rem;margin-left:auto;">🚩 ${I18n.t('feed.report')}</button>` : ''}
         </div>
-        <div class="thread-msg-text" data-translatable="true" data-content-lang="${msg.lang || 'it'}" data-content-id="thread-msg-${idx}">${safeText}</div>
+        <div class="thread-msg-text" data-content-id="thread-msg-${idx}" data-content-lang="${msg.lang || 'it'}">${safeText}</div>
         <div class="thread-msg-reactions">
           ${(msg.reactions || []).map(r => `<div class="thread-reaction">${r}</div>`).join('')}
         </div>
@@ -7594,11 +7629,7 @@ function renderThreadMessages(id) {
   });
 
   container.scrollTop = container.scrollHeight;
-  // Processa contenuti traducibili del thread
-  if (window.ContentTranslator && window.I18n && I18n.getCurrentLanguage() !== 'it') {
-    ContentTranslator.processNewContent(container);
-  }
-  // Aggiorna visibilità pulsanti (nasconde se auto-translate attivo)
+  // Aggiorna visibilità pulsante globale thread translate
   _lxUpdateTranslateVisibility(container);
 }
 
@@ -10247,7 +10278,7 @@ function renderListings() {
               <button class="lx-translate-btn" style="margin-top:0.35rem;" onclick="event.stopPropagation();_lxTranslateListing(this,${l.id})">${_lxTranslateBtnInner('translate')}</button>
             </div>
             ${role === 'candidate'
-              ? `<span class="listing-book-btn locked-btn"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display:inline;margin-right:4px;vertical-align:middle;"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>${window.I18n ? I18n.t('listing.solo_founding') : '🔒 Solo Founding'}</span>`
+              ? `<span class="listing-book-btn locked-btn">${window.I18n ? I18n.t('listing.solo_founding') : '🔒 Solo Founding'}</span>`
               : `<button class="listing-book-btn" onclick="bookListing(${l.id},'${(l.title||'').replace(/'/g,"\\'")}') ">${window.I18n ? I18n.t('listing.book_btn') : 'Prenota'}</button>`}
           </div>
         </div>`;
@@ -11476,8 +11507,8 @@ function renderRightPanel() {
     <div class="event-card-sm" data-event-id="${e.id}">
       ${e.isLive ? `<div class="live-indicator" style="margin-bottom:0.3rem;"><div class="live-dot"></div> ${liveLabel}</div>` : ''}
       <div class="event-date-sm ${e.isLive ? 'text-gold' : ''}">${dateLabel}</div>
-      <div class="event-title-sm" data-translatable="true" data-content-lang="it" data-content-id="event-title-${e.id}">${e.title}</div>
-      ${metaStr ? `<div class="event-meta-sm">${metaStr}</div>` : ''}
+      <div class="event-title-sm" data-content-id="event-title-${e.id}" data-content-lang="it">${e.title}</div>
+      ${metaStr ? `<div class="event-meta-sm" data-content-id="event-meta-${e.id}" data-content-lang="it">${metaStr}</div>` : ''}
       ${currentUser && currentUser.role === 'team' ? `
         <div style="display:flex; gap:0.4rem; margin-top:0.4rem; flex-wrap:wrap;">
           <button onclick="toggleEventLive(${e.id}, ${!e.isLive})" style="font-size:0.62rem; padding:2px 7px; border-radius:4px; border:1px solid ${e.isLive?'var(--amber)':'var(--green)'}; background:transparent; color:${e.isLive?'var(--amber)':'var(--green)'}; cursor:pointer;">
@@ -13353,46 +13384,60 @@ function reportContentById(sourceType, sourceId, parentId) {
 
 
 
-/* ── LX Translate: traduce TUTTO il thread (titolo + messaggi) ── */
+/* ── Activity / FeedPreview translation state (persist across re-renders) ── */
+let _actTranslated = false;         // true se le attività sono state tradotte
+const _actTransMap  = {};           // orig_html → translated_text
+let _fpTranslated   = false;        // true se gli ultimi aggiornamenti sono stati tradotti
+const _fpTransMap   = {};           // postId → translated_title
 async function _lxTranslateThread(btn) {
   if (!currentThreadId) return;
-  const thread = DISCUSSIONS.find(d => d.id === currentThreadId);
-  if (!thread) return;
+  const lang = window.I18n ? I18n.getCurrentLanguage() : 'en';
   const isRestoring = btn.dataset.lxRestoreThread === '1';
+
   if (isRestoring) {
-    // Ripristina titolo
-    const titleEl = document.querySelector('#threadDetailTitle [data-content-id]');
-    if (titleEl) {
-      const cached = _lxTranslateCache['disc-detail-title-' + thread.id];
-      if (cached) { titleEl.textContent = cached.original; titleEl.dataset.lxTranslated = '0'; }
+    const titleSpan = document.querySelector('#threadDetailTitle [data-content-id]');
+    if (titleSpan) {
+      const cached = _lxTranslateCache[titleSpan.dataset.contentId];
+      if (cached?.original) titleSpan.textContent = cached.original;
     }
-    // Ripristina messaggi via CT
-    document.querySelectorAll('#threadDetailMessages [data-translatable="true"]').forEach(el => {
-      if (ContentTranslator && ContentTranslator.restoreOriginal) ContentTranslator.restoreOriginal(el);
-      const wrap = el.nextElementSibling;
-      if (wrap && wrap.classList.contains('ct-actions')) wrap.remove();
+    document.querySelectorAll('#threadDetailMessages [data-content-id^="thread-msg-"]').forEach(el => {
+      const cached = _lxTranslateCache[el.dataset.contentId];
+      if (cached?.original) el.innerHTML = cached.original;
     });
     btn.dataset.lxRestoreThread = '0';
     btn.innerHTML = _lxTranslateBtnInner('translate');
     return;
   }
+
   btn.innerHTML = _lxTranslateBtnInner('loading');
   btn.classList.add('loading');
-  // Traduce il titolo
-  const titleWrap = document.getElementById('threadDetailTitle');
-  if (titleWrap) {
-    const titleBtn = titleWrap.querySelector('.lx-translate-btn');
-    if (titleBtn) await _lxTranslate(titleBtn, 'disc-detail-title-' + thread.id, thread.lang || 'it');
+
+  const translateEl = async (el, isHtml) => {
+    const cid = el.dataset.contentId;
+    const from = el.dataset.contentLang || 'it';
+    if (from === lang) return;
+    const text = el.textContent.trim();
+    if (!text) return;
+    if (!_lxTranslateCache[cid]) _lxTranslateCache[cid] = { original: isHtml ? el.innerHTML : text };
+    const cached = _lxTranslateCache[cid];
+    if (cached.translated) { el.textContent = cached.translated; return; }
+    try {
+      const res = await fetch(`https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=${from}|${lang}`);
+      const data = await res.json();
+      if (data.responseStatus === 200 && data.responseData?.translatedText) {
+        cached.translated = data.responseData.translatedText;
+        el.textContent = cached.translated;
+      }
+    } catch(_e) {}
+  };
+
+  const titleSpan = document.querySelector('#threadDetailTitle [data-content-id]');
+  if (titleSpan) await translateEl(titleSpan, false);
+
+  for (const el of document.querySelectorAll('#threadDetailMessages [data-content-id^="thread-msg-"]')) {
+    await translateEl(el, true);
   }
-  // Traduce tutti i messaggi via CT
-  const container = document.getElementById('threadDetailMessages');
-  if (container && window.ContentTranslator) {
-    const lang = window.I18n ? I18n.getCurrentLanguage() : 'en';
-    const els = container.querySelectorAll('[data-translatable="true"]');
-    for (const el of els) {
-      await ContentTranslator.processElement ? ContentTranslator.processElement(el, { auto: true, userLang: lang }) : null;
-    }
-  }
+
   btn.classList.remove('loading');
   btn.innerHTML = _lxTranslateBtnInner('restore');
   btn.dataset.lxRestoreThread = '1';
@@ -13491,11 +13536,133 @@ async function _lxTranslateSurvey(btn, surveyId) {
 async function _lxTranslateActivities(btn) {
   const container = document.getElementById('dashActivity');
   if (!container) return;
+  if (_actTranslated) {
+    // Ripristina
+    container.querySelectorAll('.activity-text[data-act-idx]').forEach(el => {
+      const orig = el.getAttribute('data-orig-html');
+      if (orig) el.innerHTML = orig;
+    });
+    _actTranslated = false;
+    btn.innerHTML = _lxTranslateBtnInner('translate');
+    btn.dataset.lxRestore = '0';
+    return;
+  }
+  btn.innerHTML = _lxTranslateBtnInner('loading');
+  btn.classList.add('loading');
+  const lang = window.I18n ? I18n.getCurrentLanguage() : 'en';
+  const items = container.querySelectorAll('.activity-text[data-act-idx]');
+  for (const el of items) {
+    const origHtml = el.getAttribute('data-orig-html') || el.innerHTML;
+    const origText = el.textContent.trim();
+    if (!origText) continue;
+    if (_actTransMap[origHtml]) { el.innerHTML = _actTransMap[origHtml]; continue; }
+    try {
+      const res = await fetch(`https://api.mymemory.translated.net/get?q=${encodeURIComponent(origText)}&langpair=it|${lang}`);
+      const data = await res.json();
+      if (data.responseStatus === 200 && data.responseData?.translatedText) {
+        _actTransMap[origHtml] = data.responseData.translatedText;
+        el.textContent = _actTransMap[origHtml];
+      }
+    } catch(_e) {}
+  }
+  _actTranslated = true;
+  btn.classList.remove('loading');
+  btn.innerHTML = _lxTranslateBtnInner('restore');
+  btn.dataset.lxRestore = '1';
+}
+
+/* ── LX Translate: traduce tutti i titoli in "Ultimi Aggiornamenti" ── */
+async function _lxTranslateFeedPreview(btn) {
+  const container = document.getElementById('dashFeedList');
+  if (!container) return;
+  if (_fpTranslated) {
+    container.querySelectorAll('[data-fp-id]').forEach(el => {
+      const orig = el.getAttribute('data-orig-title');
+      if (orig) el.textContent = orig;
+    });
+    _fpTranslated = false;
+    btn.innerHTML = _lxTranslateBtnInner('translate');
+    return;
+  }
+  btn.innerHTML = _lxTranslateBtnInner('loading');
+  btn.classList.add('loading');
+  const lang = window.I18n ? I18n.getCurrentLanguage() : 'en';
+  const items = container.querySelectorAll('[data-fp-id]');
+  for (const el of items) {
+    const pid = el.getAttribute('data-fp-id');
+    const text = el.getAttribute('data-orig-title') || el.textContent.trim();
+    if (!text) continue;
+    if (_fpTransMap[pid]) { el.textContent = _fpTransMap[pid]; continue; }
+    try {
+      const res = await fetch(`https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=it|${lang}`);
+      const data = await res.json();
+      if (data.responseStatus === 200 && data.responseData?.translatedText) {
+        _fpTransMap[pid] = data.responseData.translatedText;
+        el.textContent = _fpTransMap[pid];
+      }
+    } catch(_e) {}
+  }
+  _fpTranslated = true;
+  btn.classList.remove('loading');
+  btn.innerHTML = _lxTranslateBtnInner('restore');
+}
+
+/* ── LX Translate: traduce titolo + body di un post del team nel feed ── */
+async function _lxTranslatePost(btn, postId) {
+  const titleEl = document.querySelector(`[data-content-id="post-title-${postId}"]`);
+  const bodyEl  = document.querySelector(`[data-content-id="post-body-${postId}"]`);
+  if (!titleEl && !bodyEl) return;
+  const isRestoring = btn.dataset.lxRestore === '1';
+  const lang = window.I18n ? I18n.getCurrentLanguage() : 'en';
+  if (isRestoring) {
+    [titleEl, bodyEl].forEach(el => {
+      if (!el) return;
+      const cached = _lxTranslateCache[el.dataset.contentId];
+      if (cached?.original) el.textContent = cached.original;
+    });
+    btn.dataset.lxRestore = '0';
+    btn.innerHTML = _lxTranslateBtnInner('translate');
+    return;
+  }
+  btn.innerHTML = _lxTranslateBtnInner('loading');
+  btn.classList.add('loading');
+  const translateEl = async (el) => {
+    if (!el) return;
+    const cid = el.dataset.contentId;
+    const from = el.dataset.contentLang || 'it';
+    if (from === lang) return;
+    const text = el.textContent.trim();
+    if (!text) return;
+    if (!_lxTranslateCache[cid]) _lxTranslateCache[cid] = { original: text };
+    const cached = _lxTranslateCache[cid];
+    if (cached.translated) { el.textContent = cached.translated; return; }
+    try {
+      const res = await fetch(`https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=${from}|${lang}`);
+      const data = await res.json();
+      if (data.responseStatus === 200 && data.responseData?.translatedText) {
+        cached.translated = data.responseData.translatedText;
+        el.textContent = cached.translated;
+      }
+    } catch(_e) {}
+  };
+  await translateEl(titleEl);
+  await translateEl(bodyEl);
+  btn.classList.remove('loading');
+  btn.innerHTML = _lxTranslateBtnInner('restore');
+  btn.dataset.lxRestore = '1';
+}
+
+/* ── LX Translate: traduce titolo + meta di un evento ── */
+async function _lxTranslateEvent(btn, eventId) {
+  const titleEl = document.querySelector(`[data-content-id="event-title-${eventId}"]`);
+  const metaEl  = document.querySelector(`[data-content-id="event-meta-${eventId}"]`);
+  if (!titleEl && !metaEl) return;
   const isRestoring = btn.dataset.lxRestore === '1';
   if (isRestoring) {
-    container.querySelectorAll('.activity-text').forEach((el, i) => {
-      const cached = _lxTranslateCache['activity-text-' + i];
-      if (cached) { el.innerHTML = cached.original; el.dataset.lxTranslated = '0'; }
+    [titleEl, metaEl].forEach(el => {
+      if (!el) return;
+      const cached = _lxTranslateCache[el.dataset.contentId];
+      if (cached?.original) el.textContent = cached.original;
     });
     btn.dataset.lxRestore = '0';
     btn.innerHTML = _lxTranslateBtnInner('translate');
@@ -13504,57 +13671,25 @@ async function _lxTranslateActivities(btn) {
   btn.innerHTML = _lxTranslateBtnInner('loading');
   btn.classList.add('loading');
   const lang = window.I18n ? I18n.getCurrentLanguage() : 'en';
-  const items = container.querySelectorAll('.activity-text');
-  for (let i = 0; i < items.length; i++) {
-    const el = items[i];
+  const translateEl = async (el) => {
+    if (!el) return;
+    const cid = el.dataset.contentId;
     const text = el.textContent.trim();
-    if (!text) continue;
-    _lxTranslateCache['activity-text-' + i] = _lxTranslateCache['activity-text-' + i] || { original: el.innerHTML };
-    const cached = _lxTranslateCache['activity-text-' + i];
-    if (cached.translated) { el.innerHTML = cached.translated; el.dataset.lxTranslated = '1'; continue; }
+    if (!text) return;
+    if (!_lxTranslateCache[cid]) _lxTranslateCache[cid] = { original: text };
+    const cached = _lxTranslateCache[cid];
+    if (cached.translated) { el.textContent = cached.translated; return; }
     try {
       const res = await fetch(`https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=it|${lang}`);
       const data = await res.json();
       if (data.responseStatus === 200 && data.responseData?.translatedText) {
         cached.translated = data.responseData.translatedText;
         el.textContent = cached.translated;
-        el.dataset.lxTranslated = '1';
       }
     } catch(_e) {}
-  }
-  btn.classList.remove('loading');
-  btn.innerHTML = _lxTranslateBtnInner('restore');
-  btn.dataset.lxRestore = '1';
-}
-
-/* ── LX Translate: traduce il titolo di un evento ── */
-async function _lxTranslateEvent(btn, eventId) {
-  const titleEl = document.querySelector(`[data-content-id="event-title-${eventId}"]`);
-  if (!titleEl) return;
-  const isRestoring = btn.dataset.lxRestore === '1';
-  if (isRestoring) {
-    const cached = _lxTranslateCache['event-title-' + eventId];
-    if (cached) { titleEl.textContent = cached.original; titleEl.dataset.lxTranslated = '0'; }
-    btn.dataset.lxRestore = '0';
-    btn.innerHTML = _lxTranslateBtnInner('translate');
-    return;
-  }
-  btn.innerHTML = _lxTranslateBtnInner('loading');
-  btn.classList.add('loading');
-  const lang = window.I18n ? I18n.getCurrentLanguage() : 'en';
-  const text = titleEl.textContent.trim();
-  _lxTranslateCache['event-title-' + eventId] = _lxTranslateCache['event-title-' + eventId] || { original: text };
-  const cached = _lxTranslateCache['event-title-' + eventId];
-  if (!cached.translated) {
-    try {
-      const res = await fetch(`https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=it|${lang}`);
-      const data = await res.json();
-      if (data.responseStatus === 200 && data.responseData?.translatedText) {
-        cached.translated = data.responseData.translatedText;
-      }
-    } catch(_e) {}
-  }
-  if (cached.translated) { titleEl.textContent = cached.translated; titleEl.dataset.lxTranslated = '1'; }
+  };
+  await translateEl(titleEl);
+  await translateEl(metaEl);
   btn.classList.remove('loading');
   btn.innerHTML = _lxTranslateBtnInner('restore');
   btn.dataset.lxRestore = '1';
@@ -13697,6 +13832,9 @@ function _lxRestoreAllToOriginal(containers) {
   });
   // Svuota la cache — così le prossime traduzioni manuali ripartono pulite
   Object.keys(_lxTranslateCache).forEach(k => delete _lxTranslateCache[k]);
+  // Reset stato attività e feed preview
+  _actTranslated = false;
+  _fpTranslated  = false;
 }
 function _lxAutoTranslateTitlesIn(container) {
   if (!window.ContentTranslator || !ContentTranslator.getAutoTranslateSetting) return;
