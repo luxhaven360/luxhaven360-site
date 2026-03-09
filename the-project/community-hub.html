@@ -5276,10 +5276,25 @@ function initApp() {
       if (window.ContentTranslator) ContentTranslator.onUserLanguageChange(_newLang);
       // Cancella cache traduzioni lx-translate (lingua cambiata → vecchie traduzioni non valide)
       Object.keys(_lxTranslateCache).forEach(k => delete _lxTranslateCache[k]);
+      // Se un thread è aperto: rigenera il titolo con il pulsante Traduci per la nuova lingua
+      if (currentThreadId) {
+        const _openThread = DISCUSSIONS.find(d => d.id === currentThreadId);
+        if (_openThread) {
+          const _titleEl = document.getElementById('threadDetailTitle');
+          if (_titleEl) {
+            _titleEl.innerHTML = `<span data-content-id="disc-detail-title-${_openThread.id}" data-content-lang="${_openThread.lang||'it'}">${_openThread.title}</span>${_lxTranslateWrap('disc-detail-title-'+_openThread.id, _openThread.lang||'it')}`;
+            if (_newLang !== (_openThread.lang || 'it')) {
+              _lxAutoTranslateTitlesIn(_titleEl);
+            }
+            _lxUpdateTranslateVisibility(_titleEl);
+          }
+        }
+      }
       // Aggiorna visibilità pulsanti Translate in base a auto-translate
       setTimeout(() => {
         _lxUpdateTranslateVisibility(document.getElementById('feedContainer'));
         _lxUpdateTranslateVisibility(document.getElementById('discussionsContainer'));
+        _lxUpdateTranslateVisibility(document.getElementById('threadDetailTitle'));
       }, 100);
     });
   }
@@ -7356,6 +7371,8 @@ function openThread(id) {
   if (window.I18n && I18n.getCurrentLanguage() !== 'it') {
     _lxAutoTranslateTitlesIn(document.getElementById('threadDetailTitle'));
   }
+  // Mostra/nasconde pulsante Translate in base ad auto-translate
+  _lxUpdateTranslateVisibility(document.getElementById('threadDetailTitle'));
   document.getElementById('threadDetailInfo').innerHTML = `
     <span>
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
@@ -13203,6 +13220,7 @@ function _lxUpdateTranslateVisibility(container) {
       // Aggiorna visibilità pulsanti Translate in tutti i container
       _lxUpdateTranslateVisibility(document.getElementById('feedContainer'));
       _lxUpdateTranslateVisibility(document.getElementById('discussionsContainer'));
+      _lxUpdateTranslateVisibility(document.getElementById('threadDetailTitle'));
     };
   }
   tryPatch();
@@ -13283,9 +13301,9 @@ async function _lxTranslate(btn, contentId, sourceLang) {
 function _lxTranslateBtnInner(state) {
   const lang = (window.I18n && I18n.getCurrentLanguage) ? I18n.getCurrentLanguage() : 'en';
   const labels = {
-    translate: { it:'Traduci', en:'Translate', de:'Übersetzen', fr:'Traduire', es:'Traducir' },
-    restore:   { it:'Originale', en:'Original', de:'Original', fr:'Original', es:'Original' },
-    loading:   { it:'…', en:'…', de:'…', fr:'…', es:'…' },
+    translate: { it:'Traduci',    en:'Translate',    de:'Übersetzen', fr:'Traduire',  es:'Traducir'  },
+    restore:   { it:'Originale',  en:'Show original', de:'Original',   fr:'Original',  es:'Original'  },
+    loading:   { it:'…',          en:'…',             de:'…',          fr:'…',         es:'…'         },
   };
   const label = (labels[state] || labels.translate)[lang] || labels[state]['en'];
   const icons = {
