@@ -2313,6 +2313,7 @@ Object.assign(window.I18N_TRANSLATIONS['it'] || (window.I18N_TRANSLATIONS['it']=
   'listings.subtitle':       'Accesso anticipato alle proprietà disponibili.',
   'surveys.subtitle':        'La tua voce contribuisce allo sviluppo del progetto.',
   'notif.center_title':      'Centro Notifiche',
+  'notif.popup_label':       'NOTIFICA',
   'members.subtitle':        'Dati in tempo reale · aggiornamento automatico.',
   'members.search_placeholder':'Cerca membro…',
   'members.col.member':      'Membro',
@@ -2604,6 +2605,7 @@ Object.assign(window.I18N_TRANSLATIONS['en'] || (window.I18N_TRANSLATIONS['en']=
   'listings.subtitle':       'Early access to available properties before public launch.',
   'surveys.subtitle':        'Your voice directly contributes to project development.',
   'notif.center_title':      'Notification Center',
+  'notif.popup_label':       'NOTIFICATION',
   'members.subtitle':        'Real-time data · automatic update.',
   'members.search_placeholder':'Search member…',
   'members.col.member':      'Member',
@@ -7342,10 +7344,13 @@ function renderFeed() {
             <div class="comment-avatar">${c.initial}</div>
             <div class="comment-bubble">
               <div class="comment-author">${c.author}</div>
-              <div class="comment-text" data-translatable="true" data-content-lang="${c.lang || 'it'}" data-content-id="comment-${c.id||''}">${c.text}</div>
+              <div class="comment-text" data-content-lang="${c.lang || 'it'}" data-content-id="comment-${c.id||''}">${c.text}</div>
               <div class="comment-time" style="display:flex;align-items:center;justify-content:space-between;">
                 <span ${cts ? `data-ts="${cts}"` : ''}>${ctimeStr}</span>
-                ${!c.isTeam ? `<button onclick="reportContentById('comment','${c.id || post.id + '_c_' + Math.random().toString(36).slice(2)}','${post.id}')" style="background:none;border:none;color:var(--red);opacity:0.6;cursor:pointer;font-size:0.62rem;padding:0;margin-left:0.3rem;">🚩 ${I18n.t('feed.report')}</button>` : ''}
+                <div style="display:flex;align-items:center;gap:0.5rem;">
+                  ${window.I18n && I18n.getCurrentLanguage() !== (c.lang || 'it') ? `<button class="comment-translate-btn" onclick="event.stopPropagation();_commentTranslate(this,'comment-${c.id||''}','${c.lang||'it'}')" style="background:none;border:none;color:var(--muted2);cursor:pointer;font-size:0.62rem;padding:0;text-decoration:underline;text-underline-offset:2px;">${_lxTranslateBtnInner('translate')}</button>` : ''}
+                  ${!c.isTeam ? `<button onclick="reportContentById('comment','${c.id || post.id + '_c_' + Math.random().toString(36).slice(2)}','${post.id}')" style="background:none;border:none;color:var(--red);opacity:0.6;cursor:pointer;font-size:0.62rem;padding:0;">🚩 ${I18n.t('feed.report')}</button>` : ''}
+                </div>
               </div>
             </div>
           </div>`}).join('')}
@@ -7497,10 +7502,13 @@ function renderPostComments(post, container) {
       <div class="comment-avatar">${c.initial}</div>
       <div class="comment-bubble">
         <div class="comment-author">${c.author}</div>
-        <div class="comment-text" data-translatable="true" data-content-lang="${c.lang || 'it'}" data-content-id="comment-${c.id||''}">${c.text}</div>
+        <div class="comment-text" data-content-lang="${c.lang || 'it'}" data-content-id="comment-${c.id||''}">${c.text}</div>
         <div class="comment-time" style="display:flex;align-items:center;justify-content:space-between;">
           <span ${ts ? `data-ts="${ts}"` : ''}>${timeStr}</span>
-          ${!c.isTeam ? `<button onclick="reportContentById('comment','${c.id || post.id + '_c_' + Math.random().toString(36).slice(2)}','${post.id}')" style="background:none;border:none;color:var(--red);opacity:0.6;cursor:pointer;font-size:0.62rem;padding:0;margin-left:0.3rem;">🚩 ${I18n.t('feed.report')}</button>` : ''}
+          <div style="display:flex;align-items:center;gap:0.5rem;">
+            ${window.I18n && I18n.getCurrentLanguage() !== (c.lang || 'it') ? `<button class="comment-translate-btn" onclick="event.stopPropagation();_commentTranslate(this,'comment-${c.id||''}','${c.lang||'it'}')" style="background:none;border:none;color:var(--muted2);cursor:pointer;font-size:0.62rem;padding:0;text-decoration:underline;text-underline-offset:2px;">${_lxTranslateBtnInner('translate')}</button>` : ''}
+            ${!c.isTeam ? `<button onclick="reportContentById('comment','${c.id || post.id + '_c_' + Math.random().toString(36).slice(2)}','${post.id}')" style="background:none;border:none;color:var(--red);opacity:0.6;cursor:pointer;font-size:0.62rem;padding:0;">🚩 ${I18n.t('feed.report')}</button>` : ''}
+          </div>
         </div>
       </div>
     </div>`;
@@ -10753,15 +10761,19 @@ function _showNotifPopup(icon, text, ts) {
   const popup = document.createElement('div');
   popup.className = 'toast';
   popup.style.cssText = 'border-left:2px solid var(--gold);background:var(--dark3);box-shadow:0 8px 32px rgba(0,0,0,0.7),0 0 0 1px rgba(212,175,55,0.15);';
-  const timeStr = ts ? _notifRelTime(ts) : 'Ora';
+  const timeStr = ts ? _notifRelTime(ts) : (window.I18n ? I18n.t('time.now') : 'Ora');
+  // Translated label for the "NOTIFICA" header
+  const notifLabel = window.I18n ? (I18n.t('notif.popup_label') || 'NOTIFICA') : 'NOTIFICA';
+  // Strip leading emoji from text to avoid duplication (emoji is shown in the icon circle)
+  const cleanText = text.replace(/^[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{1F000}-\u{1F02F}\u{1F0A0}-\u{1F0FF}\u{1F100}-\u{1F1FF}\u{1F200}-\u{1F2FF}\u{1F900}-\u{1F9FF}\u{FE00}-\u{FEFF}✅⚠️❤️💬🔔📢🗑️🔗✏️✓⭐🏠🔒🚩]+\s*/u, '');
   popup.innerHTML = `
     <div class="toast-icon gold">${icon}</div>
     <div style="flex:1;min-width:0;">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:2px;">
-        <div style="font-size:0.62rem;letter-spacing:0.14em;text-transform:uppercase;color:var(--gold);">Notifica</div>
+        <div style="font-size:0.62rem;letter-spacing:0.14em;text-transform:uppercase;color:var(--gold);">${notifLabel}</div>
         <div class="popup-notif-time" style="font-size:0.6rem;color:var(--muted2);" data-ts="${ts||0}">${timeStr}</div>
       </div>
-      <div class="toast-text" style="font-size:0.78rem;">${text}</div>
+      <div class="toast-text" style="font-size:0.78rem;">${cleanText}</div>
     </div>
     <button class="toast-close" onclick="this.parentElement.remove()">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
@@ -13491,13 +13503,18 @@ async function _lxTranslateThread(btn) {
     if (!text) return;
     if (!_lxTranslateCache[cid]) _lxTranslateCache[cid] = { original: isHtml ? el.innerHTML : text };
     const cached = _lxTranslateCache[cid];
-    if (cached.translated) { el.textContent = cached.translated; return; }
+    if (cached.translated) {
+      // Ripristina con renderMentions per mantenere formattazione menzioni
+      el.innerHTML = isHtml ? _renderMentions(cached.translated) : cached.translated;
+      return;
+    }
     try {
       const res = await fetch(`https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=${from}|${lang}`);
       const data = await res.json();
       if (data.responseStatus === 200 && data.responseData?.translatedText) {
         cached.translated = data.responseData.translatedText;
-        el.textContent = cached.translated;
+        // Applica renderMentions per preservare formattazione menzioni nel testo tradotto
+        el.innerHTML = isHtml ? _renderMentions(cached.translated) : cached.translated;
       }
     } catch(_e) {}
   };
@@ -13798,7 +13815,17 @@ function _lxRestoreTranslations(container) {
     const wrap = el.nextElementSibling;
     if (wrap?.classList?.contains('lx-translate-wrap')) {
       const btn = wrap.querySelector('.lx-translate-btn');
-      el.textContent = cached.translated;
+      el.innerHTML = cached.translated;
+      el.dataset.lxTranslated = '1';
+      if (btn) btn.innerHTML = _lxTranslateBtnInner('restore');
+      return;
+    }
+
+    // Pattern C: commenti con pulsante .comment-translate-btn nel sibling .comment-time
+    const bubble = el.closest('.comment-bubble');
+    if (bubble) {
+      const btn = bubble.querySelector('.comment-translate-btn');
+      el.innerHTML = cached.translated;
       el.dataset.lxTranslated = '1';
       if (btn) btn.innerHTML = _lxTranslateBtnInner('restore');
       return;
@@ -13825,6 +13852,10 @@ function _lxUpdateTranslateVisibility(container) {
   // Pulsanti lx-translate (titoli)
   container.querySelectorAll('.lx-translate-wrap').forEach(wrap => {
     wrap.style.display = autoOn ? 'none' : '';
+  });
+  // Pulsanti commenti inline
+  container.querySelectorAll('.comment-translate-btn').forEach(btn => {
+    btn.style.display = autoOn ? 'none' : '';
   });
   // Pulsanti ContentTranslator (body text) — nasconde/mostra il loro contenitore
   container.querySelectorAll('.ct-translate-btn, .ct-original-btn').forEach(btn => {
@@ -13925,7 +13956,7 @@ function _lxRestoreAllToOriginal(containers) {
       const contentId = el.dataset.contentId;
       const cached = contentId ? _lxTranslateCache[contentId] : null;
       if (cached && cached.original) {
-        el.textContent = cached.original;
+        el.innerHTML = cached.original;
       }
       el.dataset.lxTranslated = '0';
       // Reimposta il pulsante su "Translate"
@@ -13976,7 +14007,7 @@ async function _lxTranslate(btn, contentId, sourceLang) {
   if (target.dataset.lxTranslated === '1') {
     const cached = _lxTranslateCache[contentId];
     if (cached) {
-      target.textContent = cached.original;
+      target.innerHTML = cached.original;
       target.dataset.lxTranslated = '0';
       btn.innerHTML = _lxTranslateBtnInner('translate');
     }
@@ -13985,7 +14016,7 @@ async function _lxTranslate(btn, contentId, sourceLang) {
 
   // Usa cache se disponibile
   if (_lxTranslateCache[contentId]?.translated) {
-    target.textContent = _lxTranslateCache[contentId].translated;
+    target.innerHTML = _lxTranslateCache[contentId].translated;
     target.dataset.lxTranslated = '1';
     btn.innerHTML = _lxTranslateBtnInner('restore');
     return;
@@ -13997,12 +14028,15 @@ async function _lxTranslate(btn, contentId, sourceLang) {
   try {
     const from = sourceLang || 'it';
     const to   = targetLang;
+    const originalHTML = target.innerHTML;
+    const originalText = target.textContent.trim();
+    if (!originalText) { btn.classList.remove('loading'); btn.innerHTML = _lxTranslateBtnInner('translate'); return; }
     const url  = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(originalText)}&langpair=${from}|${to}`;
     const res  = await fetch(url);
     const data = await res.json();
     if (data.responseStatus === 200 && data.responseData?.translatedText) {
-      _lxTranslateCache[contentId] = { original: originalText, translated: data.responseData.translatedText };
-      target.textContent = data.responseData.translatedText;
+      _lxTranslateCache[contentId] = { original: originalHTML, translated: data.responseData.translatedText };
+      target.innerHTML = data.responseData.translatedText;
       target.dataset.lxTranslated = '1';
       btn.classList.remove('loading');
       btn.innerHTML = _lxTranslateBtnInner('restore');
@@ -14035,6 +14069,61 @@ function _lxTranslateWrap(contentId, sourceLang) {
   const curLang = (window.I18n && I18n.getCurrentLanguage) ? I18n.getCurrentLanguage() : 'it';
   if (curLang === (sourceLang || 'it')) return '';  // stessa lingua — non mostrare
   return `<div class="lx-translate-wrap"><button class="lx-translate-btn" onclick="event.stopPropagation();_lxTranslate(this,'${contentId}','${sourceLang||'it'}')">${_lxTranslateBtnInner('translate')}</button></div>`;
+}
+
+/* ── Traduzione commenti inline (pulsante accanto a Report) ── */
+async function _commentTranslate(btn, contentId, sourceLang) {
+  const target = document.querySelector(`[data-content-id="${CSS.escape(contentId)}"]`);
+  if (!target) return;
+
+  const targetLang = (window.I18n && I18n.getCurrentLanguage) ? I18n.getCurrentLanguage() : 'en';
+  const isTranslated = target.dataset.lxTranslated === '1';
+
+  // Ripristina originale se già tradotto
+  if (isTranslated) {
+    const cached = _lxTranslateCache[contentId];
+    if (cached?.original) {
+      target.innerHTML = cached.original;
+      target.dataset.lxTranslated = '0';
+    }
+    btn.innerHTML = _lxTranslateBtnInner('translate');
+    return;
+  }
+
+  // Usa cache se disponibile
+  if (_lxTranslateCache[contentId]?.translated) {
+    const cached = _lxTranslateCache[contentId];
+    target.innerHTML = cached.translated;
+    target.dataset.lxTranslated = '1';
+    btn.innerHTML = _lxTranslateBtnInner('restore');
+    return;
+  }
+
+  // Chiama API
+  btn.innerHTML = _lxTranslateBtnInner('loading');
+  btn.classList.add('loading');
+  try {
+    const originalHTML = target.innerHTML;
+    const originalText = target.textContent.trim();
+    if (!originalText) { btn.classList.remove('loading'); btn.innerHTML = _lxTranslateBtnInner('translate'); return; }
+    const from = sourceLang || 'it';
+    const url = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(originalText)}&langpair=${from}|${targetLang}`;
+    const res = await fetch(url);
+    const data = await res.json();
+    if (data.responseStatus === 200 && data.responseData?.translatedText) {
+      const translated = data.responseData.translatedText;
+      _lxTranslateCache[contentId] = { original: originalHTML, translated };
+      target.innerHTML = translated;
+      target.dataset.lxTranslated = '1';
+      btn.classList.remove('loading');
+      btn.innerHTML = _lxTranslateBtnInner('restore');
+    } else {
+      throw new Error('API error');
+    }
+  } catch(e) {
+    btn.classList.remove('loading');
+    btn.innerHTML = _lxTranslateBtnInner('translate');
+  }
 }
 
 </script>
