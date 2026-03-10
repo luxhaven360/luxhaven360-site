@@ -3710,11 +3710,15 @@ Object.assign(window.I18N_TRANSLATIONS['es'] || (window.I18N_TRANSLATIONS['es']=
   </style>
   <script>
   (function() {
-    var BANNER_INTERVAL_MS = 360 * 60 * 1000;
-    var BANNER_VISIBLE_MS  = 10 * 1000;
-    var _bannerHideTimer = null;
-    var _bannerIntervalId = null;
+    var BANNER_INTERVAL_MS = 360 * 60 * 1000; // 6 ore — intervallo periodico
+    var BANNER_VISIBLE_MS  = 10 * 1000;        // 10 secondi visibile
+    var BANNER_DELAY_MS    = 4 * 1000;         // 4 secondi dopo il login
 
+    var _bannerHideTimer   = null;
+    var _bannerIntervalId  = null;
+    var _bannerInitialized = false; // guard: initApp può chiamare _lxInitBanner più volte
+
+    // ── Risolve il testo nella lingua corrente ─────────────────────────────
     function _lxGetBannerText() {
       if (window.I18n && I18n.t) {
         var t = I18n.t('banner.improvement');
@@ -3731,13 +3735,14 @@ Object.assign(window.I18N_TRANSLATIONS['es'] || (window.I18N_TRANSLATIONS['es']=
       return fallbacks[lang] || fallbacks['it'];
     }
 
+    // ── Mostra il banner e avvia il timer di auto-chiusura ──────────────────
     window._lxShowBanner = function() {
       var b   = document.getElementById('lxImprovementBanner');
       var txt = document.getElementById('lxBannerText');
       if (!b || !txt) return;
       txt.textContent = _lxGetBannerText();
       b.style.display = 'flex';
-      b.offsetHeight;
+      b.offsetHeight; // reflow per attivare l'animazione
       b.style.opacity = '1';
       b.style.animation = 'lxBannerSlideIn 0.45s ease';
       clearTimeout(_bannerHideTimer);
@@ -3748,7 +3753,15 @@ Object.assign(window.I18N_TRANSLATIONS['es'] || (window.I18N_TRANSLATIONS['es']=
       }, BANNER_VISIBLE_MS);
     };
 
-    document.addEventListener('DOMContentLoaded', function() {
+    // ── Inizializza il sistema banner post-login ────────────────────────────
+    // Chiamato da initApp() sia dopo login manuale che dopo auto-auth da sessione.
+    // Il guard _bannerInitialized evita doppi intervalli se initApp viene
+    // richiamato più volte nella stessa sessione.
+    window._lxInitBanner = function() {
+      if (_bannerInitialized) return;
+      _bannerInitialized = true;
+
+      // Aggancia il pulsante ✕ (una sola volta)
       var closeBtn = document.getElementById('lxBannerClose');
       if (closeBtn) {
         closeBtn.addEventListener('click', function() {
@@ -3761,11 +3774,15 @@ Object.assign(window.I18N_TRANSLATIONS['es'] || (window.I18N_TRANSLATIONS['es']=
           }
         });
       }
+
+      // Prima apparizione: pochi secondi dopo il login
       setTimeout(function() {
         window._lxShowBanner();
+        // Intervallo periodico che parte dall'orario del primo show
         _bannerIntervalId = setInterval(window._lxShowBanner, BANNER_INTERVAL_MS);
-      }, 45 * 1000);
-    });
+      }, BANNER_DELAY_MS);
+    };
+
   })();
   </script>
   <!-- ── Fine banner ──────────────────────────────────────────── -->
@@ -4987,6 +5004,11 @@ function logout() {
    INIT APP
 ═══════════════════════════════════════════ */
 function initApp() {
+  // ── Avvia il sistema banner post-login ──────────────────────────────────────
+  // _lxInitBanner è idempotente: il guard interno evita doppi intervalli
+  // anche se initApp viene richiamata più volte (login manuale + auto-auth).
+  if (typeof window._lxInitBanner === 'function') window._lxInitBanner();
+
   // ── Cache bust: rimuovi tutte le versioni precedenti della cache community ──
   // Questo garantisce che dati statici vecchi non vengano mai caricati dal browser
   // Rimuovi tutte le versioni precedenti di cache (community + stats)
