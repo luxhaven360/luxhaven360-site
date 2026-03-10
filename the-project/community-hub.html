@@ -2173,6 +2173,18 @@ mark.hl { background: rgba(212,175,55,0.22); color: var(--gold-light); border-ra
   }
   .lx-translate-btn:active { opacity: 0.65; }
   .lx-translate-btn svg { display: none; }
+
+  /* ---- Nascondi tutti i pulsanti Traduci quando disabilitate ---- */
+  body.lx-trans-disabled .lx-translate-btn,
+  body.lx-trans-disabled .ct-translate-btn,
+  body.lx-trans-disabled .ct-original-btn,
+  body.lx-trans-disabled .comment-translate-btn,
+  body.lx-trans-disabled #threadTranslateRow,
+  body.lx-trans-disabled [id$="TranslateBtn"],
+  body.lx-trans-disabled .lx-translate-wrap,
+  body.lx-trans-disabled .ct-auto-translate-row,
+  body.lx-trans-disabled [data-ct-auto],
+  body.lx-trans-disabled .lx-auto-translate-toggle { display: none !important; }
   .lx-translate-btn.loading {
     opacity: 0.45;
     pointer-events: none;
@@ -2538,6 +2550,7 @@ Object.assign(window.I18N_TRANSLATIONS['it'] || (window.I18N_TRANSLATIONS['it']=
   'chat.step_update':         'Aggiornamento conversazione',
   'chat.step_sync':           'Sincronizzazione dati',
   'chat.deleted_title':       'Cronologia eliminata',
+  'banner.improvement': 'Stiamo aggiornando progressivamente i contenuti della community — post, messaggi, listing, thread e commenti saranno migliorati nei prossimi giorni.',
   'chat.deleted_sub':         "I messaggi sono stati rimossi dal tuo account. L'altro membro non è stato influenzato.",
 });
 // Estensioni EN
@@ -2830,6 +2843,7 @@ Object.assign(window.I18N_TRANSLATIONS['en'] || (window.I18N_TRANSLATIONS['en']=
   'chat.step_update':         'Updating conversation',
   'chat.step_sync':           'Syncing data',
   'chat.deleted_title':       'History deleted',
+  'banner.improvement': 'We are progressively improving community content — posts, messages, listings, threads and comments will be enhanced over the coming days.',
   'chat.deleted_sub':         "Messages have been removed from your account. The other member was not affected.",
 });
 // Estensioni FR
@@ -3048,6 +3062,7 @@ Object.assign(window.I18N_TRANSLATIONS['fr'] || (window.I18N_TRANSLATIONS['fr']=
   'chat.step_update':         'Mise à jour de la conversation',
   'chat.step_sync':           'Synchronisation des données',
   'chat.deleted_title':       'Historique supprimé',
+  'banner.improvement': 'Nous mettons progressivement à jour le contenu de la communauté — posts, messages, listings, fils et commentaires seront améliorés dans les prochains jours.',
   'chat.deleted_sub':         "Les messages ont été supprimés de votre compte. L'autre membre n'a pas été affecté.",
 });
 // Estensioni DE
@@ -3263,6 +3278,7 @@ Object.assign(window.I18N_TRANSLATIONS['de'] || (window.I18N_TRANSLATIONS['de']=
   'chat.step_update':         'Gespräch aktualisieren',
   'chat.step_sync':           'Daten synchronisieren',
   'chat.deleted_title':       'Verlauf gelöscht',
+  'banner.improvement': 'Wir aktualisieren die Community-Inhalte schrittweise — Beiträge, Nachrichten, Listings, Threads und Kommentare werden in den nächsten Tagen verbessert.',
   'chat.deleted_sub':         "Nachrichten wurden von Ihrem Konto entfernt. Das andere Mitglied wurde nicht beeinträchtigt.",
 });
 // Estensioni ES
@@ -3478,6 +3494,7 @@ Object.assign(window.I18N_TRANSLATIONS['es'] || (window.I18N_TRANSLATIONS['es']=
   'chat.step_update':         'Actualizando conversación',
   'chat.step_sync':           'Sincronizando datos',
   'chat.deleted_title':       'Historial eliminado',
+  'banner.improvement': 'Estamos mejorando progresivamente el contenido de la comunidad — publicaciones, mensajes, listings, hilos y comentarios serán mejorados en los próximos días.',
   'chat.deleted_sub':         "Los mensajes han sido eliminados de tu cuenta. El otro miembro no fue afectado.",
 });
 </script>
@@ -3669,37 +3686,89 @@ Object.assign(window.I18N_TRANSLATIONS['es'] || (window.I18N_TRANSLATIONS['es']=
     </div>
   </header>
 
-  <!-- ── Banner miglioramento contenuti (auto-hide 14s) ─────────────────────── -->
+  <!-- ── Banner miglioramento contenuti — periodico, i18n-aware ───────────── -->
   <div id="lxImprovementBanner" style="
-    background: linear-gradient(90deg, rgba(28,22,10,0.96) 0%, rgba(38,30,10,0.96) 100%);
+    display:none; opacity:0;
+    background: linear-gradient(90deg, rgba(28,22,10,0.97) 0%, rgba(38,30,10,0.97) 100%);
     border-bottom: 1px solid rgba(212,175,55,0.2);
     padding: 0.5rem 1.1rem;
-    display: flex; align-items: center; justify-content: space-between; gap: 0.8rem;
-    font-size: 0.73rem; color: rgba(212,175,55,0.8); font-weight: 500;
-    animation: lxBannerSlideIn 0.45s ease; position: relative; z-index: 10;
-  ">
+    flex-direction:row; align-items:center; justify-content:space-between; gap:0.8rem;
+    font-size: 0.73rem; color: rgba(212,175,55,0.82); font-weight: 500;
+    position: relative; z-index: 10; transition: opacity 0.45s ease;
+  " role="status" aria-live="polite">
     <span style="display:flex; align-items:center; gap:0.5rem; flex:1; min-width:0;">
-      <span style="font-size:0.9rem; flex-shrink:0;">🛠️</span>
-      <span style="line-height:1.5;">
-        Stiamo aggiornando progressivamente i contenuti della community — post, messaggi, listing, thread e commenti saranno migliorati nei prossimi giorni.
-      </span>
+      <span style="font-size:0.9rem; flex-shrink:0;" aria-hidden="true">🛠️</span>
+      <span id="lxBannerText" style="line-height:1.5;"></span>
     </span>
-    <button onclick="(function(){var b=document.getElementById('lxImprovementBanner');if(b){b.style.transition='opacity 0.4s';b.style.opacity='0';setTimeout(function(){b.style.display='none'},400);}})()"
+    <button id="lxBannerClose"
       style="background:none;border:none;cursor:pointer;color:rgba(212,175,55,0.4);font-size:1rem;
              padding:0.1rem 0.25rem;flex-shrink:0;line-height:1;font-family:inherit;"
       aria-label="Chiudi">✕</button>
   </div>
   <style>
-    @keyframes lxBannerSlideIn { from { opacity:0; transform:translateY(-8px); } to { opacity:1; transform:translateY(0); } }
+    @keyframes lxBannerSlideIn { from { opacity:0; transform:translateY(-6px); } to { opacity:1; transform:translateY(0); } }
   </style>
   <script>
-    setTimeout(function() {
-      var b = document.getElementById('lxImprovementBanner');
-      if (b) { b.style.transition = 'opacity 0.6s'; b.style.opacity = '0';
-               setTimeout(function(){ if(b) b.style.display='none'; }, 600); }
-    }, 14000);
+  (function() {
+    var BANNER_INTERVAL_MS = 360 * 60 * 1000;
+    var BANNER_VISIBLE_MS  = 10 * 1000;
+    var _bannerHideTimer = null;
+    var _bannerIntervalId = null;
+
+    function _lxGetBannerText() {
+      if (window.I18n && I18n.t) {
+        var t = I18n.t('banner.improvement');
+        if (t && t !== 'banner.improvement') return t;
+      }
+      var lang = (window.I18n && I18n.getCurrentLanguage) ? I18n.getCurrentLanguage() : 'it';
+      var fallbacks = {
+        it: 'Stiamo aggiornando progressivamente i contenuti della community — post, messaggi, listing, thread e commenti saranno migliorati nei prossimi giorni.',
+        en: 'We are progressively improving community content — posts, messages, listings, threads and comments will be enhanced over the coming days.',
+        fr: 'Nous mettons progressivement à jour le contenu de la communauté — posts, messages, listings, fils et commentaires seront améliorés dans les prochains jours.',
+        de: 'Wir aktualisieren die Community-Inhalte schrittweise — Beiträge, Nachrichten, Listings, Threads und Kommentare werden in den nächsten Tagen verbessert.',
+        es: 'Estamos mejorando progresivamente el contenido de la comunidad — publicaciones, mensajes, listings, hilos y comentarios serán mejorados en los próximos días.'
+      };
+      return fallbacks[lang] || fallbacks['it'];
+    }
+
+    window._lxShowBanner = function() {
+      var b   = document.getElementById('lxImprovementBanner');
+      var txt = document.getElementById('lxBannerText');
+      if (!b || !txt) return;
+      txt.textContent = _lxGetBannerText();
+      b.style.display = 'flex';
+      b.offsetHeight;
+      b.style.opacity = '1';
+      b.style.animation = 'lxBannerSlideIn 0.45s ease';
+      clearTimeout(_bannerHideTimer);
+      _bannerHideTimer = setTimeout(function() {
+        b.style.transition = 'opacity 0.5s';
+        b.style.opacity = '0';
+        setTimeout(function() { if (b) b.style.display = 'none'; }, 520);
+      }, BANNER_VISIBLE_MS);
+    };
+
+    document.addEventListener('DOMContentLoaded', function() {
+      var closeBtn = document.getElementById('lxBannerClose');
+      if (closeBtn) {
+        closeBtn.addEventListener('click', function() {
+          clearTimeout(_bannerHideTimer);
+          var b = document.getElementById('lxImprovementBanner');
+          if (b) {
+            b.style.transition = 'opacity 0.3s';
+            b.style.opacity = '0';
+            setTimeout(function() { if (b) b.style.display = 'none'; }, 320);
+          }
+        });
+      }
+      setTimeout(function() {
+        window._lxShowBanner();
+        _bannerIntervalId = setInterval(window._lxShowBanner, BANNER_INTERVAL_MS);
+      }, 45 * 1000);
+    });
+  })();
   </script>
-  <!-- ── Fine banner ─────────────────────────────────────────────────────────── -->
+  <!-- ── Fine banner ──────────────────────────────────────────── -->
   <main id="mainContent">
 
     <!-- ═══ DASHBOARD ═══ -->
@@ -5617,6 +5686,11 @@ const _LX_MAX_RETRIES     = 2;         // retry per singolo endpoint prima di pa
 let _lxTestModeActive = false;
 try { _lxTestModeActive = sessionStorage.getItem('lx_test_mode') === '1'; } catch(e) {}
 
+// Applica body class subito in base allo stato iniziale
+document.addEventListener('DOMContentLoaded', function() {
+  document.body.classList.toggle('lx-trans-disabled', !window._lxTestModeActive);
+});
+
 // ── Cache in memoria: evita di ritradurre lo stesso testo più volte ──────
 // Struttura: Map<"from|to|text" → translatedText>
 const _lxMemCache = new Map();
@@ -5818,7 +5892,6 @@ function _lxLoadPlatformSettings() {
  * Chiamata sia al caricamento che ad ogni modifica RT.
  */
 function _lxApplyGlobalTranslationFlag(enabled) {
-  // Non sovrascrivere se il team ha attivato la modalità test locale
   const localTestOn = (function() {
     try { return sessionStorage.getItem('lx_test_mode') === '1'; } catch(e) { return false; }
   })();
@@ -5826,14 +5899,20 @@ function _lxApplyGlobalTranslationFlag(enabled) {
     window._lxTestModeActive = enabled;
   }
 
-  // Aggiorna pulsante "Pubblica" nel pannello test se aperto
+  // Toggle body class: nasconde/mostra tutti i pulsanti Traduci
+  const showButtons = window._lxTestModeActive;
+  document.body.classList.toggle('lx-trans-disabled', !showButtons);
+
+  // Disabilita ContentTranslator auto-translate quando nascosto
+  if (!showButtons && window.ContentTranslator && ContentTranslator.setAutoTranslate) {
+    ContentTranslator.setAutoTranslate(false);
+  }
+
   const pubBtn = document.getElementById('lxTpPublishBtn');
   if (pubBtn) {
     pubBtn.textContent     = enabled ? '🌐 Disabilita per tutti' : '🌐 Pubblica per tutti';
     pubBtn.dataset.enabled = enabled ? '1' : '0';
-    pubBtn.className       = enabled
-      ? 'lx-tp-btn danger'
-      : 'lx-tp-btn success';
+    pubBtn.className       = enabled ? 'lx-tp-btn danger' : 'lx-tp-btn success';
   }
   const pubStatus = document.getElementById('lxTpPublishStatus');
   if (pubStatus) {
