@@ -5483,13 +5483,26 @@ function initApp() {
       if (window.ContentTranslator) ContentTranslator.onUserLanguageChange(_newLang);
       // Cancella cache traduzioni lx-translate (lingua cambiata → vecchie traduzioni non valide)
       Object.keys(_lxTranslateCache).forEach(k => delete _lxTranslateCache[k]);
-      // Se un thread è aperto: rigenera il titolo con il pulsante Traduci per la nuova lingua
+      // Se un thread è aperto: aggiorna titolo, badge e contenuti
       if (currentThreadId) {
         const _openThread = DISCUSSIONS.find(d => d.id === currentThreadId);
         if (_openThread) {
           const _titleEl = document.getElementById('threadDetailTitle');
           if (_titleEl) {
             _titleEl.innerHTML = `<span data-content-id="disc-detail-title-${_openThread.id}" data-content-lang="${_openThread.lang||'it'}">${_openThread.title}</span>`;
+          }
+          // Ri-applica auto-traduzione ai messaggi se auto-translate attivo
+          const _msgContainer = document.getElementById('threadDetailMessages');
+          if (_msgContainer) {
+            const _autoOnLang = window.ContentTranslator && ContentTranslator.getAutoTranslateSetting && ContentTranslator.getAutoTranslateSetting();
+            if (_autoOnLang && _newLang && _newLang !== 'it') {
+              _msgContainer.querySelectorAll('.thread-msg-text[data-lx-translated]').forEach(el => {
+                el.dataset.lxTranslated = '0';
+                const cid = el.dataset.contentId;
+                if (cid && _lxTranslateCache[cid]) delete _lxTranslateCache[cid].translated;
+              });
+              _lxAutoTranslateThreadMessages(_msgContainer);
+            }
           }
           // Aggiorna visibilità e stato del pulsante globale "Traduci thread"
           const _tRow = document.getElementById('threadTranslateRow');
@@ -5499,6 +5512,11 @@ function initApp() {
             const _tBtn = document.getElementById('threadTranslateBtn');
             if (_tBtn) { _tBtn.innerHTML = _lxTranslateBtnInner('translate'); delete _tBtn.dataset.lxRestoreThread; }
           }
+          // Aggiorna meta info del thread (category badge)
+          document.getElementById('threadDetailMeta').innerHTML = `
+            <span class="thread-category ${_openThread.category}">${I18n.t('disc.cat.' + _openThread.category) || _openThread.category}</span>
+            ${_openThread.pinned ? `<span class="thread-pinned">📌 ${I18n.t('badge.pinned')}</span>` : ''}
+          `;
         }
       }
       // Aggiorna visibilità pulsanti Translate in base a auto-translate
@@ -7568,17 +7586,13 @@ function renderPostComments(post, container) {
       </button>
     </div>`;
   container.innerHTML = rows + inputRow;
-  // Aggiorna visibilità pulsanti translate + auto-traduce commenti se auto ON
+  // Aggiorna visibilità pulsanti translate
   _lxUpdateTranslateVisibility(container);
+  // Se auto-translate ON: traduce direttamente i testi dei commenti (approccio diretto)
   if (window.ContentTranslator && ContentTranslator.getAutoTranslateSetting && ContentTranslator.getAutoTranslateSetting()) {
     const lang = window.I18n ? I18n.getCurrentLanguage() : 'it';
     if (lang && lang !== 'it') {
-      // Auto-traduce ogni commento tramite il suo pulsante .comment-translate-btn
-      container.querySelectorAll('.comment-translate-btn').forEach(btn => {
-        if (btn.dataset.lxRestore !== '1' && !btn.classList.contains('loading')) {
-          btn.click();
-        }
-      });
+      _lxAutoTranslateComments(container);
     }
   }
 }
@@ -7726,6 +7740,70 @@ function openThread(id) {
   document.body.style.overflow = 'hidden';
 }
 
+/* ── LX Translate: auto-traduce i messaggi del thread aperto ──────────────
+   Usa la stessa API di traduzione degli altri contenuti.
+   Protegge le menzioni (@Nome) dai placeholder prima della traduzione.
+   ──────────────────────────────────────────────────────────────────────── */
+async function _lxAutoTranslateThreadMessages(container) {
+  if (!container) return;
+  if (!window.I18n) return;
+  const lang = I18n.getCurrentLanguage();
+  if (!lang || lang === 'it') return;
+
+  const msgEls = container.querySelectorAll('.thread-msg-text[data-content-id]');
+  for (const el of msgEls) {
+    const cid = el.dataset.contentId;
+    if (!cid) continue;
+    const from = el.dataset.contentLang || 'it';
+    if (from === lang) continue;
+    if (el.dataset.lxTranslated === '1') continue;
+
+    const rawText = el.textContent.trim();
+    if (!rawText) continue;
+
+    // Usa cache se disponibile
+    if (_lxTranslateCache[cid]?.translated) {
+      el.innerHTML = _renderMentions(_lxTranslateCache[cid].translated);
+      el.dataset.lxTranslated = '1';
+      continue;
+    }
+
+    // Salva originale HTML (con chip menzione) e proteggi menzioni prima della traduzione
+    if (!_lxTranslateCache[cid]) _lxTranslateCache[cid] = { original: el.innerHTML };
+
+    // Proteggi @menzioni con placeholder
+    const mentionMap = [];
+    const knownNames = _getMentionNames();
+    let safeText = rawText;
+    if (knownNames.length > 0) {
+      knownNames.forEach(name => {
+        const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const re = new RegExp('@(' + escaped + ')(?=\s|$|[^A-Za-zÀ-ÿ0-9])', 'g');
+        safeText = safeText.replace(re, (match, n) => {
+          const ph = `__TM_${mentionMap.length}__`;
+          mentionMap.push(n);
+          return ph;
+        });
+      });
+    }
+
+    try {
+      const res = await fetch(`https://api.mymemory.translated.net/get?q=${encodeURIComponent(safeText)}&langpair=${from}|${lang}`);
+      const data = await res.json();
+      if (data.responseStatus === 200 && data.responseData?.translatedText) {
+        let translated = data.responseData.translatedText;
+        // Ripristina menzioni
+        mentionMap.forEach((name, i) => {
+          translated = translated.replace(`__TM_${i}__`, '@' + name);
+        });
+        _lxTranslateCache[cid].translated = translated;
+        el.innerHTML = _renderMentions(translated);
+        el.dataset.lxTranslated = '1';
+      }
+    } catch(_e) {}
+  }
+}
+
 function renderThreadMessages(id) {
   const messages = THREAD_MESSAGES[id] || [];
   const container = document.getElementById('threadDetailMessages');
@@ -7769,11 +7847,11 @@ function renderThreadMessages(id) {
   container.scrollTop = container.scrollHeight;
   // Aggiorna visibilità pulsante globale thread translate
   _lxUpdateTranslateVisibility(container);
-  // Se auto-translate ON: traduce automaticamente i messaggi del thread
+  // Se auto-translate ON: traduce automaticamente i messaggi del thread (approccio diretto)
   if (window.ContentTranslator && ContentTranslator.getAutoTranslateSetting && ContentTranslator.getAutoTranslateSetting()) {
     const lang = window.I18n ? I18n.getCurrentLanguage() : 'it';
     if (lang && lang !== 'it') {
-      if (window.ContentTranslator) ContentTranslator.processNewContent(container);
+      _lxAutoTranslateThreadMessages(container);
     }
   }
 }
@@ -13659,12 +13737,29 @@ async function _lxTranslateThread(btn) {
   // poi ripristina i chip menzione nel testo tradotto preservando formattazione e onclick
   const _protectMentions = (text) => {
     const map = [];
-    const protected_ = text.replace(/@([A-ZÀ-Ÿ][A-Za-zÀ-ÿ0-9.]*(?:\s[A-ZÀ-Ÿ0-9][A-Za-zÀ-ÿ0-9.]*){0,3})/g, (match, name) => {
-      const ph = `__MENTION_${map.length}__`;
-      map.push(name);
-      return ph;
-    });
-    return { protected: protected_, map };
+    let result = text;
+    // Usa nomi noti (exact match, lunghezza desc) per protezione precisa delle menzioni
+    const knownNames = _getMentionNames();
+    if (knownNames.length > 0) {
+      // Sostituisce @NomeNoto con placeholder — ordine lunghezza desc evita match parziali
+      knownNames.forEach(name => {
+        const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const re = new RegExp('@(' + escaped + ')(?=\\s|$|[^A-Za-zÀ-ÿ0-9])', 'g');
+        result = result.replace(re, (match, n) => {
+          const ph = `__MENTION_${map.length}__`;
+          map.push(n);
+          return ph;
+        });
+      });
+    } else {
+      // Fallback conservativo: solo @Parola (singola parola con iniziale maiuscola)
+      result = result.replace(/@([A-ZÀ-Ÿ][A-Za-zÀ-ÿ0-9.]+)/g, (match, name) => {
+        const ph = `__MENTION_${map.length}__`;
+        map.push(name);
+        return ph;
+      });
+    }
+    return { protected: result, map };
   };
   const _restoreMentions = (translatedText, map) => {
     let result = translatedText;
@@ -14086,6 +14181,45 @@ function _lxUpdateAllTranslateVisibility() {
    (surveys, listings, events, post, commenti).
    Chiamata sia da _patchCTAutoTranslate sia da renderListings/renderSurveys
    ─────────────────────────────────────────────────────────────────────── */
+/* ── LX Translate: auto-traduce commenti in un container direttamente ──────
+   Evita dipendenze da visibilità pulsanti — agisce direttamente sugli elementi
+   di testo dei commenti con data-content-id="comment-..." ── */
+async function _lxAutoTranslateComments(container) {
+  if (!container) return;
+  if (!window.I18n) return;
+  const lang = I18n.getCurrentLanguage();
+  if (!lang || lang === 'it') return;
+
+  const commentEls = container.querySelectorAll('.comment-text[data-content-id]');
+  for (const el of commentEls) {
+    const cid = el.dataset.contentId;
+    if (!cid) continue;
+    const from = el.dataset.contentLang || 'it';
+    if (from === lang) continue;
+    if (el.dataset.lxTranslated === '1') continue;
+    const originalText = el.textContent.trim();
+    if (!originalText) continue;
+    // Usa cache se disponibile
+    if (_lxTranslateCache[cid]?.translated) {
+      el.innerHTML = _lxTranslateCache[cid].translated;
+      el.dataset.lxTranslated = '1';
+      continue;
+    }
+    // Salva originale e traduci
+    if (!_lxTranslateCache[cid]) _lxTranslateCache[cid] = { original: el.innerHTML };
+    try {
+      const res = await fetch(`https://api.mymemory.translated.net/get?q=${encodeURIComponent(originalText)}&langpair=${from}|${lang}`);
+      const data = await res.json();
+      if (data.responseStatus === 200 && data.responseData?.translatedText) {
+        const translated = data.responseData.translatedText;
+        _lxTranslateCache[cid].translated = translated;
+        el.innerHTML = translated;
+        el.dataset.lxTranslated = '1';
+      }
+    } catch(_e) {}
+  }
+}
+
 function _lxAutoTranslateAllIn(container) {
   if (!container) return;
   if (!window.ContentTranslator || !ContentTranslator.getAutoTranslateSetting) return;
@@ -14110,11 +14244,8 @@ function _lxAutoTranslateAllIn(container) {
     btn.click();
   });
 
-  // 3. Pulsanti commenti inline nei post (auto-traduce anche i commenti)
-  container.querySelectorAll('.comment-translate-btn').forEach(btn => {
-    if (btn.dataset.lxRestore === '1' || btn.classList.contains('loading')) return;
-    btn.click();
-  });
+  // 3. Commenti inline nei post — traduzione diretta (non dipende dalla visibilità dei pulsanti)
+  _lxAutoTranslateComments(container);
 }
 
 /* ── LX Translate: auto-traduce attività recenti (dashboard) ── */
@@ -14204,11 +14335,13 @@ function _lxRestoreActivitiesAndPreview() {
         const currentLang = window.I18n ? I18n.getCurrentLanguage() : 'it';
         if (currentLang && currentLang !== 'it') {
 
-          // 2. Auto-traduce feed (titoli post + body via CT)
+          // 2. Auto-traduce feed (titoli post + body via CT + commenti)
           const feedC = document.getElementById('feedContainer');
           if (feedC) {
             _lxAutoTranslateAllIn(feedC);
             if (window.ContentTranslator) ContentTranslator.processNewContent(feedC);
+            // Traduzione diretta commenti (non dipende da visibilità pulsanti)
+            _lxAutoTranslateComments(feedC);
           }
 
           // 3. Auto-traduce discussioni (titoli thread)
@@ -14220,7 +14353,8 @@ function _lxRestoreActivitiesAndPreview() {
           if (threadTitle) _lxAutoTranslateTitlesIn(threadTitle);
           const threadMsgs = document.getElementById('threadDetailMessages');
           if (threadMsgs) {
-            if (window.ContentTranslator) ContentTranslator.processNewContent(threadMsgs);
+            // Traduzione diretta dei messaggi del thread (non dipende da ContentTranslator)
+            _lxAutoTranslateThreadMessages(threadMsgs);
           }
 
           // 5. Auto-traduce listing esclusivi
@@ -14537,3 +14671,4 @@ async function _commentTranslate(btn, contentId, sourceLang) {
 
 </body>
 </html>
+
