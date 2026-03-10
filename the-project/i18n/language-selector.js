@@ -13,6 +13,57 @@
 (function (global) {
   'use strict';
 
+  // ─── TEAM MODE (combinazione segreta TESTTRAD) ───────────────────────────────
+  // L'auto-traduzione è disabilitata per tutti gli utenti per default.
+  // Il team interno può sbloccarla temporaneamente digitando la sequenza
+  // "TESTTRAD" in qualsiasi momento sulla pagina.
+
+  const TEAM_SECRET     = 'TESTTRAD';
+  const TEAM_MODE_KEY   = 'ls_team_mode';
+
+  // Legge lo stato team mode dalla sessionStorage (si azzera alla chiusura tab)
+  function isTeamModeActive() {
+    try { return sessionStorage.getItem(TEAM_MODE_KEY) === '1'; } catch (e) { return false; }
+  }
+
+  function enableTeamMode() {
+    try { sessionStorage.setItem(TEAM_MODE_KEY, '1'); } catch (e) { /* silenzio */ }
+  }
+
+  // Ascoltatore globale per la sequenza segreta TESTTRAD
+  // (ignora eventi su <input>, <textarea>, <select> per non interferire con la digitazione)
+  ;(function initTeamModeListener() {
+    let buffer = '';
+    document.addEventListener('keydown', function (e) {
+      const tag = (e.target && e.target.tagName) ? e.target.tagName.toUpperCase() : '';
+      const isEditable = ['INPUT', 'TEXTAREA', 'SELECT'].includes(tag) ||
+                         (e.target && e.target.isContentEditable);
+      if (isEditable) { buffer = ''; return; }
+
+      buffer += e.key.toUpperCase();
+      // Mantieni solo gli ultimi N caratteri pari alla lunghezza del segreto
+      if (buffer.length > TEAM_SECRET.length) {
+        buffer = buffer.slice(buffer.length - TEAM_SECRET.length);
+      }
+      if (buffer === TEAM_SECRET) {
+        buffer = '';
+        if (!isTeamModeActive()) {
+          enableTeamMode();
+          // Aggiorna tutti i toggle presenti nella pagina
+          document.querySelectorAll('.ls-toggle-auto input[type="checkbox"]').forEach(function (inp) {
+            inp.disabled    = false;
+            inp.title       = '';
+            const row       = inp.closest('.ls-auto-translate');
+            if (row) row.classList.remove('ls-auto-disabled');
+            const slider    = inp.nextElementSibling;
+            if (slider) slider.style.cursor = 'pointer';
+          });
+          console.info('[LanguageSelector] Team mode attivato — auto-traduzione sbloccata.');
+        }
+      }
+    });
+  }());
+
   const LANGUAGES = [
     { code: 'it', label: 'Italiano',  flagCode: 'it' },
     { code: 'en', label: 'English',   flagCode: 'gb' },
@@ -230,6 +281,19 @@
       background: #D4AF37;
     }
 
+    /* ── Auto-translate disabilitata (utenti normali) ── */
+    .ls-auto-disabled {
+      opacity: 0.38;
+      pointer-events: none;
+      user-select: none;
+    }
+    .ls-auto-disabled .ls-toggle-slider {
+      cursor: not-allowed !important;
+    }
+    .ls-auto-disabled .ls-auto-translate-label {
+      cursor: not-allowed !important;
+    }
+
     /* ── Floating widget ── */
     .ls-floating {
       position: fixed;
@@ -396,6 +460,16 @@
       toggleInput.type = 'checkbox';
       toggleInput.id = toggleId;
       toggleInput.checked = CT.getAutoTranslateSetting?.() || false;
+
+      // ── Disabilita per tutti gli utenti; si sblocca solo con TESTTRAD ──
+      const teamActive = isTeamModeActive();
+      if (!teamActive) {
+        toggleInput.disabled = true;
+        toggleInput.title    = '';
+        autoRow.classList.add('ls-auto-disabled');
+      }
+      // Aggiunge classe di riferimento per il listener TESTTRAD
+      toggleInput.classList.add('ls-toggle-auto');
 
       const slider = document.createElement('span');
       slider.className = 'ls-toggle-slider';
