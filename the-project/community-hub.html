@@ -3689,23 +3689,21 @@ Object.assign(window.I18N_TRANSLATIONS['es'] || (window.I18N_TRANSLATIONS['es']=
 
   <script>
   (function() {
-    var BANNER_INTERVAL_MS  = 360 * 60 * 1000; // 6 ore — cooldown tra una comparsa e l'altra
+    var BANNER_INTERVAL_MS  = 360 * 60 * 1000; // 6 ore — cooldown tra ricaricamenti
     var BANNER_VISIBLE_MS   = 10 * 1000;        // 10 secondi visibile
-    var BANNER_DELAY_MS     = 4 * 1000;         // 4 secondi dopo il login prima del primo show
-    var BANNER_STORAGE_KEY  = 'lx_banner_last_shown'; // chiave localStorage per il timestamp
+    var BANNER_DELAY_MS     = 4 * 1000;         // delay dopo login prima di mostrare
+    var BANNER_STORAGE_KEY  = 'lx_banner_last_shown';
 
-    var _bannerHideTimer    = null;
-    var _bannerScheduled    = false; // guard in-page: evita doppi setTimeout nella stessa visita
+    var _bannerHideTimer   = null;
+    var _bannerScheduled   = false; // guard: evita doppi setTimeout nella stessa visita
 
-    // ── Legge / scrive il timestamp dell'ultimo show (localStorage) ─────────
     function _lxGetLastShown() {
       try { return parseInt(localStorage.getItem(BANNER_STORAGE_KEY) || '0', 10); } catch(e) { return 0; }
     }
     function _lxSaveLastShown(ts) {
-      try { localStorage.setItem(BANNER_STORAGE_KEY, String(ts)); } catch(e) { /* silenzio */ }
+      try { localStorage.setItem(BANNER_STORAGE_KEY, String(ts)); } catch(e) {}
     }
 
-    // ── Risolve il testo nella lingua corrente ──────────────────────────────
     function _lxGetBannerText() {
       if (window.I18n && I18n.t) {
         var t = I18n.t('banner.improvement');
@@ -3722,76 +3720,71 @@ Object.assign(window.I18N_TRANSLATIONS['es'] || (window.I18N_TRANSLATIONS['es']=
       return fallbacks[lang] || fallbacks['it'];
     }
 
-    // ── Mostra il banner, salva il timestamp e avvia il timer di chiusura ───
     window._lxShowBanner = function() {
       var b   = document.getElementById('lxImprovementBanner');
       var txt = document.getElementById('lxBannerText');
       if (!b || !txt) return;
 
-      // Persiste il momento esatto della comparsa
       _lxSaveLastShown(Date.now());
 
       txt.textContent = _lxGetBannerText();
+      b.style.removeProperty('display');
       b.style.display = 'flex';
-      b.offsetHeight; // reflow per attivare l'animazione CSS
+      b.offsetHeight;
       b.style.opacity = '1';
-      b.style.animation = 'lxBannerSlideIn 0.45s ease';
       clearTimeout(_bannerHideTimer);
       _bannerHideTimer = setTimeout(function() {
-        b.style.transition = 'opacity 0.5s';
         b.style.opacity = '0';
-        setTimeout(function() { if (b) b.style.display = 'none'; }, 520);
+        setTimeout(function() { b.style.display = 'none'; }, 500);
       }, BANNER_VISIBLE_MS);
     };
 
-    // ── Inizializza il sistema banner post-login ────────────────────────────
-    // Chiamato da initApp() sia dopo login manuale che dopo auto-auth da sessione.
-    //
-    // Logica del cooldown persistente:
-    //   • Mai mostrato prima          → prima comparsa dopo BANNER_DELAY_MS
-    //   • Mostrato < 6h fa            → la prossima comparsa è schedulata
-    //                                   al completamento delle 6h (può essere
-    //                                   anche in una visita futura, ma il timer
-    //                                   attivo aiuta se la tab è aperta a lungo)
-    //   • Mostrato ≥ 6h fa            → trattato come "mai mostrato": comparsa
-    //                                   dopo BANNER_DELAY_MS
-    //
-    // Il flag _bannerScheduled evita doppi setTimeout se initApp viene chiamata
-    // più volte nella stessa visita (es. doppio auto-auth).
-    window._lxInitBanner = function() {
+    // ── Aggancia il pulsante ✕ al primo utilizzo ────────────────────────────
+    function _lxBindClose() {
+      var closeBtn = document.getElementById('lxBannerClose');
+      if (!closeBtn || closeBtn._lxBound) return;
+      closeBtn._lxBound = true;
+      closeBtn.addEventListener('click', function() {
+        clearTimeout(_bannerHideTimer);
+        var b = document.getElementById('lxImprovementBanner');
+        if (b) { b.style.opacity = '0'; setTimeout(function() { b.style.display = 'none'; }, 320); }
+      });
+    }
+
+    // ── Chiamata dopo login MANUALE con credenziali ─────────────────────────
+    // Il banner viene sempre mostrato dopo un login attivo, ignorando il cooldown.
+    // Rationale: l'utente ha appena aperto una sessione intenzionalmente.
+    window._lxInitBannerAfterLogin = function() {
+      _lxBindClose();
+      if (_bannerScheduled) return;
+      _bannerScheduled = true;
+      setTimeout(window._lxShowBanner, BANNER_DELAY_MS);
+    };
+
+    // ── Chiamata dopo auto-auth da sessione salvata (ricaricamento pagina) ──
+    // Il cooldown da 6 ore viene rispettato: se il banner è già stato mostrato
+    // di recente, non viene rilanciato ad ogni reload.
+    window._lxInitBannerAfterAutoAuth = function() {
+      _lxBindClose();
       if (_bannerScheduled) return;
       _bannerScheduled = true;
 
-      // Aggancia il pulsante ✕ una sola volta
-      var closeBtn = document.getElementById('lxBannerClose');
-      if (closeBtn) {
-        closeBtn.addEventListener('click', function() {
-          clearTimeout(_bannerHideTimer);
-          var b = document.getElementById('lxImprovementBanner');
-          if (b) {
-            b.style.transition = 'opacity 0.3s';
-            b.style.opacity = '0';
-            setTimeout(function() { if (b) b.style.display = 'none'; }, 320);
-          }
-        });
-      }
-
       var lastShown = _lxGetLastShown();
-      var elapsed   = lastShown > 0 ? (Date.now() - lastShown) : BANNER_INTERVAL_MS; // se mai mostrato, simula "già passate 6h"
-      var remaining = BANNER_INTERVAL_MS - elapsed; // ms che mancano al prossimo show legittimo
+      var elapsed   = lastShown > 0 ? (Date.now() - lastShown) : BANNER_INTERVAL_MS;
+      var remaining = BANNER_INTERVAL_MS - elapsed;
 
       if (remaining <= 0) {
-        // Cooldown scaduto (o primo accesso): mostra dopo il breve delay di benvenuto
+        // Cooldown scaduto: mostra dopo il delay standard
         setTimeout(window._lxShowBanner, BANNER_DELAY_MS);
       } else {
-        // Cooldown ancora attivo: schedula il prossimo show esattamente allo scadere
-        // (utile se l'utente tiene la tab aperta per ore)
+        // Cooldown ancora attivo: schedula allo scadere (utile se la tab resta aperta)
         setTimeout(window._lxShowBanner, remaining);
       }
     };
 
   })();
   </script>
+
 
   <main id="mainContent">
 
@@ -4927,6 +4920,8 @@ async function doLogin() {
       mainAppEl.style.cssText = '';
       document.getElementById('loginGate').style.display = 'none';
       mainAppEl.classList.add('active');
+      // Banner: login manuale → mostra sempre, senza verificare il cooldown
+      if (typeof window._lxInitBannerAfterLogin === 'function') window._lxInitBannerAfterLogin();
       initApp();
     } else {
       const msg = data.error || 'Credenziali non valide. Riprova.';
@@ -4980,9 +4975,14 @@ function logout() {
     applyDashboardStats(cachedStats);
     // initApp NON aspetta — può partire subito
     if (document.readyState === 'complete' || document.readyState === 'interactive') {
+      // Banner: auto-auth → rispetta il cooldown da 6 ore
+      if (typeof window._lxInitBannerAfterAutoAuth === 'function') window._lxInitBannerAfterAutoAuth();
       initApp();
     } else {
-      document.addEventListener('DOMContentLoaded', initApp);
+      document.addEventListener('DOMContentLoaded', function() {
+        if (typeof window._lxInitBannerAfterAutoAuth === 'function') window._lxInitBannerAfterAutoAuth();
+        initApp();
+      });
     }
   } else {
     // Nessuna cache: fetch real-time PRIMA di mostrare la dashboard
@@ -5000,9 +5000,14 @@ function logout() {
     }
     // Avvia l'app dopo il fetch (o subito se GAS non configurato)
     if (document.readyState === 'complete' || document.readyState === 'interactive') {
+      // Banner: auto-auth → rispetta il cooldown da 6 ore
+      if (typeof window._lxInitBannerAfterAutoAuth === 'function') window._lxInitBannerAfterAutoAuth();
       initApp();
     } else {
-      document.addEventListener('DOMContentLoaded', initApp);
+      document.addEventListener('DOMContentLoaded', function() {
+        if (typeof window._lxInitBannerAfterAutoAuth === 'function') window._lxInitBannerAfterAutoAuth();
+        initApp();
+      });
     }
   }
 })();
@@ -5011,11 +5016,6 @@ function logout() {
    INIT APP
 ═══════════════════════════════════════════ */
 function initApp() {
-  // ── Avvia il sistema banner post-login ──────────────────────────────────────
-  // _lxInitBanner è idempotente: il guard interno evita doppi intervalli
-  // anche se initApp viene richiamata più volte (login manuale + auto-auth).
-  if (typeof window._lxInitBanner === 'function') window._lxInitBanner();
-
   // ── Cache bust: rimuovi tutte le versioni precedenti della cache community ──
   // Questo garantisce che dati statici vecchi non vengano mai caricati dal browser
   // Rimuovi tutte le versioni precedenti di cache (community + stats)
