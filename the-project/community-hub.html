@@ -5636,6 +5636,12 @@ async function _lxTranslateWrapper(text, from, to) {
   if (!text || !text.trim()) return text;
   if (from === to) return text;
 
+  // ── Gate modalità test ────────────────────────────────────────────────
+  // Le traduzioni dinamiche sono attive SOLO se il team ha abilitato la
+  // modalità di test nella propria sessione (sessionStorage lx_test_mode=1).
+  // Gli utenti normali vedono sempre il testo originale.
+  if (!window._lxTestModeActive) return text;
+
   // 1. Cache hit → restituzione immediata senza chiamata API
   const cacheKey = `${from}|${to}|${text}`;
   if (_lxMemCache.has(cacheKey)) {
@@ -14821,246 +14827,315 @@ async function _commentTranslate(btn, contentId, sourceLang) {
     btn.classList.remove('loading');
     btn.textContent = _commentTranslateBtnLabel('translate');
   }
+}
+
 /* ═══════════════════════════════════════════════════════════════════════
    PANNELLO TEST TRADUZIONI — SOLO TEAM (combinazione segreta)
    ───────────────────────────────────────────────────────────────────────
    Come attivare: digitare "TESTTRAD" ovunque nella pagina (non in un input).
    Solo i membri con role==="team" vedono i controlli completi.
-   Il pannello è completamente lato-client: ogni utente ha la propria
-   sessione, quindi il team può testare senza influire sugli altri.
+   Gli utenti normali NON vedono il pannello — solo il messaggio 🔒.
+   _lxTestModeActive: se false, _lxTranslateWrapper restituisce testo orig.
    ═══════════════════════════════════════════════════════════════════════ */
 
 (function() {
   'use strict';
 
-  // ── Sequenza segreta ──────────────────────────────────────────────────
-  const SECRET_SEQ = 'TESTTRAD';
-  let   _seqBuffer = '';
-  let   _seqTimer  = null;
+  // ── Sequenza segreta: TESTTRAD ────────────────────────────────────────
+  var SECRET_SEQ = 'TESTTRAD';
+  var _seqBuffer = '';
+  var _seqTimer  = null;
 
   document.addEventListener('keydown', function(e) {
-    // Ignora eventi da input/textarea/select
-    const tag = document.activeElement && document.activeElement.tagName;
+    var tag = document.activeElement && document.activeElement.tagName;
     if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
     if (e.ctrlKey || e.altKey || e.metaKey) return;
-
     _seqBuffer += e.key.toUpperCase();
     if (_seqBuffer.length > SECRET_SEQ.length) {
       _seqBuffer = _seqBuffer.slice(-SECRET_SEQ.length);
     }
     clearTimeout(_seqTimer);
     _seqTimer = setTimeout(function() { _seqBuffer = ''; }, 3000);
-
     if (_seqBuffer === SECRET_SEQ) {
       _seqBuffer = '';
       _lxToggleTestPanel();
     }
   });
 
-  // ── Toggle pannello ───────────────────────────────────────────────────
+  // ── Helpers HTML (solo string concatenation — zero backticks) ─────────
+  function _epShort(url) {
+    return url ? url.replace('https://','').split('/')[0] : '\u2014';
+  }
+  function _buildStatsHtml() {
+    if (typeof _lxStats === 'undefined') return '\u2014';
+    return 'Req: <b>' + _lxStats.requests + '</b> &nbsp;|&nbsp; '
+         + 'Cache hit: <b>' + _lxStats.cacheHits + '</b> &nbsp;|&nbsp; '
+         + 'Errori: <b>' + _lxStats.errors + '</b>';
+  }
+  function _buildEndpointsHtml() {
+    if (typeof _LX_ENDPOINTS === 'undefined') return '\u2014';
+    var html = '';
+    for (var i = 0; i < _LX_ENDPOINTS.length; i++) {
+      var url    = _LX_ENDPOINTS[i];
+      var fails  = (typeof _lxEndpointFailCount !== 'undefined' && _lxEndpointFailCount[url]) || 0;
+      var active = (typeof _lxActiveEndpointIdx !== 'undefined' && _lxActiveEndpointIdx === i);
+      var nameColor  = active ? '#d4af37' : '#888';
+      var statusColor = fails > 0 ? '#e55' : '#4a4';
+      var arrow = active ? '&#9658;' : '&#9675;';
+      html += '<div style="display:flex;align-items:center;gap:0.4rem;padding:0.2rem 0;'
+            + 'border-bottom:1px solid rgba(212,175,55,0.08);">'
+            + '<span style="font-size:0.65rem;color:' + nameColor + ';' + (active ? 'font-weight:700;' : '') + '">' + arrow + '</span>'
+            + '<span style="flex:1;font-size:0.67rem;color:' + nameColor + ';word-break:break-all;">' + _epShort(url) + '</span>'
+            + '<span style="font-size:0.65rem;color:' + statusColor + ';">' + (fails > 0 ? fails + ' err' : 'OK') + '</span>'
+            + '</div>';
+    }
+    return html;
+  }
+  function _buildCacheInfo() {
+    var sz = typeof _lxMemCache !== 'undefined' ? _lxMemCache.size : '\u2014';
+    return sz + ' voci in cache';
+  }
+
+  // ── Funzioni pannello esposte globalmente ─────────────────────────────
+  window._lxRefreshPanelStats = function() {
+    var s = document.getElementById('lxTpStats');
+    if (s) s.innerHTML = _buildStatsHtml();
+    var e = document.getElementById('lxTpEndpoints');
+    if (e) e.innerHTML = _buildEndpointsHtml();
+    var c = document.getElementById('lxTpCacheInfo');
+    if (c) c.textContent = _buildCacheInfo();
+  };
+
+  window._lxRunTestTranslation = function() {
+    var inp  = document.getElementById('lxTpInput');
+    var from = document.getElementById('lxTpFrom');
+    var to   = document.getElementById('lxTpTo');
+    var res  = document.getElementById('lxTpResult');
+    if (!inp || !from || !to || !res) return;
+    var txt = inp.value.trim();
+    if (!txt) { res.textContent = 'Inserisci un testo.'; return; }
+    if (typeof _lxTranslateWrapper === 'undefined') { res.textContent = 'Wrapper non disponibile.'; return; }
+    res.textContent = '\u2026';
+    _lxTranslateWrapper(txt, from.value, to.value).then(function(t) {
+      res.innerHTML = '<span style="color:#5c5;font-weight:600;">\u2713 Tradotto</span><br>' + t;
+      _lxRefreshPanelStats();
+    }).catch(function(e) {
+      res.innerHTML = '<span style="color:#e55;">\u2717 Errore: </span>' + (e.message || e);
+    });
+  };
+
+  window._lxClearTranslationCache = function() {
+    if (typeof _lxMemCache !== 'undefined') _lxMemCache.clear();
+    if (typeof _lxTranslateCache !== 'undefined') {
+      Object.keys(_lxTranslateCache).forEach(function(k){ delete _lxTranslateCache[k]; });
+    }
+    _actTransMap && Object.keys(_actTransMap).forEach(function(k){ delete _actTransMap[k]; });
+    _fpTransMap  && Object.keys(_fpTransMap).forEach(function(k){ delete _fpTransMap[k]; });
+    _lxStats && (_lxStats.requests = _lxStats.cacheHits = _lxStats.errors = 0);
+    _lxRefreshPanelStats();
+    var r = document.getElementById('lxTpResult');
+    if (r) r.innerHTML = '<span style="color:#5c5;">Cache svuotata \u2713</span>';
+  };
+
+  window._lxToggleTestMode = function() {
+    var on;
+    try { on = sessionStorage.getItem('lx_test_mode') === '1'; } catch(e) { on = false; }
+    on = !on;
+    try { sessionStorage.setItem('lx_test_mode', on ? '1' : '0'); } catch(e) {}
+    window._lxTestModeActive = on;
+    var btn = document.getElementById('lxTpModeToggle');
+    if (btn) { btn.className = 'lx-tp-toggle ' + (on ? 'on' : 'off'); }
+    var lbl = document.getElementById('lxTpModeLabel');
+    if (lbl) lbl.textContent = on ? 'Traduzioni ABILITATE (solo tu)' : 'Traduzioni DISABILITATE (solo tu)';
+    showToast && showToast(on ? 'blue' : 'red', on ? '\uD83C\uDF10' : '\uD83D\uDEAB',
+      on ? 'Traduzioni abilitate nella tua sessione' : 'Traduzioni disabilitate nella tua sessione');
+  };
+
+  // ── CSS pannello (iniettato una volta sola) ───────────────────────────
+  if (!document.getElementById('lxTpStyle')) {
+    var style = document.createElement('style');
+    style.id = 'lxTpStyle';
+    style.textContent = [
+      '@keyframes lxPanelIn{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}',
+      '#lxTestPanel h4{margin:0;font-size:.8rem;color:#d4af37;font-weight:700}',
+      '#lxTestPanel .lx-tp-section{padding:.7rem 1rem;border-bottom:1px solid rgba(212,175,55,.12)}',
+      '#lxTestPanel .lx-tp-section:last-child{border:none}',
+      '#lxTestPanel .lx-tp-row{display:flex;align-items:center;justify-content:space-between;gap:.5rem;margin-top:.35rem}',
+      '#lxTestPanel .lx-tp-btn{background:rgba(212,175,55,.12);border:1px solid rgba(212,175,55,.3);color:#d4af37;border-radius:6px;padding:.3rem .7rem;cursor:pointer;font-size:.7rem;font-family:inherit;transition:background .2s}',
+      '#lxTestPanel .lx-tp-btn:hover{background:rgba(212,175,55,.22)}',
+      '#lxTestPanel .lx-tp-btn.danger{border-color:rgba(220,80,80,.4);color:#e55;background:rgba(220,80,80,.08)}',
+      '#lxTestPanel .lx-tp-btn.success{border-color:rgba(80,200,80,.4);color:#5c5;background:rgba(80,200,80,.08)}',
+      '#lxTestPanel .lx-tp-toggle{width:36px;height:20px;border-radius:10px;position:relative;cursor:pointer;border:none;transition:background .2s;flex-shrink:0}',
+      '#lxTestPanel .lx-tp-toggle::after{content:"";position:absolute;top:3px;width:14px;height:14px;border-radius:50%;background:#fff;transition:left .2s}',
+      '#lxTestPanel .lx-tp-toggle.on{background:#d4af37}',
+      '#lxTestPanel .lx-tp-toggle.on::after{left:19px}',
+      '#lxTestPanel .lx-tp-toggle.off{background:#333}',
+      '#lxTestPanel .lx-tp-toggle.off::after{left:3px}',
+      '#lxTestPanel .lx-tp-label{color:#aaa;font-size:.7rem;flex:1}',
+      '#lxTestPanel .lx-tp-mono{font-family:monospace;font-size:.67rem;color:#888}',
+      '#lxTestPanel .lx-tp-result{background:rgba(212,175,55,.05);border:1px solid rgba(212,175,55,.15);border-radius:6px;padding:.5rem;margin-top:.4rem;min-height:32px;font-size:.7rem;color:#ccc;word-break:break-word}',
+      '#lxTestPanel select{background:#111;border:1px solid rgba(212,175,55,.2);color:#aaa;border-radius:5px;padding:.25rem .4rem;font-size:.68rem;font-family:inherit}',
+      '#lxTestPanel textarea{width:100%;box-sizing:border-box;background:rgba(255,255,255,.04);border:1px solid rgba(212,175,55,.2);border-radius:6px;color:#ddd;padding:.5rem;font-size:.72rem;font-family:inherit;resize:vertical;min-height:56px}'
+    ].join('\n');
+    document.head.appendChild(style);
+  }
+
+  // ── Costruzione pannello ──────────────────────────────────────────────
   window._lxToggleTestPanel = function() {
-    var panel = document.getElementById('lxTestPanel');
-    if (panel) { panel.remove(); return; }
+    var existing = document.getElementById('lxTestPanel');
+    if (existing) { existing.remove(); return; }
 
-    // Accesso solo per utenti team
-    const isTeam = window.currentUser && currentUser.role === 'team';
+    var isTeam = window.currentUser && currentUser.role === 'team';
+    var testOn;
+    try { testOn = sessionStorage.getItem('lx_test_mode') === '1'; } catch(e) { testOn = false; }
 
-    panel = document.createElement('div');
+    var panel = document.createElement('div');
     panel.id = 'lxTestPanel';
-    panel.style.cssText = `
-      position: fixed; bottom: 1.2rem; right: 1.2rem; z-index: 99999;
-      width: 340px; max-height: 80vh; overflow-y: auto;
-      background: #0f0c05; border: 1px solid rgba(212,175,55,0.35);
-      border-radius: 12px; box-shadow: 0 8px 40px rgba(0,0,0,0.7);
-      font-family: 'Inter', system-ui, sans-serif; font-size: 0.75rem;
-      color: #d4af37; animation: lxPanelIn 0.25s ease;
-    `;
+    panel.setAttribute('style',
+      'position:fixed;bottom:1.2rem;right:1.2rem;z-index:99999;'
+    + 'width:340px;max-height:80vh;overflow-y:auto;'
+    + 'background:#0f0c05;border:1px solid rgba(212,175,55,.35);'
+    + 'border-radius:12px;box-shadow:0 8px 40px rgba(0,0,0,.7);'
+    + 'font-family:Inter,system-ui,sans-serif;font-size:.75rem;'
+    + 'color:#d4af37;animation:lxPanelIn .25s ease;'
+    );
 
-    function _endpointShort(url) {
-      if (!url) return '—';
-      return url.replace('https://','').split('/')[0];
+    // ── Header ──
+    var secHeader = document.createElement('div');
+    secHeader.className = 'lx-tp-section';
+    secHeader.style.cssText = 'display:flex;align-items:center;justify-content:space-between;';
+    secHeader.innerHTML = '<div><h4>&#128295; Test Traduzioni</h4>'
+      + '<div class="lx-tp-mono" style="margin-top:2px;">Solo team &middot; sessione locale</div></div>';
+    var btnClose = document.createElement('button');
+    btnClose.className = 'lx-tp-btn';
+    btnClose.textContent = '\u2715 Chiudi';
+    btnClose.onclick = function(){ document.getElementById('lxTestPanel').remove(); };
+    secHeader.appendChild(btnClose);
+    panel.appendChild(secHeader);
+
+    if (!isTeam) {
+      // ── Accesso negato ──
+      var secDenied = document.createElement('div');
+      secDenied.className = 'lx-tp-section';
+      secDenied.style.cssText = 'text-align:center;padding:1.5rem 1rem;';
+      secDenied.innerHTML = '<div style="font-size:1.5rem;margin-bottom:.5rem;">&#128274;</div>'
+        + '<div style="color:#888;font-size:.75rem;">Pannello riservato al team.<br>'
+        + 'Accedi con un account team per utilizzare questi strumenti.</div>';
+      panel.appendChild(secDenied);
+      document.body.appendChild(panel);
+      return;
     }
-    function _cacheInfo() {
-      var size = typeof _lxMemCache !== 'undefined' ? _lxMemCache.size : '—';
-      return size + ' voci in cache';
-    }
-    function _statsHtml() {
-      if (typeof _lxStats === 'undefined') return '—';
-      return `Req: <b>${_lxStats.requests}</b> &nbsp;|&nbsp; Cache hit: <b>${_lxStats.cacheHits}</b> &nbsp;|&nbsp; Errori: <b>${_lxStats.errors}</b>`;
-    }
-    function _endpointListHtml() {
-      if (typeof _LX_ENDPOINTS === 'undefined') return '—';
-      return _LX_ENDPOINTS.map(function(url, i) {
-        var fails = (typeof _lxEndpointFailCount !== 'undefined' && _lxEndpointFailCount[url]) || 0;
-        var active = (typeof _lxActiveEndpointIdx !== 'undefined' && _lxActiveEndpointIdx === i);
-        return `<div style="display:flex;align-items:center;gap:0.4rem;padding:0.2rem 0;border-bottom:1px solid rgba(212,175,55,0.08);">
-          <span style="font-size:0.65rem;${active?'color:#d4af37;font-weight:700;':'color:#666;'}">${active?'▶':'○'}</span>
-          <span style="flex:1;font-size:0.67rem;color:${active?'#d4af37':'#888'};word-break:break-all;">${_endpointShort(url)}</span>
-          <span style="font-size:0.65rem;color:${fails>0?'#e55':'#4a4'};">${fails>0?fails+' err':'OK'}</span>
-        </div>`;
-      }).join('');
-    }
 
-    var testModeOn = typeof _lxTestModeActive !== 'undefined' ? _lxTestModeActive : false;
-    try { testModeOn = sessionStorage.getItem('lx_test_mode') === '1'; } catch(e) {}
+    // ── Stato sistema ──
+    var secStats = document.createElement('div');
+    secStats.className = 'lx-tp-section';
+    secStats.innerHTML = '<div style="font-weight:600;color:#aaa;margin-bottom:.4rem;font-size:.68rem;text-transform:uppercase;letter-spacing:.05em;">Stato Sistema</div>'
+      + '<div id="lxTpStats" class="lx-tp-mono">' + _buildStatsHtml() + '</div>'
+      + '<div id="lxTpCacheInfo" class="lx-tp-mono" style="margin-top:.25rem;color:#666;">' + _buildCacheInfo() + '</div>';
+    panel.appendChild(secStats);
 
-    panel.innerHTML = `
-      <style>
-        @keyframes lxPanelIn { from{opacity:0;transform:translateY(12px);}to{opacity:1;transform:translateY(0);} }
-        #lxTestPanel h4 { margin:0;font-size:0.8rem;color:#d4af37;font-weight:700; }
-        #lxTestPanel .lx-tp-section { padding:0.7rem 1rem;border-bottom:1px solid rgba(212,175,55,0.12); }
-        #lxTestPanel .lx-tp-section:last-child { border:none; }
-        #lxTestPanel .lx-tp-row { display:flex;align-items:center;justify-content:space-between;gap:0.5rem;margin-top:0.35rem; }
-        #lxTestPanel .lx-tp-btn {
-          background: rgba(212,175,55,0.12); border: 1px solid rgba(212,175,55,0.3);
-          color: #d4af37; border-radius: 6px; padding: 0.3rem 0.7rem;
-          cursor: pointer; font-size: 0.7rem; font-family: inherit;
-          transition: background 0.2s;
-        }
-        #lxTestPanel .lx-tp-btn:hover { background:rgba(212,175,55,0.22); }
-        #lxTestPanel .lx-tp-btn.danger { border-color:rgba(220,80,80,0.4);color:#e55;background:rgba(220,80,80,0.08); }
-        #lxTestPanel .lx-tp-btn.success { border-color:rgba(80,200,80,0.4);color:#5c5;background:rgba(80,200,80,0.08); }
-        #lxTestPanel .lx-tp-toggle {
-          width:36px;height:20px;border-radius:10px;position:relative;cursor:pointer;
-          border:none;transition:background 0.2s;flex-shrink:0;
-        }
-        #lxTestPanel .lx-tp-toggle::after {
-          content:'';position:absolute;top:3px;width:14px;height:14px;border-radius:50%;
-          background:#fff;transition:left 0.2s;
-        }
-        #lxTestPanel .lx-tp-toggle.on { background:#d4af37; }
-        #lxTestPanel .lx-tp-toggle.on::after { left:19px; }
-        #lxTestPanel .lx-tp-toggle.off { background:#333; }
-        #lxTestPanel .lx-tp-toggle.off::after { left:3px; }
-        #lxTestPanel .lx-tp-label { color:#aaa;font-size:0.7rem;flex:1; }
-        #lxTestPanel .lx-tp-mono { font-family:monospace;font-size:0.67rem;color:#888; }
-        #lxTestPanel .lx-tp-result { background:rgba(212,175,55,0.05);border:1px solid rgba(212,175,55,0.15);
-          border-radius:6px;padding:0.5rem;margin-top:0.4rem;min-height:32px;
-          font-size:0.7rem;color:#ccc;word-break:break-word; }
-      </style>
+    // ── Endpoint ──
+    var secEp = document.createElement('div');
+    secEp.className = 'lx-tp-section';
+    secEp.innerHTML = '<div style="font-weight:600;color:#aaa;margin-bottom:.4rem;font-size:.68rem;text-transform:uppercase;letter-spacing:.05em;">Endpoint Attivi</div>'
+      + '<div id="lxTpEndpoints">' + _buildEndpointsHtml() + '</div>';
+    panel.appendChild(secEp);
 
-      <!-- Header -->
-      <div class="lx-tp-section" style="display:flex;align-items:center;justify-content:space-between;">
-        <div>
-          <h4>🔧 Test Traduzioni</h4>
-          <div class="lx-tp-mono" style="margin-top:2px;">Solo team · sessione locale</div>
-        </div>
-        <button class="lx-tp-btn" onclick="document.getElementById('lxTestPanel').remove()">✕ Chiudi</button>
-      </div>
+    // ── Modalità test ──
+    var secMode = document.createElement('div');
+    secMode.className = 'lx-tp-section';
+    var modeRow = document.createElement('div');
+    modeRow.className = 'lx-tp-row';
+    var modeLabel = document.createElement('span');
+    modeLabel.className = 'lx-tp-label';
+    modeLabel.id = 'lxTpModeLabel';
+    modeLabel.textContent = testOn ? 'Traduzioni ABILITATE (solo tu)' : 'Traduzioni DISABILITATE (solo tu)';
+    var modeToggle = document.createElement('button');
+    modeToggle.className = 'lx-tp-toggle ' + (testOn ? 'on' : 'off');
+    modeToggle.id = 'lxTpModeToggle';
+    modeToggle.onclick = window._lxToggleTestMode;
+    modeRow.appendChild(modeLabel);
+    modeRow.appendChild(modeToggle);
 
-      ${isTeam ? `
-      <!-- Stato sistema -->
-      <div class="lx-tp-section">
-        <div style="font-weight:600;color:#aaa;margin-bottom:0.4rem;font-size:0.68rem;text-transform:uppercase;letter-spacing:0.05em;">Stato Sistema</div>
-        <div id="lxTpStats" class="lx-tp-mono">${_statsHtml()}</div>
-        <div class="lx-tp-mono" style="margin-top:0.25rem;color:#666;">${_cacheInfo()}</div>
-      </div>
+    var cacheRow = document.createElement('div');
+    cacheRow.className = 'lx-tp-row';
+    cacheRow.style.marginTop = '.5rem';
+    var cacheLabel = document.createElement('span');
+    cacheLabel.className = 'lx-tp-label';
+    cacheLabel.textContent = 'Svuota cache in memoria';
+    var cacheBtn = document.createElement('button');
+    cacheBtn.className = 'lx-tp-btn danger';
+    cacheBtn.textContent = 'Svuota';
+    cacheBtn.onclick = window._lxClearTranslationCache;
+    cacheRow.appendChild(cacheLabel);
+    cacheRow.appendChild(cacheBtn);
 
-      <!-- Endpoint -->
-      <div class="lx-tp-section">
-        <div style="font-weight:600;color:#aaa;margin-bottom:0.4rem;font-size:0.68rem;text-transform:uppercase;letter-spacing:0.05em;">Endpoint Attivi</div>
-        <div id="lxTpEndpoints">${_endpointListHtml()}</div>
-      </div>
+    secMode.innerHTML = '<div style="font-weight:600;color:#aaa;margin-bottom:.5rem;font-size:.68rem;text-transform:uppercase;letter-spacing:.05em;">Modalit\u00e0 Test</div>';
+    secMode.appendChild(modeRow);
+    secMode.appendChild(cacheRow);
+    panel.appendChild(secMode);
 
-      <!-- Toggle traduzioni (per il tuo browser) -->
-      <div class="lx-tp-section">
-        <div style="font-weight:600;color:#aaa;margin-bottom:0.5rem;font-size:0.68rem;text-transform:uppercase;letter-spacing:0.05em;">Modalità Test</div>
-        <div class="lx-tp-row">
-          <span class="lx-tp-label">Traduzioni abilitate (solo tu)</span>
-          <button id="lxTpAutoToggle" class="lx-tp-toggle ${testModeOn?'on':'off'}" onclick="(function(){
-            var on = sessionStorage.getItem('lx_test_mode')==='1';
-            on = !on;
-            sessionStorage.setItem('lx_test_mode', on?'1':'0');
-            if(typeof _lxTestModeActive!=='undefined') window._lxTestModeActive = on;
-            var btn = document.getElementById('lxTpAutoToggle');
-            if(btn){ btn.className='lx-tp-toggle '+(on?'on':'off'); }
-          })()"></button>
-        </div>
-        <div class="lx-tp-row" style="margin-top:0.5rem;">
-          <span class="lx-tp-label">Svuota cache in memoria</span>
-          <button class="lx-tp-btn danger" onclick="(function(){
-            if(typeof _lxMemCache!=='undefined') _lxMemCache.clear();
-            if(typeof _lxTranslateCache!=='undefined') Object.keys(_lxTranslateCache).forEach(function(k){delete _lxTranslateCache[k];});
-            document.getElementById('lxTpStats').innerHTML='Cache svuotata ✓';
-            setTimeout(function(){ document.getElementById('lxTpStats') && (document.getElementById('lxTpStats').innerHTML = '${_statsHtml().replace(/'/g,"\\'")}'); }, 1500);
-          })()">Svuota</button>
-        </div>
-      </div>
+    // ── Test live ──
+    var secTest = document.createElement('div');
+    secTest.className = 'lx-tp-section';
+    secTest.innerHTML = '<div style="font-weight:600;color:#aaa;margin-bottom:.5rem;font-size:.68rem;text-transform:uppercase;letter-spacing:.05em;">Test Traduzione Live</div>'
+      + '<textarea id="lxTpInput" placeholder="Testo da tradurre..."></textarea>'
+      + '<div class="lx-tp-row" style="margin-top:.4rem;">'
+      +   '<select id="lxTpFrom"><option value="it">IT</option><option value="en">EN</option><option value="fr">FR</option><option value="de">DE</option><option value="es">ES</option></select>'
+      +   '<span style="color:#666;">\u2192</span>'
+      +   '<select id="lxTpTo"><option value="en">EN</option><option value="it">IT</option><option value="fr">FR</option><option value="de">DE</option><option value="es">ES</option></select>'
+      +   '<button class="lx-tp-btn" style="margin-left:auto;" onclick="_lxRunTestTranslation()">Traduci</button>'
+      + '</div>'
+      + '<div id="lxTpResult" class="lx-tp-result">Il risultato apparer\u00e0 qui.</div>';
+    panel.appendChild(secTest);
 
-      <!-- Test live -->
-      <div class="lx-tp-section">
-        <div style="font-weight:600;color:#aaa;margin-bottom:0.5rem;font-size:0.68rem;text-transform:uppercase;letter-spacing:0.05em;">Test Traduzione Live</div>
-        <textarea id="lxTpInput" style="width:100%;box-sizing:border-box;background:rgba(255,255,255,0.04);border:1px solid rgba(212,175,55,0.2);border-radius:6px;color:#ddd;padding:0.5rem;font-size:0.72rem;font-family:inherit;resize:vertical;min-height:56px;" placeholder="Testo da tradurre..."></textarea>
-        <div class="lx-tp-row" style="margin-top:0.4rem;">
-          <select id="lxTpFrom" style="background:#111;border:1px solid rgba(212,175,55,0.2);color:#aaa;border-radius:5px;padding:0.25rem 0.4rem;font-size:0.68rem;font-family:inherit;">
-            <option value="it">IT</option><option value="en">EN</option>
-            <option value="fr">FR</option><option value="de">DE</option><option value="es">ES</option>
-          </select>
-          <span style="color:#666;">→</span>
-          <select id="lxTpTo" style="background:#111;border:1px solid rgba(212,175,55,0.2);color:#aaa;border-radius:5px;padding:0.25rem 0.4rem;font-size:0.68rem;font-family:inherit;">
-            <option value="en">EN</option><option value="it">IT</option>
-            <option value="fr">FR</option><option value="de">DE</option><option value="es">ES</option>
-          </select>
-          <button class="lx-tp-btn" style="margin-left:auto;" onclick="(function(){
-            var txt = document.getElementById('lxTpInput').value.trim();
-            var from = document.getElementById('lxTpFrom').value;
-            var to   = document.getElementById('lxTpTo').value;
-            var res  = document.getElementById('lxTpResult');
-            if(!txt){ res.textContent='Inserisci un testo.'; return; }
-            res.textContent = '…';
-            if(typeof _lxTranslateWrapper==='undefined'){ res.textContent='Wrapper non disponibile.'; return; }
-            _lxTranslateWrapper(txt, from, to).then(function(t){
-              res.innerHTML = '<span style=\\'color:#5c5;font-weight:600;\\'>✓ Tradotto</span><br>' + t;
-              var ep = document.getElementById('lxTpEndpoints');
-              if(ep) ep.innerHTML = '${_endpointListHtml().replace(/'/g,"\\'").replace(/\n/g,'')}';
-            }).catch(function(e){
-              res.innerHTML = '<span style=\\'color:#e55;\\'>✗ Errore: </span>' + (e.message||e);
-            });
-          })()">Traduci</button>
-        </div>
-        <div id="lxTpResult" class="lx-tp-result">Il risultato apparirà qui.</div>
-      </div>
+    // ── Azioni pagina ──
+    var secAct = document.createElement('div');
+    secAct.className = 'lx-tp-section';
+    secAct.innerHTML = '<div style="font-weight:600;color:#aaa;margin-bottom:.5rem;font-size:.68rem;text-transform:uppercase;letter-spacing:.05em;">Azioni Pagina</div>';
+    var actRow = document.createElement('div');
+    actRow.style.cssText = 'display:flex;flex-wrap:wrap;gap:.4rem;';
 
-      <!-- Forza traduzione pagina -->
-      <div class="lx-tp-section">
-        <div style="font-weight:600;color:#aaa;margin-bottom:0.5rem;font-size:0.68rem;text-transform:uppercase;letter-spacing:0.05em;">Azioni Pagina</div>
-        <div style="display:flex;flex-wrap:wrap;gap:0.4rem;">
-          <button class="lx-tp-btn" onclick="(function(){
-            if(window.ContentTranslator && ContentTranslator.translateAll) ContentTranslator.translateAll({auto:false});
-            showToast && showToast('blue','🌐','Traduzione forzata su tutti i contenuti');
-          })()">Forza Traduci Tutto</button>
-          <button class="lx-tp-btn" onclick="(function(){
-            var lang = window.I18n ? I18n.getCurrentLanguage() : '?';
-            var ep = typeof _lxActiveEndpointIdx!=='undefined' && typeof _LX_ENDPOINTS!=='undefined' ? _LX_ENDPOINTS[_lxActiveEndpointIdx] : '—';
-            document.getElementById('lxTpResult').innerHTML = '<b>Lingua UI:</b> '+lang+'<br><b>Endpoint attivo:</b> '+ep.replace('https://','');
-          })()">Info Sessione</button>
-          <button class="lx-tp-btn danger" onclick="(function(){
-            if(window.ContentTranslator && ContentTranslator.restoreAll) ContentTranslator.restoreAll();
-            if(typeof _lxRestoreActivitiesAndPreview!=='undefined') _lxRestoreActivitiesAndPreview();
-          })()">Ripristina Tutto</button>
-        </div>
-      </div>
-      ` : `
-      <!-- Accesso negato -->
-      <div class="lx-tp-section" style="text-align:center;padding:1.5rem 1rem;">
-        <div style="font-size:1.5rem;margin-bottom:0.5rem;">🔒</div>
-        <div style="color:#888;font-size:0.75rem;">Pannello riservato al team.<br>Accedi con un account team per utilizzare questi strumenti.</div>
-      </div>
-      `}
-    `;
+    var btnForce = document.createElement('button');
+    btnForce.className = 'lx-tp-btn';
+    btnForce.textContent = 'Forza Traduci Tutto';
+    btnForce.onclick = function() {
+      if (window.ContentTranslator && ContentTranslator.translateAll) ContentTranslator.translateAll({auto:false});
+      showToast && showToast('blue', '\uD83C\uDF10', 'Traduzione forzata su tutti i contenuti');
+    };
+
+    var btnInfo = document.createElement('button');
+    btnInfo.className = 'lx-tp-btn';
+    btnInfo.textContent = 'Info Sessione';
+    btnInfo.onclick = function() {
+      var lang = window.I18n ? I18n.getCurrentLanguage() : '?';
+      var epUrl = (typeof _lxActiveEndpointIdx !== 'undefined' && typeof _LX_ENDPOINTS !== 'undefined')
+        ? _LX_ENDPOINTS[_lxActiveEndpointIdx] : '\u2014';
+      var r = document.getElementById('lxTpResult');
+      if (r) r.innerHTML = '<b>Lingua UI:</b> ' + lang + '<br><b>Endpoint attivo:</b> ' + epUrl.replace('https://','');
+    };
+
+    var btnRestore = document.createElement('button');
+    btnRestore.className = 'lx-tp-btn danger';
+    btnRestore.textContent = 'Ripristina Tutto';
+    btnRestore.onclick = function() {
+      if (window.ContentTranslator && ContentTranslator.restoreAll) ContentTranslator.restoreAll();
+      if (typeof _lxRestoreActivitiesAndPreview !== 'undefined') _lxRestoreActivitiesAndPreview();
+    };
+
+    actRow.appendChild(btnForce);
+    actRow.appendChild(btnInfo);
+    actRow.appendChild(btnRestore);
+    secAct.appendChild(actRow);
+    panel.appendChild(secAct);
 
     document.body.appendChild(panel);
 
-    // Aggiorna stats ogni 3s mentre il pannello è aperto
-    if (isTeam) {
-      var _lxTpInterval = setInterval(function() {
-        if (!document.getElementById('lxTestPanel')) { clearInterval(_lxTpInterval); return; }
-        var s = document.getElementById('lxTpStats');
-        if (s && typeof _lxStats !== 'undefined') {
-          s.innerHTML = 'Req: <b>' + _lxStats.requests + '</b> &nbsp;|&nbsp; Cache hit: <b>' + _lxStats.cacheHits + '</b> &nbsp;|&nbsp; Errori: <b>' + _lxStats.errors + '</b>';
-        }
-      }, 3000);
-    }
+    // Aggiorna stats ogni 3s finché il pannello è aperto
+    var _interval = setInterval(function() {
+      if (!document.getElementById('lxTestPanel')) { clearInterval(_interval); return; }
+      _lxRefreshPanelStats();
+    }, 3000);
   };
 
 })(); // fine IIFE pannello test
