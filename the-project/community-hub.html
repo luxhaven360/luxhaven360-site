@@ -5494,7 +5494,8 @@ function initApp() {
           // Aggiorna visibilità e stato del pulsante globale "Traduci thread"
           const _tRow = document.getElementById('threadTranslateRow');
           if (_tRow) {
-            _tRow.style.display = (_newLang !== 'it') ? '' : 'none';
+            const _autoOnLang = window.ContentTranslator && ContentTranslator.getAutoTranslateSetting && ContentTranslator.getAutoTranslateSetting();
+            _tRow.style.display = (_newLang !== 'it' && !_autoOnLang) ? '' : 'none';
             const _tBtn = document.getElementById('threadTranslateBtn');
             if (_tBtn) { _tBtn.innerHTML = _lxTranslateBtnInner('translate'); delete _tBtn.dataset.lxRestoreThread; }
           }
@@ -7707,11 +7708,12 @@ function openThread(id) {
   // Messages
   renderThreadMessages(id);
 
-  // Add "Translate Thread" button if language != it
+  // Add "Translate Thread" button if language != it AND auto-translate is OFF
   const curLang = window.I18n ? I18n.getCurrentLanguage() : 'it';
   const _threadTranslateRow = document.getElementById('threadTranslateRow');
   if (_threadTranslateRow) {
-    if (curLang !== 'it') {
+    const _autoOnThread = window.ContentTranslator && ContentTranslator.getAutoTranslateSetting && ContentTranslator.getAutoTranslateSetting();
+    if (curLang !== 'it' && !_autoOnThread) {
       _threadTranslateRow.style.display = '';
       const btn = _threadTranslateRow.querySelector('#threadTranslateBtn');
       if (btn) btn.innerHTML = _lxTranslateBtnInner('translate');
@@ -7975,8 +7977,9 @@ function _renderMentions(text) {
   
   const knownNames = _getMentionNames();
   if (knownNames.length === 0) {
-    // Fallback generico se lista membri non ancora caricata
-    return escaped.replace(/@([A-Za-zÀ-ÿ][A-Za-zÀ-ÿ0-9 .]{1,40}?)(?=$|[^A-Za-zÀ-ÿ0-9 .])/g,
+    // Fallback: cattura nomi composti da parole che iniziano con maiuscola o cifra
+    // (es. "@Fondatore LuxHaven360") senza inglobare parole minuscole successive
+    return escaped.replace(/@([A-ZÀ-Ÿ][A-Za-zÀ-ÿ0-9.]*(?:\s[A-ZÀ-Ÿ0-9][A-Za-zÀ-ÿ0-9.]*){0,3})(?=\s|$|[^A-Za-zÀ-ÿ0-9\s])/g,
       (match, name) => `<span class="mention-chip" onclick="_scrollToMention('${name.trim().replace(/'/g,"\'")}')">@${name.trim()}</span>`
     );
   }
@@ -13652,13 +13655,32 @@ async function _lxTranslateThread(btn) {
   btn.innerHTML = _lxTranslateBtnInner('loading');
   btn.classList.add('loading');
 
+  // Protezione menzioni: sostituisce @Nome con placeholder prima della traduzione,
+  // poi ripristina i chip menzione nel testo tradotto preservando formattazione e onclick
+  const _protectMentions = (text) => {
+    const map = [];
+    const protected_ = text.replace(/@([A-ZÀ-Ÿ][A-Za-zÀ-ÿ0-9.]*(?:\s[A-ZÀ-Ÿ0-9][A-Za-zÀ-ÿ0-9.]*){0,3})/g, (match, name) => {
+      const ph = `__MENTION_${map.length}__`;
+      map.push(name);
+      return ph;
+    });
+    return { protected: protected_, map };
+  };
+  const _restoreMentions = (translatedText, map) => {
+    let result = translatedText;
+    map.forEach((name, i) => {
+      result = result.replace(`__MENTION_${i}__`, `@${name}`);
+    });
+    return result;
+  };
+
   const translateEl = async (el, isHtml) => {
     const cid = el.dataset.contentId;
     const from = el.dataset.contentLang || 'it';
     if (from === lang) return;
-    const text = el.textContent.trim();
-    if (!text) return;
-    if (!_lxTranslateCache[cid]) _lxTranslateCache[cid] = { original: isHtml ? el.innerHTML : text };
+    const rawText = el.textContent.trim();
+    if (!rawText) return;
+    if (!_lxTranslateCache[cid]) _lxTranslateCache[cid] = { original: isHtml ? el.innerHTML : rawText };
     const cached = _lxTranslateCache[cid];
     if (cached.translated) {
       // Ripristina con renderMentions per mantenere formattazione menzioni
@@ -13666,11 +13688,15 @@ async function _lxTranslateThread(btn) {
       return;
     }
     try {
-      const res = await fetch(`https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=${from}|${lang}`);
+      // Proteggi le menzioni (@Nome) prima di inviare il testo all'API di traduzione
+      const { protected: safeText, map: mentionMap } = _protectMentions(rawText);
+      const res = await fetch(`https://api.mymemory.translated.net/get?q=${encodeURIComponent(safeText)}&langpair=${from}|${lang}`);
       const data = await res.json();
       if (data.responseStatus === 200 && data.responseData?.translatedText) {
-        cached.translated = data.responseData.translatedText;
-        // Applica renderMentions per preservare formattazione menzioni nel testo tradotto
+        // Ripristina le menzioni nel testo tradotto (i placeholder non vengono tradotti dall'API)
+        const translatedWithMentions = _restoreMentions(data.responseData.translatedText, mentionMap);
+        cached.translated = translatedWithMentions;
+        // Applica renderMentions per trasformare @Nome in chip cliccabili con stile corretto
         el.innerHTML = isHtml ? _renderMentions(cached.translated) : cached.translated;
       }
     } catch(_e) {}
@@ -14038,6 +14064,12 @@ function _lxUpdateAllTranslateVisibility() {
     // nascondi anche il div wrapper
     if (el && el.parentElement) el.parentElement.style.display = autoOn ? 'none' : '';
   });
+  // Pulsante "Traduci thread" (threadTranslateRow) — nascosto se auto-translate ON
+  const tRow = document.getElementById('threadTranslateRow');
+  if (tRow) {
+    const curLang = window.I18n ? I18n.getCurrentLanguage() : 'it';
+    tRow.style.display = (autoOn || curLang === 'it') ? 'none' : '';
+  }
   // Tutti i pulsanti nelle aree traduzione
   [
     document.getElementById('feedContainer'),
@@ -14072,9 +14104,15 @@ function _lxAutoTranslateAllIn(container) {
     if (btn.closest('.lx-translate-wrap')) return;
     // Salta se già tradotto o in loading
     if (btn.dataset.lxRestore === '1' || btn.classList.contains('loading')) return;
-    // Salta i pulsanti commenti (gestiti separatamente con _commentTranslate)
+    // Salta i pulsanti commenti (gestiti nel blocco dedicato sotto)
     if (btn.classList.contains('comment-translate-btn')) return;
     // Trigger asincrono con piccolo delay per non sovraccaricare l'API
+    btn.click();
+  });
+
+  // 3. Pulsanti commenti inline nei post (auto-traduce anche i commenti)
+  container.querySelectorAll('.comment-translate-btn').forEach(btn => {
+    if (btn.dataset.lxRestore === '1' || btn.classList.contains('loading')) return;
     btn.click();
   });
 }
