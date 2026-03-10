@@ -56,12 +56,13 @@
           enableTeamMode();
           // Aggiorna tutti i toggle presenti nella pagina
           document.querySelectorAll('.ls-toggle-auto input[type="checkbox"]').forEach(function (inp) {
-            inp.disabled    = false;
-            inp.title       = '';
-            const row       = inp.closest('.ls-auto-translate');
+            inp.disabled = false;
+            const row    = inp.closest('.ls-auto-translate');
             if (row) row.classList.remove('ls-auto-disabled');
-            const slider    = inp.nextElementSibling;
-            if (slider) slider.style.cursor = 'pointer';
+            const lbl    = inp.closest('.ls-toggle');
+            if (lbl) { lbl.style.pointerEvents = ''; lbl.style.cursor = ''; }
+            const labelWrap = row && row.querySelector('.ls-auto-translate-label');
+            if (labelWrap) { labelWrap.style.pointerEvents = ''; labelWrap.style.cursor = ''; }
           });
           console.info('[LanguageSelector] Team mode attivato — auto-traduzione sbloccata.');
         }
@@ -470,8 +471,14 @@
       const teamActive = isTeamModeActive();
       if (!teamActive) {
         toggleInput.disabled = true;
-        toggleInput.title    = '';
+        // Blocca sia il wrapper row che il label e lo slider direttamente:
+        // pointer-events sul solo padre non basta, il <label> nativo del browser
+        // può comunque attivare il checkbox associato via attributo "for".
         autoRow.classList.add('ls-auto-disabled');
+        toggle.style.pointerEvents   = 'none';
+        toggle.style.cursor          = 'not-allowed';
+        autoLabelWrap.style.pointerEvents = 'none';
+        autoLabelWrap.style.cursor        = 'not-allowed';
       }
       // Aggiunge classe di riferimento per il listener TESTTRAD
       toggleInput.classList.add('ls-toggle-auto');
