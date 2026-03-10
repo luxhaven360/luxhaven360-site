@@ -3751,20 +3751,11 @@ Object.assign(window.I18N_TRANSLATIONS['es'] || (window.I18N_TRANSLATIONS['es']=
       });
     }
 
-    // ── Chiamata dopo login MANUALE con credenziali ─────────────────────────
-    // Il banner viene sempre mostrato dopo un login attivo, ignorando il cooldown.
-    // Rationale: l'utente ha appena aperto una sessione intenzionalmente.
-    window._lxInitBannerAfterLogin = function() {
-      _lxBindClose();
-      if (_bannerScheduled) return;
-      _bannerScheduled = true;
-      setTimeout(window._lxShowBanner, BANNER_DELAY_MS);
-    };
-
-    // ── Chiamata dopo auto-auth da sessione salvata (ricaricamento pagina) ──
-    // Il cooldown da 6 ore viene rispettato: se il banner è già stato mostrato
-    // di recente, non viene rilanciato ad ogni reload.
-    window._lxInitBannerAfterAutoAuth = function() {
+    // ── Inizializza il sistema banner ───────────────────────────────────────
+    // Unica funzione, chiamata sia dopo login manuale che dopo auto-auth.
+    // Regola: il banner appare solo se sono trascorse almeno 6 ore dall'ultima
+    // visualizzazione — indipendentemente da quante volte l'utente fa login.
+    function _lxInitBannerCore() {
       _lxBindClose();
       if (_bannerScheduled) return;
       _bannerScheduled = true;
@@ -3774,13 +3765,15 @@ Object.assign(window.I18N_TRANSLATIONS['es'] || (window.I18N_TRANSLATIONS['es']=
       var remaining = BANNER_INTERVAL_MS - elapsed;
 
       if (remaining <= 0) {
-        // Cooldown scaduto: mostra dopo il delay standard
         setTimeout(window._lxShowBanner, BANNER_DELAY_MS);
       } else {
-        // Cooldown ancora attivo: schedula allo scadere (utile se la tab resta aperta)
+        // Cooldown attivo: schedula allo scadere (utile se la tab resta aperta)
         setTimeout(window._lxShowBanner, remaining);
       }
-    };
+    }
+
+    window._lxInitBannerAfterLogin    = _lxInitBannerCore;
+    window._lxInitBannerAfterAutoAuth = _lxInitBannerCore;
 
   })();
   </script>
