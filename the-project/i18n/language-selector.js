@@ -17,17 +17,22 @@
   // L'auto-traduzione è disabilitata per tutti gli utenti per default.
   // Il team interno può sbloccarla temporaneamente digitando la sequenza
   // "TESTTRAD" in qualsiasi momento sulla pagina.
+  //
+  // Il flag è volutamente in-memory (non sessionStorage/localStorage):
+  // si azzera ad ogni ricaricamento della pagina, richiedendo di digitare
+  // TESTTRAD nuovamente. Questo evita che il pulsante resti abilitato
+  // per errore in sessioni successive.
 
-  const TEAM_SECRET     = 'TESTTRAD';
-  const TEAM_MODE_KEY   = 'ls_team_mode';
+  const TEAM_SECRET = 'TESTTRAD';
+  let   _teamModeActive = false;  // in-memory: si azzera ad ogni reload
 
-  // Legge lo stato team mode dalla sessionStorage (si azzera alla chiusura tab)
   function isTeamModeActive() {
-    try { return sessionStorage.getItem(TEAM_MODE_KEY) === '1'; } catch (e) { return false; }
+    return _teamModeActive;
   }
 
   function enableTeamMode() {
-    try { sessionStorage.setItem(TEAM_MODE_KEY, '1'); } catch (e) { /* silenzio */ }
+    _teamModeActive = true;
+    window._lsTeamModeActive = true; // esposto per content-translator.js
   }
 
   // Ascoltatore globale per la sequenza segreta TESTTRAD
