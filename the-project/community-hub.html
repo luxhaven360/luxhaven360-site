@@ -5422,10 +5422,10 @@ function initApp() {
     sbListenConversations();
   }
 
-  // Carica statistiche dinamiche ogni 10 secondi (aggiornamento in tempo reale)
+  // Carica statistiche dinamiche ogni 60 secondi (ridotto da 10s per evitare richieste eccessive)
   loadDashboardStats();
   if (_dashStatsTimer) clearInterval(_dashStatsTimer);
-  _dashStatsTimer = setInterval(loadDashboardStats, 10 * 1000);
+  _dashStatsTimer = setInterval(loadDashboardStats, 60 * 1000);
 
   // Carica dati community (post, discussioni, sondaggi, presenza, eventi) da GAS
   initCommunityData();
@@ -5537,14 +5537,7 @@ function initApp() {
   // quando la lingua UI differisce dalla lingua del contenuto originale.
   if (window.ContentTranslator) {
     ContentTranslator.setTranslationService(async (text, from, to) => {
-      const url = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=${from}|${to}&de=community@luxhaven360.com`;
-      const res = await fetch(url);
-      if (!res.ok) throw new Error('Network error');
-      const data = await res.json();
-      if (data.responseStatus === 200 && data.responseData?.translatedText) {
-        return data.responseData.translatedText;
-      }
-      throw new Error(data.responseDetails || 'Translation failed');
+      return _lxQueuedTranslate(text, from, to);
     });
     // Processa i contenuti utente già presenti al caricamento iniziale
     // con un piccolo ritardo per non bloccare il render principale
@@ -5555,6 +5548,66 @@ function initApp() {
       }
     }, 1500);
   }
+}
+
+/* ── Coda di traduzione con throttling — evita errori 429 da MyMemory ───
+   Tutte le chiamate API passano per questa coda: max 1 richiesta ogni 300ms.
+   In caso di 429, si attende 2s prima di riprovare (max 2 retry). ──────── */
+const _lxTranslateQueue = [];
+let   _lxTranslateRunning = false;
+const _LX_TRANSLATE_DELAY = 350; // ms tra richieste successive
+const _lxTranslateInFlight = new Map(); // deduplication: key → Promise
+
+async function _lxQueuedTranslate(text, from, to) {
+  const key = `${from}|${to}|${text}`;
+  // Deduplication: se la stessa stringa è già in coda/in-flight, riusa la stessa Promise
+  if (_lxTranslateInFlight.has(key)) return _lxTranslateInFlight.get(key);
+
+  const promise = new Promise((resolve, reject) => {
+    _lxTranslateQueue.push({ text, from, to, key, resolve, reject });
+    _lxProcessTranslateQueue();
+  }).finally(() => _lxTranslateInFlight.delete(key));
+
+  _lxTranslateInFlight.set(key, promise);
+  return promise;
+}
+
+async function _lxProcessTranslateQueue() {
+  if (_lxTranslateRunning || _lxTranslateQueue.length === 0) return;
+  _lxTranslateRunning = true;
+  while (_lxTranslateQueue.length > 0) {
+    const { text, from, to, resolve, reject } = _lxTranslateQueue.shift();
+    let retries = 0;
+    while (retries <= 2) {
+      try {
+        const url = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=${from}|${to}&de=community@luxhaven360.com`;
+        const res = await fetch(url);
+        if (res.status === 429) {
+          // Rate limited: attendi prima di riprovare
+          await new Promise(r => setTimeout(r, 2000 + retries * 1000));
+          retries++;
+          continue;
+        }
+        if (!res.ok) { reject(new Error('Network error ' + res.status)); break; }
+        const data = await res.json();
+        if (data.responseStatus === 200 && data.responseData?.translatedText) {
+          resolve(data.responseData.translatedText);
+        } else {
+          reject(new Error(data.responseDetails || 'Translation failed'));
+        }
+        break;
+      } catch(e) {
+        if (retries >= 2) { reject(e); break; }
+        retries++;
+        await new Promise(r => setTimeout(r, 1500));
+      }
+    }
+    // Pausa tra richieste successive per rispettare il rate limit
+    if (_lxTranslateQueue.length > 0) {
+      await new Promise(r => setTimeout(r, _LX_TRANSLATE_DELAY));
+    }
+  }
+  _lxTranslateRunning = false;
 }
 
 /* ═══════════════════════════════════════════
@@ -6479,6 +6532,9 @@ async function loadDashboardStats() {
 
   if (!GAS_URL) return;
 
+  // Dopo 3 fallimenti consecutivi, smetti di richiederlo (evita spam in console)
+  if ((loadDashboardStats._failCount || 0) >= 3) return;
+
   // 2. Aggiorna in background da GAS — l'utente non vede il loading
   try {
     const url = `${GAS_URL}?action=get_dashboard_stats`;
@@ -6486,10 +6542,17 @@ async function loadDashboardStats() {
     if (!resp.ok) throw new Error('HTTP ' + resp.status);
     const data = await resp.json();
     if (!data.success) throw new Error(data.error || 'Errore');
+    loadDashboardStats._failCount = 0; // reset on success
     saveStatsCache(data);
     applyDashboardStats(data);
   } catch (err) {
-    console.warn('[Stats] GAS non raggiungibile:', err.message);
+    loadDashboardStats._failCount = (loadDashboardStats._failCount || 0) + 1;
+    if (loadDashboardStats._failCount < 3) {
+      console.warn('[Stats] GAS non raggiungibile:', err.message);
+    } else {
+      console.warn('[Stats] GAS non raggiungibile dopo 3 tentativi, richieste sospese.');
+      if (_dashStatsTimer) { clearInterval(_dashStatsTimer); _dashStatsTimer = null; }
+    }
   }
 }
 
@@ -7788,16 +7851,15 @@ async function _lxAutoTranslateThreadMessages(container) {
     }
 
     try {
-      const res = await fetch(`https://api.mymemory.translated.net/get?q=${encodeURIComponent(safeText)}&langpair=${from}|${lang}`);
-      const data = await res.json();
-      if (data.responseStatus === 200 && data.responseData?.translatedText) {
-        let translated = data.responseData.translatedText;
+      const translated = await _lxQueuedTranslate(safeText, from, lang);
+      if (translated) {
+        let result = translated;
         // Ripristina menzioni
         mentionMap.forEach((name, i) => {
-          translated = translated.replace(`__TM_${i}__`, '@' + name);
+          result = result.replace(`__TM_${i}__`, '@' + name);
         });
-        _lxTranslateCache[cid].translated = translated;
-        el.innerHTML = _renderMentions(translated);
+        _lxTranslateCache[cid].translated = result;
+        el.innerHTML = _renderMentions(result);
         el.dataset.lxTranslated = '1';
       }
     } catch(_e) {}
@@ -7818,7 +7880,11 @@ function renderThreadMessages(id) {
     const div = document.createElement('div');
     div.className = `thread-message${msg.isOp ? ' op' : ''}`;
     div.dataset.msgIdx = idx;
-    const safeText = _renderMentions(msg.text || '');
+    // Se il testo contiene già chip mention in HTML (salvati dal DB), usarlo direttamente
+    // senza passarlo per _renderMentions (che esegue escape HTML causando visualizzazione come testo)
+    const safeText = (msg.text && msg.text.includes('<span class="mention-chip"'))
+      ? msg.text
+      : _renderMentions(msg.text || '');
     div.innerHTML = `
       <div class="thread-msg-avatar ${msg.isTeam ? 'team' : ''}">${msg.initial}</div>
       <div class="thread-msg-body">
@@ -14127,37 +14193,43 @@ function _lxRestoreTranslations(container) {
 function _lxUpdateTranslateVisibility(container) {
   if (!container) return;
   const autoOn = !!(window.ContentTranslator && ContentTranslator.getAutoTranslateSetting && ContentTranslator.getAutoTranslateSetting());
+  const curLang = window.I18n ? I18n.getCurrentLanguage() : 'it';
+  // Nasconde pulsanti se auto-translate è ON oppure se la lingua selezionata è italiano
+  // (l'italiano è la lingua nativa del contenuto: nessuna traduzione necessaria)
+  const hideTranslate = autoOn || curLang === 'it';
   // Pulsanti lx-translate-wrap (titoli discussioni/feed con wrapper)
   container.querySelectorAll('.lx-translate-wrap').forEach(wrap => {
-    wrap.style.display = autoOn ? 'none' : '';
+    wrap.style.display = hideTranslate ? 'none' : '';
   });
   // Pulsanti commenti inline
   container.querySelectorAll('.comment-translate-btn').forEach(btn => {
-    btn.style.display = autoOn ? 'none' : '';
+    btn.style.display = hideTranslate ? 'none' : '';
   });
   // Pulsanti standalone .lx-translate-btn (survey/listing/event/post card-level)
   // che NON sono dentro un .lx-translate-wrap
   container.querySelectorAll('.lx-translate-btn').forEach(btn => {
     if (!btn.closest('.lx-translate-wrap')) {
-      btn.style.display = autoOn ? 'none' : '';
+      btn.style.display = hideTranslate ? 'none' : '';
     }
   });
   // Pulsanti ContentTranslator (body text) — nasconde/mostra il loro contenitore
   container.querySelectorAll('.ct-translate-btn, .ct-original-btn').forEach(btn => {
     const row = btn.closest('.ct-btn-row') || btn.parentElement;
-    if (row) row.style.display = autoOn ? 'none' : '';
+    if (row) row.style.display = hideTranslate ? 'none' : '';
   });
 }
 
 /* ── LX Translate: nasconde i pulsanti standalone nel documento intero ── */
 function _lxUpdateAllTranslateVisibility() {
   const autoOn = !!(window.ContentTranslator && ContentTranslator.getAutoTranslateSetting && ContentTranslator.getAutoTranslateSetting());
+  const curLang = window.I18n ? I18n.getCurrentLanguage() : 'it';
+  const hideTranslate = autoOn || curLang === 'it';
   // #actTranslateBtn e #fpTranslateBtn (dashboard)
   ['actTranslateBtn','fpTranslateBtn'].forEach(id => {
     const el = document.getElementById(id);
-    if (el) el.style.display = autoOn ? 'none' : '';
+    if (el) el.style.display = hideTranslate ? 'none' : '';
     // nascondi anche il div wrapper
-    if (el && el.parentElement) el.parentElement.style.display = autoOn ? 'none' : '';
+    if (el && el.parentElement) el.parentElement.style.display = hideTranslate ? 'none' : '';
   });
   // Pulsante "Traduci thread" (threadTranslateRow) — nascosto se auto-translate ON
   const tRow = document.getElementById('threadTranslateRow');
