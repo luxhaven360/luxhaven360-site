@@ -5452,6 +5452,12 @@ function initApp() {
     sbListenConversations();
   }
 
+  // ── Carica e ascolta platform_settings in real-time ──────────────────
+  // Legge translations_enabled da Supabase al login e resta in ascolto di
+  // eventuali modifiche → quando il team pubblica, tutti i client si aggiornano
+  // in tempo reale senza ricaricare la pagina.
+  _lxLoadPlatformSettings();
+
   // Carica statistiche dinamiche ogni 60 secondi (ridotto da 10s per evitare richieste eccessive)
   loadDashboardStats();
   if (_dashStatsTimer) clearInterval(_dashStatsTimer);
@@ -5763,6 +5769,117 @@ async function _lxProcessTranslateQueue() {
   }
 
   _lxTranslateRunning = false;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   PLATFORM SETTINGS — Carica e ascolta translations_enabled da Supabase
+   ───────────────────────────────────────────────────────────────────────
+   Funzionamento:
+   • Al login legge platform_settings WHERE key='translations_enabled'
+   • Se il valore è 'true' → abilita traduzioni per tutti (flag globale)
+   • Sottoscrive il canale RT → ogni modifica si propaga istantaneamente
+   • Il team può pubblicare/disabilitare dal pannello TESTTRAD
+   ═══════════════════════════════════════════════════════════════════════ */
+
+function _lxLoadPlatformSettings() {
+  if (!_sbReady || !_sb) return;
+
+  // ── Lettura iniziale ──────────────────────────────────────────────────
+  _sb.from('platform_settings')
+    .select('value')
+    .eq('key', 'translations_enabled')
+    .maybeSingle()
+    .then(({ data, error }) => {
+      if (error) { console.warn('[LxSettings] Lettura fallita:', error.message); return; }
+      const enabled = data && data.value === 'true';
+      _lxApplyGlobalTranslationFlag(enabled);
+      console.log('[LxSettings] translations_enabled =', enabled);
+    });
+
+  // ── Listener real-time: si aggiorna per tutti istantaneamente ────────
+  sbOff('platform_settings_rt');
+  const psCh = _sb.channel('platform_settings_rt')
+    .on('postgres_changes', {
+      event: '*',        // INSERT, UPDATE, DELETE
+      schema: 'public',
+      table:  'platform_settings',
+      filter: "key=eq.translations_enabled"
+    }, (payload) => {
+      const newVal = payload.new && payload.new.value === 'true';
+      _lxApplyGlobalTranslationFlag(newVal);
+      console.log('[LxSettings] RT update → translations_enabled =', newVal);
+    })
+    .subscribe();
+  _sbChannels['platform_settings_rt'] = psCh;
+}
+
+/**
+ * _lxApplyGlobalTranslationFlag — applica il flag globale e aggiorna UI.
+ * Chiamata sia al caricamento che ad ogni modifica RT.
+ */
+function _lxApplyGlobalTranslationFlag(enabled) {
+  // Non sovrascrivere se il team ha attivato la modalità test locale
+  const localTestOn = (function() {
+    try { return sessionStorage.getItem('lx_test_mode') === '1'; } catch(e) { return false; }
+  })();
+  if (!localTestOn) {
+    window._lxTestModeActive = enabled;
+  }
+
+  // Aggiorna pulsante "Pubblica" nel pannello test se aperto
+  const pubBtn = document.getElementById('lxTpPublishBtn');
+  if (pubBtn) {
+    pubBtn.textContent     = enabled ? '🌐 Disabilita per tutti' : '🌐 Pubblica per tutti';
+    pubBtn.dataset.enabled = enabled ? '1' : '0';
+    pubBtn.className       = enabled
+      ? 'lx-tp-btn danger'
+      : 'lx-tp-btn success';
+  }
+  const pubStatus = document.getElementById('lxTpPublishStatus');
+  if (pubStatus) {
+    pubStatus.textContent  = enabled ? '✓ Traduzioni attive per tutti gli utenti' : '○ Traduzioni disabilitate per tutti';
+    pubStatus.style.color  = enabled ? '#5c5' : '#888';
+  }
+}
+
+/**
+ * _lxPublishForAll — scrive su Supabase e propaga a tutti i client via RT.
+ * Solo il team può chiamarla.
+ */
+async function _lxPublishForAll(enable) {
+  if (!_sbReady || !_sb) { showToast('red', '⚠️', 'Supabase non disponibile.'); return; }
+  if (!currentUser || currentUser.role !== 'team') {
+    showToast('red', '🔒', 'Solo il team può modificare questa impostazione.');
+    return;
+  }
+
+  const pubBtn = document.getElementById('lxTpPublishBtn');
+  if (pubBtn) { pubBtn.textContent = '…'; pubBtn.disabled = true; }
+
+  try {
+    // Upsert: crea la riga se non esiste, aggiorna se esiste
+    const { error } = await _sb.from('platform_settings').upsert({
+      key:        'translations_enabled',
+      value:      enable ? 'true' : 'false',
+      updated_at: new Date().toISOString(),
+      updated_by: currentUser.email
+    }, { onConflict: 'key' });
+
+    if (error) throw error;
+
+    // L'aggiornamento locale arriverà via RT — ma aggiorniamo subito l'UI
+    _lxApplyGlobalTranslationFlag(enable);
+    showToast('blue', '🌐',
+      enable
+        ? 'Traduzioni abilitate per tutti gli utenti ✓'
+        : 'Traduzioni disabilitate per tutti ✓'
+    );
+  } catch(e) {
+    console.error('[LxSettings] Errore pubblicazione:', e);
+    showToast('red', '⚠️', 'Errore: ' + (e.message || e));
+  } finally {
+    if (pubBtn) pubBtn.disabled = false;
+  }
 }
 
 /* ═══════════════════════════════════════════
@@ -15128,6 +15245,61 @@ async function _commentTranslate(btn, contentId, sourceLang) {
     actRow.appendChild(btnRestore);
     secAct.appendChild(actRow);
     panel.appendChild(secAct);
+
+    // ── Sezione: Pubblica per tutti ──────────────────────────────────────
+    var secPublish = document.createElement('div');
+    secPublish.className = 'lx-tp-section';
+    secPublish.innerHTML = '<div style="font-weight:600;color:#d4af37;margin-bottom:.5rem;font-size:.68rem;text-transform:uppercase;letter-spacing:.05em;">&#127760; Pubblicazione Globale</div>'
+      + '<div style="font-size:.7rem;color:#888;margin-bottom:.6rem;line-height:1.5;">'
+      + 'Attiva o disattiva le traduzioni per <b style="color:#aaa;">tutti gli utenti</b>. '
+      + 'La modifica si propaga in tempo reale senza ricaricare la pagina.</div>'
+      + '<div id="lxTpPublishStatus" style="font-size:.7rem;color:#888;margin-bottom:.5rem;">'
+      + '&#8230; caricamento stato</div>';
+
+    // Leggi stato corrente da Supabase per mostrare il pulsante corretto
+    var publishEnabled = false;
+    if (typeof _sb !== 'undefined' && _sb) {
+      _sb.from('platform_settings').select('value').eq('key','translations_enabled').maybeSingle()
+        .then(function(res) {
+          publishEnabled = res.data && res.data.value === 'true';
+          var btn = document.getElementById('lxTpPublishBtn');
+          var sts = document.getElementById('lxTpPublishStatus');
+          if (btn) {
+            btn.textContent     = publishEnabled ? '\uD83C\uDF10 Disabilita per tutti' : '\uD83C\uDF10 Pubblica per tutti';
+            btn.dataset.enabled = publishEnabled ? '1' : '0';
+            btn.className       = publishEnabled ? 'lx-tp-btn danger' : 'lx-tp-btn success';
+          }
+          if (sts) {
+            sts.textContent = publishEnabled ? '\u2713 Traduzioni attive per tutti gli utenti' : '\u25CB Traduzioni disabilitate per tutti';
+            sts.style.color = publishEnabled ? '#5c5' : '#888';
+          }
+        });
+    }
+
+    var btnPublish = document.createElement('button');
+    btnPublish.id        = 'lxTpPublishBtn';
+    btnPublish.className = 'lx-tp-btn';
+    btnPublish.textContent = '\uD83C\uDF10 \u2026 caricamento';
+    btnPublish.style.width = '100%';
+    btnPublish.style.marginTop = '.2rem';
+    btnPublish.style.padding = '.45rem .7rem';
+    btnPublish.style.fontSize = '.72rem';
+    btnPublish.onclick = function() {
+      var currentlyEnabled = this.dataset.enabled === '1';
+      var confirmMsg = currentlyEnabled
+        ? 'Disabilitare le traduzioni per tutti gli utenti?'
+        : 'Pubblicare le traduzioni per tutti gli utenti?';
+      if (!confirm(confirmMsg)) return;
+      _lxPublishForAll(!currentlyEnabled);
+    };
+    secPublish.appendChild(btnPublish);
+
+    // Avviso sulla RLS
+    var rlsNote = document.createElement('div');
+    rlsNote.style.cssText = 'font-size:.63rem;color:#555;margin-top:.5rem;line-height:1.4;';
+    rlsNote.textContent = 'Richiede policy RLS su platform_settings per il ruolo anon in scrittura.';
+    secPublish.appendChild(rlsNote);
+    panel.appendChild(secPublish);
 
     document.body.appendChild(panel);
 
