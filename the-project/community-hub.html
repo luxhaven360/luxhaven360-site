@@ -5532,12 +5532,12 @@ function initApp() {
     });
   }
 
-  // ── ContentTranslator: configura servizio di traduzione (MyMemory — gratuito) ─
+  // ── ContentTranslator: configura servizio di traduzione (LibreTranslate — pubblico) ─
   // Traduce automaticamente post, commenti, messaggi e thread
   // quando la lingua UI differisce dalla lingua del contenuto originale.
   if (window.ContentTranslator) {
     ContentTranslator.setTranslationService(async (text, from, to) => {
-      return _lxQueuedTranslate(text, from, to);
+      return _lxTranslateWrapper(text, from, to);
     });
     // Processa i contenuti utente già presenti al caricamento iniziale
     // con un piccolo ritardo per non bloccare il render principale
@@ -5550,16 +5550,66 @@ function initApp() {
   }
 }
 
-/* ── Coda di traduzione con throttling — evita errori 429 da MyMemory ───
-   Tutte le chiamate API passano per questa coda: max 1 richiesta ogni 300ms.
-   In caso di 429, si attende 2s prima di riprovare (max 2 retry). ──────── */
-const _lxTranslateQueue = [];
-let   _lxTranslateRunning = false;
-const _LX_TRANSLATE_DELAY = 350; // ms tra richieste successive
+/* ═══════════════════════════════════════════════════════════════════════
+   SISTEMA DI TRADUZIONE — LibreTranslate (provider pubblico)
+   ───────────────────────────────────────────────────────────────────────
+   Architettura:
+   • _lxTranslateWrapper()   — wrapper centralizzato (unico punto di ingresso)
+   • _lxMemCache             — cache in memoria per evitare chiamate duplicate
+   • _lxTranslateQueue       — coda FIFO con throttling (max 1 req / 500ms)
+   • _lxTranslateInFlight    — deduplication Promise per richieste identiche
+   • Fallback                — restituisce il testo originale se l'API non risponde
+   ═══════════════════════════════════════════════════════════════════════ */
+
+// ── Configurazione LibreTranslate ────────────────────────────────────────
+const _LX_LIBRETRANSLATE_URL = 'https://libretranslate.com/translate';
+const _LX_TRANSLATE_DELAY    = 500;   // ms tra richieste successive (rate-limiting)
+const _LX_MAX_RETRIES        = 2;     // numero massimo di retry su errore/429
+
+// ── Cache in memoria: evita di ritradurre lo stesso testo più volte ──────
+// Struttura: Map<"from|to|text" → translatedText>
+const _lxMemCache = new Map();
+
+// ── Coda di traduzione con throttling ────────────────────────────────────
+const _lxTranslateQueue    = [];
+let   _lxTranslateRunning  = false;
 const _lxTranslateInFlight = new Map(); // deduplication: key → Promise
 
+/**
+ * _lxTranslateWrapper — Wrapper centralizzato per tutte le traduzioni.
+ * Tutte le parti della piattaforma devono chiamare questo punto unico.
+ *
+ * @param {string} text  - Testo da tradurre
+ * @param {string} from  - Codice lingua sorgente (es. "en", "auto")
+ * @param {string} to    - Codice lingua destinazione (es. "it")
+ * @returns {Promise<string>} Testo tradotto, o testo originale su errore (fallback)
+ */
+async function _lxTranslateWrapper(text, from, to) {
+  if (!text || !text.trim()) return text;
+
+  // 1. Cache hit → restituzione immediata senza chiamata API
+  const cacheKey = `${from}|${to}|${text}`;
+  if (_lxMemCache.has(cacheKey)) return _lxMemCache.get(cacheKey);
+
+  // 2. Traduzione on-demand tramite coda (con deduplication)
+  try {
+    const result = await _lxQueuedTranslate(text, from, to);
+    _lxMemCache.set(cacheKey, result); // salva in cache per usi futuri
+    return result;
+  } catch (e) {
+    // Fallback: se LibreTranslate non risponde, restituisce il testo originale
+    console.warn('[LxTranslate] Fallback al testo originale:', e.message || e);
+    return text;
+  }
+}
+
+/**
+ * _lxQueuedTranslate — Accoda la richiesta con deduplication.
+ * Non chiamare direttamente: usa _lxTranslateWrapper.
+ */
 async function _lxQueuedTranslate(text, from, to) {
   const key = `${from}|${to}|${text}`;
+
   // Deduplication: se la stessa stringa è già in coda/in-flight, riusa la stessa Promise
   if (_lxTranslateInFlight.has(key)) return _lxTranslateInFlight.get(key);
 
@@ -5572,41 +5622,64 @@ async function _lxQueuedTranslate(text, from, to) {
   return promise;
 }
 
+/**
+ * _lxProcessTranslateQueue — Processa la coda con throttling e retry.
+ * Utilizza LibreTranslate pubblico (POST /translate) al posto di MyMemory.
+ */
 async function _lxProcessTranslateQueue() {
   if (_lxTranslateRunning || _lxTranslateQueue.length === 0) return;
   _lxTranslateRunning = true;
+
   while (_lxTranslateQueue.length > 0) {
     const { text, from, to, resolve, reject } = _lxTranslateQueue.shift();
     let retries = 0;
-    while (retries <= 2) {
+
+    while (retries <= _LX_MAX_RETRIES) {
       try {
-        const url = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=${from}|${to}&de=community@luxhaven360.com`;
-        const res = await fetch(url);
+        // ── Chiamata a LibreTranslate (POST JSON) ──────────────────────
+        const res = await fetch(_LX_LIBRETRANSLATE_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            q:      text,
+            source: from === 'auto' ? 'auto' : from,
+            target: to,
+            format: 'text'
+          })
+        });
+
+        // Rate limited: attendi prima di riprovare
         if (res.status === 429) {
-          // Rate limited: attendi prima di riprovare
           await new Promise(r => setTimeout(r, 2000 + retries * 1000));
           retries++;
           continue;
         }
+
         if (!res.ok) { reject(new Error('Network error ' + res.status)); break; }
+
+        // ── Parsing risposta LibreTranslate ────────────────────────────
+        // Formato risposta: { "translatedText": "..." }
         const data = await res.json();
-        if (data.responseStatus === 200 && data.responseData?.translatedText) {
-          resolve(data.responseData.translatedText);
+        if (data && data.translatedText) {
+          resolve(data.translatedText);
         } else {
-          reject(new Error(data.responseDetails || 'Translation failed'));
+          reject(new Error(data?.error || 'Translation failed'));
         }
         break;
-      } catch(e) {
-        if (retries >= 2) { reject(e); break; }
+
+      } catch (e) {
+        if (retries >= _LX_MAX_RETRIES) { reject(e); break; }
         retries++;
         await new Promise(r => setTimeout(r, 1500));
       }
     }
-    // Pausa tra richieste successive per rispettare il rate limit
+
+    // Pausa tra richieste successive per rispettare il rate limit di LibreTranslate
     if (_lxTranslateQueue.length > 0) {
       await new Promise(r => setTimeout(r, _LX_TRANSLATE_DELAY));
     }
   }
+
   _lxTranslateRunning = false;
 }
 
@@ -10729,7 +10802,7 @@ async function voteSurvey(surveyId, optionIndex) {
 /* ═══════════════════════════════════════════
    NOTIFICATION TEXT HELPERS
    - Emoji only in icon circle, never in text
-   - Full translation: prefix via I18n, title via MyMemory async cache
+   - Full translation: prefix via I18n, title via LibreTranslate async cache
 ═══════════════════════════════════════════ */
 
 /* Strip leading emoji from notification text (fallback for DB/legacy notifications) */
@@ -10753,12 +10826,11 @@ function _getNotifTitle(rawTitle, contentLang) {
   if (_notifTitleCache[key]) return _notifTitleCache[key];
   if (_notifTitleCache[key + ':p']) return rawTitle;
   _notifTitleCache[key + ':p'] = true;
-  fetch('https://api.mymemory.translated.net/get?q=' + encodeURIComponent(rawTitle) + '&langpair=' + from + '|' + lang)
-    .then(function(r) { return r.json(); })
-    .then(function(data) {
+  _lxTranslateWrapper(rawTitle, from, lang)
+    .then(function(translated) {
       delete _notifTitleCache[key + ':p'];
-      if (data.responseStatus === 200 && data.responseData && data.responseData.translatedText) {
-        _notifTitleCache[key] = data.responseData.translatedText;
+      if (translated && translated !== rawTitle) {
+        _notifTitleCache[key] = translated;
         renderNotifications();
         renderNotifDropdown();
       }
@@ -13851,11 +13923,10 @@ async function _lxTranslateThread(btn) {
     try {
       // Proteggi le menzioni (@Nome) prima di inviare il testo all'API di traduzione
       const { protected: safeText, map: mentionMap } = _protectMentions(rawText);
-      const res = await fetch(`https://api.mymemory.translated.net/get?q=${encodeURIComponent(safeText)}&langpair=${from}|${lang}`);
-      const data = await res.json();
-      if (data.responseStatus === 200 && data.responseData?.translatedText) {
+      const translatedRaw = await _lxTranslateWrapper(safeText, from, lang);
+      if (translatedRaw && translatedRaw !== safeText) {
         // Ripristina le menzioni nel testo tradotto (i placeholder non vengono tradotti dall'API)
-        const translatedWithMentions = _restoreMentions(data.responseData.translatedText, mentionMap);
+        const translatedWithMentions = _restoreMentions(translatedRaw, mentionMap);
         cached.translated = translatedWithMentions;
         // Applica renderMentions per trasformare @Nome in chip cliccabili con stile corretto
         el.innerHTML = isHtml ? _renderMentions(cached.translated) : cached.translated;
@@ -13902,12 +13973,10 @@ async function _lxTranslateListing(btn, listingId) {
     _lxTranslateCache[el.dataset.contentId] = _lxTranslateCache[el.dataset.contentId] || { original: text };
     const cached = _lxTranslateCache[el.dataset.contentId];
     if (cached.translated) { el.textContent = cached.translated; el.dataset.lxTranslated = '1'; return; }
-    const url = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=${from}|${lang}`;
     try {
-      const res = await fetch(url);
-      const data = await res.json();
-      if (data.responseStatus === 200 && data.responseData?.translatedText) {
-        cached.translated = data.responseData.translatedText;
+      const translated = await _lxTranslateWrapper(text, from, lang);
+      if (translated && translated !== text) {
+        cached.translated = translated;
         el.textContent = cached.translated;
         el.dataset.lxTranslated = '1';
       }
@@ -13949,10 +14018,9 @@ async function _lxTranslateSurvey(btn, surveyId) {
     const cached = _lxTranslateCache[el.dataset.contentId];
     if (cached.translated) { el.textContent = cached.translated; el.dataset.lxTranslated = '1'; return; }
     try {
-      const res = await fetch(`https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=${from}|${lang}`);
-      const data = await res.json();
-      if (data.responseStatus === 200 && data.responseData?.translatedText) {
-        cached.translated = data.responseData.translatedText;
+      const translated = await _lxTranslateWrapper(text, from, lang);
+      if (translated && translated !== text) {
+        cached.translated = translated;
         el.textContent = cached.translated;
         el.dataset.lxTranslated = '1';
       }
@@ -14000,10 +14068,8 @@ async function _lxTranslateActivities(btn) {
     const afterBold = boldText ? fullText.slice(fullText.indexOf(boldText) + boldText.length).trim() : fullText;
     if (!afterBold) continue;
     try {
-      const res = await fetch(`https://api.mymemory.translated.net/get?q=${encodeURIComponent(afterBold)}&langpair=it|${lang}`);
-      const data = await res.json();
-      if (data.responseStatus === 200 && data.responseData?.translatedText) {
-        const translated = data.responseData.translatedText;
+      const translated = await _lxTranslateWrapper(afterBold, 'it', lang);
+      if (translated && translated !== afterBold) {
         // Ricostruisce HTML: <strong>NomeBold</strong> testo tradotto
         const newHtml = boldText
           ? `<strong>${boldText}</strong> ${translated}`
@@ -14042,10 +14108,9 @@ async function _lxTranslateFeedPreview(btn) {
     if (!text) continue;
     if (_fpTransMap[pid]) { el.textContent = _fpTransMap[pid]; continue; }
     try {
-      const res = await fetch(`https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=it|${lang}`);
-      const data = await res.json();
-      if (data.responseStatus === 200 && data.responseData?.translatedText) {
-        _fpTransMap[pid] = data.responseData.translatedText;
+      const translated = await _lxTranslateWrapper(text, 'it', lang);
+      if (translated && translated !== text) {
+        _fpTransMap[pid] = translated;
         el.textContent = _fpTransMap[pid];
       }
     } catch(_e) {}
@@ -14085,10 +14150,9 @@ async function _lxTranslatePost(btn, postId) {
     const cached = _lxTranslateCache[cid];
     if (cached.translated) { el.textContent = cached.translated; el.dataset.lxTranslated = '1'; return; }
     try {
-      const res = await fetch(`https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=${from}|${lang}`);
-      const data = await res.json();
-      if (data.responseStatus === 200 && data.responseData?.translatedText) {
-        cached.translated = data.responseData.translatedText;
+      const translated = await _lxTranslateWrapper(text, from, lang);
+      if (translated && translated !== text) {
+        cached.translated = translated;
         el.textContent = cached.translated;
         el.dataset.lxTranslated = '1';
       }
@@ -14129,10 +14193,9 @@ async function _lxTranslateEvent(btn, eventId) {
     const cached = _lxTranslateCache[cid];
     if (cached.translated) { el.textContent = cached.translated; el.dataset.lxTranslated = '1'; return; }
     try {
-      const res = await fetch(`https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=it|${lang}`);
-      const data = await res.json();
-      if (data.responseStatus === 200 && data.responseData?.translatedText) {
-        cached.translated = data.responseData.translatedText;
+      const translated = await _lxTranslateWrapper(text, 'it', lang);
+      if (translated && translated !== text) {
+        cached.translated = translated;
         el.textContent = cached.translated;
         el.dataset.lxTranslated = '1';
       }
@@ -14280,10 +14343,8 @@ async function _lxAutoTranslateComments(container) {
     // Salva originale e traduci
     if (!_lxTranslateCache[cid]) _lxTranslateCache[cid] = { original: el.innerHTML };
     try {
-      const res = await fetch(`https://api.mymemory.translated.net/get?q=${encodeURIComponent(originalText)}&langpair=${from}|${lang}`);
-      const data = await res.json();
-      if (data.responseStatus === 200 && data.responseData?.translatedText) {
-        const translated = data.responseData.translatedText;
+      const translated = await _lxTranslateWrapper(originalText, from, lang);
+      if (translated && translated !== originalText) {
         _lxTranslateCache[cid].translated = translated;
         el.innerHTML = translated;
         el.dataset.lxTranslated = '1';
@@ -14572,7 +14633,7 @@ async function _lxTranslate(btn, contentId, sourceLang) {
     return;
   }
 
-  // Chiama API MyMemory
+  // Chiama LibreTranslate tramite wrapper centralizzato
   btn.innerHTML = _lxTranslateBtnInner('loading');
   btn.classList.add('loading');
   try {
@@ -14581,17 +14642,15 @@ async function _lxTranslate(btn, contentId, sourceLang) {
     const originalHTML = target.innerHTML;
     const originalText = target.textContent.trim();
     if (!originalText) { btn.classList.remove('loading'); btn.innerHTML = _lxTranslateBtnInner('translate'); return; }
-    const url  = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(originalText)}&langpair=${from}|${to}`;
-    const res  = await fetch(url);
-    const data = await res.json();
-    if (data.responseStatus === 200 && data.responseData?.translatedText) {
-      _lxTranslateCache[contentId] = { original: originalHTML, translated: data.responseData.translatedText };
-      target.innerHTML = data.responseData.translatedText;
+    const translatedText = await _lxTranslateWrapper(originalText, from, to);
+    if (translatedText && translatedText !== originalText) {
+      _lxTranslateCache[contentId] = { original: originalHTML, translated: translatedText };
+      target.innerHTML = translatedText;
       target.dataset.lxTranslated = '1';
       btn.classList.remove('loading');
       btn.innerHTML = _lxTranslateBtnInner('restore');
     } else {
-      throw new Error('API error');
+      throw new Error('No translation');
     }
   } catch(e) {
     btn.classList.remove('loading');
@@ -14660,7 +14719,7 @@ async function _commentTranslate(btn, contentId, sourceLang) {
     return;
   }
 
-  // Chiama API
+  // Chiama LibreTranslate tramite wrapper centralizzato
   btn.textContent = _commentTranslateBtnLabel('loading');
   btn.classList.add('loading');
   try {
@@ -14668,18 +14727,15 @@ async function _commentTranslate(btn, contentId, sourceLang) {
     const originalText = target.textContent.trim();
     if (!originalText) { btn.classList.remove('loading'); btn.textContent = _commentTranslateBtnLabel('translate'); return; }
     const from = sourceLang || 'it';
-    const url = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(originalText)}&langpair=${from}|${targetLang}`;
-    const res = await fetch(url);
-    const data = await res.json();
-    if (data.responseStatus === 200 && data.responseData?.translatedText) {
-      const translated = data.responseData.translatedText;
+    const translated = await _lxTranslateWrapper(originalText, from, targetLang);
+    if (translated && translated !== originalText) {
       _lxTranslateCache[contentId] = { original: originalHTML, translated };
       target.innerHTML = translated;
       target.dataset.lxTranslated = '1';
       btn.classList.remove('loading');
       btn.textContent = _commentTranslateBtnLabel('restore');
     } else {
-      throw new Error('API error');
+      throw new Error('No translation');
     }
   } catch(e) {
     btn.classList.remove('loading');
