@@ -3728,14 +3728,17 @@ Object.assign(window.I18N_TRANSLATIONS['es'] || (window.I18N_TRANSLATIONS['es']=
       _lxSaveLastShown(Date.now());
 
       txt.textContent = _lxGetBannerText();
-      b.style.removeProperty('display');
       b.style.display = 'flex';
+      // Forza reflow prima di applicare la classe per attivare la transizione CSS
       b.offsetHeight;
       b.style.opacity = '1';
+      b.classList.add('lx-banner-visible');
+
       clearTimeout(_bannerHideTimer);
       _bannerHideTimer = setTimeout(function() {
         b.style.opacity = '0';
-        setTimeout(function() { b.style.display = 'none'; }, 500);
+        b.classList.remove('lx-banner-visible');
+        setTimeout(function() { b.style.display = 'none'; }, 520);
       }, BANNER_VISIBLE_MS);
     };
 
@@ -3747,7 +3750,11 @@ Object.assign(window.I18N_TRANSLATIONS['es'] || (window.I18N_TRANSLATIONS['es']=
       closeBtn.addEventListener('click', function() {
         clearTimeout(_bannerHideTimer);
         var b = document.getElementById('lxImprovementBanner');
-        if (b) { b.style.opacity = '0'; setTimeout(function() { b.style.display = 'none'; }, 320); }
+        if (b) {
+            b.style.opacity = '0';
+            b.classList.remove('lx-banner-visible');
+            setTimeout(function() { b.style.display = 'none'; }, 320);
+          }
       });
     }
 
@@ -15482,29 +15489,117 @@ async function _commentTranslate(btn, contentId, sourceLang) {
   <!-- ══════════════════════════════════════════════════════════════
        Banner miglioramento contenuti — fixed overlay, fuori dal grid
        ══════════════════════════════════════════════════════════════ -->
-  <div id="lxImprovementBanner" style="
-    display:none; opacity:0;
-    position:fixed; top:0; left:0; right:0;
-    background: linear-gradient(90deg, rgba(28,22,10,0.97) 0%, rgba(38,30,10,0.97) 100%);
-    border-bottom: 1px solid rgba(212,175,55,0.2);
-    padding: 0.5rem 1.1rem;
-    flex-direction:row; align-items:center; justify-content:space-between; gap:0.8rem;
-    font-size: 0.73rem; color: rgba(212,175,55,0.82); font-weight: 500;
-    z-index: 99999; transition: opacity 0.45s ease;
-    font-family: var(--ff-ui, 'Raleway', sans-serif);
-  " role="status" aria-live="polite">
-    <span style="display:flex; align-items:center; gap:0.5rem; flex:1; min-width:0;">
-      <span style="font-size:0.9rem; flex-shrink:0;" aria-hidden="true">🛠️</span>
-      <span id="lxBannerText" style="line-height:1.5;"></span>
-    </span>
-    <button id="lxBannerClose"
-      style="background:none;border:none;cursor:pointer;color:rgba(212,175,55,0.4);font-size:1rem;
-             padding:0.1rem 0.25rem;flex-shrink:0;line-height:1;font-family:inherit;"
-      aria-label="Chiudi">✕</button>
-  </div>
   <style>
-    @keyframes lxBannerSlideIn { from { opacity:0; transform:translateY(-8px); } to { opacity:1; transform:translateY(0); } }
+    #lxImprovementBanner {
+      display: none;
+      opacity: 0;
+      position: fixed;
+      top: 0; left: 0; right: 0;
+      z-index: 99999;
+      font-family: var(--ff-ui, 'Raleway', sans-serif);
+      /* Struttura interna */
+      align-items: center;
+      justify-content: center;
+      gap: 1rem;
+      padding: 0 1.5rem;
+      height: 42px;
+      /* Estetica luxury */
+      background: linear-gradient(90deg,
+        rgba(14,11,4,0.98) 0%,
+        rgba(22,17,6,0.98) 40%,
+        rgba(22,17,6,0.98) 60%,
+        rgba(14,11,4,0.98) 100%
+      );
+      border-bottom: 1px solid rgba(212,175,55,0.15);
+      box-shadow: 0 1px 0 rgba(212,175,55,0.06), 0 4px 24px rgba(0,0,0,0.5);
+      /* Transizioni */
+      transition: opacity 0.5s cubic-bezier(0.4,0,0.2,1),
+                  transform 0.5s cubic-bezier(0.4,0,0.2,1);
+      transform: translateY(-4px);
+    }
+    #lxImprovementBanner.lx-banner-visible {
+      transform: translateY(0);
+    }
+    /* Linea dorata decorativa in cima */
+    #lxImprovementBanner::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      height: 1px;
+      background: linear-gradient(90deg,
+        transparent 0%,
+        rgba(212,175,55,0.5) 20%,
+        rgba(212,175,55,0.8) 50%,
+        rgba(212,175,55,0.5) 80%,
+        transparent 100%
+      );
+    }
+    .lx-banner-icon {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 20px; height: 20px;
+      flex-shrink: 0;
+      color: rgba(212,175,55,0.7);
+    }
+    .lx-banner-icon svg { width: 13px; height: 13px; }
+    .lx-banner-dot {
+      width: 3px; height: 3px;
+      border-radius: 50%;
+      background: rgba(212,175,55,0.35);
+      flex-shrink: 0;
+    }
+    #lxBannerText {
+      font-size: 0.7rem;
+      font-weight: 500;
+      letter-spacing: 0.02em;
+      color: rgba(212,175,55,0.65);
+      line-height: 1;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    #lxBannerClose {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 20px; height: 20px;
+      background: none;
+      border: none;
+      cursor: pointer;
+      color: rgba(212,175,55,0.25);
+      padding: 0;
+      flex-shrink: 0;
+      border-radius: 3px;
+      transition: color 0.18s, background 0.18s;
+      position: absolute;
+      right: 1.25rem;
+    }
+    #lxBannerClose:hover {
+      color: rgba(212,175,55,0.65);
+      background: rgba(212,175,55,0.06);
+    }
+    #lxBannerClose svg { width: 9px; height: 9px; }
+    @keyframes lxBannerIn {
+      from { opacity: 0; transform: translateY(-4px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
   </style>
+
+  <div id="lxImprovementBanner" role="status" aria-live="polite">
+    <span class="lx-banner-icon" aria-hidden="true">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+      </svg>
+    </span>
+    <span class="lx-banner-dot" aria-hidden="true"></span>
+    <span id="lxBannerText"></span>
+    <button id="lxBannerClose" aria-label="Chiudi">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
+        <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+      </svg>
+    </button>
+  </div>
 
 </body>
 </html>
