@@ -473,12 +473,19 @@
 
   function getAutoTranslateSetting() {
     try {
+      // Per gli utenti normali restituisce sempre false — solo il team mode può abilitarla
+      if (sessionStorage.getItem('ls_team_mode') !== '1') return false;
       return localStorage.getItem(global.I18n?.config?.autoTranslateKey || 'community_hub_auto_translate') === 'true';
     } catch (e) { return false; }
   }
 
   function setAutoTranslate(enabled) {
+    // Modifica consentita solo se il team mode è attivo (sequenza TESTTRAD)
     try {
+      if (sessionStorage.getItem('ls_team_mode') !== '1') {
+        warn('setAutoTranslate: operazione non consentita — team mode non attivo.');
+        return;
+      }
       localStorage.setItem(global.I18n?.config?.autoTranslateKey || 'community_hub_auto_translate', String(enabled));
     } catch (e) { /* silenzio */ }
   }
