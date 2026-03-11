@@ -5969,7 +5969,10 @@ function _lxApplyGlobalTranslationFlag(enabled) {
  */
 async function _lxPublishForAll(enable) {
   if (!_sbReady || !_sb) { showToast('red', '⚠️', 'Supabase non disponibile.'); return; }
-  if (!currentUser || currentUser.role !== 'team') {
+  const _pubRole = (currentUser && currentUser.role) ? currentUser.role.toLowerCase() : '';
+  const _isTeam  = _pubRole.includes('team') || _pubRole.includes('admin') ||
+                   _pubRole.includes('fondatore') || _pubRole.includes('founder');
+  if (!currentUser || !_isTeam) {
     showToast('red', '🔒', 'Solo il team può modificare questa impostazione.');
     return;
   }
@@ -15096,6 +15099,12 @@ async function _commentTranslate(btn, contentId, sourceLang) {
     _seqTimer = setTimeout(function() { _seqBuffer = ''; }, 3000);
     if (_seqBuffer === SECRET_SEQ) {
       _seqBuffer = '';
+      // Attiva subito il test mode se non è già attivo (non attendere il click del toggle)
+      var alreadyOn = false;
+      try { alreadyOn = sessionStorage.getItem('lx_test_mode') === '1'; } catch(e) {}
+      if (!alreadyOn && typeof window._lxToggleTestMode === 'function') {
+        window._lxToggleTestMode();
+      }
       _lxToggleTestPanel();
     }
   });
@@ -15181,10 +15190,32 @@ async function _commentTranslate(btn, contentId, sourceLang) {
     on = !on;
     try { sessionStorage.setItem('lx_test_mode', on ? '1' : '0'); } catch(e) {}
     window._lxTestModeActive = on;
+
+    // ── Mostra/nasconde tutti i pulsanti Traduci e i controlli CT ──────────
+    document.body.classList.toggle('lx-trans-disabled', !on);
+
+    // ── Sincronizza il flag per ContentTranslator ──────────────────────────
+    window._lsTeamModeActive = on;
+
+    // ── Sblocca/riblocca il toggle "Traduci automaticamente" nel language selector
+    document.querySelectorAll('.ls-toggle-auto input[type="checkbox"]').forEach(function(inp) {
+      inp.disabled = !on;
+      var row = inp.closest('.ls-auto-translate');
+      if (row) {
+        row.classList.toggle('ls-auto-disabled', !on);
+        var lbl = row.querySelector('.ls-auto-translate-label');
+        if (lbl) { lbl.style.pointerEvents = on ? '' : 'none'; lbl.style.cursor = on ? '' : 'not-allowed'; }
+      }
+      var toggle = inp.closest('.ls-toggle');
+      if (toggle) { toggle.style.pointerEvents = on ? '' : 'none'; toggle.style.cursor = on ? '' : 'not-allowed'; }
+    });
+
+    // ── Aggiorna label del toggle nel pannello ─────────────────────────────
     var btn = document.getElementById('lxTpModeToggle');
     if (btn) { btn.className = 'lx-tp-toggle ' + (on ? 'on' : 'off'); }
     var lbl = document.getElementById('lxTpModeLabel');
     if (lbl) lbl.textContent = on ? 'Traduzioni ABILITATE (solo tu)' : 'Traduzioni DISABILITATE (solo tu)';
+
     showToast && showToast(on ? 'blue' : 'red', on ? '\uD83C\uDF10' : '\uD83D\uDEAB',
       on ? 'Traduzioni abilitate nella tua sessione' : 'Traduzioni disabilitate nella tua sessione');
   };
