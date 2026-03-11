@@ -11377,22 +11377,25 @@ async function requestLevelUpgrade() {
   if (_upgradeRequestPending) return;
   _upgradeRequestPending = true;
   showToast('gold', '⭐', I18n.t('upgrade.request_sent'));
-  if (_sbReady && currentUser) {
+
+  if (!currentUser) { setTimeout(() => { _upgradeRequestPending = false; }, 30000); return; }
+
+  const userName  = currentUser.name;
+  const userShort = userName.split(' ')[0] + ' ' + (userName.split(' ')[1]||'?')[0] + '.';
+  const notifText = `<strong>${userShort}</strong> ha richiesto il passaggio al livello superiore (Founding Member)`;
+
+  // Trova tutti i membri team da REAL_MEMBERS; fallback all'email hardcoded
+  const teamMembers = (REAL_MEMBERS || []).filter(m =>
+    m.role === 'team' ||
+    (m.email && m.email.toLowerCase().includes('fondatore'))
+  );
+  const teamEmails = teamMembers.length > 0
+    ? [...new Set(teamMembers.map(m => m.email.toLowerCase()))]
+    : ['fondatore@luxhaven360.com'];
+
+  // 1. Supabase (se disponibile)
+  if (_sbReady) {
     try {
-      const userName = currentUser.name;
-      const userShort = userName.split(' ')[0] + ' ' + (userName.split(' ')[1]||'?')[0] + '.';
-      const notifText = `<strong>${userShort}</strong> ha richiesto il passaggio al livello superiore (Founding Member)`;
-
-      // Trova tutti i membri team da REAL_MEMBERS; fallback all'email hardcoded
-      const teamMembers = (REAL_MEMBERS || []).filter(m =>
-        m.role === 'team' ||
-        (m.email && m.email.toLowerCase().includes('fondatore'))
-      );
-      const teamEmails = teamMembers.length > 0
-        ? [...new Set(teamMembers.map(m => m.email.toLowerCase()))]
-        : ['fondatore@luxhaven360.com'];
-
-      // Invia notifica a ogni membro team
       const rows = teamEmails.map(email => ({
         user_email:   email,
         author_email: currentUser.email,
@@ -11403,6 +11406,15 @@ async function requestLevelUpgrade() {
       await _sb.from('notifications').insert(rows);
     } catch(e) { console.warn('[upgradeRequest] Supabase error:', e.message); }
   }
+
+  // 2. GAS fallback — invia sempre, indipendentemente da Supabase
+  if (GAS_URL) {
+    fetch(`${GAS_URL}?action=notify_upgrade_request` +
+      `&requester=${encodeURIComponent(userName)}` +
+      `&requesterEmail=${encodeURIComponent(currentUser.email)}`
+    ).catch(() => {});
+  }
+
   // Re-enable after 30s to prevent spam
   setTimeout(() => { _upgradeRequestPending = false; }, 30000);
 }
@@ -13917,32 +13929,37 @@ async function requestFoundingUpgrade(postId) {
   // Mostra subito feedback visivo
   showToast('gold', '⭐', I18n.t('upgrade.sent'));
 
-  if (!_sbReady) return; // fallback silenzioso se Supabase non disponibile
-
-  const userName = currentUser.name;
+  const userName  = currentUser.name;
   const userShort = userName.split(' ')[0] + ' ' + (userName.split(' ')[1]||'?')[0] + '.';
 
-  // Trova l'email del fondatore/team dai REAL_MEMBERS
-  const founderMember = (REAL_MEMBERS || []).find(m =>
+  // Trova TUTTI i membri team (non solo il primo)
+  const teamMembers = (REAL_MEMBERS || []).filter(m =>
     m.role === 'team' ||
     (m.email && m.email.toLowerCase().includes('fondatore'))
   );
-  const founderEmail = founderMember?.email?.toLowerCase() || 'fondatore@luxhaven360.com';
+  const teamEmails = teamMembers.length > 0
+    ? [...new Set(teamMembers.map(m => m.email.toLowerCase()))]
+    : ['fondatore@luxhaven360.com'];
 
-  try {
-    await _sb.from('notifications').insert({
-      user_email: founderEmail,
-      icon:       'gold',
-      emoji:      '⭐',
-      text:       `<strong>${userShort}</strong> ha richiesto l'upgrade a <strong>Founding Member</strong>`,
-      created_at: new Date().toISOString(),
-      read:       false
-    });
-  } catch(e) {
-    console.warn('[upgradeNotif]', e.message);
+  // 1. Supabase (se disponibile) — NON fa return se non disponibile
+  if (_sbReady) {
+    try {
+      const rows = teamEmails.map(email => ({
+        user_email:   email,
+        author_email: currentUser.email,
+        icon:         'gold',
+        emoji:        '⭐',
+        text:         `<strong>${userShort}</strong> ha richiesto l'upgrade a <strong>Founding Member</strong>`,
+        created_at:   new Date().toISOString(),
+        read:         false
+      }));
+      await _sb.from('notifications').insert(rows);
+    } catch(e) {
+      console.warn('[upgradeNotif]', e.message);
+    }
   }
 
-  // Invia anche via GAS se disponibile (fallback email / log)
+  // 2. GAS fallback — invia sempre, indipendentemente da Supabase
   if (GAS_URL) {
     fetch(`${GAS_URL}?action=notify_upgrade_request` +
       `&requester=${encodeURIComponent(userName)}` +
@@ -16382,6 +16399,11 @@ function _lxApplyManualTransToEl(el, translatedText) {
 
   <div id="lxImprovementBanner" role="status" aria-live="polite">
     <span class="lx-banner-icon" aria-hidden="true">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+      </svg>
+    </span>
+    ner-icon" aria-hidden="true">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
         <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
       </svg>
