@@ -68,8 +68,8 @@
     labelAttr:           'data-i18n',
 
     // Rate limiting (evita troppe richieste consecutive)
-    requestDelay:   200,  // ms tra richieste
-    maxConcurrent:  3,    // richieste parallele max
+    requestDelay:   50,   // ms tra richieste (ridotto per maggiore reattività)
+    maxConcurrent:  5,    // richieste parallele max
 
     debugMode: false,
   };
@@ -441,12 +441,15 @@
 
     const userLang = opts.userLang || global.I18n?.getCurrentLanguage() || CONFIG.defaultLang;
 
-    // Processa in batch per non bloccare il thread
+    // Processa in batch paralleli per non bloccare il thread
+    // e garantire una risposta immediata (nessun delay artificiale)
     const batch = Array.from(elements);
-    for (let i = 0; i < batch.length; i++) {
-      await processElement(batch[i], { ...opts, userLang });
-      // Piccola pausa ogni 10 elementi per non bloccare il rendering
-      if (i % 10 === 9) await sleep(CONFIG.requestDelay);
+    const PARALLEL = CONFIG.maxConcurrent;
+    for (let i = 0; i < batch.length; i += PARALLEL) {
+      const chunk = batch.slice(i, i + PARALLEL);
+      await Promise.all(chunk.map(el => processElement(el, { ...opts, userLang })));
+      // Piccola pausa ogni batch per non bloccare il rendering
+      if (i + PARALLEL < batch.length) await sleep(CONFIG.requestDelay);
     }
   }
 
@@ -465,7 +468,7 @@
       if (btn?.parentElement) btn.parentElement.remove();
     });
 
-    // Riprocessa
+    // Riprocessa immediatamente con la nuova lingua
     await translateAll({ userLang: newLang, auto: getAutoTranslateSetting() });
   }
 
