@@ -5465,6 +5465,11 @@ function initApp() {
   // Avvia presenza real-time: heartbeat immediato + timer + Firebase
   startPresenceSystem();
 
+  // Precarica tutte le traduzioni manuali in cache per traduzioni istantanee al cambio lingua
+  if (_sbReady && typeof _lxPreloadAllTranslations === 'function') {
+    _lxPreloadAllTranslations();
+  }
+
   // Supabase: ascolta notifiche in tempo reale
   if (_sbReady && currentUser) {
     const notifKey = emailKey(currentUser.email);
@@ -8119,8 +8124,7 @@ function renderFeed() {
             ${I18n.t('feed.locked_msg')}
           </div>
           <button class="upgrade-btn" onclick="requestFoundingUpgrade(${post.id})">${I18n.t('feed.locked_btn')}</button>
-        ` : `<div class="post-text" data-content-id="post-body-${post.id}" data-content-lang="${post.lang || 'it'}">${post.text}</div>
-        ${window.I18n && I18n.getCurrentLanguage() !== (post.lang||'it') ? `<button class="lx-translate-btn" onclick="event.stopPropagation();_lxTranslatePost(this,${post.id})" data-post-id="${post.id}">${_lxTranslateBtnInner('translate')}</button>` : ''}`}
+        ` : `<div class="post-text" data-content-id="post-body-${post.id}" data-content-lang="${post.lang || 'it'}">${post.text}</div>`}
       </div>
       ${!isLocked ? `
       <div class="reaction-bar" id="reaction-bar-${post.id}">
@@ -8203,6 +8207,9 @@ function renderFeed() {
     // Ripristina traduzioni attive dalla cache e aggiorna visibilità pulsanti
     _lxRestoreTranslations(container);
     _lxUpdateTranslateVisibility(container);
+    // Applica subito le traduzioni già in cache (istantaneo, senza ritardo)
+    const _feedLang = window.I18n ? I18n.getCurrentLanguage() : 'it';
+    _lxApplyCachedTranslationsSync(container, _feedLang);
   });
 }
 
@@ -11232,10 +11239,17 @@ function renderListings() {
       ${listings.map(l => {
         // ── Normalizza i campi per supportare sia il formato nuovo che quello legacy ──
         const displayTitle = l.title || l.name || '';
-        // Separa emoji dal titolo: l'emoji non va tradotta, il testo sì
-        const _emojiMatch = displayTitle.match(/^(\p{Emoji_Presentation}|\p{Extended_Pictographic})\s*/u);
-        const displayEmoji = _emojiMatch ? _emojiMatch[0].trim() : '';
-        const displayTitleText = displayEmoji ? displayTitle.slice(_emojiMatch[0].length) : displayTitle;
+        // Usa l.emoji salvato (campo separato); fallback: estrai dall'inizio del titolo
+        let displayEmoji = l.emoji || '';
+        let displayTitleText;
+        if (displayEmoji) {
+          const emojiPrefix = displayEmoji + ' ';
+          displayTitleText = displayTitle.startsWith(emojiPrefix) ? displayTitle.slice(emojiPrefix.length) : displayTitle;
+        } else {
+          const _emojiMatch = displayTitle.match(/^(\p{Emoji_Presentation}|\p{Extended_Pictographic})\s*/u);
+          displayEmoji = _emojiMatch ? _emojiMatch[0].trim() : '';
+          displayTitleText = displayEmoji ? displayTitle.slice(_emojiMatch[0].length) : displayTitle;
+        }
         // Estrai desc e price da text se non presenti come campi separati
         let displayDesc  = l.desc || '';
         let displayPrice = l.price || '';
@@ -11263,7 +11277,6 @@ function renderListings() {
           <div class="listing-footer">
             <div>
               ${displayPrice ? `<div class="listing-price">${displayPrice} <span class="listing-price-unit">${displayUnit}</span></div>` : ''}
-              <button class="lx-translate-btn" style="margin-top:0.35rem;" onclick="event.stopPropagation();_lxTranslateListing(this,${l.id})">${_lxTranslateBtnInner('translate')}</button>
             </div>
             ${role === 'candidate'
               ? `<span class="listing-book-btn locked-btn">${window.I18n ? I18n.t('listing.solo_founding') : '🔒 Solo Founding'}</span>`
@@ -11275,6 +11288,9 @@ function renderListings() {
   // Ripristina traduzioni attive e aggiorna visibilità pulsanti dopo ogni re-render
   _lxRestoreTranslations(container);
   _lxUpdateTranslateVisibility(container);
+  // Applica subito le traduzioni già in cache (istantaneo, senza ritardo)
+  const _listLang = window.I18n ? I18n.getCurrentLanguage() : 'it';
+  _lxApplyCachedTranslationsSync(container, _listLang);
   // Se auto-translate attivo, traduce automaticamente i nuovi contenuti renderizzati
   if (window.ContentTranslator && ContentTranslator.getAutoTranslateSetting && ContentTranslator.getAutoTranslateSetting()) {
     const lang = window.I18n ? I18n.getCurrentLanguage() : 'it';
@@ -11298,7 +11314,6 @@ function renderSurveys() {
     <div class="survey-card" id="survey-${s.id}">
       <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:0.5rem; margin-bottom:0.8rem;">
         <div class="post-type-tag survey">${I18n.t('survey.active_tag')}</div>
-        <button class="lx-translate-btn" onclick="event.stopPropagation();_lxTranslateSurvey(this,${s.id})" style="flex-shrink:0;">${_lxTranslateBtnInner('translate')}</button>
       </div>
       <div class="survey-title" data-content-id="survey-title-${s.id}" data-content-lang="${s.lang||'it'}">${s.title}</div>
       <div class="survey-desc" data-content-id="survey-desc-${s.id}" data-content-lang="${s.lang||'it'}">${s.desc || s.question || ''}</div>
@@ -11320,14 +11335,15 @@ function renderSurveys() {
   // Ripristina traduzioni attive e aggiorna visibilità pulsanti dopo ogni re-render
   _lxRestoreTranslations(container);
   _lxUpdateTranslateVisibility(container);
+  // Applica subito le traduzioni già in cache (istantaneo, senza ritardo)
+  const _survLang = window.I18n ? I18n.getCurrentLanguage() : 'it';
+  _lxApplyCachedTranslationsSync(container, _survLang);
   // Se auto-translate attivo, traduce automaticamente i nuovi contenuti renderizzati
   if (window.ContentTranslator && ContentTranslator.getAutoTranslateSetting && ContentTranslator.getAutoTranslateSetting()) {
     const lang = window.I18n ? I18n.getCurrentLanguage() : 'it';
     if (lang && lang !== 'it') _lxAutoTranslateAllIn(container);
   }
 }
-
-/* ── Richiesta upgrade livello (Founder Candidate → Founding Member) ──── */
 let _upgradeRequestPending = false;
 async function requestLevelUpgrade() {
   if (_upgradeRequestPending) return;
@@ -12618,7 +12634,6 @@ function renderRightPanel() {
           <button onclick="completeEventUI(${e.id})" style="font-size:0.62rem; padding:2px 7px; border-radius:4px; border:1px solid var(--green); background:transparent; color:var(--green); cursor:pointer;">${complLabel}</button>
           <button onclick="deleteEventUI(${e.id})" style="font-size:0.62rem; padding:2px 7px; border-radius:4px; border:1px solid var(--border2); background:transparent; color:var(--muted2); cursor:pointer;">${delLabel}</button>
         </div>` : ''}
-      <button class="lx-translate-btn" style="margin-top:0.4rem;" onclick="event.stopPropagation();_lxTranslateEvent(this,${e.id})">${_lxTranslateBtnInner('translate')}</button>
     </div>`;
   }).join('');
   // Ripristina traduzioni attive sugli eventi dopo ogni re-render
@@ -12626,6 +12641,9 @@ function renderRightPanel() {
   if (eventsContainer) {
     _lxRestoreTranslations(eventsContainer);
     _lxUpdateTranslateVisibility(eventsContainer);
+    // Applica subito le traduzioni già in cache (istantaneo, senza ritardo)
+    const _evtLang = window.I18n ? I18n.getCurrentLanguage() : 'it';
+    _lxApplyCachedTranslationsSync(eventsContainer, _evtLang);
     // Se auto-translate attivo, traduce automaticamente gli eventi renderizzati
     if (window.ContentTranslator && ContentTranslator.getAutoTranslateSetting && ContentTranslator.getAutoTranslateSetting()) {
       const lang = window.I18n ? I18n.getCurrentLanguage() : 'it';
@@ -12816,13 +12834,15 @@ async function publishListing() {
   // Listing sempre globali — nessun filtro destinatari
   var recipient = "all";
   var catIcons = {"real-estate":"🏠","supercar":"🏎️","experience":"✨","shop":"🛍️","testdrive":"🚗","services":"💎"};
+  var listingEmoji = catIcons[category] || "";
   var postText = price ? desc + "\n\n💰 " + price : desc;
   var tempId = Date.now();
   // FIX: il listing va in LISTINGS, NON in FEED_POSTS.
   // Prima era inserito in FEED_POSTS → appariva nel Feed → scompariva al poll successivo (GAS non lo aveva).
   var listingObj = {
     id: tempId, author: currentUser.name, author_email: currentUser.email, initial: currentUser.initial, role: currentUser.title,
-    type: "listing", time: "Ora", title: (catIcons[category]||"")+" "+title, text: postText,
+    type: "listing", time: "Ora", title: listingEmoji+" "+title, text: postText,
+    emoji: listingEmoji,
     desc: desc, price: price,
     locked: "", recipient: "all", category: category, likes: 0, comments: 0,
     liked: false, commentsData: [], likedBy: [], ts: new Date().toISOString(),
@@ -15794,6 +15814,75 @@ async function _commentTranslate(btn, contentId, sourceLang) {
 // ── Cache in-memory delle traduzioni manuali ─────────────────────────────
 // Chiave: "content_type|content_id|lang" → { title, text } | null (assente)
 const _lxManualTransCache = {};
+let _lxPreloadDone = false;
+
+/**
+ * _lxApplyCachedTranslationsSync — applica immediatamente le traduzioni già in cache
+ * a tutti i [data-content-id] nel container, senza alcun ritardo.
+ * Chiamato subito dopo ogni render per eliminare il flash di contenuto non tradotto.
+ */
+function _lxApplyCachedTranslationsSync(container, lang) {
+  if (!container || !lang || lang === 'it') return;
+  container.querySelectorAll('[data-content-id]').forEach(el => {
+    const cid = el.dataset.contentId;
+    if (!cid) return;
+    // Controlla cache _lxTranslateCache (traduzioni LibreTranslate già fatte)
+    if (_lxTranslateCache[cid]?.translated) {
+      el.textContent = _lxTranslateCache[cid].translated;
+      el.dataset.lxTranslated = '1';
+      return;
+    }
+    // Controlla cache traduzioni manuali
+    const optMatch = cid.match(/^survey-opt-(\d+)-(\d+)$/);
+    if (optMatch) {
+      const key = `survey_opt|${optMatch[1]}-${optMatch[2]}|${lang}`;
+      const cached = _lxManualTransCache[key];
+      if (cached && cached.text) { el.textContent = cached.text; el.dataset.lxTranslated = '1'; }
+      return;
+    }
+    const match = cid.match(/^(post|listing|survey|event)-(?:title|body|desc|meta)-(.+)$/);
+    if (!match) return;
+    const contentType = match[1];
+    const contentId = match[2];
+    const field = cid.includes('-title-') ? 'title' : 'text';
+    const key = `${contentType}|${contentId}|${lang}`;
+    const cached = _lxManualTransCache[key];
+    if (cached && cached[field]) {
+      if (!_lxTranslateCache[cid]) _lxTranslateCache[cid] = { original: el.textContent.trim() };
+      el.textContent = cached[field];
+      el.dataset.lxTranslated = '1';
+      _lxTranslateCache[cid].translated = cached[field];
+    }
+  });
+}
+
+/**
+ * _lxPreloadAllTranslations — carica TUTTE le traduzioni da Supabase in cache al login.
+ * Questo elimina qualsiasi ritardo al cambio lingua: i dati sono già in memoria.
+ */
+async function _lxPreloadAllTranslations() {
+  if (_lxPreloadDone || !_sbReady || !_sb) return;
+  try {
+    const { data, error } = await _sb.from('content_translations').select('content_type, content_id, lang, title, text');
+    if (error) throw error;
+    if (!Array.isArray(data)) return;
+    data.forEach(row => {
+      const key = `${row.content_type}|${row.content_id}|${row.lang}`;
+      _lxManualTransCache[key] = { title: row.title || null, text: row.text || null };
+    });
+    _lxPreloadDone = true;
+    console.info(`[LxTrans] Precaricate ${data.length} traduzioni manuali in cache.`);
+    // Applica subito le traduzioni se la lingua attuale non è IT
+    const currLang = window.I18n ? I18n.getCurrentLanguage() : 'it';
+    if (currLang && currLang !== 'it') {
+      ['feedContainer','surveysContainer','listingsContainer','upcomingEvents'].forEach(id => {
+        _lxApplyCachedTranslationsSync(document.getElementById(id), currLang);
+      });
+    }
+  } catch(e) {
+    console.warn('[LxTrans] Preload traduzioni fallito:', e.message);
+  }
+}
 
 /**
  * _lxSaveManualTranslations — salva le traduzioni manuali su Supabase.
