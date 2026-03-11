@@ -3606,17 +3606,17 @@ Object.assign(window.I18N_TRANSLATIONS['es'] || (window.I18N_TRANSLATIONS['es']=
       <div style="text-align:center; font-size:0.72rem; color:var(--muted2); line-height:1.6;" data-i18n="login.credentials_sent">
         Le credenziali ti sono state inviate via email al momento della prenotazione. Per assistenza:</div>
       <div style="text-align:center; font-size:0.72rem; color:var(--muted2); line-height:1.6;">
-        <a href="mailto:support@luxhaven360.com" style="color:var(--gold); text-decoration:none;">support@luxhaven360.com</a>
+        <a href="/cdn-cgi/l/email-protection#1665636666796462567a636e7e776073782520263875797b" style="color:var(--gold); text-decoration:none;"><span class="__cf_email__" data-cfemail="d4a7a1a4a4bba6a094b8a1acbcb5a2b1bae7e2e4fab7bbb9">[email&#160;protected]</span></a>
       </div>
     </div>
     <div style="margin-top:0.8rem; padding:0.55rem 0.8rem; border-radius:var(--radius); background:rgba(212,175,55,0.05); border:1px solid rgba(212,175,55,0.18); text-align:center; font-size:0.63rem; color:var(--muted2); line-height:1.7;">
       🔐 <strong style="color:var(--gold);">Accesso Fondatore</strong><br>
-      <span style="font-family:monospace; letter-spacing:0.03em; font-size:0.65rem; color:var(--light);">fondatore@luxhaven360.com</span><br>
+      <span style="font-family:monospace; letter-spacing:0.03em; font-size:0.65rem; color:var(--light);"><a href="/cdn-cgi/l/email-protection" class="__cf_email__" data-cfemail="37515859535643584552775b424f5f564152590401071954585a">[email&#160;protected]</a></span><br>
       <span style="font-family:monospace; letter-spacing:0.03em; font-size:0.65rem; color:var(--light);">LuxFounder2025!</span>
     </div>
 </div>
-</div>
-  
+</div><!-- /loginGate -->
+
 <!-- ═══════════════ MAIN APP ═══════════════ -->
 <div id="mainApp">
 
@@ -3757,7 +3757,7 @@ Object.assign(window.I18N_TRANSLATIONS['es'] || (window.I18N_TRANSLATIONS['es']=
   </header>
 
 
-  <script>
+  <script data-cfasync="false" src="/cdn-cgi/scripts/5c5dd728/cloudflare-static/email-decode.min.js"></script><script>
   (function() {
     var BANNER_INTERVAL_MS  = 360 * 60 * 1000; // 6 ore — cooldown tra ricaricamenti
     var BANNER_VISIBLE_MS   = 10 * 1000;        // 10 secondi visibile
@@ -12605,24 +12605,64 @@ function renderRightPanel() {
         Nessun membro online al momento
       </div>`;
   } else {
-    list.innerHTML = ONLINE_MEMBERS.map(m => {
-      const isTeam     = m.role === 'team';
-      const roleLabel  = window.I18n ? (isTeam ? I18n.t('role.team_short') : m.role === 'founding' ? I18n.t('role.founding') : I18n.t('role.candidate')) : (isTeam ? 'Team' : m.role === 'founding' ? 'Founding Member' : 'Founder Candidate');
-      const nameColor  = isTeam ? 'var(--gold)' : 'var(--light)';
-      const isMe       = currentUser && (m.email === currentUser.email || m.name === currentUser.name);
-      const emailAttr  = m.email || '';
-      return `
-      <div class="online-member" style="cursor:pointer;" onclick="openMemberQuickMenu(event,'${encodeURIComponent(emailAttr)}','${encodeURIComponent(m.name)}','${m.initial}','${m.role||''}')">
-        <div class="om-avatar" style="background:var(--dark4); border:1px solid var(--border2); color:${isTeam ? 'var(--gold)' : 'var(--muted)'};">
-          ${m.initial}
-          <div class="om-status online"></div>
-        </div>
-        <div style="min-width:0;">
-          <div class="om-name" style="color:${nameColor};">${m.name}${isMe ? ' <span style="font-size:0.58rem;color:var(--muted2);font-weight:400;">(Io)</span>' : ''}</div>
-          <div class="om-role-tag ${isTeam ? 'gold' : ''}">${roleLabel}</div>
-        </div>
-      </div>`;
-    }).join('');
+    // DOM diffing: aggiorna solo i nodi cambiati, senza distruggere quelli esistenti.
+    // Evita il flash/lampeggio sull'hover causato dalla ricostruzione completa del DOM.
+    if (list.querySelector('.om-empty')) list.innerHTML = '';
+
+    const existingByEmail = {};
+    Array.from(list.children).forEach(function(node) {
+      if (node.dataset.memberEmail) existingByEmail[node.dataset.memberEmail] = node;
+    });
+
+    ONLINE_MEMBERS.forEach(function(m, i) {
+      var isTeam    = m.role === 'team';
+      var roleLabel = window.I18n ? (isTeam ? I18n.t('role.team_short') : m.role === 'founding' ? I18n.t('role.founding') : I18n.t('role.candidate')) : (isTeam ? 'Team' : m.role === 'founding' ? 'Founding Member' : 'Founder Candidate');
+      var nameColor = isTeam ? 'var(--gold)' : 'var(--light)';
+      var isMe      = currentUser && (m.email === currentUser.email || m.name === currentUser.name);
+      var emailKey  = (m.email || m.name || '').toLowerCase();
+      var emailAttr = m.email || '';
+
+      var node = existingByEmail[emailKey];
+      if (!node) {
+        node = document.createElement('div');
+        node.className = 'online-member';
+        node.style.cursor = 'pointer';
+        node.dataset.memberEmail = emailKey;
+        (function(ea, en, ei, er) {
+          node.onclick = function(e) { openMemberQuickMenu(e, encodeURIComponent(ea), encodeURIComponent(en), ei, er); };
+        })(emailAttr, m.name, m.initial, m.role || '');
+        node.innerHTML =
+          '<div class="om-avatar" style="background:var(--dark4); border:1px solid var(--border2);">' +
+            '<span class="om-initial">' + m.initial + '</span>' +
+            '<div class="om-status online"></div>' +
+          '</div>' +
+          '<div style="min-width:0;">' +
+            '<div class="om-name"></div>' +
+            '<div class="om-role-tag' + (isTeam ? ' gold' : '') + '"></div>' +
+          '</div>';
+      } else {
+        delete existingByEmail[emailKey];
+      }
+
+      // Aggiorna solo i campi testuali se effettivamente cambiati
+      var nameEl   = node.querySelector('.om-name');
+      var roleEl   = node.querySelector('.om-role-tag');
+      var initEl   = node.querySelector('.om-initial');
+      var avatarEl = node.querySelector('.om-avatar');
+      var newNameHtml = m.name + (isMe ? ' <span style="font-size:0.58rem;color:var(--muted2);font-weight:400;">(Io)</span>' : '');
+      if (nameEl   && nameEl.innerHTML   !== newNameHtml) nameEl.innerHTML   = newNameHtml;
+      if (roleEl   && roleEl.textContent !== roleLabel)   roleEl.textContent = roleLabel;
+      if (initEl   && initEl.textContent !== m.initial)   initEl.textContent = m.initial;
+      if (nameEl)   nameEl.style.color   = nameColor;
+      if (avatarEl) avatarEl.style.color = isTeam ? 'var(--gold)' : 'var(--muted)';
+
+      // Riposiziona il nodo solo se non e' gia' nella posizione corretta
+      var atIndex = list.children[i];
+      if (atIndex !== node) list.insertBefore(node, atIndex || null);
+    });
+
+    // Rimuovi i nodi degli utenti non piu' online
+    Object.values(existingByEmail).forEach(function(node) { node.remove(); });
   }
 
   // ── Prossimi Eventi ────────────────────────────────────────────────────
@@ -16346,6 +16386,11 @@ function _lxApplyManualTransToEl(el, translatedText) {
         <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
       </svg>
     </span>
+    ner-icon" aria-hidden="true">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+      </svg>
+    </span>
     <span class="lx-banner-dot" aria-hidden="true"></span>
     <span id="lxBannerText"></span>
     <button id="lxBannerClose" aria-label="Chiudi">
@@ -16354,7 +16399,5 @@ function _lxApplyManualTransToEl(el, translatedText) {
       </svg>
     </button>
   </div>
-
 </body>
 </html>
-
