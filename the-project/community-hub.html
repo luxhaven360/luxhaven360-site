@@ -2243,7 +2243,10 @@ mark.hl { background: rgba(212,175,55,0.22); color: var(--gold-light); border-ra
     to   { transform: rotate(360deg); }
   }
 
-  /* ── Sezione traduzioni manuali nei form (TESTTRAD) ── */
+  /* ── Sezione traduzioni manuali nei form ──────────────────────────────────
+     Visibile sempre per account team (aggiunta in initApp).
+     Visibile anche per utenti non-team quando TESTTRAD è attivo.
+     ─────────────────────────────────────────────────────────────────────── */
   .lx-trans-form-section { display: none; }
   body.lx-trans-forms-visible .lx-trans-form-section { display: block; }
 
@@ -5253,7 +5256,16 @@ function initApp() {
   });
 
   const role = currentUser.role;
-  
+
+  // ── Form di traduzione manuale: sempre visibili per gli account team ─────
+  // Non richiedono TESTTRAD — il team può inserire traduzioni in qualsiasi momento.
+  const _roleLC = role ? role.toLowerCase() : '';
+  const _isTeamRole = _roleLC.includes('team') || _roleLC.includes('admin') ||
+                      _roleLC.includes('fondatore') || _roleLC.includes('founder');
+  if (_isTeamRole) {
+    document.body.classList.add('lx-trans-forms-visible');
+  }
+
   // Apply role class to sidebar
   const sidebar = document.getElementById('sidebar');
   sidebar.className = `role-${role === 'team' ? 'team' : role === 'founding' ? 'founding' : 'candidate'}`;
@@ -6154,7 +6166,7 @@ function _lxApplyGlobalTranslationFlag(enabled) {
   window._lxGlobalTranslationsEnabled = enabled;
 
   const localTestOn = (function() {
-    try { return sessionStorage.getItem('lx_test_mode') === '1'; } catch(e) { return false; }\
+    try { return sessionStorage.getItem('lx_test_mode') === '1'; } catch(e) { return false; }
   })();
   if (!localTestOn) {
     window._lxTestModeActive = enabled;
@@ -15606,6 +15618,8 @@ async function _commentTranslate(btn, contentId, sourceLang) {
 /* ═══════════════════════════════════════════════════════════════════════
    SISTEMA TRADUZIONI MANUALI — Sezione 5 specifica
    ───────────────────────────────────────────────────────────────────────
+   Tabella Supabase richiesta (eseguire manualmente una sola volta):
+
    CREATE TABLE content_translations (
      id          uuid DEFAULT gen_random_uuid() PRIMARY KEY,
      content_type text NOT NULL,           -- 'post' | 'event' | 'listing' | 'survey'
@@ -15976,4 +15990,3 @@ function _lxApplyManualTransToEl(el, translatedText) {
 
 </body>
 </html>
-
