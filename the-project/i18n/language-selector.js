@@ -53,9 +53,17 @@
       if (buffer === TEAM_SECRET) {
         buffer = '';
         if (!isTeamModeActive()) {
+          // ── Verifica ruolo: solo team/admin/fondatore ricevono l'unlock ──────
+          const _role = (window.currentUser && window.currentUser.role)
+            ? window.currentUser.role.toLowerCase() : '';
+          const _isTeam = _role.includes('team') || _role.includes('admin') ||
+                          _role.includes('fondatore') || _role.includes('founder');
+          if (!_isTeam) return; // non-team: nessuna modifica visibile
+
           enableTeamMode();
-          // Aggiorna tutti i toggle presenti nella pagina
-          document.querySelectorAll('.ls-toggle-auto input[type="checkbox"]').forEach(function (inp) {
+          // Aggiorna tutti i toggle presenti nella pagina.
+          // Selettore corretto: la classe ls-toggle-auto è sull'<input> stesso
+          document.querySelectorAll('input.ls-toggle-auto[type="checkbox"]').forEach(function (inp) {
             inp.disabled = false;
             const row    = inp.closest('.ls-auto-translate');
             if (row) row.classList.remove('ls-auto-disabled');
@@ -422,7 +430,8 @@
         opt.classList.add('active');
         closeDropdown();
 
-        if (CT) await CT.onUserLanguageChange(lang.code);
+        // Traduzione immediata: avvia subito senza attendere tick successivo
+        if (CT) CT.onUserLanguageChange(lang.code);
       });
 
       dropdown.appendChild(opt);
