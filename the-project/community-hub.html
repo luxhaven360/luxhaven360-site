@@ -5930,14 +5930,13 @@ function initApp() {
     ContentTranslator.setTranslationService(async (text, from, to) => {
       return _lxTranslateWrapper(text, from, to);
     });
-    // Processa i contenuti utente già presenti al caricamento iniziale
-    // con un piccolo ritardo per non bloccare il render principale
+    // Processa i contenuti utente già presenti al caricamento iniziale.
+    // Usa un tick minimo (50ms) per non bloccare il render principale,
+    // ma senza ritardi artificiali che causerebbero contenuti visibilmente
+    // in ritardo rispetto alla lingua selezionata.
     setTimeout(() => {
-      const currentLang = window.I18n ? I18n.getCurrentLanguage() : 'it';
-      if (currentLang !== 'it') {
-        ContentTranslator.translateAll({ auto: false });
-      }
-    }, 1500);
+      ContentTranslator.translateAll({ auto: ContentTranslator.getAutoTranslateSetting() });
+    }, 50);
   }
 }
 
@@ -14655,26 +14654,13 @@ async function _lxTranslateSurvey(btn, surveyId) {
     const manTrans = await _lxFetchManualTranslation('survey', String(surveyId), lang);
     if (manTrans && (manTrans.title || manTrans.text)) {
       if (titleEl && manTrans.title) _lxApplyManualTransToEl(titleEl, manTrans.title);
-      // Prova a decodificare text come JSON {q, opts} (traduzione con opzioni)
-      let questionText = manTrans.text;
-      let optsFromManual = null;
-      if (manTrans.text) {
-        try {
-          const parsed = JSON.parse(manTrans.text);
-          if (parsed && typeof parsed.q !== 'undefined') {
-            questionText = parsed.q;
-            if (Array.isArray(parsed.opts)) optsFromManual = parsed.opts;
-          }
-        } catch(_je) { /* testo normale, non JSON */ }
-      }
-      if (descEl && questionText) _lxApplyManualTransToEl(descEl, questionText);
-      // Applica traduzioni manuali alle opzioni se disponibili
-      if (optsFromManual) {
-        optEls.forEach((el, i) => {
-          if (optsFromManual[i] && optsFromManual[i].trim()) {
-            _lxApplyManualTransToEl(el, optsFromManual[i].trim());
-          }
-        });
+      if (descEl  && manTrans.text)  _lxApplyManualTransToEl(descEl,  manTrans.text);
+      // Recupera traduzioni opzioni (righe survey_opt separate)
+      for (let i = 0; i < optEls.length; i++) {
+        const optManTrans = await _lxFetchManualTranslation('survey_opt', `${surveyId}-${i}`, lang);
+        if (optManTrans && optManTrans.text) {
+          _lxApplyManualTransToEl(optEls[i], optManTrans.text);
+        }
       }
       btn.classList.remove('loading');
       btn.innerHTML = _lxTranslateBtnInner('restore');
@@ -15471,16 +15457,18 @@ async function _commentTranslate(btn, contentId, sourceLang) {
   });
 
   // ── Attivazione silenziosa ────────────────────────────────────────────
-  // Non apre pannelli. Abilita le funzionalità di traduzione per il solo
-  // membro del team nella sua sessione. La pagina rimane visivamente identica
-  // per gli utenti normali.
+  // Per il team: abilita pulsanti traduzione + form + barra controllo.
+  // Per utenti normali: nessuna modifica visibile (sicurezza extra).
   function _lxActivateTestMode() {
-    // 1. Verifica ruolo
+    // 1. Verifica ruolo — solo team/admin/fondatore ottengono le funzioni di traduzione
     var _role  = (window.currentUser && window.currentUser.role) ? window.currentUser.role.toLowerCase() : '';
     var isTeam = _role.includes('team') || _role.includes('admin') ||
                  _role.includes('fondatore') || _role.includes('founder');
 
-    // 2. Attiva traduzione nella sessione (indipendente dal ruolo per sicurezza doppia)
+    // Non-team: esce silenziosamente senza fare nulla di visibile
+    if (!isTeam) return;
+
+    // 2. Attiva traduzione nella sessione (solo per account team)
     var alreadyOn = false;
     try { alreadyOn = sessionStorage.getItem('lx_test_mode') === '1'; } catch(e) {}
 
@@ -15500,15 +15488,10 @@ async function _commentTranslate(btn, contentId, sourceLang) {
       }
     }
 
-    // 3. Mostra/nascondi barra di controllo team (solo per il team)
-    if (isTeam) {
-      _lxToggleTeamBar();
-    }
-  }
-
   // ── Sblocca toggle auto-traduzione nel language selector ─────────────
   function _lxUnlockAutoTranslateToggle() {
-    document.querySelectorAll('.ls-toggle-auto input[type="checkbox"]').forEach(function(inp) {
+    // Selettore corretto: la classe ls-toggle-auto è sull'<input> stesso, non su un wrapper
+    document.querySelectorAll('input.ls-toggle-auto[type="checkbox"]').forEach(function(inp) {
       inp.disabled = false;
       var row = inp.closest('.ls-auto-translate');
       if (row) {
@@ -15744,6 +15727,23 @@ async function _lxSaveManualTranslations(contentType, contentId, translations, b
       title: hasTitle ? t.title.trim() : null,
       text:  hasText  ? t.text.trim()  : null,
     };
+
+    // ── Salva opzioni sondaggio come righe survey_opt separate ──────────
+    // Struttura: content_type='survey_opt', content_id='{surveyId}-{i}', text=opzione tradotta
+    if (contentType === 'survey' && Array.isArray(t.opts)) {
+      t.opts.forEach((optText, i) => {
+        if (!optText || !optText.trim()) return;
+        const optId = `${contentId}-${i}`;
+        rows.push({
+          content_type: 'survey_opt',
+          content_id:   optId,
+          lang,
+          title: null,
+          text:  optText.trim(),
+        });
+        _lxManualTransCache[`survey_opt|${optId}|${lang}`] = { title: null, text: optText.trim() };
+      });
+    }
   });
   if (rows.length === 0) return;
 
@@ -15796,7 +15796,8 @@ async function _lxFetchManualTranslation(contentType, contentId, lang) {
 /**
  * _lxReadTransFields — legge i campi di traduzione dal form.
  * @param {string} prefix - es. 'broadcastTrans', 'listingTrans', etc.
- * @returns {Object} { en: {title, text}, fr: {title, text}, ... }
+ * @returns {Object} { en: {title, text, opts?}, fr: ..., ... }
+ *   opts è presente (array di stringhe) solo per il prefix 'surveyTrans'
  */
 function _lxReadTransFields(prefix) {
   const langs = ['en', 'fr', 'de', 'es'];
@@ -15805,28 +15806,22 @@ function _lxReadTransFields(prefix) {
     const titleEl = document.getElementById(`${prefix}_${lang}_title`);
     const textEl  = document.getElementById(`${prefix}_${lang}_text`);
     const metaEl  = document.getElementById(`${prefix}_${lang}_meta`); // eventi
-    // ── Opzioni sondaggio (se presenti) ──────────────────────────────────
-    let optsArr = null;
+    const entry = {
+      title: titleEl ? titleEl.value.trim() : '',
+      text:  textEl  ? textEl.value.trim()  : (metaEl ? metaEl.value.trim() : ''),
+    };
+    // Leggi opzioni sondaggio (se presenti nel form)
     if (prefix === 'surveyTrans') {
       const optsWrap = document.getElementById(`surveyTransOpts_${lang}`);
       if (optsWrap) {
         const optInputs = optsWrap.querySelectorAll('input.lx-tf-input');
         if (optInputs.length > 0) {
-          optsArr = Array.from(optInputs).map(i => i.value.trim());
-          if (optsArr.every(o => !o)) optsArr = null; // ignora se tutti vuoti
+          const opts = Array.from(optInputs).map(i => i.value.trim());
+          if (opts.some(o => o)) entry.opts = opts; // includi solo se almeno uno non è vuoto
         }
       }
     }
-    const rawText = textEl ? textEl.value.trim() : (metaEl ? metaEl.value.trim() : '');
-    // Se ci sono opzioni, serializza come JSON in text: {q:"...", opts:[...]}
-    let encodedText = rawText;
-    if (optsArr) {
-      encodedText = JSON.stringify({ q: rawText, opts: optsArr });
-    }
-    result[lang] = {
-      title: titleEl ? titleEl.value.trim() : '',
-      text:  encodedText,
-    };
+    result[lang] = entry;
   });
   return result;
 }
@@ -15840,10 +15835,18 @@ function _lxClearTransFields(prefix) {
       const el = document.getElementById(`${prefix}_${lang}_${field}`);
       if (el) el.value = '';
     });
-    // Rimuovi campi opzioni sondaggio (vengono ricreati al prossimo form)
+    // Svuota i valori dei campi opzione sondaggio; rimuovi quelli aggiunti dinamicamente (idx >= 2)
     if (prefix === 'surveyTrans') {
       const optsWrap = document.getElementById(`surveyTransOpts_${lang}`);
-      if (optsWrap) optsWrap.innerHTML = '';
+      if (optsWrap) {
+        const optRows = Array.from(optsWrap.children);
+        optRows.forEach((row, i) => {
+          const inp = row.querySelector('input.lx-tf-input');
+          if (inp) inp.value = '';
+          // Rimuovi righe aggiuntive oltre le 2 predefinite (da + Aggiungi opzione)
+          if (i >= 2) row.remove();
+        });
+      }
     }
   });
 }
