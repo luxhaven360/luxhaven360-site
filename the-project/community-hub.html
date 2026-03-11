@@ -3606,15 +3606,14 @@ Object.assign(window.I18N_TRANSLATIONS['es'] || (window.I18N_TRANSLATIONS['es']=
       <div style="text-align:center; font-size:0.72rem; color:var(--muted2); line-height:1.6;" data-i18n="login.credentials_sent">
         Le credenziali ti sono state inviate via email al momento della prenotazione. Per assistenza:</div>
       <div style="text-align:center; font-size:0.72rem; color:var(--muted2); line-height:1.6;">
-        <a href="/cdn-cgi/l/email-protection#fa898f8a8a95888eba968f82929b8c9f94c9cccad4999597" style="color:var(--gold); text-decoration:none;"><span class="__cf_email__" data-cfemail="84f7f1f4f4ebf6f0c4e8f1fcece5f2e1eab7b2b4aae7ebe9">[email&#160;protected]</span></a>
+        <a href="mailto:support@luxhaven360.com" style="color:var(--gold); text-decoration:none;">support@luxhaven360.com</a>
       </div>
     </div>
     <div style="margin-top:0.8rem; padding:0.55rem 0.8rem; border-radius:var(--radius); background:rgba(212,175,55,0.05); border:1px solid rgba(212,175,55,0.18); text-align:center; font-size:0.63rem; color:var(--muted2); line-height:1.7;">
       🔐 <strong style="color:var(--gold);">Accesso Fondatore</strong><br>
-      <span style="font-family:monospace; letter-spacing:0.03em; font-size:0.65rem; color:var(--light);"><a href="/cdn-cgi/l/email-protection" class="__cf_email__" data-cfemail="41272e2f2520352e3324012d3439292037242f7277716f222e2c">[email&#160;protected]</a></span><br>
+      <span style="font-family:monospace; letter-spacing:0.03em; font-size:0.65rem; color:var(--light);">fondatore@luxhaven360.com</span><br>
       <span style="font-family:monospace; letter-spacing:0.03em; font-size:0.65rem; color:var(--light);">LuxFounder2025!</span>
     </div>
-  </div>
 </div>
 
 <!-- ═══════════════ MAIN APP ═══════════════ -->
@@ -7030,9 +7029,14 @@ function applyRemoteData(data) {
     }
   }
   if (pid === 'listings') {
-    renderListings();
-    _lxRestoreTranslations(document.getElementById('listingsContainer'));
-    _lxUpdateTranslateVisibility(document.getElementById('listingsContainer'));
+    // Blocca renderListings se il mouse è sopra le card — evita il flash/lampeggio al polling.
+    const listingsContainer = document.getElementById('listingsContainer');
+    const isHoveringListings = listingsContainer && listingsContainer.matches(':hover');
+    if (!isHoveringListings) {
+      renderListings();
+      _lxRestoreTranslations(listingsContainer);
+      _lxUpdateTranslateVisibility(listingsContainer);
+    }
   }
   if (pid === 'dashboard')   {
     // BUG FIX #1: usa GLOBAL_ACTIVITIES come sorgente
@@ -11239,17 +11243,19 @@ function renderListings() {
       ${listings.map(l => {
         // ── Normalizza i campi per supportare sia il formato nuovo che quello legacy ──
         const displayTitle = l.title || l.name || '';
-        // Usa l.emoji salvato (campo separato); fallback: estrai dall'inizio del titolo
-        let displayEmoji = l.emoji || '';
-        let displayTitleText;
-        if (displayEmoji) {
-          const emojiPrefix = displayEmoji + ' ';
-          displayTitleText = displayTitle.startsWith(emojiPrefix) ? displayTitle.slice(emojiPrefix.length) : displayTitle;
-        } else {
-          const _emojiMatch = displayTitle.match(/^(\p{Emoji_Presentation}|\p{Extended_Pictographic})\s*/u);
-          displayEmoji = _emojiMatch ? _emojiMatch[0].trim() : '';
-          displayTitleText = displayEmoji ? displayTitle.slice(_emojiMatch[0].length) : displayTitle;
+        // Emoji: usa SEMPRE catIcons[category] come fonte autoritativa (ha il variation selector corretto).
+        // Non usare l.emoji né regex sul titolo: GAS può strippare U+FE0F e i contenuti già pubblicati
+        // non hanno il campo emoji — catIcons garantisce sempre la forma corretta indipendentemente
+        // da quando è stato pubblicato il listing.
+        const _CAT_ICONS = {'real-estate':'🏠','supercar':'🏎️','experience':'✨','shop':'🛍️','testdrive':'🚗','services':'💎'};
+        let displayEmoji = (l.category && _CAT_ICONS[l.category]) ? _CAT_ICONS[l.category] : (l.emoji || '');
+        // Se non c'è category utile, prova a estrarre dal titolo come ultimo fallback
+        if (!displayEmoji) {
+          const _em = displayTitle.match(/^(\p{Emoji_Presentation}|\p{Extended_Pictographic})\uFE0F?\s*/u);
+          displayEmoji = _em ? _em[0].trim() : '';
         }
+        // Testo titolo: rimuovi l'emoji (con o senza variation selector) dall'inizio
+        let displayTitleText = displayTitle.replace(/^(\p{Emoji_Presentation}|\p{Extended_Pictographic})\uFE0F?\s*/u, '').trim();
         // Estrai desc e price da text se non presenti come campi separati
         let displayDesc  = l.desc || '';
         let displayPrice = l.price || '';
@@ -11351,13 +11357,28 @@ async function requestLevelUpgrade() {
   showToast('gold', '⭐', I18n.t('upgrade.request_sent'));
   if (_sbReady && currentUser) {
     try {
-      await _sb.from('notifications').insert({
-        user_email:   'fondatore@luxhaven360.com',
+      const userName = currentUser.name;
+      const userShort = userName.split(' ')[0] + ' ' + (userName.split(' ')[1]||'?')[0] + '.';
+      const notifText = `<strong>${userShort}</strong> ha richiesto il passaggio al livello superiore (Founding Member)`;
+
+      // Trova tutti i membri team da REAL_MEMBERS; fallback all'email hardcoded
+      const teamMembers = (REAL_MEMBERS || []).filter(m =>
+        m.role === 'team' ||
+        (m.email && m.email.toLowerCase().includes('fondatore'))
+      );
+      const teamEmails = teamMembers.length > 0
+        ? [...new Set(teamMembers.map(m => m.email.toLowerCase()))]
+        : ['fondatore@luxhaven360.com'];
+
+      // Invia notifica a ogni membro team
+      const rows = teamEmails.map(email => ({
+        user_email:   email,
         author_email: currentUser.email,
         icon: 'gold', emoji: '⭐',
-        text: `<strong>${currentUser.name}</strong> ha richiesto il passaggio al livello superiore (Founding Member)`,
+        text: notifText,
         created_at: new Date().toISOString(), read: false
-      });
+      }));
+      await _sb.from('notifications').insert(rows);
     } catch(e) { console.warn('[upgradeRequest] Supabase error:', e.message); }
   }
   // Re-enable after 30s to prevent spam
