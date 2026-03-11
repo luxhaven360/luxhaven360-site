@@ -5369,6 +5369,20 @@ function initApp() {
     _communityDataReady = true;
   }
 
+  // ── Pre-carica attività recenti dalla cache localStorage ─────────────────
+  // Mostra subito i dati dell'ultima sessione mentre Supabase carica in background.
+  if (GLOBAL_ACTIVITIES.length === 0) {
+    try {
+      const _actRaw = localStorage.getItem('lh360_activity_log');
+      if (_actRaw) {
+        const _actParsed = JSON.parse(_actRaw);
+        if (Array.isArray(_actParsed) && _actParsed.length > 0) {
+          GLOBAL_ACTIVITIES = _actParsed;
+        }
+      }
+    } catch(e) {}
+  }
+
   renderDashboard();
   renderFeed();
   renderDiscussions();
@@ -5398,15 +5412,14 @@ function initApp() {
   // Avvia ticker aggiornamento tempi relativi notifiche
   _startNotifTimeTicker();
 
-  // BUG FIX #1/#2: Carica rimozioni da Supabase (sincronizza _REMOVED_IDS dopo refresh)
-  setTimeout(() => _loadRemovalsFromSupabase(), 600);
-
-  // Carica attività globali da Supabase (sorgente condivisa per tutti gli utenti)
-  setTimeout(() => _loadGlobalActivitiesFromSupabase(), 500);
-  // VIEWS: carica conteggi reali da Supabase (sorgente unica condivisa per tutti gli utenti)
-  setTimeout(() => _loadThreadViewsFromSupabase(), 700);
-  // LAST REPLIES: carica timestamps ultima risposta da Supabase (risolve "Ora" congelato)
-  setTimeout(() => _loadThreadLastRepliesFromSupabase(), 900);
+  // ── Carica dati Supabase immediatamente, in parallelo, senza setTimeout artificiali ──
+  // Tutte queste funzioni sono async e non bloccano il rendering.
+  // I dati da localStorage/cache sono già stati applicati sopra (zero latenza);
+  // questi fetch aggiornano con i valori reali appena Supabase risponde.
+  _loadRemovalsFromSupabase();
+  _loadGlobalActivitiesFromSupabase();
+  _loadThreadViewsFromSupabase();
+  _loadThreadLastRepliesFromSupabase();
   // FIX #3: pulizia automatica attività > 14 giorni (solo una volta per sessione)
   const _actCleanKey = 'lh360_act_lastclean';
   const _lastClean = parseInt(localStorage.getItem(_actCleanKey) || '0', 10);
@@ -5833,8 +5846,8 @@ function initApp() {
   if (REAL_CONVS.length > 0) {
     updateMsgBadge(); // badge immediato dalla cache già caricata sopra
   }
-  // Carica/sincronizza in background senza bloccare l'UI
-  setTimeout(() => loadConversations(), 800);
+  // Carica/sincronizza conversazioni in background senza bloccare l'UI
+  loadConversations();
 
   // Gestisci link diretto a un post (#post-ID nella URL)
   handlePostAnchor();
@@ -7025,6 +7038,12 @@ async function initCommunityData() {
       applyRemoteData(data);
       if (Array.isArray(data.online)) applyPresenceData(data.online);
       if (Array.isArray(data.events)) { applyEventsData(data.events); saveEventsCache(); }
+      // Aggiorna le statistiche dashboard appena i dati community sono pronti
+      loadDashboardStats();
+      // Aggiorna il feed attività con i dati reali (Supabase aggiorna GLOBAL_ACTIVITIES
+      // in _loadGlobalActivitiesFromSupabase, già avviato in parallelo in initApp)
+      const dashActive = document.getElementById('panel-dashboard')?.classList.contains('active');
+      if (dashActive) renderActivityFeed();
     }
   } catch(e) {
     console.warn('[CommunityData] GAS non raggiungibile:', e.message);
@@ -15487,6 +15506,10 @@ async function _commentTranslate(btn, contentId, sourceLang) {
         showToast('blue', '🌐', 'Modalità test traduzioni attivata');
       }
     }
+
+    // 3. Mostra/nascondi barra di controllo team
+    _lxToggleTeamBar();
+  }
 
   // ── Sblocca toggle auto-traduzione nel language selector ─────────────
   function _lxUnlockAutoTranslateToggle() {
