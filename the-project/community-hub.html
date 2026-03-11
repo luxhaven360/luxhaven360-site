@@ -5880,8 +5880,23 @@ function initApp() {
   // stringhe generate da JS (non solo data-i18n) vengano aggiornate subito.
   if (window.I18n) {
     I18n.onLanguageChange((_newLang) => {
+      // Cancella cache traduzioni lx-translate PRIMA del re-render per evitare che
+      // _lxRestoreTranslations ripristini traduzioni della lingua precedente
+      Object.keys(_lxTranslateCache).forEach(k => delete _lxTranslateCache[k]);
+      // Cancella anche le entry null di _lxManualTransCache per la nuova lingua,
+      // così possono essere ri-fetchate (fix survey stuck on second language change)
+      if (typeof _lxManualTransCache !== 'undefined') {
+        Object.keys(_lxManualTransCache).forEach(k => {
+          if (k.endsWith('|' + _newLang) && _lxManualTransCache[k] === null) {
+            delete _lxManualTransCache[k];
+          }
+        });
+      }
       // Re-render UI strings
       renderDashboard();
+      // Fix flash "Ultimi 30 giorni": dopo il re-render, ricalcola subito il report dai dati in cache
+      const _statsCache = typeof loadStatsCache === 'function' ? loadStatsCache() : null;
+      if (_statsCache && typeof applyDashboardStats === 'function') applyDashboardStats(_statsCache);
       renderFeed();
       renderDiscussions();
       renderListings();
@@ -5906,8 +5921,6 @@ function initApp() {
       if (document.getElementById('panel-analytics')?.classList.contains('active')) renderAnalytics();
       // Ritraduce i contenuti utente già visibili nella nuova lingua
       if (window.ContentTranslator) ContentTranslator.onUserLanguageChange(_newLang);
-      // Cancella cache traduzioni lx-translate (lingua cambiata → vecchie traduzioni non valide)
-      Object.keys(_lxTranslateCache).forEach(k => delete _lxTranslateCache[k]);
       // Se un thread è aperto: aggiorna titolo, badge e contenuti
       if (currentThreadId) {
         const _openThread = DISCUSSIONS.find(d => d.id === currentThreadId);
@@ -6508,7 +6521,7 @@ function renderDashboard() {
       <div style="margin-bottom:0.5rem; font-size:0.72rem; color:var(--muted);">${I18n.t('dash.progress_title')}</div>
       <div class="progress-bar-wrap" style="height:8px;"><div class="progress-bar-fill" style="width:45%;"></div></div>
       <div style="font-size:0.7rem; color:var(--muted2); margin-top:0.4rem;">${I18n.t('dash.progress_pct')}</div>
-      <button class="upgrade-btn" style="margin-top:0.8rem;" onclick="showToast('gold', '⭐', I18n.t('upgrade.request_sent'))">
+      <button class="upgrade-btn" style="margin-top:0.8rem;" onclick="requestLevelUpgrade()">
         ${I18n.t('dash.upgrade_btn')}
       </button>`;
   }
@@ -11219,6 +11232,10 @@ function renderListings() {
       ${listings.map(l => {
         // ── Normalizza i campi per supportare sia il formato nuovo che quello legacy ──
         const displayTitle = l.title || l.name || '';
+        // Separa emoji dal titolo: l'emoji non va tradotta, il testo sì
+        const _emojiMatch = displayTitle.match(/^(\p{Emoji_Presentation}|\p{Extended_Pictographic})\s*/u);
+        const displayEmoji = _emojiMatch ? _emojiMatch[0].trim() : '';
+        const displayTitleText = displayEmoji ? displayTitle.slice(_emojiMatch[0].length) : displayTitle;
         // Estrai desc e price da text se non presenti come campi separati
         let displayDesc  = l.desc || '';
         let displayPrice = l.price || '';
@@ -11240,7 +11257,7 @@ function renderListings() {
           </div>
           <div class="listing-info">
             ${displayCity ? `<div class="listing-city">${displayCity}</div>` : ''}
-            <div class="listing-name" data-content-id="listing-title-${l.id}" data-content-lang="${l.lang||'it'}">${displayTitle}</div>
+            <div class="listing-name">${displayEmoji ? `<span style="margin-right:0.3em;">${displayEmoji}</span>` : ''}<span data-content-id="listing-title-${l.id}" data-content-lang="${l.lang||'it'}">${displayTitleText}</span></div>
             ${displayDesc ? `<div class="listing-desc" data-content-id="listing-desc-${l.id}" data-content-lang="${l.lang||'it'}">${displayDesc}</div>` : ''}
           </div>
           <div class="listing-footer">
@@ -11308,6 +11325,27 @@ function renderSurveys() {
     const lang = window.I18n ? I18n.getCurrentLanguage() : 'it';
     if (lang && lang !== 'it') _lxAutoTranslateAllIn(container);
   }
+}
+
+/* ── Richiesta upgrade livello (Founder Candidate → Founding Member) ──── */
+let _upgradeRequestPending = false;
+async function requestLevelUpgrade() {
+  if (_upgradeRequestPending) return;
+  _upgradeRequestPending = true;
+  showToast('gold', '⭐', I18n.t('upgrade.request_sent'));
+  if (_sbReady && currentUser) {
+    try {
+      await _sb.from('notifications').insert({
+        user_email:   'fondatore@luxhaven360.com',
+        author_email: currentUser.email,
+        icon: 'gold', emoji: '⭐',
+        text: `<strong>${currentUser.name}</strong> ha richiesto il passaggio al livello superiore (Founding Member)`,
+        created_at: new Date().toISOString(), read: false
+      });
+    } catch(e) { console.warn('[upgradeRequest] Supabase error:', e.message); }
+  }
+  // Re-enable after 30s to prevent spam
+  setTimeout(() => { _upgradeRequestPending = false; }, 30000);
 }
 
 /* ── Prenotazione listing (Founding Member) ─────────────────────────── */
@@ -12013,7 +12051,7 @@ function renderProfile() {
               <div style="display:flex;align-items:center;gap:0.5rem;font-size:0.78rem;padding:0.3rem 0;color:var(--muted2);">
                 <span style="color:var(--muted2);">🔒</span> ${b}</div>`).join('')}
           </div>
-          <button class="upgrade-btn" style="margin-top:0.8rem;width:100%;" onclick="showToast('gold','⭐', I18n.t('upgrade.request_sent'))">
+          <button class="upgrade-btn" style="margin-top:0.8rem;width:100%;" onclick="requestLevelUpgrade()">
             ${I18n.t('profile.upgrade_btn')}</button>`}
       </div>
     </div>
@@ -12083,6 +12121,11 @@ function renderMembersTable() {
   const tbody   = document.getElementById('membersTable');
   const emptyEl = document.getElementById('membersEmpty');
   if (!tbody) return;
+
+  // FIX: non ri-renderizzare la tabella se il mouse è sopra un pulsante
+  // (evita il lampeggio dei pulsanti Promuovi/Messaggio/Avviso)
+  const membersSection = tbody.closest('table') || tbody;
+  if (membersSection.querySelector(':hover')) return;
 
   const query = (document.getElementById('membersSearch')?.value || '').toLowerCase().trim();
 
@@ -12798,7 +12841,7 @@ async function publishListing() {
         user_email: '__broadcast__',
         author_email: currentUser.email,
         icon: 'gold', emoji: '🏷️',
-        text: listingObj.title,  // store only raw title; prefix added at render time
+        text: `${window.I18n ? I18n.t('notif.new_listing') : 'Nuovo listing:'} <strong>${listingObj.title}</strong>`,
         created_at: new Date().toISOString(), read: false
       });
     } catch(_e) {}
@@ -13419,8 +13462,33 @@ function startRealTimeSimulation() {
 }
 function applyPresenceData(onlineList) {
   if (!Array.isArray(onlineList)) return;
-  ONLINE_MEMBERS.length = 0;
-  onlineList.forEach(u => ONLINE_MEMBERS.push(u));
+
+  // FIX: aggiorna la lista in modo stabile senza riordinarla continuamente.
+  // Mantieni l'ordine corrente degli utenti già presenti; aggiungi nuovi in fondo;
+  // rimuovi quelli non più presenti.
+  const newEmailSet = new Set(onlineList.map(u => (u.email || '').toLowerCase()));
+  // Rimuovi utenti non più online
+  for (let i = ONLINE_MEMBERS.length - 1; i >= 0; i--) {
+    const em = (ONLINE_MEMBERS[i].email || '').toLowerCase();
+    if (em && !newEmailSet.has(em)) ONLINE_MEMBERS.splice(i, 1);
+  }
+  // Aggiorna dati esistenti e aggiungi nuovi (mantenendo ordine stabile)
+  const existingEmails = new Set(ONLINE_MEMBERS.map(u => (u.email || '').toLowerCase()));
+  onlineList.forEach(u => {
+    const em = (u.email || '').toLowerCase();
+    const idx = ONLINE_MEMBERS.findIndex(m => (m.email || '').toLowerCase() === em);
+    if (idx !== -1) {
+      // Aggiorna i dati senza cambiare la posizione
+      ONLINE_MEMBERS[idx] = Object.assign(ONLINE_MEMBERS[idx], u);
+    } else {
+      // Nuovo utente: team in testa, altri in coda
+      if (u.role === 'team') {
+        ONLINE_MEMBERS.unshift({ email: u.email || '', name: u.name || '', initial: u.initial || '?', role: u.role || '' });
+      } else {
+        ONLINE_MEMBERS.push({ email: u.email || '', name: u.name || '', initial: u.initial || '?', role: u.role || '' });
+      }
+    }
+  });
   // Aggiorna cache nomi autori team da presence data (hanno il campo role affidabile)
   ONLINE_MEMBERS.forEach(m => {
     if (m.role === 'team' && m.name) {
@@ -15925,24 +15993,61 @@ function _lxApplyManualTransToEl(el, translatedText) {
     }
     I18n.onLanguageChange(async function(newLang) {
       if (newLang === 'it') return; // IT è la lingua originale — nulla da fare
-      // Raccoglie tutti i content-id presenti nel DOM
-      document.querySelectorAll('[data-content-id][data-content-lang]').forEach(async function(el) {
+
+      // ── Batch pre-fetch: raccoglie tutti i content-id visibili e li traduce in parallelo ──
+      // Questo elimina il ritardo di 2-3 secondi causato dalle fetch sequenziali.
+      const elements = Array.from(document.querySelectorAll('[data-content-id][data-content-lang]'));
+      if (elements.length === 0) return;
+
+      // Raggruppa per (contentType, contentId) per evitare fetch duplicate
+      const fetchMap = new Map(); // key: "contentType|contentId" → [ {el, field} ]
+      const surveyOptFetchMap = new Map(); // key: "surveyId-optIdx" → el
+
+      elements.forEach(el => {
         const cid  = el.dataset.contentId;
         const from = el.dataset.contentLang || 'it';
         if (from === newLang) return;
-        // Deriva tipo e id dal content-id (es. "post-title-123", "listing-title-456")
-        const match = cid.match(/^(post|listing|survey|event)-(?:title|body|desc|meta|opt-\d+)-(.+)$/);
+
+        // Gestione speciale: survey-opt-{surveyId}-{optIdx}
+        const optMatch = cid.match(/^survey-opt-(\d+)-(\d+)$/);
+        if (optMatch) {
+          const key = `${optMatch[1]}-${optMatch[2]}`;
+          surveyOptFetchMap.set(key, el);
+          return;
+        }
+
+        // Formato standard: {type}-{title|body|desc|meta}-{id}
+        const match = cid.match(/^(post|listing|survey|event)-(?:title|body|desc|meta)-(.+)$/);
         if (!match) return;
         const contentType = match[1];
         const contentId   = match[2];
-        // Solo post-title e post-body (per post); listing-title/desc; survey-title/desc; event-title/meta
-        const isTitle = cid.includes('-title-');
-        const field   = isTitle ? 'title' : 'text';
+        const field       = cid.includes('-title-') ? 'title' : 'text';
+        const mapKey = `${contentType}|${contentId}`;
+        if (!fetchMap.has(mapKey)) fetchMap.set(mapKey, []);
+        fetchMap.get(mapKey).push({ el, field, contentType, contentId });
+      });
+
+      // Fetch in parallelo per tutti i content-id standard
+      const standardFetches = Array.from(fetchMap.entries()).map(async ([, items]) => {
+        const { contentType, contentId } = items[0];
         const manTrans = await _lxFetchManualTranslation(contentType, contentId, newLang);
-        if (manTrans && manTrans[field]) {
-          _lxApplyManualTransToEl(el, manTrans[field]);
+        if (manTrans) {
+          items.forEach(({ el, field }) => {
+            const val = manTrans[field];
+            if (val) _lxApplyManualTransToEl(el, val);
+          });
         }
       });
+
+      // Fetch in parallelo per le opzioni sondaggio
+      const optFetches = Array.from(surveyOptFetchMap.entries()).map(async ([key, el]) => {
+        const optManTrans = await _lxFetchManualTranslation('survey_opt', key, newLang);
+        if (optManTrans && optManTrans.text) {
+          _lxApplyManualTransToEl(el, optManTrans.text);
+        }
+      });
+
+      await Promise.all([...standardFetches, ...optFetches]);
     });
   }
   tryInit();
