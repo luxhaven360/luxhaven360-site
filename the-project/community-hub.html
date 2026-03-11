@@ -4352,18 +4352,34 @@ Object.assign(window.I18N_TRANSLATIONS['es'] || (window.I18N_TRANSLATIONS['es']=
                     <div class="lx-tf-pane active" data-lang="en">
                       <div><div class="lx-tf-label">Titolo (EN)</div><input class="lx-tf-input" id="surveyTrans_en_title" placeholder="Survey title in English…"/></div>
                       <div><div class="lx-tf-label">Domanda (EN)</div><input class="lx-tf-input" id="surveyTrans_en_text" placeholder="Question in English…"/></div>
+                      <div id="surveyTransOpts_en" style="display:flex;flex-direction:column;gap:0.35rem;margin-top:0.1rem;">
+                        <div><div class="lx-tf-label">Opzione 1 (EN)</div><input class="lx-tf-input" id="surveyTrans_en_opt_0" placeholder="Option 1 in English…"/></div>
+                        <div><div class="lx-tf-label">Opzione 2 (EN)</div><input class="lx-tf-input" id="surveyTrans_en_opt_1" placeholder="Option 2 in English…"/></div>
+                      </div>
                     </div>
                     <div class="lx-tf-pane" data-lang="fr">
                       <div><div class="lx-tf-label">Titolo (FR)</div><input class="lx-tf-input" id="surveyTrans_fr_title" placeholder="Titre du sondage…"/></div>
                       <div><div class="lx-tf-label">Domanda (FR)</div><input class="lx-tf-input" id="surveyTrans_fr_text" placeholder="Question en français…"/></div>
+                      <div id="surveyTransOpts_fr" style="display:flex;flex-direction:column;gap:0.35rem;margin-top:0.1rem;">
+                        <div><div class="lx-tf-label">Opzione 1 (FR)</div><input class="lx-tf-input" id="surveyTrans_fr_opt_0" placeholder="Option 1 en français…"/></div>
+                        <div><div class="lx-tf-label">Opzione 2 (FR)</div><input class="lx-tf-input" id="surveyTrans_fr_opt_1" placeholder="Option 2 en français…"/></div>
+                      </div>
                     </div>
                     <div class="lx-tf-pane" data-lang="de">
                       <div><div class="lx-tf-label">Titolo (DE)</div><input class="lx-tf-input" id="surveyTrans_de_title" placeholder="Titel der Umfrage…"/></div>
                       <div><div class="lx-tf-label">Domanda (DE)</div><input class="lx-tf-input" id="surveyTrans_de_text" placeholder="Frage auf Deutsch…"/></div>
+                      <div id="surveyTransOpts_de" style="display:flex;flex-direction:column;gap:0.35rem;margin-top:0.1rem;">
+                        <div><div class="lx-tf-label">Opzione 1 (DE)</div><input class="lx-tf-input" id="surveyTrans_de_opt_0" placeholder="Option 1 auf Deutsch…"/></div>
+                        <div><div class="lx-tf-label">Opzione 2 (DE)</div><input class="lx-tf-input" id="surveyTrans_de_opt_1" placeholder="Option 2 auf Deutsch…"/></div>
+                      </div>
                     </div>
                     <div class="lx-tf-pane" data-lang="es">
                       <div><div class="lx-tf-label">Titolo (ES)</div><input class="lx-tf-input" id="surveyTrans_es_title" placeholder="Título de la encuesta…"/></div>
                       <div><div class="lx-tf-label">Domanda (ES)</div><input class="lx-tf-input" id="surveyTrans_es_text" placeholder="Pregunta en español…"/></div>
+                      <div id="surveyTransOpts_es" style="display:flex;flex-direction:column;gap:0.35rem;margin-top:0.1rem;">
+                        <div><div class="lx-tf-label">Opzione 1 (ES)</div><input class="lx-tf-input" id="surveyTrans_es_opt_0" placeholder="Opción 1 en español…"/></div>
+                        <div><div class="lx-tf-label">Opzione 2 (ES)</div><input class="lx-tf-input" id="surveyTrans_es_opt_1" placeholder="Opción 2 en español…"/></div>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -5955,10 +5971,13 @@ const _LX_MAX_RETRIES     = 2;         // retry per singolo endpoint prima di pa
 // Ogni utente ha la propria sessione → il team può testare senza influire su nessuno.
 let _lxTestModeActive = false;
 try { _lxTestModeActive = sessionStorage.getItem('lx_test_mode') === '1'; } catch(e) {}
+// Sync to window so that _lxApplyGlobalTranslationFlag and DOMContentLoaded use the correct value
+if (_lxTestModeActive) window._lxTestModeActive = true;
 
 // Applica body class subito in base allo stato iniziale
 document.addEventListener('DOMContentLoaded', function() {
-  document.body.classList.toggle('lx-trans-disabled', !window._lxTestModeActive);
+  // Usa la variabile locale (letta da sessionStorage) come fonte di verità primaria
+  document.body.classList.toggle('lx-trans-disabled', !_lxTestModeActive);
 });
 
 // ── Cache in memoria: evita di ritradurre lo stesso testo più volte ──────
@@ -6170,6 +6189,9 @@ function _lxApplyGlobalTranslationFlag(enabled) {
   })();
   if (!localTestOn) {
     window._lxTestModeActive = enabled;
+  } else {
+    // sessionStorage dice che il test mode è attivo — assicura che window sia allineato
+    window._lxTestModeActive = true;
   }
 
   // Toggle body class: nasconde/mostra tutti i pulsanti Traduci
@@ -9319,7 +9341,8 @@ function formatMsgTime(isoStr) {
     if (diffDays === 0) return d.getHours().toString().padStart(2,'0') + ':' + d.getMinutes().toString().padStart(2,'0');
     if (diffDays === 1) return 'Ieri';
     if (diffDays < 7) return diffDays + ' gg fa';
-    return d.toLocaleDateString('it-IT', { day:'2-digit', month:'short' });
+    const _msgDateLang = (window.I18n && I18n.getCurrentLanguage) ? (I18n.getCurrentLanguage() || 'it') : 'it';
+    return d.toLocaleDateString(_msgDateLang, { day:'2-digit', month:'short' });
   } catch(_e) { return ''; }
 }
 
@@ -9650,7 +9673,8 @@ function renderChatMessages(messages, partnerEmail) {
     const isNewSender = senderEmail !== lastSenderEmail || showDateDivider;
 
     if (showDateDivider) {
-      const dateLabel = new Date(msg.ts).toLocaleDateString('it-IT', { weekday:'long', day:'2-digit', month:'long' });
+      const _chatDivLang = (window.I18n && I18n.getCurrentLanguage) ? (I18n.getCurrentLanguage() || 'it') : 'it';
+      const dateLabel = new Date(msg.ts).toLocaleDateString(_chatDivLang, { weekday:'long', day:'2-digit', month:'long' });
       html += `<div class="chat-date-divider"><span>${dateLabel}</span></div>`;
     }
 
@@ -10148,7 +10172,8 @@ function appendMessageToChat(msg, isSent) {
   messagesEl.dataset.lastMsgTs = msgTs;
 
   if (!lastMsgEl || gap > DATE_GAP_MS) {
-    const dateLabel = new Date(msg.ts).toLocaleDateString('it-IT', { weekday:'long', day:'2-digit', month:'long' });
+    const _appendDivLang = (window.I18n && I18n.getCurrentLanguage) ? (I18n.getCurrentLanguage() || 'it') : 'it';
+    const dateLabel = new Date(msg.ts).toLocaleDateString(_appendDivLang, { weekday:'long', day:'2-digit', month:'long' });
     const divider = document.createElement('div');
     divider.className = 'chat-date-divider';
     divider.innerHTML = `<span>${dateLabel}</span>`;
@@ -12595,6 +12620,31 @@ function addSurveyOption() {
   inp.className = "form-input";
   inp.placeholder = "Opzione " + count;
   wrap.appendChild(inp);
+
+  // Sincronizza campi opzione nei pannelli di traduzione manuale (se visibili)
+  var optIdx = count - 1; // indice 0-based della nuova opzione
+  var langs = ['en', 'fr', 'de', 'es'];
+  var langPlaceholders = {
+    en: 'Option ' + count + ' in English…',
+    fr: 'Option ' + count + ' en français…',
+    de: 'Option ' + count + ' auf Deutsch…',
+    es: 'Opción ' + count + ' en español…'
+  };
+  langs.forEach(function(lang) {
+    var optsWrap = document.getElementById('surveyTransOpts_' + lang);
+    if (!optsWrap) return;
+    var row = document.createElement('div');
+    var lbl = document.createElement('div');
+    lbl.className = 'lx-tf-label';
+    lbl.textContent = 'Opzione ' + count + ' (' + lang.toUpperCase() + ')';
+    var field = document.createElement('input');
+    field.className = 'lx-tf-input';
+    field.id = 'surveyTrans_' + lang + '_opt_' + optIdx;
+    field.placeholder = langPlaceholders[lang];
+    row.appendChild(lbl);
+    row.appendChild(field);
+    optsWrap.appendChild(row);
+  });
 }
 
 async function publishSurvey() {
@@ -14605,7 +14655,27 @@ async function _lxTranslateSurvey(btn, surveyId) {
     const manTrans = await _lxFetchManualTranslation('survey', String(surveyId), lang);
     if (manTrans && (manTrans.title || manTrans.text)) {
       if (titleEl && manTrans.title) _lxApplyManualTransToEl(titleEl, manTrans.title);
-      if (descEl  && manTrans.text)  _lxApplyManualTransToEl(descEl,  manTrans.text);
+      // Prova a decodificare text come JSON {q, opts} (traduzione con opzioni)
+      let questionText = manTrans.text;
+      let optsFromManual = null;
+      if (manTrans.text) {
+        try {
+          const parsed = JSON.parse(manTrans.text);
+          if (parsed && typeof parsed.q !== 'undefined') {
+            questionText = parsed.q;
+            if (Array.isArray(parsed.opts)) optsFromManual = parsed.opts;
+          }
+        } catch(_je) { /* testo normale, non JSON */ }
+      }
+      if (descEl && questionText) _lxApplyManualTransToEl(descEl, questionText);
+      // Applica traduzioni manuali alle opzioni se disponibili
+      if (optsFromManual) {
+        optEls.forEach((el, i) => {
+          if (optsFromManual[i] && optsFromManual[i].trim()) {
+            _lxApplyManualTransToEl(el, optsFromManual[i].trim());
+          }
+        });
+      }
       btn.classList.remove('loading');
       btn.innerHTML = _lxTranslateBtnInner('restore');
       btn.dataset.lxRestore = '1';
@@ -15475,7 +15545,7 @@ async function _commentTranslate(btn, contentId, sourceLang) {
       st.textContent = [
         '@keyframes lxBarIn{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}',
         '#lxTeamBar{',
-        '  position:fixed;bottom:1.5rem;right:1.5rem;z-index:99998;',
+        '  position:fixed;bottom:5.5rem;right:1.5rem;z-index:9500;',
         '  background:rgba(10,8,2,0.96);',
         '  border:1px solid rgba(212,175,55,0.3);',
         '  border-radius:10px;',
@@ -15735,9 +15805,27 @@ function _lxReadTransFields(prefix) {
     const titleEl = document.getElementById(`${prefix}_${lang}_title`);
     const textEl  = document.getElementById(`${prefix}_${lang}_text`);
     const metaEl  = document.getElementById(`${prefix}_${lang}_meta`); // eventi
+    // ── Opzioni sondaggio (se presenti) ──────────────────────────────────
+    let optsArr = null;
+    if (prefix === 'surveyTrans') {
+      const optsWrap = document.getElementById(`surveyTransOpts_${lang}`);
+      if (optsWrap) {
+        const optInputs = optsWrap.querySelectorAll('input.lx-tf-input');
+        if (optInputs.length > 0) {
+          optsArr = Array.from(optInputs).map(i => i.value.trim());
+          if (optsArr.every(o => !o)) optsArr = null; // ignora se tutti vuoti
+        }
+      }
+    }
+    const rawText = textEl ? textEl.value.trim() : (metaEl ? metaEl.value.trim() : '');
+    // Se ci sono opzioni, serializza come JSON in text: {q:"...", opts:[...]}
+    let encodedText = rawText;
+    if (optsArr) {
+      encodedText = JSON.stringify({ q: rawText, opts: optsArr });
+    }
     result[lang] = {
       title: titleEl ? titleEl.value.trim() : '',
-      text:  textEl  ? textEl.value.trim()  : (metaEl ? metaEl.value.trim() : ''),
+      text:  encodedText,
     };
   });
   return result;
@@ -15752,6 +15840,11 @@ function _lxClearTransFields(prefix) {
       const el = document.getElementById(`${prefix}_${lang}_${field}`);
       if (el) el.value = '';
     });
+    // Rimuovi campi opzioni sondaggio (vengono ricreati al prossimo form)
+    if (prefix === 'surveyTrans') {
+      const optsWrap = document.getElementById(`surveyTransOpts_${lang}`);
+      if (optsWrap) optsWrap.innerHTML = '';
+    }
   });
 }
 
