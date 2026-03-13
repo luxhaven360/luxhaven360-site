@@ -42,13 +42,14 @@ class I18n {
  * Redirect per inserire lingua nel path se mancante
  */
  redirectToLanguagePath(langCode) {
-    // Routing path-based: https://luxhaven360.com/{lang}/...
-    // Rimuove il prefisso lingua esistente (se presente)
+    // ✅ GUARD: chiama replaceState SOLO se il prefisso è errato o assente.
+    // Evita il limite browser (~100 replaceState/30s) che causa RESULT_CODE_HUNG.
+    const m = window.location.pathname.match(/^\/(it|en|fr|de|es)(\/|$)/);
+    if (m && m[1] === langCode) return;
     const cleanPath = window.location.pathname.replace(/^\/(it|en|fr|de|es)(\/|$)/, '/') || '/';
-    // Rimuove eventuali ?lang= residui dalla query string
     const cleanSearch = window.location.search.replace(/[?&]lang=[a-z]+/, '').replace(/^\?$/, '');
     const newPath = '/' + langCode + (cleanPath.startsWith('/') ? cleanPath : '/' + cleanPath);
-    window.history.replaceState({}, '', newPath + cleanSearch);
+    try { window.history.replaceState({}, '', newPath + cleanSearch); } catch(e) {}
 }
 
   /**
@@ -76,8 +77,9 @@ class I18n {
         console.log(`🔄 Sincronizzazione lingua rilevata: ${this.currentLang} → ${savedLang}`);
         this.currentLang = savedLang;
         
-        // Aggiorna URL path senza ricaricare (es. /it/ → /fr/)
-        this.redirectToLanguagePath(savedLang);
+        // ✅ NON chiamare redirectToLanguagePath su pageshow:
+        // il bfcache ripristina la pagina con l'URL già corretto.
+        // Chiamare replaceState qui consumerebbe il budget browser → RESULT_CODE_HUNG.
         
         // Ri-traduci TUTTA la pagina
         this.translatePage();
