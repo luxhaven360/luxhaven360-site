@@ -106,14 +106,18 @@
 
   /* ══════════════════════════════════════════════════════════════
      B. BFCACHE HANDLER — pageshow con persisted=true (ex v2)
+     ✅ FIX: rimosso il window.location.reload() per fetch stale.
+     Il reload veniva triggered erroneamente perché _activeFetches
+     può rimanere > 0 dopo che la pagina entra in BFCache (il
+     .finally() del Promise non viene eseguito durante la sospensione).
+     Questo causava un ciclo reload → BFCache → reload → "Uffa!".
+     Ora ci limitiamo a pulire la UI di loading senza forzare reload.
   ══════════════════════════════════════════════════════════════ */
   window.addEventListener('pageshow', function (e) {
     if (!e.persisted) return;
-    var staleFetch = _activeFetches > 0 && (Date.now() - _lastFetchStart) > 5000;
-    if (staleFetch) {
-      window.location.reload();
-      return;
-    }
+    // ✅ Reset contatore fetch: potrebbe essere rimasto > 0 per fetch
+    // avviate prima che la pagina entrasse in BFCache.
+    _activeFetches = 0;
     _closeAllLoadingUI();
   });
 
