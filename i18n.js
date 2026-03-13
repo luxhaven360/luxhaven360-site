@@ -7,8 +7,7 @@ class I18n {
   constructor() {
     this.translations = translations;
     this.currentLang = this.detectLanguage();
-    // Aggiungi questa riga:
-    this.githubRepo = 'luxhaven360-site'; // Nome del repository GitHub
+    this.baseUrl = 'https://luxhaven360.com';
     this.init();
 }
 
@@ -16,19 +15,17 @@ class I18n {
    * Rileva lingua da URL o localStorage
    */
    detectLanguage() {
-    // 1. Check localStorage (PRIORITÀ MASSIMA - sincronizzato tra pagine)
+    // 1. Check URL path (es. /it/, /en/, /fr/, /de/, /es/)
+    const pathMatch = window.location.pathname.match(/^\/(it|en|fr|de|es)(\/|$)/);
+    if (pathMatch && this.translations[pathMatch[1]]) {
+        localStorage.setItem('lh360_lang', pathMatch[1]);
+        return pathMatch[1];
+    }
+
+    // 2. Check localStorage (sincronizzato tra pagine)
     const savedLang = localStorage.getItem('lh360_lang');
     if (savedLang && this.translations[savedLang]) {
         return savedLang;
-    }
-
-    // 2. Check URL query parameter (?lang=xx)
-    const urlParams = new URLSearchParams(window.location.search);
-    const langFromUrl = urlParams.get('lang');
-    
-    if (langFromUrl && this.translations[langFromUrl]) {
-        localStorage.setItem('lh360_lang', langFromUrl);
-        return langFromUrl;
     }
 
     // 3. Check browser language
@@ -45,10 +42,13 @@ class I18n {
  * Redirect per inserire lingua nel path se mancante
  */
  redirectToLanguagePath(langCode) {
-    // Usa query parameters per GitHub Pages
-    const url = new URL(window.location);
-    url.searchParams.set('lang', langCode);
-    window.history.replaceState({}, '', url.toString());
+    // Routing path-based: https://luxhaven360.com/{lang}/...
+    // Rimuove il prefisso lingua esistente (se presente)
+    const cleanPath = window.location.pathname.replace(/^\/(it|en|fr|de|es)(\/|$)/, '/') || '/';
+    // Rimuove eventuali ?lang= residui dalla query string
+    const cleanSearch = window.location.search.replace(/[?&]lang=[a-z]+/, '').replace(/^\?$/, '');
+    const newPath = '/' + langCode + (cleanPath.startsWith('/') ? cleanPath : '/' + cleanPath);
+    window.history.replaceState({}, '', newPath + cleanSearch);
 }
 
   /**
@@ -69,13 +69,11 @@ class I18n {
       const savedLang = localStorage.getItem('lh360_lang');
       
       if (savedLang && savedLang !== this.currentLang && this.translations[savedLang]) {
-        console.log(`ðŸ"„ Sincronizzazione lingua rilevata: ${this.currentLang} â†' ${savedLang}`);
+        console.log(`🔄 Sincronizzazione lingua rilevata: ${this.currentLang} → ${savedLang}`);
         this.currentLang = savedLang;
         
-        // Aggiorna URL senza ricaricare
-        const url = new URL(window.location);
-        url.searchParams.set('lang', savedLang);
-        window.history.replaceState({}, '', url.toString());
+        // Aggiorna URL path senza ricaricare (es. /it/ → /fr/)
+        this.redirectToLanguagePath(savedLang);
         
         // Ri-traduci TUTTA la pagina
         this.translatePage();
@@ -89,20 +87,20 @@ class I18n {
         if (typeof updateAllBadgesForLanguage === 'function') {
           setTimeout(() => updateAllBadgesForLanguage(), 100);
         
-        // ✅ Aggiorna descrizioni brevi
+        // Aggiorna descrizioni brevi
         if (typeof updateAllBriefDescriptionsForLanguage === 'function') {
           setTimeout(() => updateAllBriefDescriptionsForLanguage(), 100);
         }
         }
         
-        console.log(`âœ… Lingua aggiornata automaticamente a: ${savedLang.toUpperCase()}`);
+        console.log(`✅ Lingua aggiornata automaticamente a: ${savedLang.toUpperCase()}`);
       }
     });
     
     // ✅ Aggiorna UI selettore con lingua corrente
     this.updateLanguageSelector();
 
-    // ✅ Sincronizza query parameter nei link al caricamento pagina
+    // Sincronizza il prefisso lingua nei link al caricamento pagina
     this.updateInternalLinks(this.currentLang);
     
     // Listener per contenuti dinamici
@@ -231,12 +229,10 @@ class I18n {
     localStorage.setItem('lh360_lang', langCode);
     this.currentLang = langCode;
 
-    // Aggiorna URL con query parameter
-    const url = new URL(window.location);
-    url.searchParams.set('lang', langCode);
-    window.history.replaceState({}, '', url.toString());
+    // Aggiorna URL con prefisso lingua path-based (es. /it/ → /fr/)
+    this.redirectToLanguagePath(langCode);
 
-    // Sincronizza query parameter per tutti i link interni
+    // Sincronizza prefisso lingua per tutti i link interni
     this.updateInternalLinks(langCode);
 
     // Traduci pagina
@@ -314,17 +310,19 @@ updateInternalLinks(langCode) {
             return;
         }
         
-        // Aggiorna query parameter
+        // Aggiorna prefisso lingua nel path
         try {
-            // Se è un path relativo
-            if (href.includes('?')) {
-                // URL con query esistente
-                const url = new URL(href, window.location.origin);
-                url.searchParams.set('lang', langCode);
-                link.setAttribute('href', url.pathname + url.search);
+            // Rimuove eventuali ?lang= residui e prefisso lingua esistente
+            let cleanHref = href
+                .replace(/[?&]lang=[a-z]+/g, '')
+                .replace(/^\/(it|en|fr|de|es)(\/|$)/, '/');
+
+            if (cleanHref.startsWith('/')) {
+                // Path assoluto: /path → /{lang}/path
+                link.setAttribute('href', '/' + langCode + cleanHref);
             } else {
-                // URL senza query
-                link.setAttribute('href', `${href}?lang=${langCode}`);
+                // Path relativo: file.html → /{lang}/file.html
+                link.setAttribute('href', '/' + langCode + '/' + cleanHref);
             }
         } catch (e) {
             // Ignora errori di parsing
@@ -564,3 +562,27 @@ document.addEventListener('DOMContentLoaded', () => {
 
 // Esporta per uso globale
 window.i18n = () => i18nInstance;
+
+/**
+ * Helper globale per costruire URL interni con prefisso lingua.
+ * Utilizza la lingua attiva da i18nInstance, con fallback a localStorage o 'it'.
+ *
+ * Esempi:
+ *   lhUrl('product-details/cart.html')
+ *   → 'https://luxhaven360.com/it/product-details/cart.html'
+ *
+ *   lhUrl('product-details/booking.html?sku=X')
+ *   → 'https://luxhaven360.com/fr/product-details/booking.html?sku=X'
+ *
+ * @param {string} path - Path relativo o assoluto (senza dominio)
+ * @returns {string} URL completo con dominio e prefisso lingua
+ */
+window.lhUrl = function(path) {
+  const BASE = 'https://luxhaven360.com';
+  const lang = (i18nInstance && i18nInstance.currentLang)
+    || localStorage.getItem('lh360_lang')
+    || 'it';
+  // Rimuove eventuali slash iniziali dal path per evitare doppi slash
+  const cleanPath = (path || '').replace(/^\/+/, '');
+  return `${BASE}/${lang}/${cleanPath}`;
+};
