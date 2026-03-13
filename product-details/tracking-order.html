@@ -2429,10 +2429,17 @@ if (!userEmail) {
 
     const pendingOrders = getPendingOrdersFromLocalStorage();
 
-    // timeout / abort controller
-    const TIMEOUT_MS = 30000; // 30s (aumentato per connessioni lente)
+    // ✅ FIX: timeout ridotto da 30s a 8s.
+    // 30s bloccava il renderer quando l'utente navigava Indietro/Avanti
+    // mentre GAS era ancora in cold start → RESULT_CODE_HUNG ("Uffa!").
+    // 8s è sufficiente per GAS caldo; se è freddo mostriamo il recovery.
+    const TIMEOUT_MS = 8000;
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), TIMEOUT_MS);
+
+    // ✅ FIX: registra il controller con SiteGuard così viene abortito
+    // automaticamente su pagehide (back/forward navigation) → BFCache ok.
+    if (window.__sgTrackController) window.__sgTrackController(controller);
 
     const params = new URLSearchParams({
         action: 'get_orders',
@@ -2447,6 +2454,7 @@ if (!userEmail) {
         const resp = await fetch(requestUrl, { method: 'GET', mode: 'cors', cache: 'no-store', signal: controller.signal });
 
         clearTimeout(timeoutId);
+        if (window.__sgUntrackController) window.__sgUntrackController(controller);
 
         if (!resp.ok) {
             console.warn('Fetch non OK:', resp.status, resp.statusText);
@@ -2527,6 +2535,7 @@ if (!userEmail) {
 
     } catch (err) {
     clearTimeout(timeoutId);
+    if (window.__sgUntrackController) window.__sgUntrackController(controller);
     
     // ✅ NUOVO: Ottieni istanza i18n per traduzioni
     const i18n = window.i18nPDP && window.i18nPDP();
@@ -2871,7 +2880,21 @@ async function handleVerifyCode(e) {
     document.getElementById('recoverySection').style.display = 'none';
     document.getElementById('loadingState').style.display = 'block';
     ordersRendered = false;
-    loadOrders(); 
+    loadOrders();
+
+    // ✅ FIX DEFINITIVO RESULT_CODE_HUNG: abort tutti i fetch pendenti
+    // quando l'utente naviga via (back/forward). Senza questo, un fetch
+    // GAS da 8s blocca il BFCache e causa "Uffa!" RESULT_CODE_HUNG.
+    window.addEventListener('pagehide', function() {
+        if (window.__sgTrackController) return; // gestito da SiteGuard
+        // Fallback autonomo: cerca controller globali esposti dalla pagina
+        if (typeof controller !== 'undefined') {
+            try { controller.abort(); } catch(e) {}
+        }
+        if (typeof checkController !== 'undefined') {
+            try { checkController.abort(); } catch(e) {}
+        }
+    }, { once: true });
 } else {
             throw new Error(resp.error || 'Codice non valido');
         }
