@@ -15,18 +15,17 @@ class I18nPDP {
   }
 
   detectLanguage() {
-    // 1. Check localStorage (sincronizzato con index.html)
+    // 1. Check URL path (es. /it/, /en/, /fr/, /de/, /es/)
+    const pathMatch = window.location.pathname.match(/^\/(it|en|fr|de|es)(\/|$)/);
+    if (pathMatch && this.translations[pathMatch[1]]) {
+      localStorage.setItem('lh360_lang', pathMatch[1]);
+      return pathMatch[1];
+    }
+
+    // 2. Check localStorage (sincronizzato con index.html)
     const savedLang = localStorage.getItem('lh360_lang');
     if (savedLang && this.translations[savedLang]) {
       return savedLang;
-    }
-
-    // 2. Check URL query parameter
-    const urlParams = new URLSearchParams(window.location.search);
-    const langFromUrl = urlParams.get('lang');
-    if (langFromUrl && this.translations[langFromUrl]) {
-      localStorage.setItem('lh360_lang', langFromUrl);
-      return langFromUrl;
     }
 
     // 3. Check browser language
@@ -37,6 +36,17 @@ class I18nPDP {
 
     // 4. Default: italiano
     return 'it';
+  }
+
+  /**
+   * Aggiorna il path URL con il codice lingua corrente (path-based routing).
+   * Es. /it/product-details/booking.html → /fr/product-details/booking.html
+   */
+  redirectToLanguagePath(langCode) {
+    const cleanPath = window.location.pathname.replace(/^\/(it|en|fr|de|es)(\/|$)/, '/') || '/';
+    const cleanSearch = window.location.search.replace(/[?&]lang=[a-z]+/g, '').replace(/^\?$/, '');
+    const newPath = '/' + langCode + (cleanPath.startsWith('/') ? cleanPath : '/' + cleanPath);
+    window.history.replaceState({}, '', newPath + cleanSearch);
   }
 
   init() {
@@ -52,13 +62,11 @@ class I18nPDP {
       const savedLang = localStorage.getItem('lh360_lang');
       
       if (savedLang && savedLang !== this.currentLang && this.translations[savedLang]) {
-        console.log(`ðŸ"„ [PDP] Sincronizzazione lingua: ${this.currentLang} â†' ${savedLang}`);
+        console.log(`🔄 [PDP] Sincronizzazione lingua: ${this.currentLang} → ${savedLang}`);
         this.currentLang = savedLang;
         
-        // Aggiorna URL
-        const url = new URL(window.location);
-        url.searchParams.set('lang', savedLang);
-        window.history.replaceState({}, '', url.toString());
+        // Aggiorna URL path-based
+        this.redirectToLanguagePath(savedLang);
         
         // Ri-traduci pagina
         this.translatePage();
@@ -196,10 +204,8 @@ document.querySelectorAll('[data-i18n-placeholder]').forEach(el => {
     localStorage.setItem('lh360_lang', langCode);
     this.currentLang = langCode;
 
-    // Aggiorna URL con query parameter
-    const url = new URL(window.location);
-    url.searchParams.set('lang', langCode);
-    window.history.replaceState({}, '', url.toString());
+    // Aggiorna URL con prefisso lingua path-based
+    this.redirectToLanguagePath(langCode);
     
     // Sincronizza link interni
     this.updateInternalLinks(langCode);
@@ -273,12 +279,15 @@ updateInternalLinks(langCode) {
         }
         
         try {
-            if (href.includes('?')) {
-                const url = new URL(href, window.location.origin);
-                url.searchParams.set('lang', langCode);
-                link.setAttribute('href', url.pathname + url.search);
+            // Rimuove eventuali ?lang= residui e prefisso lingua esistente
+            let cleanHref = href
+                .replace(/[?&]lang=[a-z]+/g, '')
+                .replace(/^\/(it|en|fr|de|es)(\/|$)/, '/');
+
+            if (cleanHref.startsWith('/')) {
+                link.setAttribute('href', '/' + langCode + cleanHref);
             } else {
-                link.setAttribute('href', `${href}?lang=${langCode}`);
+                link.setAttribute('href', '/' + langCode + '/' + cleanHref);
             }
         } catch (e) {
             // Ignora errori
@@ -717,3 +726,19 @@ document.addEventListener('DOMContentLoaded', () => {
 
 // Esporta per uso globale
 window.i18nPDP = () => i18nPDPInstance;
+
+/**
+ * Helper globale per costruire URL interni con prefisso lingua.
+ * Dominio principale: https://luxhaven360.com/{lang}/{path}
+ *
+ * @param {string} path - Path relativo (es. 'product-details/cart.html')
+ * @returns {string} URL completo con dominio e lingua attiva
+ */
+window.lhUrl = function(path) {
+  const BASE = 'https://luxhaven360.com';
+  const lang = (i18nPDPInstance && i18nPDPInstance.currentLang)
+    || localStorage.getItem('lh360_lang')
+    || 'it';
+  const cleanPath = (path || '').replace(/^\/+/, '');
+  return `${BASE}/${lang}/${cleanPath}`;
+};
