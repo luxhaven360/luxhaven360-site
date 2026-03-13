@@ -57,6 +57,10 @@ class I18nPDP {
     
     this.translatePage();
 
+    // ✅ Applica subito il prefisso lingua nell'URL (cosmetico via replaceState)
+    // Es: luxhaven360.com/product-details/cart.html → luxhaven360.com/it/product-details/cart.html
+    this.redirectToLanguagePath(this.currentLang);
+
     // LISTENER PER SINCRONIZZAZIONE LINGUA TRA PAGINE
     window.addEventListener('pageshow', (event) => {
       const savedLang = localStorage.getItem('lh360_lang');
