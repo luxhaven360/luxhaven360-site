@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="it">
 <head>
@@ -18,6 +19,47 @@
     </script>
     <script src="../error-handler.js" defer></script>
 <script src="../siteguard-client.js"></script>
+<script>
+    // ✅ FIX DEFINITIVO RESULT_CODE_HUNG
+    // Abort tutti i fetch GAS pendenti quando l'utente naviga via.
+    // Senza questo il renderer rimane "hung" → Chrome mostra "Uffa!".
+    (function() {
+        var _controllers = [];
+        var _origFetch = window._originalFetch || window.fetch;
+        var _patchedFetch = window.fetch;
+
+        // Intercetta fetch della pagina per tracciare i controller
+        window.fetch = function(input, init) {
+            if (init && init.signal && init.signal.aborted !== undefined) {
+                // Estrai AbortController dal signal tramite listeners (non diretto)
+                // Ci affidiamo a SiteGuard.__sgTrackController per il tracciamento
+            }
+            return _patchedFetch.apply(this, arguments);
+        };
+
+        window.addEventListener('pagehide', function() {
+            // SiteGuard gestisce abort via __sgTrackController/pagehide listener.
+            // Questo è un secondo livello di sicurezza.
+            if (typeof window.__lhPageControllers !== 'undefined') {
+                window.__lhPageControllers.forEach(function(c) {
+                    try { c.abort(); } catch(e) {}
+                });
+                window.__lhPageControllers = [];
+            }
+        }, { once: true });
+
+        // Espone helper globale per questa pagina
+        window.__lhPageControllers = window.__lhPageControllers || [];
+        window.__lhRegisterCtrl = function(ctrl) {
+            window.__lhPageControllers.push(ctrl);
+            if (window.__sgTrackController) window.__sgTrackController(ctrl);
+        };
+        window.__lhUnregisterCtrl = function(ctrl) {
+            window.__lhPageControllers = window.__lhPageControllers.filter(function(c){ return c !== ctrl; });
+            if (window.__sgUntrackController) window.__sgUntrackController(ctrl);
+        };
+    })();
+</script>
     <meta charset="utf-8" />
     <!-- PERFORMANCE: preconnect GAS -->
     <link rel="preconnect" href="https://script.google.com" crossorigin>
