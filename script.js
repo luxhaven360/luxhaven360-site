@@ -692,7 +692,7 @@ btn.dataset.title = prod.title || '';
   const skuPrefix = sku.split('-')[0].toUpperCase();
   
   if (['SC', 'PR', 'EX'].includes(skuPrefix)) {
-    window.location.href = `product-details/booking.html?sku=${encodeURIComponent(sku)}`;
+    window.location.href = lhUrl(`product-details/booking.html?sku=${encodeURIComponent(sku)}`);
   } else {
             try {
                 localStorage.setItem('lh360_last_product', JSON.stringify({ sku: sku, title: btn.dataset.title, ts: Date.now() }));
@@ -700,9 +700,8 @@ btn.dataset.title = prod.title || '';
             } catch (e) {}
             
             setTimeout(() => {
-                const base = 'product-details/pdp-products.html';
                 const section = encodeURIComponent(prod.sectionName || prod.category || 'shop');
-                window.location.href = `${base}?sku=${encodeURIComponent(sku)}&section=${section}`;
+                window.location.href = lhUrl(`product-details/pdp-products.html?sku=${encodeURIComponent(sku)}&section=${section}`);
             }, 500);
         }
     });
