@@ -35,7 +35,7 @@
     defaultLanguage:    'it',
     fallbackLanguage:   'it',
     supportedLanguages: ['it', 'en', 'fr', 'de', 'es'],
-    storageKey:         'community_hub_lang',
+    storageKey:         'lh360_lang',          // ✅ FIX: unificato con il resto del sito
     autoTranslateKey:   'community_hub_auto_translate',
     domAttr:            'data-i18n',
     domAttrPlaceholder: 'data-i18n-placeholder',
@@ -91,9 +91,21 @@
   }
 
   /**
-   * Legge la lingua preferita dell'utente (localStorage → browser → default).
+   * Legge la lingua preferita (URL path → localStorage → browser → default).
+   * ✅ FIX: legge prima il prefisso /it/ /en/ ecc. dall'URL (già applicato
+   * dall'inline script in <head>), poi da localStorage 'lh360_lang'.
+   * Questo garantisce che il selettore lingua rifletta la lingua dell'URL.
    */
   function resolveInitialLanguage() {
+    // 1. Prefisso lingua nell'URL path (es. /it/the-project/community-hub)
+    const pathMatch = window.location.pathname.match(/^\/(it|en|fr|de|es)(\/|$)/);
+    if (pathMatch && CONFIG.supportedLanguages.includes(pathMatch[1])) {
+      log('Lingua da URL path:', pathMatch[1]);
+      try { localStorage.setItem(CONFIG.storageKey, pathMatch[1]); } catch (e) {}
+      return pathMatch[1];
+    }
+
+    // 2. localStorage (chiave unificata con il resto del sito: lh360_lang)
     try {
       const stored = localStorage.getItem(CONFIG.storageKey);
       if (stored && CONFIG.supportedLanguages.includes(stored)) {
@@ -282,6 +294,54 @@
   // ─── GESTIONE LINGUA ─────────────────────────────────────────────────────────
 
   /**
+   * Aggiorna cosmeticamente l'URL con il prefisso lingua via replaceState.
+   * Non causa reload né redirect visibili — solo aggiornamento silenzioso.
+   * ✅ FIX: ora presente anche in i18n-core (per community-hub.html).
+   */
+  function redirectToLanguagePath(langCode) {
+    const m = window.location.pathname.match(/^\/(it|en|fr|de|es)(\/|$)/);
+    if (m && m[1] === langCode) return; // prefisso già corretto, niente da fare
+    const cleanPath = window.location.pathname
+      .replace(/^\/(it|en|fr|de|es)(\/|$)/, '/') || '/';
+    const cleanSearch = window.location.search
+      .replace(/[?&]lang=[a-z]+/, '').replace(/^\?$/, '');
+    const newPath = '/' + langCode + (cleanPath.startsWith('/') ? cleanPath : '/' + cleanPath);
+    try { window.history.replaceState({}, '', newPath + cleanSearch + window.location.hash); } catch (e) {}
+  }
+
+  /**
+   * Aggiorna tutti i link interni con il prefisso lingua corretto.
+   * ✅ FIX: usa link.href (URL risolto dal browser, rispetta <base href>)
+   * invece di link.getAttribute('href') per evitare path relativi errati
+   * in sottocartelle che causano cicli 404 → errore "Uffa!".
+   */
+  function updateInternalLinks(langCode) {
+    document.querySelectorAll('a[href]').forEach(link => {
+      const rawHref = link.getAttribute('href');
+      if (!rawHref ||
+          rawHref.startsWith('javascript:') ||
+          rawHref.startsWith('mailto:') ||
+          rawHref.startsWith('tel:') ||
+          rawHref.startsWith('data:') ||
+          rawHref.startsWith('#')) {
+        return;
+      }
+      try {
+        const resolvedUrl = new URL(link.href);
+        if (resolvedUrl.origin !== location.origin) return;
+        let cleanPath = resolvedUrl.pathname
+          .replace(/^\/(it|en|fr|de|es)(\/|$)/, '/');
+        if (!cleanPath.startsWith('/')) cleanPath = '/' + cleanPath;
+        const cleanSearch = resolvedUrl.search
+          .replace(/[?&]lang=[a-z]+/g, '').replace(/^\?$/, '');
+        link.setAttribute('href',
+          '/' + langCode + cleanPath + cleanSearch + resolvedUrl.hash
+        );
+      } catch (e) {}
+    });
+  }
+
+  /**
    * Cambia la lingua attiva e aggiorna tutto il DOM.
    * @param {string} lang - Codice lingua (it|en|fr|de|es)
    * @param {boolean} [save=true] - Salva in localStorage
@@ -298,13 +358,19 @@
     // Aggiorna attributo html lang
     document.documentElement.setAttribute('lang', lang);
 
-    // Salva preferenza
+    // Salva preferenza (chiave unificata lh360_lang)
     if (save) {
       try {
         localStorage.setItem(CONFIG.storageKey, lang);
         log('Lingua salvata in localStorage:', lang);
       } catch (e) { /* silenzio */ }
     }
+
+    // ✅ FIX: aggiorna URL con prefisso lingua (es. /it/ → /en/)
+    redirectToLanguagePath(lang);
+
+    // ✅ FIX: aggiorna tutti i link interni con nuovo prefisso lingua
+    updateInternalLinks(lang);
 
     // Aggiorna DOM
     translateDOM();
@@ -387,15 +453,20 @@
     state.currentLanguage = lang;
     document.documentElement.setAttribute('lang', lang);
 
-    // Applica al DOM
-    if (document.readyState === 'loading') {
-      document.addEventListener('DOMContentLoaded', () => {
-        translateDOM();
-        startDOMObserver();
-      });
-    } else {
+    // ✅ FIX: applica subito prefisso lingua nell'URL senza flash visibili
+    redirectToLanguagePath(lang);
+
+    // Applica al DOM + aggiorna link interni
+    const applyDOM = () => {
       translateDOM();
+      updateInternalLinks(lang);
       startDOMObserver();
+    };
+
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', applyDOM);
+    } else {
+      applyDOM();
     }
 
     log(`Inizializzato. Lingua: ${lang}`);
@@ -418,6 +489,10 @@
     // DOM
     translateDOM,
     translateElement,
+
+    // Navigazione lingua (✅ nuove funzioni)
+    redirectToLanguagePath,
+    updateInternalLinks,
 
     // Utility
     timeAgo,
