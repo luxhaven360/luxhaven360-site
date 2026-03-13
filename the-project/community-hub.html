@@ -1,6 +1,21 @@
 <!DOCTYPE html>
 <html lang="it">
 <head>
+<!-- ✅ BASE HREF: ancora i path relativi indipendentemente da replaceState -->
+<base href="https://luxhaven360.com/the-project/">
+<!-- ✅ LANG PREFIX — inline early: nessun flash nell'URL -->
+<script>
+(function(){
+  var S=['it','en','fr','de','es'];
+  var lang=localStorage.getItem('lh360_lang')||'it';
+  if(S.indexOf(lang)<0)lang='it';
+  var m=window.location.pathname.match(/^\/(it|en|fr|de|es)(\/|$)/);
+  if(m&&m[1]===lang)return;
+  var clean=window.location.pathname.replace(/^\/(it|en|fr|de|es)(\/|$)/,'/')||'/';
+  var qs=window.location.search.replace(/[?&]lang=[a-z]+/,'').replace(/^\?$/,'');
+  try{history.replaceState({},'','/'+lang+clean+qs+window.location.hash);}catch(e){}
+})();
+</script>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <meta name="robots" content="noindex, nofollow"/>
@@ -3572,6 +3587,30 @@ Object.assign(window.I18N_TRANSLATIONS['es'] || (window.I18N_TRANSLATIONS['es']=
 <script src="i18n/content-translator.js"></script>
 <script src="i18n/language-selector.js"></script>
 <script src="i18n/i18n-init.js"></script>
+<script>
+// ✅ LANG PREFIX IN URL — si aggancia all'evento languageChanged
+// emesso da i18n/language-selector.js ad ogni cambio lingua.
+// Idempotente: replaceState viene chiamato SOLO se il prefisso cambia davvero.
+(function() {
+  function applyLangPrefix(lang) {
+    var S = ['it','en','fr','de','es'];
+    if (S.indexOf(lang) < 0) return;
+    var m = window.location.pathname.match(/^\/(it|en|fr|de|es)(\/|$)/);
+    if (m && m[1] === lang) return; // già corretto
+    var clean = window.location.pathname.replace(/^\/(it|en|fr|de|es)(\/|$)/, '/') || '/';
+    var qs = window.location.search.replace(/[?&]lang=[a-z]+/, '').replace(/^\?$/, '');
+    try { history.replaceState({}, '', '/' + lang + clean + qs + window.location.hash); } catch(e) {}
+  }
+  // Evento emesso da i18n/language-selector.js
+  document.addEventListener('languageChanged', function(e) {
+    if (e.detail && e.detail.lang) applyLangPrefix(e.detail.lang);
+  });
+  // Evento alternativo
+  document.addEventListener('lhLanguageChanged', function(e) {
+    if (e.detail && e.detail.lang) applyLangPrefix(e.detail.lang);
+  });
+})();
+</script>
 <!-- ═══ FINE SISTEMA i18n ═══ -->
 <body>
 
