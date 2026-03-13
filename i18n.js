@@ -59,9 +59,9 @@ class I18n {
     
     // Traduci pagina
     this.translatePage();
-    
-    // ✅ Applica subito il prefisso lingua nell'URL (cosmetico, nessun reload)
-    // Es. luxhaven360.com/ → luxhaven360.com/it/
+
+    // ✅ Applica subito il prefisso lingua nell'URL (cosmetico via replaceState)
+    // Es: luxhaven360.com/ → luxhaven360.com/it/
     this.redirectToLanguagePath(this.currentLang);
     
     // Setup selettore lingua
@@ -301,11 +301,38 @@ class I18n {
  * Aggiorna tutti i link interni con il query parameter lingua
  */
 updateInternalLinks(langCode) {
-    // ✅ I file fisici sono alla radice del sito — NON modifichiamo gli href.
-    // Il prefisso /{lang}/ nell'URL è cosmetico: ogni pagina lo applica via
-    // redirectToLanguagePath() al caricamento, senza causare 404.
-    // Salviamo solo la preferenza lingua in localStorage per la coerenza tra pagine.
-    localStorage.setItem('lh360_lang', langCode);
+    // Seleziona tutti i link interni (non esterni)
+    document.querySelectorAll('a[href]').forEach(link => {
+        const href = link.getAttribute('href');
+        
+        // Salta link esterni, ancore, javascript:, mailto, tel
+        if (!href || 
+            href.startsWith('http') || 
+            href.startsWith('mailto:') || 
+            href.startsWith('tel:') ||
+            href.startsWith('#') ||
+            href.startsWith('javascript:')) {
+            return;
+        }
+        
+        // Aggiorna prefisso lingua nel path
+        try {
+            // Rimuove eventuali ?lang= residui e prefisso lingua esistente
+            let cleanHref = href
+                .replace(/[?&]lang=[a-z]+/g, '')
+                .replace(/^\/(it|en|fr|de|es)(\/|$)/, '/');
+
+            if (cleanHref.startsWith('/')) {
+                // Path assoluto: /path → /{lang}/path
+                link.setAttribute('href', '/' + langCode + cleanHref);
+            } else {
+                // Path relativo: file.html → /{lang}/file.html
+                link.setAttribute('href', '/' + langCode + '/' + cleanHref);
+            }
+        } catch (e) {
+            // Ignora errori di parsing
+        }
+    });
 }
 
   /**
@@ -557,10 +584,12 @@ window.i18n = () => i18nInstance;
  */
 window.lhUrl = function(path) {
   const BASE = 'https://luxhaven360.com';
-  // ✅ NON aggiunge il prefisso lingua: i file sono alla radice del sito.
-  // Il prefisso /it/, /en/ ecc. è gestito in modo cosmetico via replaceState
-  // da redirectToLanguagePath() su ogni pagina. Aggiungere il prefisso qui
-  // causerebbe 404 perché luxhaven360.com/it/product-details/... non esiste.
+  const lang = (i18nInstance && i18nInstance.currentLang)
+    || localStorage.getItem('lh360_lang')
+    || 'it';
+  // Genera URL con prefisso lingua: /it/product-details/cart.html
+  // Se il file non esiste fisicamente, 404.html lo intercetta, salva la lingua
+  // in localStorage, fa redirect al file reale → la pagina riapplica il prefisso.
   const cleanPath = (path || '').replace(/^\/+/, '');
-  return `${BASE}/${cleanPath}`;
+  return cleanPath ? `${BASE}/${lang}/${cleanPath}` : `${BASE}/${lang}/`;
 };
