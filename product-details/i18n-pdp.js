@@ -43,10 +43,13 @@ class I18nPDP {
    * Es. /it/product-details/booking.html → /fr/product-details/booking.html
    */
   redirectToLanguagePath(langCode) {
+    // ✅ GUARD: chiama replaceState SOLO se il prefisso è errato o assente.
+    const m = window.location.pathname.match(/^\/(it|en|fr|de|es)(\/|$)/);
+    if (m && m[1] === langCode) return;
     const cleanPath = window.location.pathname.replace(/^\/(it|en|fr|de|es)(\/|$)/, '/') || '/';
     const cleanSearch = window.location.search.replace(/[?&]lang=[a-z]+/g, '').replace(/^\?$/, '');
     const newPath = '/' + langCode + (cleanPath.startsWith('/') ? cleanPath : '/' + cleanPath);
-    window.history.replaceState({}, '', newPath + cleanSearch);
+    try { window.history.replaceState({}, '', newPath + cleanSearch); } catch(e) {}
   }
 
   init() {
@@ -69,8 +72,7 @@ class I18nPDP {
         console.log(`🔄 [PDP] Sincronizzazione lingua: ${this.currentLang} → ${savedLang}`);
         this.currentLang = savedLang;
         
-        // Aggiorna URL path-based
-        this.redirectToLanguagePath(savedLang);
+        // ✅ NON chiamare redirectToLanguagePath su pageshow (bfcache).
         
         // Ri-traduci pagina
         this.translatePage();
