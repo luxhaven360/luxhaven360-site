@@ -17,6 +17,47 @@
     <script src="translations-brief-descriptions.js"></script>
     <script src="i18n.js"></script>
     <link rel="stylesheet" href="lang-selector.css" />
+    <style>
+    /* ═══ THE PROJECT LINK — Hero CTA ═══ */
+    .the-project-link {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+        margin-top: 1.75rem;
+        padding: 0.55rem 1.4rem;
+        border: 1px solid rgba(212, 175, 55, 0.35);
+        border-radius: 2px;
+        color: rgba(212, 175, 55, 0.75);
+        font-size: 0.72rem;
+        font-weight: 500;
+        letter-spacing: 0.18em;
+        text-transform: uppercase;
+        text-decoration: none;
+        transition: border-color 0.3s ease, color 0.3s ease, background 0.3s ease;
+        backdrop-filter: blur(4px);
+        background: rgba(212, 175, 55, 0.03);
+    }
+    .the-project-link:hover {
+        border-color: rgba(212, 175, 55, 0.7);
+        color: rgba(212, 175, 55, 1);
+        background: rgba(212, 175, 55, 0.06);
+    }
+    .the-project-link .the-project-arrow {
+        opacity: 0.7;
+        transition: transform 0.3s ease, opacity 0.3s ease;
+    }
+    .the-project-link:hover .the-project-arrow {
+        transform: translateX(4px);
+        opacity: 1;
+    }
+    @media (max-width: 640px) {
+        .the-project-link {
+            margin-top: 1.4rem;
+            font-size: 0.68rem;
+            padding: 0.5rem 1.2rem;
+        }
+    }
+    </style>
 </head>
 <body>
     <!-- ========================================
@@ -106,6 +147,12 @@
                 <a href="#" class="btn btn-primary" onclick="showSection('properties')" data-i18n="hero_cta_explore">Esplora Proprietà</a>
                 <a href="#" class="btn" onclick="showSection('contact')" data-i18n="hero_cta_contact">Contattaci</a>
             </div>
+            <a href="the-project/index.html" class="the-project-link" data-i18n="hero_the_project">
+                <span class="the-project-label">The Project</span>
+                <svg class="the-project-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="16" height="16">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M17.25 8.25L21 12m0 0l-3.75 3.75M21 12H3"/>
+                </svg>
+            </a>
         </div>
         <div class="scroll-indicator"><div class="scroll-line"></div></div>
     </section>
@@ -493,7 +540,24 @@
     <!-- ========================================
          FLOATING COMMUNITY BUTTON
          ======================================== -->
-    <div class="community-float" id="communityFloat" onclick="(function(){ var lang = (window.i18n && window.i18n()) ? window.i18n().currentLang : 'it'; window.location.href = 'https://luxhaven360.com/' + lang + '/the-project/community.html'; })()" title="Members Area">
+    <div class="community-float" id="communityFloat" onclick="(function(){
+        var lang = (window.i18n && window.i18n()) ? window.i18n().currentLang : (localStorage.getItem('lh360_lang') || 'it');
+        var privilegedRoles = ['founding', 'candidate', 'team', 'founder', 'admin'];
+        var userRole = '';
+        try {
+            var sess = localStorage.getItem('lh360_community_session');
+            if (sess) {
+                var parsed = JSON.parse(sess);
+                if (parsed && parsed.user && parsed.user.role) {
+                    userRole = parsed.user.role.toLowerCase().trim();
+                }
+            }
+        } catch(e) {}
+        var dest = privilegedRoles.indexOf(userRole) > -1
+            ? 'the-project/community-hub'
+            : 'the-project/community';
+        window.location.href = 'https://luxhaven360.com/' + lang + '/' + dest;
+    })()" title="Members Area">
         <div class="community-float-inner">
             <div class="community-float-icon">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
@@ -506,6 +570,66 @@
     </div>
 
     <!-- SCRIPTS -->
+    <!-- ═══ LANGUAGE HELPER — lhUrl + currentLang fallback ═══ -->
+    <script>
+    /**
+     * lhUrl(relativePath) → https://luxhaven360.com/{lang}/{relativePath}
+     * Legge la lingua attiva da i18n, con fallback a localStorage e poi 'it'.
+     */
+    function lhGetLang() {
+        if (window.i18n && typeof window.i18n === 'function') {
+            var inst = window.i18n();
+            if (inst && inst.currentLang) return inst.currentLang;
+        }
+        return localStorage.getItem('lh360_lang') || 'it';
+    }
+
+    function lhUrl(relativePath) {
+        var lang = lhGetLang();
+        var base = 'https://luxhaven360.com/' + lang + '/';
+        return base + relativePath;
+    }
+
+    /**
+     * Sincronizza il prefisso /lang/ nell'URL del browser quando la lingua cambia.
+     * Se siamo su luxhaven360.com e il prefisso lingua non corrisponde, corregge.
+     */
+    function syncLangInUrl(lang) {
+        var supported = ['it', 'en', 'fr', 'de', 'es'];
+        if (supported.indexOf(lang) === -1) return;
+        localStorage.setItem('lh360_lang', lang);
+        var loc = window.location;
+        // Verifica se siamo sul dominio di produzione
+        if (loc.hostname !== 'luxhaven360.com') return;
+        var parts = loc.pathname.split('/').filter(Boolean);
+        // Se il primo segmento è già il prefisso corretto, non fare nulla
+        if (parts[0] === lang) return;
+        // Se il primo segmento è un'altra lingua supportata, sostituisci
+        if (parts.length > 0 && supported.indexOf(parts[0]) > -1) {
+            parts[0] = lang;
+        } else {
+            parts.unshift(lang);
+        }
+        var newPath = '/' + parts.join('/') + (loc.pathname.endsWith('/') ? '/' : '');
+        try {
+            history.replaceState(null, '', newPath + loc.search + loc.hash);
+        } catch(e) {}
+    }
+
+    // Intercetta i cambi lingua del selettore
+    document.addEventListener('DOMContentLoaded', function() {
+        // Ogni click su .lang-option aggiorna il prefisso URL
+        document.querySelectorAll('.lang-option').forEach(function(btn) {
+            btn.addEventListener('click', function() {
+                var lang = this.getAttribute('data-lang');
+                if (lang) syncLangInUrl(lang);
+            });
+        });
+        // Al caricamento: se i18n è già pronto, sincronizza subito
+        var initLang = lhGetLang();
+        syncLangInUrl(initLang);
+    });
+    </script>
     <script src="script.js"></script>
     <script src="connection-monitor.js"></script>
     <script>
