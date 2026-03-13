@@ -300,39 +300,57 @@ class I18n {
 }
 
   /**
- * Aggiorna tutti i link interni con il query parameter lingua
+ * Aggiorna tutti i link interni con il prefisso lingua nel path.
+ *
+ * ✅ FIX: usa link.href (URL risolto dal browser, rispetta <base href>)
+ * invece di link.getAttribute('href') (valore raw non risolto).
+ *
+ * PROBLEMA PRECEDENTE: su pagine in sottocartelle (es. /the-project/)
+ * un link relativo href="showcase.html" veniva trasformato in
+ * /it/showcase.html invece di /it/the-project/showcase.html,
+ * causando un ciclo 404 → redirect a / (errore "Uffa!").
+ *
+ * CON IL FIX: link.href = "https://luxhaven360.com/the-project/showcase.html"
+ * → path risolto = /the-project/showcase.html
+ * → risultato corretto: /it/the-project/showcase.html
  */
 updateInternalLinks(langCode) {
-    // Seleziona tutti i link interni (non esterni)
     document.querySelectorAll('a[href]').forEach(link => {
-        const href = link.getAttribute('href');
-        
-        // Salta link esterni, ancore, javascript:, mailto, tel
-        if (!href || 
-            href.startsWith('http') || 
-            href.startsWith('mailto:') || 
-            href.startsWith('tel:') ||
-            href.startsWith('#') ||
-            href.startsWith('javascript:')) {
+        const rawHref = link.getAttribute('href');
+
+        // Salta link non navigabili o che non devono essere modificati
+        if (!rawHref ||
+            rawHref.startsWith('javascript:') ||
+            rawHref.startsWith('mailto:') ||
+            rawHref.startsWith('tel:') ||
+            rawHref.startsWith('data:') ||
+            rawHref.startsWith('#')) {
             return;
         }
-        
-        // Aggiorna prefisso lingua nel path
-        try {
-            // Rimuove eventuali ?lang= residui e prefisso lingua esistente
-            let cleanHref = href
-                .replace(/[?&]lang=[a-z]+/g, '')
-                .replace(/^\/(it|en|fr|de|es)(\/|$)/, '/');
 
-            if (cleanHref.startsWith('/')) {
-                // Path assoluto: /path → /{lang}/path
-                link.setAttribute('href', '/' + langCode + cleanHref);
-            } else {
-                // Path relativo: file.html → /{lang}/file.html
-                link.setAttribute('href', '/' + langCode + '/' + cleanHref);
-            }
+        try {
+            // ✅ Usa link.href: URL già risolto dal browser (rispetta <base href>)
+            const resolvedUrl = new URL(link.href);
+
+            // Salta link esterni (origine diversa)
+            if (resolvedUrl.origin !== location.origin) return;
+
+            // Rimuovi prefisso lingua esistente dal path risolto
+            let cleanPath = resolvedUrl.pathname
+                .replace(/^\/(it|en|fr|de|es)(\/|$)/, '/');
+            if (!cleanPath.startsWith('/')) cleanPath = '/' + cleanPath;
+
+            // Rimuovi eventuali ?lang= residui dalla query string
+            const cleanSearch = resolvedUrl.search
+                .replace(/[?&]lang=[a-z]+/g, '')
+                .replace(/^\?$/, '');
+
+            // Costruisci nuovo href con il prefisso lingua corretto
+            link.setAttribute('href',
+                '/' + langCode + cleanPath + cleanSearch + resolvedUrl.hash
+            );
         } catch (e) {
-            // Ignora errori di parsing
+            // Ignora errori di parsing URL
         }
     });
 }
