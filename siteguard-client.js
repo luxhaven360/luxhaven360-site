@@ -92,6 +92,36 @@
   var _activeFetches  = 0;
   var _lastFetchStart = 0;
 
+  /* ══════════════════════════════════════════════════════════════
+     REGISTRO GLOBALE AbortController — FIX DEFINITIVO RESULT_CODE_HUNG
+     ──────────────────────────────────────────────────────────────
+     Ogni fetch aperto (inclusi quelli verso GAS) viene registrato.
+     Su `pagehide` (back/forward del browser) tutti vengono abortiti
+     immediatamente, permettendo al browser di mettere la pagina in
+     BFCache invece di tenerla in stato "hung" con fetch pendenti.
+     Senza questo, un fetch GAS da 30s blocca la navigazione back/forward
+     causando RESULT_CODE_HUNG ("Uffa!").
+  ══════════════════════════════════════════════════════════════ */
+  var _pageHideControllers = new Set();
+
+  /* Helper pubblico — le pagine registrano i loro AbortController */
+  window.__sgTrackController = function (ctrl) {
+    if (ctrl && typeof ctrl.abort === 'function') _pageHideControllers.add(ctrl);
+  };
+  window.__sgUntrackController = function (ctrl) {
+    _pageHideControllers.delete(ctrl);
+  };
+
+  /* pagehide: abort TUTTI i fetch pendenti → BFCache può agire liberamente */
+  window.addEventListener('pagehide', function () {
+    _activeFetches = 0;
+    _pageHideControllers.forEach(function (ctrl) {
+      try { ctrl.abort(); } catch (e) {}
+    });
+    _pageHideControllers.clear();
+    log('pagehide: abortiti tutti i fetch pendenti');
+  });
+
   if (window._sgFetchPatched) {
     var _timedFetch = window.fetch;
     window.fetch = function (input, init) {
