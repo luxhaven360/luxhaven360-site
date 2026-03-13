@@ -1035,6 +1035,68 @@
       .form-modal-header, .form-modal-body { padding-left: 1.5rem; padding-right: 1.5rem; }
     }
   </style>
+<script>
+(function() {
+    'use strict';
+
+    // ══════════════════════════════════════════════════════════
+    //  FIX DEFINITIVO RESULT_CODE_HUNG — the-project pages
+    // ══════════════════════════════════════════════════════════
+    //  Problema: fetch GAS senza AbortController + WebSocket
+    //  Supabase rimangono aperti quando l'utente naviga via.
+    //  Chrome non può usare BFCache → renderer hung → "Uffa!"
+    //
+    //  Soluzione: su pagehide, abort TUTTI i fetch attivi e
+    //  chiudi tutti i canali Supabase Realtime.
+    // ══════════════════════════════════════════════════════════
+
+    window.__lhPageControllers = window.__lhPageControllers || [];
+
+    window.__lhRegisterCtrl = function(ctrl) {
+        if (!ctrl || typeof ctrl.abort !== 'function') return;
+        window.__lhPageControllers.push(ctrl);
+        if (window.__sgTrackController) window.__sgTrackController(ctrl);
+    };
+
+    window.__lhUnregisterCtrl = function(ctrl) {
+        window.__lhPageControllers = (window.__lhPageControllers || [])
+            .filter(function(c){ return c !== ctrl; });
+        if (window.__sgUntrackController) window.__sgUntrackController(ctrl);
+    };
+
+    window.addEventListener('pagehide', function() {
+        // 1. Abort tutti i fetch registrati
+        (window.__lhPageControllers || []).forEach(function(ctrl) {
+            try { ctrl.abort(); } catch(e) {}
+        });
+        window.__lhPageControllers = [];
+
+        // 2. Chiudi tutti i canali Supabase Realtime
+        //    (presenti solo in community-hub.html — no-op sulle altre)
+        try {
+            if (window._sbChannels && typeof window._sbChannels === 'object') {
+                Object.values(window._sbChannels).forEach(function(ch) {
+                    try {
+                        if (ch && typeof ch.unsubscribe === 'function') ch.unsubscribe();
+                    } catch(e) {}
+                });
+            }
+        } catch(e) {}
+
+        // 3. Disconnect Supabase client se presente
+        try {
+            if (window._sb && typeof window._sb.removeAllChannels === 'function') {
+                window._sb.removeAllChannels();
+            }
+        } catch(e) {}
+
+        if (window.DEBUG_PAGEHIDE) {
+            console.log('[pagehide] Cleanup completato: fetch abortiti, canali Supabase chiusi');
+        }
+    }, { once: true });
+
+})();
+</script>
 </head>
 <body>
 
@@ -1561,11 +1623,18 @@ async function _fetchAndRender(silent = false) {
     // In preview mode, invia il token → il backend restituisce TUTTI i record
     // inclusi quelli con Attivo=FALSE (bozze, contenuti in preparazione)
     const previewParam = PREVIEW_MODE ? '&preview=' + PREVIEW_TOKEN : '';
+    // ✅ FIX: AbortController per evitare RESULT_CODE_HUNG su back/forward
+    const _showcaseCtrl = new AbortController();
+    const _showcaseTid  = setTimeout(() => _showcaseCtrl.abort(), 8000);
+    if (window.__lhRegisterCtrl) window.__lhRegisterCtrl(_showcaseCtrl);
     const response = await fetch(APPS_SCRIPT_URL + '?action=all' + previewParam, {
       method: 'GET',
       mode: 'cors',
-      cache: 'no-store'
+      cache: 'no-store',
+      signal: _showcaseCtrl.signal
     });
+    clearTimeout(_showcaseTid);
+    if (window.__lhUnregisterCtrl) window.__lhUnregisterCtrl(_showcaseCtrl);
 
     if (!response.ok) throw new Error('HTTP ' + response.status);
     const data = await response.json();
