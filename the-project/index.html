@@ -1,6 +1,8 @@
 <!DOCTYPE html>
 <html lang="it">
 <head>
+<script src="../bfcache-guard.js"></script>
+
   <!-- ✅ BASE HREF: mantiene la risoluzione dei path relativi corretta
        anche dopo che replaceState aggiunge il prefisso /it/ all'URL. -->
   <base href="https://luxhaven360.com/the-project/">
@@ -1286,68 +1288,6 @@
     .lux-modal::-webkit-scrollbar { width: 3px; }
     .lux-modal::-webkit-scrollbar-thumb { background: var(--gold-dk); }
   </style>
-<script>
-(function() {
-    'use strict';
-
-    // ══════════════════════════════════════════════════════════
-    //  FIX DEFINITIVO RESULT_CODE_HUNG — the-project pages
-    // ══════════════════════════════════════════════════════════
-    //  Problema: fetch GAS senza AbortController + WebSocket
-    //  Supabase rimangono aperti quando l'utente naviga via.
-    //  Chrome non può usare BFCache → renderer hung → "Uffa!"
-    //
-    //  Soluzione: su pagehide, abort TUTTI i fetch attivi e
-    //  chiudi tutti i canali Supabase Realtime.
-    // ══════════════════════════════════════════════════════════
-
-    window.__lhPageControllers = window.__lhPageControllers || [];
-
-    window.__lhRegisterCtrl = function(ctrl) {
-        if (!ctrl || typeof ctrl.abort !== 'function') return;
-        window.__lhPageControllers.push(ctrl);
-        if (window.__sgTrackController) window.__sgTrackController(ctrl);
-    };
-
-    window.__lhUnregisterCtrl = function(ctrl) {
-        window.__lhPageControllers = (window.__lhPageControllers || [])
-            .filter(function(c){ return c !== ctrl; });
-        if (window.__sgUntrackController) window.__sgUntrackController(ctrl);
-    };
-
-    window.addEventListener('pagehide', function() {
-        // 1. Abort tutti i fetch registrati
-        (window.__lhPageControllers || []).forEach(function(ctrl) {
-            try { ctrl.abort(); } catch(e) {}
-        });
-        window.__lhPageControllers = [];
-
-        // 2. Chiudi tutti i canali Supabase Realtime
-        //    (presenti solo in community-hub.html — no-op sulle altre)
-        try {
-            if (window._sbChannels && typeof window._sbChannels === 'object') {
-                Object.values(window._sbChannels).forEach(function(ch) {
-                    try {
-                        if (ch && typeof ch.unsubscribe === 'function') ch.unsubscribe();
-                    } catch(e) {}
-                });
-            }
-        } catch(e) {}
-
-        // 3. Disconnect Supabase client se presente
-        try {
-            if (window._sb && typeof window._sb.removeAllChannels === 'function') {
-                window._sb.removeAllChannels();
-            }
-        } catch(e) {}
-
-        if (window.DEBUG_PAGEHIDE) {
-            console.log('[pagehide] Cleanup completato: fetch abortiti, canali Supabase chiusi');
-        }
-    }, { once: true });
-
-})();
-</script>
 </head>
 <body>
 
@@ -4072,7 +4012,6 @@
       } catch(e) {}
       try {
         const ctrl = new AbortController();
-    if (window.__lhRegisterCtrl) window.__lhRegisterCtrl(ctrl);
         const tid  = setTimeout(() => ctrl.abort(), 8000);
         const r    = await fetch(PAY_GAS_URL + '?action=get_payment_status&t=' + Date.now(), { signal: ctrl.signal });
         clearTimeout(tid);
@@ -4090,7 +4029,6 @@
     async function setRemotePaymentStatus(enabled) {
       try { sessionStorage.removeItem(PAY_CACHE_KEY); sessionStorage.removeItem(PAY_CACHE_TS); } catch(e) {}
       const ctrl = new AbortController();
-    if (window.__lhRegisterCtrl) window.__lhRegisterCtrl(ctrl);
       const tid  = setTimeout(() => ctrl.abort(), 12000);
       const r = await fetch(
         PAY_GAS_URL + '?action=set_payment_status&value=' + (enabled ? '1' : '0') +
