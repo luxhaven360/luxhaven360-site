@@ -92,36 +92,6 @@
   var _activeFetches  = 0;
   var _lastFetchStart = 0;
 
-  /* ══════════════════════════════════════════════════════════════
-     REGISTRO GLOBALE AbortController — FIX DEFINITIVO RESULT_CODE_HUNG
-     ──────────────────────────────────────────────────────────────
-     Ogni fetch aperto (inclusi quelli verso GAS) viene registrato.
-     Su `pagehide` (back/forward del browser) tutti vengono abortiti
-     immediatamente, permettendo al browser di mettere la pagina in
-     BFCache invece di tenerla in stato "hung" con fetch pendenti.
-     Senza questo, un fetch GAS da 30s blocca la navigazione back/forward
-     causando RESULT_CODE_HUNG ("Uffa!").
-  ══════════════════════════════════════════════════════════════ */
-  var _pageHideControllers = new Set();
-
-  /* Helper pubblico — le pagine registrano i loro AbortController */
-  window.__sgTrackController = function (ctrl) {
-    if (ctrl && typeof ctrl.abort === 'function') _pageHideControllers.add(ctrl);
-  };
-  window.__sgUntrackController = function (ctrl) {
-    _pageHideControllers.delete(ctrl);
-  };
-
-  /* pagehide: abort TUTTI i fetch pendenti → BFCache può agire liberamente */
-  window.addEventListener('pagehide', function () {
-    _activeFetches = 0;
-    _pageHideControllers.forEach(function (ctrl) {
-      try { ctrl.abort(); } catch (e) {}
-    });
-    _pageHideControllers.clear();
-    log('pagehide: abortiti tutti i fetch pendenti');
-  });
-
   if (window._sgFetchPatched) {
     var _timedFetch = window.fetch;
     window.fetch = function (input, init) {
@@ -136,18 +106,12 @@
 
   /* ══════════════════════════════════════════════════════════════
      B. BFCACHE HANDLER — pageshow con persisted=true (ex v2)
-     ✅ FIX: rimosso il window.location.reload() per fetch stale.
-     Il reload veniva triggered erroneamente perché _activeFetches
-     può rimanere > 0 dopo che la pagina entra in BFCache (il
-     .finally() del Promise non viene eseguito durante la sospensione).
-     Questo causava un ciclo reload → BFCache → reload → "Uffa!".
-     Ora ci limitiamo a pulire la UI di loading senza forzare reload.
   ══════════════════════════════════════════════════════════════ */
+  // ✅ FIX: rimosso location.reload() che causava loop BFCache → "Uffa!"
+  // bfcache-guard.js gestisce il ripristino corretto su pageshow.
   window.addEventListener('pageshow', function (e) {
     if (!e.persisted) return;
-    // ✅ Reset contatore fetch: potrebbe essere rimasto > 0 per fetch
-    // avviate prima che la pagina entrasse in BFCache.
-    _activeFetches = 0;
+    _activeFetches = 0; // reset contatore (potrebbe essere sporco da BFCache)
     _closeAllLoadingUI();
   });
 
