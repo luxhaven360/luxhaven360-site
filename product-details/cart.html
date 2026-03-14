@@ -1,6 +1,9 @@
+
 <!DOCTYPE html>
 <html lang="it">
 <head>
+<script src="../bfcache-guard.js"></script>
+
   <!-- ✅ BASE HREF: ancora i path relativi all'URL reale (fix dopo replaceState) -->
   <base href="https://luxhaven360.com/product-details/">
     <!-- ✅ LANG PREFIX — inline early: nessun flash nell'URL -->
@@ -9,56 +12,15 @@
       var S=['it','en','fr','de','es'];
       var lang=localStorage.getItem('lh360_lang')||'it';
       if(S.indexOf(lang)<0)lang='it';
-      var m=window.location.pathname.match(/^\/(it|en|fr|de|es)(\\/|$)/);
+      var m=window.location.pathname.match(/^\/(it|en|fr|de|es)(\/|$)/);
       if(m&&m[1]===lang)return;
-      var clean=window.location.pathname.replace(/^\/(it|en|fr|de|es)(\\/|$)/,'/')||'/';
+      var clean=window.location.pathname.replace(/^\/(it|en|fr|de|es)(\/|$)/,'/')||'/';
       var qs=window.location.search.replace(/[?&]lang=[a-z]+/,'').replace(/^\?$/,'');
       try{history.replaceState({},'','/'+lang+clean+qs+window.location.hash);}catch(e){}
     })();
     </script>
     <script src="../error-handler.js" defer></script>
 <script src="../siteguard-client.js"></script>
-<script>
-    // ✅ FIX DEFINITIVO RESULT_CODE_HUNG
-    // Abort tutti i fetch GAS pendenti quando l'utente naviga via.
-    // Senza questo il renderer rimane "hung" → Chrome mostra "Uffa!".
-    (function() {
-        var _controllers = [];
-        var _origFetch = window._originalFetch || window.fetch;
-        var _patchedFetch = window.fetch;
-
-        // Intercetta fetch della pagina per tracciare i controller
-        window.fetch = function(input, init) {
-            if (init && init.signal && init.signal.aborted !== undefined) {
-                // Estrai AbortController dal signal tramite listeners (non diretto)
-                // Ci affidiamo a SiteGuard.__sgTrackController per il tracciamento
-            }
-            return _patchedFetch.apply(this, arguments);
-        };
-
-        window.addEventListener('pagehide', function() {
-            // SiteGuard gestisce abort via __sgTrackController/pagehide listener.
-            // Questo è un secondo livello di sicurezza.
-            if (typeof window.__lhPageControllers !== 'undefined') {
-                window.__lhPageControllers.forEach(function(c) {
-                    try { c.abort(); } catch(e) {}
-                });
-                window.__lhPageControllers = [];
-            }
-        }, { once: true });
-
-        // Espone helper globale per questa pagina
-        window.__lhPageControllers = window.__lhPageControllers || [];
-        window.__lhRegisterCtrl = function(ctrl) {
-            window.__lhPageControllers.push(ctrl);
-            if (window.__sgTrackController) window.__sgTrackController(ctrl);
-        };
-        window.__lhUnregisterCtrl = function(ctrl) {
-            window.__lhPageControllers = window.__lhPageControllers.filter(function(c){ return c !== ctrl; });
-            if (window.__sgUntrackController) window.__sgUntrackController(ctrl);
-        };
-    })();
-</script>
     <meta charset="UTF-8">
     <!-- PERFORMANCE: preconnect GAS -->
     <link rel="preconnect" href="https://script.google.com" crossorigin>
@@ -3500,7 +3462,6 @@ window.addEventListener('storage', (event) => {
     // 3. Fetch con timeout 8s via AbortController — evita RESULT_CODE_HUNG da GAS cold start
     try {
       const controller = new AbortController();
-    if (window.__lhRegisterCtrl) window.__lhRegisterCtrl(controller);
       const timeoutId  = setTimeout(() => controller.abort(), 8000);
       const r = await fetch(GAS_URL + '?action=get_payment_status&t=' + Date.now(), {
         signal: controller.signal
