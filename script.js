@@ -1,10 +1,3 @@
-// ─── NAVIGAZIONE SEZIONI (SPA) ───────────────────────────────────────────────
-
-/**
- * Logica DOM pura per mostrare una sezione.
- * Chiamata sia da showSection() che dal popstate handler.
- * NON tocca history per evitare loop.
- */
 function _showSectionInternal(sectionId) {
     console.log(`🔀 Cambio sezione: ${sectionId}`);
     
@@ -81,22 +74,6 @@ function _showSectionInternal(sectionId) {
         window.scrollTo({ top: 0, behavior: 'smooth' }); // Smooth
     }
     
-    // ✅ FIX: aggiorna URL con pushState per permettere il pulsante Indietro
-    // senza reload completo e senza causare la pagina di errore "Uffa!".
-    // Usa section id come hash fragment cosmetico: /it/#shop
-    // Questo impedisce che il browser faccia una vera navigazione (nessun 404).
-    try {
-        const lang = (window.i18n && window.i18n())
-            ? window.i18n().currentLang
-            : (localStorage.getItem('lh360_lang') || 'it');
-        const basePath = '/' + lang + '/';
-        if (sectionId === 'home') {
-            history.pushState({ section: 'home' }, '', basePath);
-        } else {
-            history.pushState({ section: sectionId }, '', basePath + '#' + sectionId);
-        }
-    } catch (e) {}
-
     // Ri-traduci elementi dopo cambio sezione
     setTimeout(() => {
         if (window.i18n && typeof window.i18n === 'function') {
@@ -110,21 +87,24 @@ function _showSectionInternal(sectionId) {
     console.log(`✅ Sezione "${sectionId}" attiva`);
 }
 
-/**
- * Funzione pubblica — chiamata dai link onclick="showSection(...)"
- * Esegue la logica DOM + aggiorna la history del browser.
- */
+// Funzione pubblica: aggiorna URL via pushState poi mostra sezione
 function showSection(sectionId) {
+    try {
+        const lang = (window.i18n && window.i18n())
+            ? window.i18n().currentLang
+            : (localStorage.getItem('lh360_lang') || 'it');
+        if (sectionId === 'home') {
+            history.pushState({ section: 'home' }, '', '/' + lang + '/');
+        } else {
+            history.pushState({ section: sectionId }, '', '/' + lang + '/#' + sectionId);
+        }
+    } catch (e) {}
     _showSectionInternal(sectionId);
 }
 
-// ✅ FIX: gestione pulsante Indietro del browser — ripristina la sezione
-// dal history.state senza ricaricare la pagina.
+// Gestione pulsante Indietro/Avanti: ripristina sezione senza reload
 window.addEventListener('popstate', (event) => {
-    const section = event.state && event.state.section
-        ? event.state.section
-        : 'home';
-    // Chiama _showSectionInternal senza pushState per evitare loop
+    const section = event.state && event.state.section ? event.state.section : 'home';
     _showSectionInternal(section);
 });
 
