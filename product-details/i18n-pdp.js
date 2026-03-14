@@ -1,3 +1,4 @@
+
 /**
  * 🌍 Sistema i18n per Product Details Pages
  * Sincronizzato con index.html tramite localStorage
@@ -104,41 +105,22 @@ class I18nPDP {
    */
   async loadExchangeRates() {
     const WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbwr79RkXIEocpuOKaM6uMJqE6VFs9wjlUPvrr__FvDbDDrD2ELB1NbfrWP3BCYpHj2u/exec';
-
-    // ✅ FIX: AbortController con timeout 3s (era senza limite).
-    // I tassi di cambio sono dati non critici: se GAS è lento usiamo il
-    // fallback senza bloccare il renderer o impedire il BFCache.
-    const ctrl = new AbortController();
-    const tid  = setTimeout(() => ctrl.abort(), 3000);
-    if (window.__sgTrackController) window.__sgTrackController(ctrl);
-
+    
     try {
-      // Usa _originalFetch per bypassare il double-wrap di siteguard
-      // (che aggiungerebbe un secondo AbortController innestato)
-      const fetchFn = window._originalFetch || window.fetch;
-      const response = await fetchFn(
-        `${WEB_APP_URL}?action=get_exchange_rates&t=${Date.now()}`,
-        { signal: ctrl.signal }
-      );
-      clearTimeout(tid);
-      if (window.__sgUntrackController) window.__sgUntrackController(ctrl);
-
+      const response = await fetch(`${WEB_APP_URL}?action=get_exchange_rates&t=${Date.now()}`);
       const data = await response.json();
-
+      
       if (data.success && data.rates) {
         this.exchangeRates = data.rates;
         console.log('✅ [i18n-pdp] Tassi aggiornati:', this.exchangeRates);
+        
+        // ✅ Aggiorna tutti i prezzi visibili dopo il caricamento
         if (typeof updateAllPricesForLanguage === 'function') {
           updateAllPricesForLanguage();
         }
       }
     } catch (error) {
-      clearTimeout(tid);
-      if (window.__sgUntrackController) window.__sgUntrackController(ctrl);
-      if (error.name !== 'AbortError') {
-        console.warn('⚠️ [i18n-pdp] Errore caricamento tassi, uso fallback:', error);
-      }
-      // Fallback già impostato nel costruttore: { EUR:1, USD:1.17, GBP:0.87 }
+      console.warn('⚠️ [i18n-pdp] Errore caricamento tassi, uso fallback:', error);
     }
   }
 
