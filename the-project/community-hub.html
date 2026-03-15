@@ -13638,7 +13638,7 @@ function showToast(color, icon, text) {
    PRESENZA REAL-TIME — SUPABASE
    Sostituisce completamente il sistema Firebase
 ═══════════════════════════════════════════ */
-const HEARTBEAT_INTERVAL = 25 * 1000; // keep-alive ogni 25s
+const HEARTBEAT_INTERVAL = 25 * 1000; // keep-alive ogni 25s (runs in background tabs too)
 let _heartbeatTimer = null;
 let _presencePollTimer = null;
 let _sbPresenceCh = null; // Supabase Presence Channel — gestisce offline automaticamente
@@ -13663,6 +13663,11 @@ const fbSetPresence = sbSetPresence;
 /* ── Rimuovi presenza (logout/chiusura) ── */
 async function removePresence() {
   if (_heartbeatTimer) { clearInterval(_heartbeatTimer); _heartbeatTimer = null; }
+  // Cancel all grace-period removal timers on explicit logout
+  if (window._presenceRemovalTimers) {
+    Object.values(window._presenceRemovalTimers).forEach(function(t) { clearTimeout(t); });
+    window._presenceRemovalTimers = {};
+  }
   // Untrack dal Presence Channel — notifica immediata agli altri utenti
   if (_sbPresenceCh) {
     try { await _sbPresenceCh.untrack(); } catch(_e) {}
@@ -13701,7 +13706,7 @@ async function sbGetOnlineMembers() {
     // Filtra presenze stantie (>90s senza heartbeat — heartbeat ogni 30s)
     const fresh = (data || []).filter(u => {
       if (!u.updated_at) return false;
-      return Date.now() - new Date(u.updated_at).getTime() < 90 * 1000;
+      return Date.now() - new Date(u.updated_at).getTime() < 210 * 1000; // 3.5 min — tolerates tab switches
     });
     applyPresenceData(fresh);
   } catch(_e) {}
@@ -13838,23 +13843,27 @@ function startPresenceSystem() {
   // ── Offline su chiusura tab/browser (sendBeacon — garantito)
   window.addEventListener('beforeunload', removePresenceSync);
 
-  // ── Offline/online su cambio visibilità tab
+  // ── Visibilità tab: NON segnare offline al cambio scheda.
+  // Un utente è offline SOLO quando chiude la pagina/browser o perde connessione.
+  // Al ritorno sulla tab: rinfresca la presenza (re-track) senza mai fare offline.
   window.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'hidden') {
-      // Tab nascosta: segna offline preventivamente
-      if (_sbReady && currentUser) {
-        _sb.from('presence').update({ online: false, updated_at: new Date().toISOString() })
-          .eq('email', currentUser.email.toLowerCase()).then(()=>{}).catch(()=>{});
-      }
-    } else {
-      // Tab tornata visibile: ripristina presenza
+    if (document.visibilityState === 'visible') {
+      // Tab tornata attiva: rinfresca presenza (senza prima aver fatto offline)
       sbSetPresence();
       if (_sbPresenceCh && currentUser) {
         try {
-          _sbPresenceCh.track({ email: currentUser.email.toLowerCase(), name: currentUser.name, initial: currentUser.initial, role: currentUser.role });
+          _sbPresenceCh.track({
+            email:   currentUser.email.toLowerCase(),
+            name:    currentUser.name,
+            initial: currentUser.initial,
+            role:    currentUser.role
+          });
         } catch(_e) {}
       }
     }
+    // document.visibilityState === 'hidden' → NON fare nulla.
+    // Il beforeunload + freeze gestiscono la chiusura reale.
+    // Il Supabase Presence Channel gestisce la disconnessione di rete.
   });
 
   // ── Offline su freeze della pagina (mobile/tablet)
@@ -13872,10 +13881,39 @@ function applyPresenceData(onlineList) {
   // Mantieni l'ordine corrente degli utenti già presenti; aggiungi nuovi in fondo;
   // rimuovi quelli non più presenti.
   const newEmailSet = new Set(onlineList.map(u => (u.email || '').toLowerCase()));
-  // Rimuovi utenti non più online
+
+  // Grace-period removal: don't remove instantly on a single sync event.
+  // Schedule removal after 45s — if the user re-appears before that, cancel.
+  // This prevents flicker when a tab becomes temporarily hidden/unhidden.
+  if (!window._presenceRemovalTimers) window._presenceRemovalTimers = {};
   for (let i = ONLINE_MEMBERS.length - 1; i >= 0; i--) {
-    const em = (ONLINE_MEMBERS[i].email || '').toLowerCase();
-    if (em && !newEmailSet.has(em)) ONLINE_MEMBERS.splice(i, 1);
+    const m  = ONLINE_MEMBERS[i];
+    const em = (m.email || '').toLowerCase();
+    if (!em) continue;
+    if (newEmailSet.has(em)) {
+      // User is online — cancel any pending removal
+      if (window._presenceRemovalTimers[em]) {
+        clearTimeout(window._presenceRemovalTimers[em]);
+        delete window._presenceRemovalTimers[em];
+      }
+    } else {
+      // User absent from this sync — schedule removal after 45s grace period
+      if (!window._presenceRemovalTimers[em]) {
+        (function(email, member) {
+          window._presenceRemovalTimers[email] = setTimeout(function() {
+            delete window._presenceRemovalTimers[email];
+            const idx2 = ONLINE_MEMBERS.findIndex(function(x) {
+              return (x.email || '').toLowerCase() === email;
+            });
+            if (idx2 !== -1) {
+              ONLINE_MEMBERS.splice(idx2, 1);
+              renderRightPanel();
+              if (typeof _foundingStatusImmediate === 'function') _foundingStatusImmediate();
+            }
+          }, 45000); // 45s grace — tab switches resolved well within this window
+        })(em, m);
+      }
+    }
   }
   // Aggiorna dati esistenti e aggiungi nuovi (mantenendo ordine stabile)
   const existingEmails = new Set(ONLINE_MEMBERS.map(u => (u.email || '').toLowerCase()));
