@@ -64,7 +64,7 @@ self.addEventListener('message', event => {
   });
   _pending.clear();
 
-  if (event.source) {
-    try { event.source.postMessage({ type: 'ABORTED', count }); } catch(e) {}
-  }
+  /* NON inviare postMessage di ritorno alla pagina:
+     se la pagina è in BFCache, ricevere un MessageEvent la esclude
+     dal BFCache → Chrome blocca BFCache per "ServiceWorkerPostMessage" */
 });
