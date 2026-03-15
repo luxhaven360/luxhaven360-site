@@ -13752,6 +13752,8 @@ function sbListenPresence() {
         renderRightPanel();
         const countEl = document.getElementById('dashOnlineCount');
         if (countEl) countEl.textContent = ONLINE_MEMBERS.length;
+        // Update founding chat status immediately on member leave
+        if (typeof _foundingStatusImmediate === 'function') _foundingStatusImmediate();
       }
     })
     .subscribe(async (status) => {
@@ -13921,6 +13923,9 @@ function applyPresenceData(onlineList) {
   // Aggiorna il contatore nella dashboard
   const countEl = document.getElementById('dashOnlineCount');
   if (countEl) countEl.textContent = ONLINE_MEMBERS.length;
+
+  // Aggiorna IMMEDIATAMENTE il contatore nel canale Founding Members
+  if (typeof _foundingStatusImmediate === 'function') _foundingStatusImmediate();
 
   // Aggiorna IMMEDIATAMENTE lo stato online/offline nella chat aperta
   if (currentConvPartnerEmail) {
@@ -17162,17 +17167,52 @@ function _foundingBroadcastTyping(isTyping) {
 }
 
 // ── Status bar animation (Fix 10) ──────────────────────────────────────────
-function _updateFoundingStatus() {
-  var statusEl = document.getElementById('foundingChatStatus');
-  if (!statusEl) return;
-  var onlineCount = (ONLINE_MEMBERS || []).filter(function(m) {
+function _getFoundingOnlineCount() {
+  return (ONLINE_MEMBERS || []).filter(function(m) {
     return m.role === 'founding' || m.role === 'team' ||
       (m.role && (m.role.toLowerCase().indexOf('founding') !== -1 || m.role.toLowerCase().indexOf('team') !== -1));
   }).length;
+}
+
+function _updateFoundingStatus() {
+  var statusEl = document.getElementById('foundingChatStatus');
+  if (!statusEl) return;
+  var onlineCount = _getFoundingOnlineCount();
   var onlineLbl  = (window.I18n ? I18n.t('founding.online_count')   : 'online');
   var channelLbl = (window.I18n ? I18n.t('founding.channel_status') : 'Canale esclusivo');
   statusEl._onlineText  = onlineCount > 0 ? onlineCount + ' ' + onlineLbl : null;
   statusEl._channelText = channelLbl;
+}
+
+/* ── Aggiorna il contatore online IMMEDIATAMENTE (senza interrompere l'animazione) ── */
+function _foundingStatusImmediate() {
+  _updateFoundingStatus(); // ricalcola _onlineText / _channelText
+
+  var statusEl = document.getElementById('foundingChatStatus');
+  if (!statusEl) return;
+
+  // Aggiorna il testo visibile SOLO se mostra già il contatore online (non "Canale esclusivo")
+  // Così non interrompiamo il ciclo dell'animazione: il testo corrente viene aggiornato in-place
+  var currentText = statusEl.textContent || '';
+  var onlineLbl   = (window.I18n ? I18n.t('founding.online_count') : 'online');
+
+  // Se il testo corrente contiene la parola-chiave online (es "2 online", "3 en ligne")
+  // oppure se il pannello è appena stato aperto (testo vuoto / data-i18n non ancora sostituito)
+  var isShowingOnline = currentText.indexOf(onlineLbl) !== -1 ||
+                        currentText === '' ||
+                        currentText === (statusEl.getAttribute('data-i18n') || '');
+
+  if (isShowingOnline && statusEl._onlineText) {
+    // Micro-fade: aggiorna il numero senza resettare il ciclo 4s
+    statusEl.style.transition = 'opacity 0.15s ease';
+    statusEl.style.opacity    = '0.4';
+    setTimeout(function() {
+      statusEl.textContent  = statusEl._onlineText;
+      statusEl.style.opacity = '1';
+    }, 160);
+  }
+  // Se non mostra il contatore (mostra "Canale esclusivo"), non fare nulla:
+  // al prossimo tick dell'animazione mostrerà il numero aggiornato
 }
 
 function _startStatusAnimation() {
@@ -17183,6 +17223,7 @@ function _startStatusAnimation() {
 
   function _tick() {
     if (!statusEl) return;
+    _updateFoundingStatus(); // always re-read ONLINE_MEMBERS at each tick
     var txt = (showOnline && statusEl._onlineText) ? statusEl._onlineText : statusEl._channelText;
     // Fade out
     statusEl.style.transition = 'opacity 0.4s ease';
