@@ -1,70 +1,24 @@
 /**
- * ================================================================
- *  LuxHaven360 — Service Worker  v2.0
- *  File: sw.js  (root del sito)
- * ================================================================
- *
- *  REGOLA FONDAMENTALE:
- *  Intercetta SOLO richieste fetch sub-resource verso GAS.
- *  NON intercettare MAI navigazioni documento (mode='navigate').
- *  NON intercettare MAI risorse same-origin (HTML, JS, CSS, img).
- *
- *  Perché: intercettare navigazioni causava RESULT_CODE_HUNG
- *  durante il redirect di 404.html — il browser aspettava una
- *  risposta dal SW che non arrivava mai.
- * ================================================================
+ * LuxHaven360 — Service Worker (disattivato)
+ * 
+ * Questo file sostituisce il precedente sw.js che causava
+ * unhandled AbortError rejections durante la navigazione rapida,
+ * destabilizzando Chrome dopo ~10-20 cicli di back/forward.
+ * 
+ * La gestione dei fetch GAS è ora interamente delegata a
+ * bfcache-guard.js (livello JS, AbortController).
  */
 'use strict';
 
-const _pending = new Map();
-
-self.addEventListener('install', () => {
-  self.skipWaiting();
-});
+self.addEventListener('install', () => self.skipWaiting());
 
 self.addEventListener('activate', event => {
-  /* NON chiamare clients.claim() — evita race condition con pagine
-     che stanno eseguendo un redirect (404.html) */
-  event.waitUntil(Promise.resolve());
+  /* Rimuovi tutte le cache precedenti del SW */
+  event.waitUntil(
+    caches.keys().then(keys =>
+      Promise.all(keys.map(k => caches.delete(k)))
+    ).then(() => self.clients.claim())
+  );
 });
 
-self.addEventListener('fetch', event => {
-  const req = event.request;
-  const url = req.url;
-
-  /* ── REGOLA 1: mai intercettare navigazioni documento ─────────
-     Questo è il fix critico. Senza questo, il SW intercettava le
-     navigazioni di 404.html causando RESULT_CODE_HUNG immediato.
-  ─────────────────────────────────────────────────────────────── */
-  if (req.mode === 'navigate') return;
-
-  /* ── REGOLA 2: intercetta solo richieste GAS (cross-origin) ── */
-  if (!url.includes('script.google.com')) return;
-
-  /* ── REGOLA 3: solo XMLHttpRequest / fetch (non script tag) ── */
-  if (req.destination === 'script') return;
-
-  /* Traccia la richiesta con AbortController */
-  const ctrl = new AbortController();
-  const key  = Date.now() + '_' + Math.random();
-  _pending.set(key, ctrl);
-
-  const promise = fetch(req, { signal: ctrl.signal })
-    .finally(() => { _pending.delete(key); });
-
-  event.respondWith(promise);
-});
-
-self.addEventListener('message', event => {
-  if (!event.data || event.data.type !== 'ABORT_ALL') return;
-
-  let count = 0;
-  _pending.forEach((ctrl) => {
-    try { ctrl.abort(); count++; } catch (e) {}
-  });
-  _pending.clear();
-
-  /* NON inviare postMessage di ritorno alla pagina:
-     se la pagina è in BFCache, ricevere un MessageEvent la esclude
-     dal BFCache → Chrome blocca BFCache per "ServiceWorkerPostMessage" */
-});
+/* Nessuna intercettazione fetch — tutto passa direttamente alla rete */
