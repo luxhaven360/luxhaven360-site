@@ -728,4 +728,18 @@ window.I18N_TRANSLATIONS['fr'] = {
   'thread.write_reply':              'Rédigez votre réponse…',
   'dash.position_label':             'Position',
 
+
+  // ─── FOUNDING MEMBERS CHAT ───────────────────────────────────────
+  'nav.founding_chat': 'Founding Members',
+  'founding.channel_status': 'Canal exclusif',
+  'founding.welcome_title': 'Bienvenue sur le canal exclusif',
+  'founding.welcome_name': 'Founding Members',
+  'founding.welcome_sub': 'Écrivez le premier message pour commencer.',
+  'founding.input_placeholder': 'Écrire dans le groupe Founding Members…',
+  'founding.online_count': 'en ligne',
+  'founding.send_btn': 'Envoyer',
+  'founding.emoji_btn': 'Emoji',
+  'founding.date_today': 'Aujourd\'hui',
+  'founding.date_yesterday': 'Hier',
+  'emoji.search_placeholder': 'Rechercher un emoji…',
 };
