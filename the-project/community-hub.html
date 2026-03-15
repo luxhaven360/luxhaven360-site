@@ -4954,6 +4954,9 @@ Object.defineProperty(window, '_fbReady', { get: () => _sbReady });
       realtime: { params: { eventsPerSecond: 20 } }
     });
     _sbReady = true;
+    // Expose on window so code in any <script> block can access them
+    window._sb      = _sb;
+    window._sbReady = true;
     console.log('[Supabase] ✅ Client inizializzato — Realtime attivo');
   } catch(e) {
     console.error('[Supabase] Errore inizializzazione:', e.message);
@@ -16748,6 +16751,43 @@ function _lxApplyManualTransToEl(el, translatedText) {
   padding: 2rem; text-align: center;
 }
 #foundingChatMessages .fc-empty svg { color: var(--gold-dim); }
+/* ── Typing indicator — modern design ── */
+.fc-typing-indicator {
+  display: flex; align-items: center; gap: 0.55rem;
+  padding: 0.4rem 1rem 0.5rem;
+  opacity: 1; transition: opacity 0.2s ease;
+}
+.fc-typing-bubble {
+  display: flex; align-items: center; justify-content: center;
+  background: var(--dark4); border: 1px solid var(--border2);
+  border-radius: 12px 12px 12px 2px;
+  padding: 0.45rem 0.7rem;
+  min-width: 42px;
+}
+.fc-typing-dots-modern {
+  display: flex; align-items: center; gap: 3px;
+}
+.fc-typing-dots-modern span {
+  width: 5px; height: 5px; border-radius: 50%;
+  background: var(--gold-dim);
+  display: inline-block;
+  animation: fcDotPulse 1.2s ease-in-out infinite;
+}
+.fc-typing-dots-modern span:nth-child(1) { animation-delay: 0s; }
+.fc-typing-dots-modern span:nth-child(2) { animation-delay: 0.2s; }
+.fc-typing-dots-modern span:nth-child(3) { animation-delay: 0.4s; }
+@keyframes fcDotPulse {
+  0%, 60%, 100% { transform: scale(1); opacity: 0.4; }
+  30%            { transform: scale(1.4); opacity: 1; background: var(--gold); }
+}
+.fc-typing-name {
+  font-size: 0.68rem; color: var(--muted);
+  font-style: normal; font-weight: 400;
+  letter-spacing: 0.01em;
+}
+.fc-typing-action {
+  color: var(--muted2); font-style: italic;
+}
 #foundingChatMessages .fc-retention-banner {
   display: flex; align-items: center; gap: 0.4rem;
   font-size: 0.62rem; color: rgba(212,175,55,0.45);
@@ -16823,7 +16863,7 @@ function initFoundingChat() {
   // Always reload messages when panel opens (fresh data, handles re-open)
   loadFoundingMessages();
 
-  if (_sbReady && _sb) {
+  if (window._sbReady && window._sb) {
     // Supabase ready — start/restart listeners immediately
     // Reset existing channels so they reconnect fresh on each panel open
     if (_foundingSbChannel) {
@@ -16841,7 +16881,7 @@ function initFoundingChat() {
     var _retries = 0;
     var _waitSb = setInterval(function() {
       _retries++;
-      if (_sbReady && _sb) {
+      if (window._sbReady && window._sb) {
         clearInterval(_waitSb);
         if (_foundingSbChannel) {
           try { _foundingSbChannel.unsubscribe(); } catch(e) {}
@@ -16901,10 +16941,10 @@ async function loadFoundingMessages() {
   }
 
   // ── Step 2: fetch from Supabase in background (ALL users, anon key, no auth needed)
-  if (!_sb) { _startFoundingPoll(); return; }
+  if (!window._sb) { _startFoundingPoll(); return; }
   try {
     var thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString();
-    var result = await _sb
+    var result = await window._sb
       .from('founding_group_messages')
       .select('id, author_name, author_initial, author_email, text, created_at')
       .order('created_at', { ascending: true })
@@ -16942,7 +16982,7 @@ async function loadFoundingMessages() {
 
 // ── Realtime listener (Fix 1: INSERT + DELETE) ─────────────────────────────
 function _startFoundingListener() {
-  if (!_sb) return;
+  if (!window._sb) return;
   // If already subscribed and healthy, skip
   if (_foundingSbChannel) {
     // Re-subscribe if channel is closed/errored
@@ -16953,7 +16993,7 @@ function _startFoundingListener() {
     _foundingSbChannel = null;
   }
   try {
-    _foundingSbChannel = _sb
+    _foundingSbChannel = window._sb
       .channel('founding-group-chat-v2')
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'founding_group_messages' }, function(payload) {
         var msg = _mapFoundingMsg(payload.new);
@@ -17012,10 +17052,10 @@ function _startFoundingPoll() {
 
 // ── Typing indicator (Fix 9) ───────────────────────────────────────────────
 function _startFoundingTypingListener() {
-  if (!_sb || !currentUser || _foundingTypingCh) return;
+  if (!window._sb || !currentUser || _foundingTypingCh) return;
   try {
     // Use Supabase Broadcast (no DB table needed — no schema mismatch possible)
-    _foundingTypingCh = _sb
+    _foundingTypingCh = window._sb
       .channel('founding-typing-broadcast')
       .on('broadcast', { event: 'typing' }, function(payload) {
         var d = payload.payload;
@@ -17049,22 +17089,50 @@ function _renderFoundingTypingIndicator() {
   var container = document.getElementById('foundingChatMessages');
   if (!container) return;
   var existing = container.querySelector('.fc-typing-indicator');
-  var typers = Object.values(_foundingTypersMap);
+
+  // BUG FIX: filter out __timer_ keys — they hold setTimeout IDs (numbers), not names
+  var typers = Object.keys(_foundingTypersMap)
+    .filter(function(k) { return k.indexOf('__timer_') !== 0; })
+    .map(function(k) { return _foundingTypersMap[k]; });
+
   if (typers.length === 0) {
-    if (existing) existing.remove();
+    if (existing) {
+      existing.style.opacity = '0';
+      setTimeout(function() { if (existing.parentNode) existing.remove(); }, 250);
+    }
     return;
   }
-  var names = typers.slice(0, 2).join(', ');
-  var suffix = typers.length > 2 ? ' e altri' : '';
-  var lbl = window.I18n ? I18n.t('founding.typing') : '{name} sta scrivendo…';
-  var text = lbl.replace('{name}', names + suffix);
+
+  var firstName = (typers[0] || '').split(' ')[0]; // solo il primo nome
+  var moreLbl = typers.length > 1
+    ? ' +' + (typers.length - 1)
+    : '';
+
   if (!existing) {
     existing = document.createElement('div');
     existing.className = 'fc-typing-indicator';
-    existing.style.cssText = 'padding:0.3rem 1rem 0.2rem; font-size:0.7rem; color:var(--gold); font-style:italic; display:flex; align-items:center; gap:0.4rem;';
     container.appendChild(existing);
+    // fade in
+    existing.style.opacity = '0';
+    requestAnimationFrame(function() {
+      existing.style.transition = 'opacity 0.2s ease';
+      existing.style.opacity = '1';
+    });
   }
-  existing.innerHTML = text + '<span class="conv-typing-dots"><span>.</span><span>.</span><span>.</span></span>';
+
+  existing.innerHTML =
+    '<div class="fc-typing-bubble">' +
+      '<span class="fc-typing-dots-modern">' +
+        '<span></span><span></span><span></span>' +
+      '</span>' +
+    '</div>' +
+    '<span class="fc-typing-name">' +
+      _escHtmlFC(firstName + moreLbl) +
+      ' <span class="fc-typing-action">' +
+        (typers.length === 1 ? 'sta scrivendo' : 'stanno scrivendo') +
+      '</span>' +
+    '</span>';
+
   _scrollFoundingToBottom();
 }
 
@@ -17144,9 +17212,9 @@ async function sendFoundingMessage() {
   renderFoundingMessages();
   _scrollFoundingToBottom();
 
-  if (_sb) {
+  if (window._sb) {
     try {
-      var ins = await _sb.from('founding_group_messages').insert({
+      var ins = await window._sb.from('founding_group_messages').insert({
         author_name:    currentUser.name    || 'Founding Member',
         author_initial: (currentUser.initial || (currentUser.name || 'F')[0] || 'F').toUpperCase(),
         author_email:   currentUser.email,
