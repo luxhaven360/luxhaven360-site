@@ -6774,6 +6774,7 @@ const EVENTS_CACHE_KEY     = 'lh360_events_v1'; // cache eventi separata, senza 
 const ONLINE_CACHE_KEY     = 'lh360_online_v1'; // cache membri online, TTL breve (60s)
 const CONVS_CACHE_KEY      = 'lh360_convs_v2';  // FIX: cache conversazioni per caricamento immediato
 const FC_MSGS_CACHE_KEY    = 'lh360_fc_msgs_v1'; // Cache messaggi Founding Members (TTL 30 giorni)
+const TEAM_MEMBERS_CACHE_KEY = 'lh360_team_members_v1'; // Cache membri Team per Founding Members
 let _communityPollTimer    = null;
 
 function saveCommunityCache() {
@@ -9693,29 +9694,91 @@ function getPartnerInfo(partnerEmail) {
 
 /* ── Carica conversazioni da GAS ── */
 /* ── Fix 4: inietta Team members nella lista conv per Founding Member ── */
+/* ── Salva la lista membri Team in cache locale ── */
+function _saveTeamMembersCache(members) {
+  try {
+    if (!members || members.length === 0) return;
+    localStorage.setItem(TEAM_MEMBERS_CACHE_KEY, JSON.stringify({
+      ts: Date.now(),
+      members: members.map(function(m) {
+        return { email: m.email, name: m.name || 'Team LuxHaven360', initial: m.initial || 'T', role: 'team' };
+      })
+    }));
+  } catch(e) {}
+}
+
+/* ── Carica i membri Team dalla cache locale ── */
+function _loadTeamMembersCache() {
+  try {
+    var raw = localStorage.getItem(TEAM_MEMBERS_CACHE_KEY);
+    if (!raw) return [];
+    var obj = JSON.parse(raw);
+    // TTL: 7 giorni — team members rarely change
+    if (Date.now() - obj.ts > 7 * 24 * 3600 * 1000) return [];
+    return obj.members || [];
+  } catch(e) { return []; }
+}
+
+/* ── Inietta le conversazioni con il Team per i Founding Member ──
+   REGOLA: i Founding Member vedono SEMPRE il Team nella lista conv,
+   indipendentemente da: presenza online, messaggi esistenti, tombstones.
+   Fonte dati: REAL_MEMBERS > ONLINE_MEMBERS > localStorage cache (per resilienza) ── */
 function _injectTeamConvsForFounding() {
   if (!currentUser || currentUser.role !== 'founding') return;
-  const tombstones = (typeof _loadDeletedConvTombstones === 'function') ? _loadDeletedConvTombstones() : [];
-  const teamMembers = ONLINE_MEMBERS.filter(m =>
-    m.email && (
-      m.role === 'team' ||
-      (m.role && (m.role.toLowerCase().includes('team') || m.role.toLowerCase().includes('admin')))
-    )
-  );
-  teamMembers.forEach(tm => {
-    const emailLow = tm.email.toLowerCase();
-    if (tombstones.includes(emailLow)) return;
-    if (!REAL_CONVS.some(c => c.partnerEmail.toLowerCase() === emailLow)) {
-      REAL_CONVS.push({
+
+  // ── Raccoglie i membri Team da tutte le fonti disponibili ──
+  var seen = {};
+  var teamMembers = [];
+
+  function _addTeamMember(m) {
+    if (!m || !m.email) return;
+    var key = m.email.toLowerCase();
+    if (seen[key]) return;
+    var isTeam = m.role === 'team' || m.role === 'admin' ||
+      (m.role && (m.role.toLowerCase().includes('team') || m.role.toLowerCase().includes('admin')));
+    if (!isTeam) return;
+    seen[key] = true;
+    teamMembers.push({ email: m.email, name: m.name || 'Team LuxHaven360', initial: m.initial || 'T', role: 'team' });
+  }
+
+  // Source 1: REAL_MEMBERS (loaded from GAS — most complete)
+  (REAL_MEMBERS || []).forEach(_addTeamMember);
+  // Source 2: ONLINE_MEMBERS (currently online — may include team)
+  (ONLINE_MEMBERS || []).forEach(_addTeamMember);
+  // Source 3: localStorage cache (fallback when both sources are empty / offline)
+  _loadTeamMembersCache().forEach(_addTeamMember);
+
+  if (teamMembers.length === 0) return;
+
+  // Save the freshest data back to cache for future sessions
+  _saveTeamMembersCache(teamMembers);
+
+  // ── Inject: NEVER filtered by tombstones for founding members.
+  //    Founding Members always have access to Team — even after deleting conv history.
+  //    Position: inject at TOP (index 0) — team always visible first.
+  teamMembers.forEach(function(tm) {
+    var emailLow = tm.email.toLowerCase();
+    var existingIdx = REAL_CONVS.findIndex(function(c) {
+      return c.partnerEmail.toLowerCase() === emailLow;
+    });
+
+    if (existingIdx === -1) {
+      // Not in list at all — insert at position 0 (top)
+      REAL_CONVS.unshift({
         partnerEmail:   tm.email,
-        partnerName:    tm.name || 'Team LuxHaven360',
-        partnerInitial: tm.initial || 'T',
+        partnerName:    tm.name,
+        partnerInitial: tm.initial,
         partnerRole:    'team',
         lastMessage:    '',
         lastTs:         '',
         unread:         0
       });
+    } else if (existingIdx > 0) {
+      // In list but not at top — move to top
+      var existing = REAL_CONVS.splice(existingIdx, 1)[0];
+      REAL_CONVS.unshift(existing);
     }
+    // existingIdx === 0: already at top, nothing to do
   });
 }
 
@@ -9816,7 +9879,7 @@ async function loadConversations() {
 
       saveConvsCache();
 
-      _injectTeamConvsForFounding();
+      _injectTeamConvsForFounding(); // always inject team for founding (even after tombstone)
       // ─────────────────────────────────────────────────────────────────
 
       renderConversations();
@@ -12450,6 +12513,13 @@ async function loadRealMembers() {
     const data = await fetch(`${GAS_URL}?action=get_members`).then(r => r.json());
     if (data.success && Array.isArray(data.members)) {
       REAL_MEMBERS = data.members;
+      // Cache team members for Founding Member conv injection (survives offline)
+      if (typeof _saveTeamMembersCache === 'function') {
+        _saveTeamMembersCache(REAL_MEMBERS.filter(function(m) {
+          return m.role === 'team' || m.role === 'admin' ||
+            (m.role && (m.role.toLowerCase().includes('team') || m.role.toLowerCase().includes('admin')));
+        }));
+      }
     } else if (data.success && Array.isArray(data.users)) {
       // fallback campo alternativo
       REAL_MEMBERS = data.users;
