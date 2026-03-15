@@ -11528,14 +11528,32 @@ async function _executeDeletion() {
   }
 
   // Aggiorna REAL_CONVS, tombstone e cache — ordine importante:
-  // 1. tombstone prima di tutto → loadConvsCache filtra subito questa conv
-  _saveDeletedConvTombstone(partnerEmail);
+  // 1. tombstone: SKIP per i Founding Member che eliminano conv con il Team.
+  //    I Founding Member devono sempre vedere il Team nella lista — indipendentemente
+  //    dall'eliminazione dei messaggi. Il tombstone verrebbe filtrato da loadConvsCache
+  //    impedendo il re-inject; lo salviamo SOLO se non è team+founding.
+  const _deletedPartnerRole = (REAL_CONVS.find(c =>
+    c.partnerEmail.toLowerCase() === partnerEmail.toLowerCase()
+  ) || getPartnerInfo(partnerEmail) || {}).partnerRole || (getPartnerInfo(partnerEmail)||{}).role || '';
+  const _isFoundingDeletingTeam = currentUser.role === 'founding' &&
+    (_deletedPartnerRole === 'team' || _deletedPartnerRole === 'admin' ||
+     (_deletedPartnerRole && (_deletedPartnerRole.toLowerCase().includes('team') ||
+      _deletedPartnerRole.toLowerCase().includes('admin'))));
+
+  if (!_isFoundingDeletingTeam) {
+    _saveDeletedConvTombstone(partnerEmail);
+  }
   // 2. rimuovi dalla lista in memoria
   REAL_CONVS = REAL_CONVS.filter(c => c.partnerEmail.toLowerCase() !== partnerEmail.toLowerCase());
   // 3. svuota cache messaggi di questa conv
   delete _msgCache[partnerEmail.toLowerCase()];
   // 4. salva stato aggiornato (anche se REAL_CONVS ora è vuoto)
   saveConvsCache();
+  // 5. Se Founding Member ha eliminato la conv col Team: re-inject immediatamente
+  //    così il Team riappare in lista con cronologia vuota ma conversazione visibile
+  if (_isFoundingDeletingTeam && typeof _injectTeamConvsForFounding === 'function') {
+    _injectTeamConvsForFounding();
+  }
 
   _dhoSetStep('dhoStep4', 'done');
   _dhoSetProgress(100);
@@ -11560,6 +11578,8 @@ async function _executeDeletion() {
   const headerStatus = document.getElementById('chatHeaderStatus');
   if (headerName)   headerName.textContent   = I18n.t('msg.select_conv');
   if (headerStatus) headerStatus.textContent = '—';
+  // Re-inject team convs BEFORE render so Founding Members see them immediately
+  if (typeof _injectTeamConvsForFounding === 'function') _injectTeamConvsForFounding();
   renderConversations();
 
   // Chiude l'overlay dopo 1.6s
