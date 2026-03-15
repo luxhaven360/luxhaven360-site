@@ -87,18 +87,22 @@ function _showSectionInternal(sectionId) {
     console.log(`✅ Sezione "${sectionId}" attiva`);
 }
 
-// Funzione pubblica: aggiorna URL via pushState poi mostra sezione
-function showSection(sectionId) {
-    try {
-        const lang = (window.i18n && window.i18n())
-            ? window.i18n().currentLang
-            : (localStorage.getItem('lh360_lang') || 'it');
-        if (sectionId === 'home') {
-            history.pushState({ section: 'home' }, '', '/' + lang + '/');
-        } else {
-            history.pushState({ section: sectionId }, '', '/' + lang + '/#' + sectionId);
-        }
-    } catch (e) {}
+// Funzione pubblica — chiamata dai link onclick="showSection(...)"
+// pushHistory=false usato dal hash-check iniziale per non creare
+// history entries extra che confonderebbero il pulsante Indietro.
+function showSection(sectionId, pushHistory) {
+    if (pushHistory !== false) {
+        try {
+            const lang = (window.i18n && window.i18n())
+                ? window.i18n().currentLang
+                : (localStorage.getItem('lh360_lang') || 'it');
+            if (sectionId === 'home') {
+                history.pushState({ section: 'home' }, '', '/' + lang + '/');
+            } else {
+                history.pushState({ section: sectionId }, '', '/' + lang + '/#' + sectionId);
+            }
+        } catch (e) {}
+    }
     _showSectionInternal(sectionId);
 }
 
