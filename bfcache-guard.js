@@ -104,19 +104,29 @@
   ══════════════════════════════════════════════════════════════ */
   global.addEventListener('pagehide', function () {
 
-    /* 3a. Abort tutti i fetch GAS pendenti */
+    /* 3a. Abort TUTTI i fetch pendenti registrati
+          (include quelli di siteguard grazie all'integrazione __lhReg) */
     _controllers.forEach(function (c) {
       try { c.abort(); } catch (e) {}
     });
     _controllers.clear();
 
-    /* 3b. Ferma tutti i setInterval attivi */
+    /* 3b. Rimuovi i tag <script> JSONP verso GAS
+          (tracking-order usa JSONP per gli ordini — questi non sono fetch
+          e non vengono intercettati da AbortController, ma blocking BFCache)
+    */
+    try {
+      var gasScripts = document.querySelectorAll('script[src*="script.google.com"]');
+      gasScripts.forEach(function (s) { try { s.remove(); } catch (e) {} });
+    } catch (e) {}
+
+    /* 3c. Ferma tutti i setInterval attivi */
     _intervals.forEach(function (info, id) {
       try { _origClearInterval(id); } catch (e) {}
     });
     /* NON svuotiamo _intervals: servirà per il restore su pageshow */
 
-    /* 3c. Chiudi canali Supabase Realtime
+    /* 3d. Chiudi canali Supabase Realtime
           (_sbChannels è popolato da community-hub.html) */
     try {
       if (global._sbChannels && typeof global._sbChannels === 'object') {
@@ -126,7 +136,7 @@
       }
     } catch (e) {}
 
-    /* 3d. removeAllChannels sul client Supabase */
+    /* 3e. removeAllChannels sul client Supabase */
     try {
       if (global._sb && typeof global._sb.removeAllChannels === 'function') {
         global._sb.removeAllChannels();
