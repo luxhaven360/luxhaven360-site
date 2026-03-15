@@ -79,9 +79,14 @@
       }
       var controller = new AbortController();
       var timeoutId  = setTimeout(function () { controller.abort(); }, FETCH_TIMEOUT_MS);
+      // ✅ FIX DEFINITIVO: registra il controller con bfcache-guard.
+      // Senza questo, pagehide non abortirebbe mai i fetch di siteguard
+      // (che sono i wrappatori più esterni), causando RESULT_CODE_HUNG.
+      if (window.__lhReg) window.__lhReg(controller);
       var mergedInit = Object.assign({}, init || {}, { signal: controller.signal });
       return _origFetch(input, mergedInit).finally(function () {
         clearTimeout(timeoutId);
+        if (window.__lhUnreg) window.__lhUnreg(controller);
       });
     };
 
