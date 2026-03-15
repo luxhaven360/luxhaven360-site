@@ -1,81 +1,63 @@
 /**
  * ================================================================
- *  LuxHaven360 — BFCache Guard  v2.0
+ *  LuxHaven360 — BFCache Guard  v3.0  (pure JS, no Service Worker)
  *  File: bfcache-guard.js
  *  Da includere come PRIMO <script> in ogni pagina del sito.
  * ================================================================
  *
- *  STRATEGIA A DUE LIVELLI:
+ *  APPROCCIO: 100% JavaScript, senza Service Worker.
  *
- *  Livello 1 — Service Worker (sw.js):
- *    Intercetta TUTTE le richieste GAS a livello di rete.
- *    Su pagehide → SW riceve ABORT_ALL → cancella TUTTO.
- *    Questo è il livello più affidabile: funziona a prescindere
- *    da come la richiesta è stata aperta (fetch, JSONP, XHR...).
+ *  Il Service Worker è stato rimosso perché causava unhandled
+ *  AbortError rejections che si accumulavano durante navigazione
+ *  rapida (back/forward ripetuto), destabilizzando Chrome dopo
+ *  ~10-20 cicli → RESULT_CODE_HUNG.
  *
- *  Livello 2 — AbortController + setInterval + Supabase (fallback):
- *    Se il SW non è ancora attivo o non è supportato, questo livello
- *    fa la stessa cosa a livello JS.
- *    - Intercetta window.fetch verso GAS e aggiunge AbortController
- *    - Traccia tutti i setInterval (li ferma su pagehide)
- *    - Chiude canali Supabase Realtime su pagehide
+ *  COME FUNZIONA:
  *
- *  Su pageshow (BFCache restore): ripristina setInterval e Supabase.
+ *  1. window.fetch viene avvolto: ogni chiamata GAS riceve
+ *     automaticamente un AbortController con timeout 8s.
+ *     Il controller viene registrato in _controllers.
+ *
+ *  2. siteguard-client.js chiama window.__lhReg(controller)
+ *     per registrare i propri controller → tutti tracciati.
+ *
+ *  3. pagehide → _controllers.forEach(abort) → TUTTE le
+ *     richieste GAS pendenti vengono cancellate istantaneamente.
+ *     Chrome vede zero richieste pendenti → rilascia il renderer.
+ *     Nessun HUNG, nessun "Uffa!".
+ *
+ *  4. setInterval tracciati → fermati su pagehide → riavviati
+ *     su pageshow (BFCache restore).
+ *
+ *  5. Supabase canali chiusi su pagehide → riaperti su pageshow.
  * ================================================================
  */
 (function (global) {
   'use strict';
 
-  /* ── Singleton guard ────────────────────────────────────────── */
   if (global.__lhBFCacheGuard) return;
   global.__lhBFCacheGuard = true;
 
   /* ══════════════════════════════════════════════════════════════
-     LIVELLO 1 — Registrazione Service Worker
-     Il SW intercetta tutte le richieste GAS a livello di rete.
-  ══════════════════════════════════════════════════════════════ */
-  var _swRegistration = null;
-
-  if ('serviceWorker' in navigator) {
-    /* Il SW è nella root, path assoluto */
-    /* updateViaCache:'none' forza sempre il check della nuova versione sw.js */
-    navigator.serviceWorker.register('/sw.js', {
-      scope: '/',
-      updateViaCache: 'none'
-    })
-      .then(function (reg) {
-        _swRegistration = reg;
-        /* Forza update immediato se c'è una nuova versione in attesa */
-        if (reg.waiting) reg.waiting.postMessage({ type: 'SKIP_WAITING' });
-      })
-      .catch(function (err) {
-        /* SW non disponibile: il livello 2 (AbortController JS) copre */
-      });
-  }
-
-  /* Invia messaggio ABORT_ALL al Service Worker */
-  function _swAbortAll() {
-    if (!navigator.serviceWorker || !navigator.serviceWorker.controller) return;
-    try {
-      navigator.serviceWorker.controller.postMessage({ type: 'ABORT_ALL' });
-    } catch (e) {}
-  }
-
-  /* ══════════════════════════════════════════════════════════════
-     LIVELLO 2a — Registro AbortController (fallback JS)
-     Usato da siteguard-client.js tramite window.__lhReg/__lhUnreg.
+     1. REGISTRO AbortController
+     Esposto come __lhReg/__lhUnreg per integrazione con siteguard.
   ══════════════════════════════════════════════════════════════ */
   var _controllers = new Set();
 
   global.__lhReg   = function (c) { if (c && c.abort) _controllers.add(c); };
   global.__lhUnreg = function (c) { _controllers.delete(c); };
 
-  /* Intercetta window.fetch: aggiunge AbortController su chiamate GAS */
+  /* ══════════════════════════════════════════════════════════════
+     2. WRAP window.fetch
+     Aggiunge AbortController + timeout 8s a OGNI chiamata GAS
+     che non ha già un signal esplicito.
+  ══════════════════════════════════════════════════════════════ */
   if (typeof global.fetch === 'function' && !global.__lhFetchWrapped) {
 
     var _origFetch = global._originalFetch || global.fetch;
 
     global.fetch = function (input, init) {
+      /* Lascia passare fetch con signal già impostato */
       if (init && init.signal) {
         return _origFetch(input, init);
       }
@@ -89,10 +71,16 @@
         var timeout = setTimeout(function () { ctrl.abort(); }, 8000);
         _controllers.add(ctrl);
         var merged = Object.assign({}, init || {}, { signal: ctrl.signal });
-        return _origFetch(input, merged).finally(function () {
-          clearTimeout(timeout);
-          _controllers.delete(ctrl);
-        });
+        return _origFetch(input, merged)
+          .catch(function (err) {
+            /* Gestisci AbortError silenziosamente: è un abort intenzionale */
+            if (err && err.name === 'AbortError') return new Response('null', { status: 200 });
+            throw err;
+          })
+          .finally(function () {
+            clearTimeout(timeout);
+            _controllers.delete(ctrl);
+          });
       }
 
       return _origFetch(input, init);
@@ -102,12 +90,10 @@
   }
 
   /* ══════════════════════════════════════════════════════════════
-     LIVELLO 2b — Registro setInterval
-     Tutti gli intervalli vengono tracciati. Su pagehide → stop.
-     Su pageshow → ripristino.
+     3. WRAP setInterval / clearInterval
+     Tutti gli intervalli vengono tracciati per stop/restore.
   ══════════════════════════════════════════════════════════════ */
   var _intervals = new Map();
-
   var _origSetInterval   = global.setInterval;
   var _origClearInterval = global.clearInterval;
 
@@ -123,31 +109,29 @@
   };
 
   /* ══════════════════════════════════════════════════════════════
-     PAGEHIDE — L1 + L2: abort tutto
+     4. PAGEHIDE — abort tutto, stop intervalli, chiudi Supabase
   ══════════════════════════════════════════════════════════════ */
   global.addEventListener('pagehide', function () {
 
-    /* L1: Service Worker abortisce tutte le richieste GAS a livello rete */
-    _swAbortAll();
-
-    /* L2a: Fallback JS — abortisce controller registrati */
+    /* Abort tutti i fetch GAS registrati */
     _controllers.forEach(function (c) {
       try { c.abort(); } catch (e) {}
     });
     _controllers.clear();
 
-    /* L2b: Rimuovi tag <script> JSONP verso GAS (tracking-order) */
+    /* Rimuovi tag <script> JSONP verso GAS (tracking-order) */
     try {
-      var gasScripts = document.querySelectorAll('script[src*="script.google.com"]');
-      gasScripts.forEach(function (s) { try { s.remove(); } catch (e) {} });
+      document.querySelectorAll('script[src*="script.google.com"]')
+        .forEach(function (s) { try { s.remove(); } catch (e) {} });
     } catch (e) {}
 
-    /* L2c: Ferma tutti i setInterval */
-    _intervals.forEach(function (info, id) {
+    /* Ferma tutti i setInterval */
+    _intervals.forEach(function (_, id) {
       try { _origClearInterval(id); } catch (e) {}
     });
+    /* Non svuotiamo _intervals: serve per pageshow restore */
 
-    /* L2d: Chiudi canali Supabase Realtime (community-hub) */
+    /* Chiudi canali Supabase Realtime (community-hub) */
     try {
       if (global._sbChannels && typeof global._sbChannels === 'object') {
         Object.values(global._sbChannels).forEach(function (ch) {
@@ -165,7 +149,7 @@
   }, { capture: true });
 
   /* ══════════════════════════════════════════════════════════════
-     PAGESHOW — ripristino dopo BFCache restore
+     5. PAGESHOW — ripristino dopo BFCache restore
   ══════════════════════════════════════════════════════════════ */
   global.addEventListener('pageshow', function (e) {
     if (!e.persisted) return;
@@ -174,7 +158,6 @@
     var toRestore = [];
     _intervals.forEach(function (info) { toRestore.push(info); });
     _intervals.clear();
-
     toRestore.forEach(function (info) {
       try {
         var newId = _origSetInterval(info.fn, info.delay);
@@ -186,22 +169,18 @@
     setTimeout(function () {
       try {
         var session = null;
-        try { session = localStorage.getItem('lh360_community_session'); } catch (ex) {}
+        try { session = localStorage.getItem('lh360_community_session'); } catch (x) {}
         if (!session || !global.currentUser) return;
-
         try {
           if (global._sbChannels) {
             Object.values(global._sbChannels).forEach(function (ch) {
-              try { if (ch && ch.unsubscribe) ch.unsubscribe(); } catch (ex) {}
+              try { if (ch && ch.unsubscribe) ch.unsubscribe(); } catch (x) {}
             });
             global._sbChannels = {};
           }
-        } catch (ex) {}
-
-        if (typeof global.initApp === 'function') {
-          global.initApp();
-        }
-      } catch (ex) {}
+        } catch (x) {}
+        if (typeof global.initApp === 'function') global.initApp();
+      } catch (x) {}
     }, 80);
 
   }, { capture: true });
