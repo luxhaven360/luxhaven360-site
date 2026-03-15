@@ -17213,68 +17213,101 @@ function _getFoundingOnlineCount() {
 }
 
 function _updateFoundingStatus() {
-  var statusEl = document.getElementById('foundingChatStatus');
-  if (!statusEl) return;
   var onlineCount = _getFoundingOnlineCount();
   var onlineLbl  = (window.I18n ? I18n.t('founding.online_count')   : 'online');
   var channelLbl = (window.I18n ? I18n.t('founding.channel_status') : 'Canale esclusivo');
-  statusEl._onlineText  = onlineCount > 0 ? onlineCount + ' ' + onlineLbl : null;
-  statusEl._channelText = channelLbl;
+  // Store on module-level vars (not on DOM element) — avoids stale DOM refs
+  window._fcOnlineText  = onlineCount > 0 ? onlineCount + ' ' + onlineLbl : null;
+  window._fcChannelText = channelLbl;
 }
 
-/* ── Aggiorna il contatore online IMMEDIATAMENTE (senza interrompere l'animazione) ── */
+/* ── Unico sistema di animazione con lock anti-race ── */
+var _fcAnimLocked  = false;  // true while a fade is running
+var _fcAnimPending = null;   // text queued while locked
+
+function _fcAnimateTo(el, newText, fromTick) {
+  if (!el) return;
+  // If same text: update silently (no flash, no animation)
+  if (el.textContent === newText) return;
+
+  if (_fcAnimLocked) {
+    // Queue: only keep the latest request; discard older ones
+    if (fromTick) _fcAnimPending = newText; // tick can queue
+    // Immediate calls (from presence) don't queue: let tick handle it
+    return;
+  }
+  _fcAnimLocked = true;
+
+  el.style.transition = 'opacity 0.32s ease';
+  el.style.opacity    = '0';
+  setTimeout(function() {
+    el.textContent  = newText;
+    el.style.opacity = '1';
+    // Unlock after fade-in completes
+    setTimeout(function() {
+      _fcAnimLocked = false;
+      if (_fcAnimPending !== null) {
+        var next = _fcAnimPending;
+        _fcAnimPending = null;
+        _fcAnimateTo(el, next, false);
+      }
+    }, 340);
+  }, 340);
+}
+
+/* ── Aggiorna il contatore online senza interrompere l'animazione ── */
 function _foundingStatusImmediate() {
-  _updateFoundingStatus(); // ricalcola _onlineText / _channelText
+  _updateFoundingStatus(); // refresh data
 
   var statusEl = document.getElementById('foundingChatStatus');
-  if (!statusEl) return;
+  if (!statusEl || _fcAnimLocked) return;
 
-  // Aggiorna il testo visibile SOLO se mostra già il contatore online (non "Canale esclusivo")
-  // Così non interrompiamo il ciclo dell'animazione: il testo corrente viene aggiornato in-place
-  var currentText = statusEl.textContent || '';
-  var onlineLbl   = (window.I18n ? I18n.t('founding.online_count') : 'online');
+  // Only update in-place if currently showing online text (number changed)
+  var current = statusEl.textContent || '';
+  var onlineLbl = (window.I18n ? I18n.t('founding.online_count') : 'online');
+  var showingOnline = current.indexOf(onlineLbl) !== -1;
 
-  // Se il testo corrente contiene la parola-chiave online (es "2 online", "3 en ligne")
-  // oppure se il pannello è appena stato aperto (testo vuoto / data-i18n non ancora sostituito)
-  var isShowingOnline = currentText.indexOf(onlineLbl) !== -1 ||
-                        currentText === '' ||
-                        currentText === (statusEl.getAttribute('data-i18n') || '');
-
-  if (isShowingOnline && statusEl._onlineText) {
-    // Micro-fade: aggiorna il numero senza resettare il ciclo 4s
-    statusEl.style.transition = 'opacity 0.15s ease';
-    statusEl.style.opacity    = '0.4';
-    setTimeout(function() {
-      statusEl.textContent  = statusEl._onlineText;
-      statusEl.style.opacity = '1';
-    }, 160);
+  if (showingOnline && window._fcOnlineText && current !== window._fcOnlineText) {
+    // Number changed while online text is visible — update silently, no fade
+    statusEl.textContent = window._fcOnlineText;
   }
-  // Se non mostra il contatore (mostra "Canale esclusivo"), non fare nulla:
-  // al prossimo tick dell'animazione mostrerà il numero aggiornato
+  // If showing "Canale esclusivo", let the next tick cycle handle the update
 }
 
 function _startStatusAnimation() {
   var statusEl = document.getElementById('foundingChatStatus');
   if (!statusEl || _foundingStatusTimer) return;
-  var showOnline = true;
+
+  // Tracks which of the two texts is "next" to show
+  var _nextIsOnline = true;
   _updateFoundingStatus();
 
-  function _tick() {
-    if (!statusEl) return;
-    _updateFoundingStatus(); // always re-read ONLINE_MEMBERS at each tick
-    var txt = (showOnline && statusEl._onlineText) ? statusEl._onlineText : statusEl._channelText;
-    // Fade out
-    statusEl.style.transition = 'opacity 0.4s ease';
-    statusEl.style.opacity = '0';
-    setTimeout(function() {
-      statusEl.textContent = txt;
-      statusEl.style.opacity = '1';
-      showOnline = !showOnline;
-    }, 420);
-  }
+  // Show first text immediately (no fade) to avoid initial flash
+  var firstTxt = (window._fcOnlineText) ? window._fcOnlineText : window._fcChannelText;
+  statusEl.textContent = firstTxt || '';
+  statusEl.style.opacity = '1';
+  _nextIsOnline = !window._fcOnlineText; // if we showed online, next is channel
 
-  _tick();
-  _foundingStatusTimer = setInterval(_tick, 4000);
+  _foundingStatusTimer = setInterval(function() {
+    var el = document.getElementById('foundingChatStatus');
+    if (!el) return;
+    _updateFoundingStatus();
+
+    var txt;
+    if (_nextIsOnline && window._fcOnlineText) {
+      txt = window._fcOnlineText;
+    } else if (!_nextIsOnline) {
+      txt = window._fcChannelText;
+    } else {
+      // _nextIsOnline but no online users: show channel text, don't toggle
+      txt = window._fcChannelText;
+      // Don't advance toggle — stay on channel until someone is online
+      _fcAnimateTo(el, txt, true);
+      return;
+    }
+    _nextIsOnline = !_nextIsOnline;
+    _fcAnimateTo(el, txt, true);
+  }, 4000);
 }
 
 // ── Send message ────────────────────────────────────────────────────────────
@@ -17488,6 +17521,16 @@ if (window.I18n && typeof I18n.onLanguageChange === 'function') {
     }
     // Always update status bar text
     _updateFoundingStatus();
+    // Refresh displayed text immediately (silent, no fade)
+    var _lsEl = document.getElementById('foundingChatStatus');
+    if (_lsEl && !_fcAnimLocked) {
+      var _lsCurr = _lsEl.textContent || '';
+      var _lsOLbl = window.I18n ? I18n.t('founding.online_count') : 'online';
+      if (_lsCurr.indexOf(_lsOLbl) !== -1 && window._fcOnlineText)
+        _lsEl.textContent = window._fcOnlineText;
+      else if (window._fcChannelText)
+        _lsEl.textContent = window._fcChannelText;
+    }
     // Update header if currently showing founding chat
     var headerEl = document.getElementById('headerTitle');
     if (headerEl && headerEl.textContent.toLowerCase().indexOf('founding') !== -1) {
