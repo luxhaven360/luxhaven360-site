@@ -2652,6 +2652,9 @@ Object.assign(window.I18N_TRANSLATIONS['it'] || (window.I18N_TRANSLATIONS['it']=
   'founding.clear_history_done': 'La tua cronologia è stata eliminata.',
   'founding.media_compressed': 'File compresso e caricato.',
   'founding.notification_new_msg': 'Nuovo messaggio nel Canale Founding da',
+
+  'founding.team_readonly': 'Il Team può solo leggere il Canale Founding.',
+  'founding.team_readonly_placeholder': 'Solo visualizzazione — il Team non può scrivere',
 });
 // Estensioni EN
 Object.assign(window.I18N_TRANSLATIONS['en'] || (window.I18N_TRANSLATIONS['en']={}), {
@@ -2958,6 +2961,9 @@ Object.assign(window.I18N_TRANSLATIONS['en'] || (window.I18N_TRANSLATIONS['en']=
   'founding.clear_history_done': 'Your history has been deleted.',
   'founding.media_compressed': 'File compressed and uploaded.',
   'founding.notification_new_msg': 'New message in the Founding Channel from',
+
+  'founding.team_readonly': 'The Team can only read the Founding Channel.',
+  'founding.team_readonly_placeholder': 'Read-only — Team members cannot write',
 });
 // Estensioni FR
 Object.assign(window.I18N_TRANSLATIONS['fr'] || (window.I18N_TRANSLATIONS['fr']={}), {
@@ -3190,6 +3196,9 @@ Object.assign(window.I18N_TRANSLATIONS['fr'] || (window.I18N_TRANSLATIONS['fr']=
   'founding.clear_history_done': 'Votre historique a été supprimé.',
   'founding.media_compressed': 'Fichier compressé et téléchargé.',
   'founding.notification_new_msg': 'Nouveau message dans le Canal Founding de',
+
+  'founding.team_readonly': 'L\'équipe peut uniquement lire le Canal Founding.',
+  'founding.team_readonly_placeholder': 'Lecture seule — l\'équipe ne peut pas écrire',
 });
 // Estensioni DE
 Object.assign(window.I18N_TRANSLATIONS['de'] || (window.I18N_TRANSLATIONS['de']={}), {
@@ -3419,6 +3428,9 @@ Object.assign(window.I18N_TRANSLATIONS['de'] || (window.I18N_TRANSLATIONS['de']=
   'founding.clear_history_done': 'Ihr Verlauf wurde gelöscht.',
   'founding.media_compressed': 'Datei komprimiert und hochgeladen.',
   'founding.notification_new_msg': 'Neue Nachricht im Founding-Kanal von',
+
+  'founding.team_readonly': 'Das Team kann den Founding-Kanal nur lesen.',
+  'founding.team_readonly_placeholder': 'Nur lesen — Team-Mitglieder können nicht schreiben',
 });
 // Estensioni ES
 Object.assign(window.I18N_TRANSLATIONS['es'] || (window.I18N_TRANSLATIONS['es']={}), {
@@ -3648,6 +3660,9 @@ Object.assign(window.I18N_TRANSLATIONS['es'] || (window.I18N_TRANSLATIONS['es']=
   'founding.clear_history_done': 'Tu historial ha sido eliminado.',
   'founding.media_compressed': 'Archivo comprimido y subido.',
   'founding.notification_new_msg': 'Nuevo mensaje en el Canal Founding de',
+
+  'founding.team_readonly': 'El equipo solo puede leer el Canal Founding.',
+  'founding.team_readonly_placeholder': 'Solo lectura — el equipo no puede escribir',
 });
 </script>
 <script src="i18n/i18n-core.js"></script>
@@ -3868,7 +3883,7 @@ Object.assign(window.I18N_TRANSLATIONS['es'] || (window.I18N_TRANSLATIONS['es']=
   </header>
 
 
-  <script data-cfasync="false" src="/cdn-cgi/scripts/5c5dd728/cloudflare-static/email-decode.min.js"></script><script>
+  <script>
 /* ══════════════════════════════════════════════════════════════
    FOUNDING GROUP CHANNEL
    Canal di gruppo esclusivo per i Founding Member.
@@ -3923,6 +3938,9 @@ async function autoCleanFoundingChannel() {
 
 async function loadFoundingGroupMessages() {
   if (!_sbReady || !currentUser) return;
+
+  // Apply team read-only UI state
+  _applyFoundingChannelTeamMode();
 
   // FIX 5: Auto-cleanup messages older than 30 days
   await autoCleanFoundingChannel();
@@ -4078,6 +4096,34 @@ async function compressFoundingMedia(file) {
   return file; // other types: no compression
 }
 
+
+/**
+ * For Team members: disable input/send/attach in founding channel (read-only view).
+ * For Founding members: re-enable if previously disabled.
+ */
+function _applyFoundingChannelTeamMode() {
+  const isTeam = currentUser && currentUser.role === 'team';
+  const chatInput = document.getElementById('foundingChatInput');
+  const sendBtn   = document.querySelector('#panel-founding-chat .chat-send-btn');
+  const attachBtn = document.querySelector('#panel-founding-chat .chat-action');
+  const fileInput = document.getElementById('foundingChatFileInput');
+  const clearBtn  = document.querySelector('#panel-founding-chat button[onclick="clearFoundingHistory()"]');
+
+  if (chatInput) {
+    chatInput.disabled = isTeam;
+    chatInput.placeholder = isTeam
+      ? (I18n && I18n.t ? I18n.t('founding.team_readonly_placeholder') : 'Solo visualizzazione — il Team non può scrivere')
+      : (I18n && I18n.t ? I18n.t('founding.write_placeholder') : 'Scrivi un messaggio al gruppo…');
+    chatInput.style.opacity = isTeam ? '0.45' : '';
+    chatInput.style.cursor  = isTeam ? 'not-allowed' : '';
+  }
+  if (sendBtn)   { sendBtn.disabled   = isTeam; sendBtn.style.opacity   = isTeam ? '0.3' : ''; }
+  if (attachBtn) { attachBtn.disabled = isTeam; attachBtn.style.opacity = isTeam ? '0.3' : ''; }
+  if (fileInput) { fileInput.disabled = isTeam; }
+  // Hide "elimina cronologia" button for team (they don't need it)
+  if (clearBtn)  { clearBtn.style.display = isTeam ? 'none' : ''; }
+}
+
 async function sendFoundingMessage() {
   const input = document.getElementById('foundingChatInput');
   const text = (input?.value || '').trim();
@@ -4085,6 +4131,13 @@ async function sendFoundingMessage() {
 
   if (!text && !hasMedia) return;
   if (!currentUser) { showToast('red','⚠️', I18n.t('msg.session_expired')); return; }
+
+  // Team members can view but NOT write in the founding channel
+  if (currentUser.role === 'team') {
+    showToast('red', '🔒',
+      I18n && I18n.t ? I18n.t('founding.team_readonly') : 'Il Team può solo leggere il canale Founding.');
+    return;
+  }
 
   const sendBtn = document.querySelector('#panel-founding-chat .chat-send-btn');
   if (sendBtn) { sendBtn.disabled = true; sendBtn.style.opacity = '0.5'; }
@@ -4283,7 +4336,7 @@ async function clearFoundingHistory() {
     showToast('green','✅', doneMsg);
   } catch(e) {
     console.warn('[FoundingChat] clearHistory error:', e.message);
-    showToast('red','⚠️','Errore durante l'eliminazione.');
+    showToast('red','⚠️','Errore durante l\'eliminazione.');
   }
 }
 
