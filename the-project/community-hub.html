@@ -2501,6 +2501,11 @@ Object.assign(window.I18N_TRANSLATIONS['it'] || (window.I18N_TRANSLATIONS['it']=
   'founding.date_today': 'Oggi',
   'founding.date_yesterday': 'Ieri',
   'emoji.search_placeholder': 'Cerca emoji…',
+  'sidebar.no_online_members': 'Nessun membro online al momento',
+  'founding.retention_note': 'I messaggi vengono eliminati automaticamente ogni 30 giorni.',
+  'founding.history_cleared': 'Cronologia eliminata per te.',
+  'founding.typing': '{name} sta scrivendo…',
+  'founding.clear_history': 'Elimina cronologia',
   // ─── PROFILE (JS-rendered) ────────────────────────────────────
   'profile.member_since':       'Membro dal',
   'profile.verified_badge':     'Verificato',
@@ -2807,6 +2812,11 @@ Object.assign(window.I18N_TRANSLATIONS['en'] || (window.I18N_TRANSLATIONS['en']=
   'founding.date_today': 'Today',
   'founding.date_yesterday': 'Yesterday',
   'emoji.search_placeholder': 'Search emoji…',
+  'sidebar.no_online_members': 'No members online at the moment',
+  'founding.retention_note': 'Messages are automatically deleted every 30 days.',
+  'founding.history_cleared': 'History cleared for you.',
+  'founding.typing': '{name} is typing…',
+  'founding.clear_history': 'Clear history',
   // ─── PROFILE (JS-rendered) ────────────────────────────────────
   'profile.member_since':       'Member since',
   'profile.verified_badge':     'Verified',
@@ -3051,6 +3061,11 @@ Object.assign(window.I18N_TRANSLATIONS['fr'] || (window.I18N_TRANSLATIONS['fr']=
   'founding.date_today': 'Aujourd\'hui',
   'founding.date_yesterday': 'Hier',
   'emoji.search_placeholder': 'Rechercher un emoji…',
+  'sidebar.no_online_members': 'Aucun membre en ligne pour le moment',
+  'founding.retention_note': 'Les messages sont supprimés automatiquement tous les 30 jours.',
+  'founding.history_cleared': 'Historique effacé pour vous.',
+  'founding.typing': '{name} est en train d’écrire…',
+  'founding.clear_history': 'Effacer l’historique',
   // ─── PROFILE ──────────────────────────────────────────────────
   'profile.member_since':       'Membre depuis le',
   'profile.verified_badge':     'Vérifié',
@@ -3280,6 +3295,11 @@ Object.assign(window.I18N_TRANSLATIONS['de'] || (window.I18N_TRANSLATIONS['de']=
   'founding.date_today': 'Heute',
   'founding.date_yesterday': 'Gestern',
   'emoji.search_placeholder': 'Emoji suchen…',
+  'sidebar.no_online_members': 'Gerade kein Mitglied online',
+  'founding.retention_note': 'Nachrichten werden automatisch alle 30 Tage gelöscht.',
+  'founding.history_cleared': 'Verlauf für dich gelöscht.',
+  'founding.typing': '{name} schreibt…',
+  'founding.clear_history': 'Verlauf löschen',
   // ─── PROFILE ──────────────────────────────────────────────────
   'profile.member_since':       'Mitglied seit',
   'profile.verified_badge':     'Verifiziert',
@@ -3509,6 +3529,11 @@ Object.assign(window.I18N_TRANSLATIONS['es'] || (window.I18N_TRANSLATIONS['es']=
   'founding.date_today': 'Hoy',
   'founding.date_yesterday': 'Ayer',
   'emoji.search_placeholder': 'Buscar emoji…',
+  'sidebar.no_online_members': 'Ningún miembro conectado en este momento',
+  'founding.retention_note': 'Los mensajes se eliminan automáticamente cada 30 días.',
+  'founding.history_cleared': 'Historial eliminado para ti.',
+  'founding.typing': '{name} está escribiendo…',
+  'founding.clear_history': 'Eliminar historial',
   // ─── PROFILE ──────────────────────────────────────────────────
   'profile.member_since':       'Miembro desde el',
   'profile.verified_badge':     'Verificado',
@@ -4172,9 +4197,14 @@ Object.assign(window.I18N_TRANSLATIONS['es'] || (window.I18N_TRANSLATIONS['es']=
           <div class="chat-area">
             <div class="chat-header" id="foundingChatHeader">
               <div class="user-avatar-sm" style="width:36px;height:36px;font-size:0.9rem;border-color:var(--gold-dim);color:var(--gold);">◈</div>
-              <div>
+              <div style="flex:1;">
                 <div class="chat-header-name" data-i18n="nav.founding_chat">Founding Members</div>
                 <div class="chat-header-status" id="foundingChatStatus" data-i18n="founding.channel_status">Canale esclusivo</div>
+              </div>
+              <div class="chat-header-actions">
+                <button class="header-btn" style="width:30px;height:30px;" data-i18n-title="founding.clear_history" title="Elimina cronologia" onclick="clearFoundingHistory()">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><polyline points="3,6 5,6 21,6"/><path d="M19,6l-1,14a2,2,0,0,1-2,2H8a2,2,0,0,1-2-2L5,6"/><path d="M10,11v6"/><path d="M14,11v6"/><path d="M9,6V4a1,1,0,0,1,1-1h4a1,1,0,0,1,1,1v2"/></svg>
+                </button>
               </div>
             </div>
             <div class="chat-messages" id="foundingChatMessages" style="flex:1;"></div>
@@ -6073,6 +6103,15 @@ function initApp() {
       renderNotifications();
       renderProfile();
       renderRightPanel();
+      // Re-render founding chat if open
+      if (document.getElementById('panel-founding-chat') &&
+          document.getElementById('panel-founding-chat').classList.contains('active')) {
+        if (typeof renderFoundingMessages === 'function') renderFoundingMessages();
+        if (typeof _updateFoundingStatus === 'function') _updateFoundingStatus();
+      }
+      // Update position label
+      var _fpEl = document.getElementById('founderDashPosition');
+      if (_fpEl && typeof _getFoundingPosition === 'function') _fpEl.textContent = _getFoundingPosition();
       renderNotifDropdown();
       // Aggiorna badge header
       const _role = currentUser ? currentUser.role : 'candidate';
@@ -6535,7 +6574,10 @@ function showPanel(id, navEl) {
     notifications:'Centro Notifiche', profile:'Il Mio Profilo',
     members:'Gestione Membri', broadcast:'Comunicazioni', moderation:'Moderazione', analytics:'Analytics'
   };
-  document.getElementById('headerTitle').textContent = titles[id] || id;
+  const _panelTitle = id === 'founding-chat'
+    ? (window.I18n ? I18n.t('nav.founding_chat') : 'Founding Members')
+    : (titles[id] || id);
+  document.getElementById('headerTitle').textContent = _panelTitle;
 
   // Clear badges when viewing
   if (id === 'notifications') { notifCount = 0; updateNotifBadge(); renderNotifications(); }
@@ -6691,7 +6733,7 @@ function renderDashboard() {
       <div style="display:flex; gap:1.5rem; flex-wrap:wrap; margin-bottom:0.8rem;">
         <div><div class="stat-label">${I18n.t('dash.level_label')}</div><div style="font-family:var(--ff-display); font-size:1.1rem; color:var(--green);">Founding Member</div></div>
         <div><div class="stat-label">${I18n.t('dash.status_label')}</div><div style="font-size:0.82rem; color:var(--gold);">${I18n.t('dash.founding_status_perm')}</div></div>
-        <div><div class="stat-label">${I18n.t('dash.position_label')}</div><div style="font-size:0.82rem; color:var(--light);">#19 / 200</div></div>
+        <div><div class="stat-label">${I18n.t('dash.position_label')}</div><div style="font-size:0.82rem; color:var(--light);" id="founderDashPosition">${_getFoundingPosition()}</div></div>
       </div>
       <div style="display:flex; gap:0.5rem; flex-wrap:wrap;">
         ${(I18n.t('dash.founding_benefits') || []).map(b => `<div class="profile-badge gold-badge">✓ ${b}</div>`).join('')}
@@ -12812,10 +12854,13 @@ function renderRightPanel() {
   if (!list) return;
 
   if (ONLINE_MEMBERS.length === 0) {
-    list.innerHTML = `
-      <div style="padding:1rem 0 0.5rem; color:var(--muted2); font-size:0.72rem; text-align:center;">
-        Nessun membro online al momento
-      </div>`;
+    const _emptyTxt = window.I18n ? I18n.t('sidebar.no_online_members') : 'Nessun membro online al momento';
+    if (!list.querySelector('.om-empty')) {
+      list.innerHTML = `<div class="om-empty" data-i18n="sidebar.no_online_members" style="padding:1rem 0 0.5rem; color:var(--muted2); font-size:0.72rem; text-align:center;">${_emptyTxt}</div>`;
+    } else {
+      const _oel = list.querySelector('.om-empty');
+      _oel.textContent = _emptyTxt;
+    }
   } else {
     // DOM diffing: aggiorna solo i nodi cambiati, senza distruggere quelli esistenti.
     // Evita il flash/lampeggio sull'hover causato dalla ricostruzione completa del DOM.
@@ -16663,40 +16708,103 @@ function _lxApplyManualTransToEl(el, translatedText) {
   padding: 2rem; text-align: center;
 }
 #foundingChatMessages .fc-empty svg { color: var(--gold-dim); }
+#foundingChatMessages .fc-retention-banner {
+  display: flex; align-items: center; gap: 0.4rem;
+  font-size: 0.62rem; color: rgba(212,175,55,0.45);
+  padding: 0.4rem 0.8rem 0.6rem;
+  border-bottom: 1px solid var(--border2);
+  margin-bottom: 0.4rem;
+}
+#foundingChatMessages .fc-retention-note {
+  display: flex; align-items: center; gap: 0.35rem;
+  font-size: 0.62rem; color: rgba(212,175,55,0.35);
+  margin-top: 0.5rem;
+}
+#foundingChatMessages .fc-msg .fc-sender { display: block !important; }
+#foundingChatMessages .fc-msg.own .fc-sender { color: var(--amber); text-align: right; }
+/* Status bar fade animation */
+#foundingChatStatus { transition: opacity 0.4s ease; }
 </style>
 
 <script>
-/* === FOUNDING MEMBERS GROUP CHAT - Fix 5 === */
-let _foundingMessages  = [];
-let _foundingPollTimer = null;
-let _foundingLastTs    = null;
-let _foundingSbChannel = null;
-let _foundingEmojiOpen = false;
+/* ═══════════════════════════════════════════════════════════════
+   FOUNDING MEMBERS GROUP CHAT
+   Fixes: sync, typing, language, status animation, auto-clean
+═══════════════════════════════════════════════════════════════ */
 
+// ── State ──────────────────────────────────────────────────────────────────
+var _foundingMessages    = [];
+var _foundingPollTimer   = null;
+var _foundingSbChannel   = null;
+var _foundingTypingCh    = null;
+var _foundingEmojiOpen   = false;
+var _foundingTypingTimer = null;
+var _foundingTypersMap   = {};   // { email: timestamp }
+var _foundingStatusTimer = null; // alternating status animation
+var _foundingHiddenTs    = null; // ISO of earliest hidden-for-user message
+
+// ── Utility ────────────────────────────────────────────────────────────────
+function _getFoundingPosition() {
+  if (!currentUser) return '#— / 200';
+  // Sort founding members by join order (position field, fallback to index)
+  var foundingMembers = (REAL_MEMBERS || []).filter(function(m) {
+    return m.role === 'founding' || (m.role && m.role.toLowerCase().indexOf('founding') !== -1);
+  });
+  // Try to sort by position or joined date
+  foundingMembers.sort(function(a, b) {
+    var pa = parseInt(a.position || a.pos || 9999);
+    var pb = parseInt(b.position || b.pos || 9999);
+    if (pa !== pb) return pa - pb;
+    var da = new Date(a.joined || a.created_at || 0).getTime();
+    var db = new Date(b.joined || b.created_at || 0).getTime();
+    return da - db;
+  });
+  var idx = foundingMembers.findIndex(function(m) {
+    return (m.email && currentUser.email && m.email.toLowerCase() === currentUser.email.toLowerCase()) ||
+           (m.name  && currentUser.name  && m.name.toLowerCase()  === currentUser.name.toLowerCase());
+  });
+  if (idx !== -1) return '#' + (idx + 1) + ' / 200';
+  // Fallback: look at user's own position field
+  if (currentUser.position) return '#' + currentUser.position + ' / 200';
+  return '#— / 200';
+}
+
+// ── Init ───────────────────────────────────────────────────────────────────
 function initFoundingChat() {
+  _loadFoundingHiddenTs();
   renderFoundingMessages();
   loadFoundingMessages();
   _startFoundingListener();
-  const onlineCount = (ONLINE_MEMBERS || []).filter(function(m) {
-    return m.role === 'founding' || m.role === 'team' ||
-      (m.role && (m.role.toLowerCase().indexOf('founding') !== -1 || m.role.toLowerCase().indexOf('team') !== -1));
-  }).length;
-  var statusEl = document.getElementById('foundingChatStatus');
-  if (statusEl) {
-    var onlineLbl  = window.I18n ? I18n.t('founding.online_count')   : 'online';
-    var defaultLbl = window.I18n ? I18n.t('founding.channel_status') : 'Canale esclusivo';
-    statusEl.textContent = onlineCount > 0 ? onlineCount + ' ' + onlineLbl : defaultLbl;
-  }
+  _startFoundingTypingListener();
+  _startStatusAnimation();
+  _updateFoundingStatus();
+
   // Reset badge
   var badge = document.getElementById('foundingChatBadge');
   if (badge) { badge.textContent = '0'; badge.classList.add('hidden'); }
 }
 
+// ── Hidden timestamp (Fix 6: personal history clear) ───────────────────────
+var _FC_HIDDEN_KEY = 'lh360_fc_hidden_ts';
+function _loadFoundingHiddenTs() {
+  try { _foundingHiddenTs = localStorage.getItem(_FC_HIDDEN_KEY) || null; } catch(e) {}
+}
+function clearFoundingHistory() {
+  var now = new Date().toISOString();
+  try { localStorage.setItem(_FC_HIDDEN_KEY, now); } catch(e) {}
+  _foundingHiddenTs = now;
+  _foundingMessages = [];
+  renderFoundingMessages();
+  var lbl = window.I18n ? I18n.t('founding.history_cleared') : 'Cronologia eliminata.';
+  if (typeof showToast === 'function') showToast('gold', '🗑️', lbl);
+}
+
+// ── Map row → message ──────────────────────────────────────────────────────
 function _mapFoundingMsg(row) {
   return {
     id:      row.id,
     author:  row.author_name    || row.authorName  || 'Founding Member',
-    initial: row.author_initial || row.authorInitial || (row.author_name||'F')[0].toUpperCase(),
+    initial: (row.author_initial || row.authorInitial || (row.author_name || row.authorName || 'F')[0] || 'F').toUpperCase(),
     email:   row.author_email   || row.authorEmail || '',
     text:    row.text           || '',
     ts:      row.created_at     || row.ts          || new Date().toISOString(),
@@ -16704,39 +16812,50 @@ function _mapFoundingMsg(row) {
   };
 }
 
+// ── Load messages (Fix 1: global sync, hidden filter, 30-day window) ────────
 async function loadFoundingMessages() {
   if (!window._sb) { _startFoundingPoll(); return; }
   try {
-    var result = await window._sb
+    var q = window._sb
       .from('founding_group_messages')
       .select('*')
       .order('created_at', { ascending: true })
-      .limit(100);
+      .limit(200);
+    // 30-day auto-cleanup window (Fix 7)
+    var thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString();
+    q = q.gte('created_at', thirtyDaysAgo);
+    var result = await q;
     if (result.error) throw result.error;
-    if (result.data && result.data.length > 0) {
-      _foundingMessages = result.data.map(_mapFoundingMsg);
-      _foundingLastTs   = result.data[result.data.length - 1].created_at;
-      renderFoundingMessages();
-      _scrollFoundingToBottom();
+    var rows = result.data || [];
+    // Apply personal hidden timestamp (Fix 6)
+    if (_foundingHiddenTs) {
+      rows = rows.filter(function(r) { return (r.created_at || '') > _foundingHiddenTs; });
     }
+    _foundingMessages = rows.map(_mapFoundingMsg);
+    renderFoundingMessages();
+    _scrollFoundingToBottom();
   } catch(e) {
-    console.warn('[FoundingChat] loadFoundingMessages error:', e.message);
+    console.warn('[FoundingChat] load error:', e.message);
     _startFoundingPoll();
   }
 }
 
+// ── Realtime listener (Fix 1: INSERT + DELETE) ─────────────────────────────
 function _startFoundingListener() {
   if (!window._sb || _foundingSbChannel) return;
   try {
     _foundingSbChannel = window._sb
-      .channel('founding-group-chat')
+      .channel('founding-group-chat-v2')
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'founding_group_messages' }, function(payload) {
         var msg = _mapFoundingMsg(payload.new);
+        // Skip if user has cleared history before this message
+        if (_foundingHiddenTs && msg.ts <= _foundingHiddenTs) return;
         if (!_foundingMessages.some(function(m) { return m.id === msg.id; })) {
           _foundingMessages.push(msg);
           renderFoundingMessages();
           _scrollFoundingToBottom();
-          var panelActive = document.getElementById('panel-founding-chat') && document.getElementById('panel-founding-chat').classList.contains('active');
+          var panelActive = document.getElementById('panel-founding-chat') &&
+            document.getElementById('panel-founding-chat').classList.contains('active');
           if (!panelActive && !msg.own) {
             var badge = document.getElementById('foundingChatBadge');
             if (badge) {
@@ -16746,38 +16865,155 @@ function _startFoundingListener() {
           }
         }
       })
+      .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'founding_group_messages' }, function(payload) {
+        var deletedId = payload.old && payload.old.id;
+        if (deletedId) {
+          _foundingMessages = _foundingMessages.filter(function(m) { return m.id !== deletedId; });
+          renderFoundingMessages();
+        }
+      })
       .subscribe();
   } catch(e) { console.warn('[FoundingChat] listener error:', e.message); _startFoundingPoll(); }
 }
 
+// ── Poll fallback ──────────────────────────────────────────────────────────
 function _startFoundingPoll() {
   if (_foundingPollTimer || !GAS_URL) return;
   _foundingPollTimer = setInterval(async function() {
     try {
       var url = GAS_URL + '?action=get_founding_group_messages' +
-        (currentUser ? '&email=' + encodeURIComponent(currentUser.email) : '');
+        (currentUser ? '&email=' + encodeURIComponent(currentUser.email) : '') +
+        (_foundingHiddenTs ? '&since=' + encodeURIComponent(_foundingHiddenTs) : '') +
+        '&window=30d';
       var data = await fetch(url).then(function(r) { return r.json(); });
       if (data.success && Array.isArray(data.messages)) {
-        _foundingMessages = data.messages.map(_mapFoundingMsg);
+        _foundingMessages = data.messages.map(_mapFoundingMsg)
+          .filter(function(m) { return !_foundingHiddenTs || m.ts > _foundingHiddenTs; });
         renderFoundingMessages();
         _scrollFoundingToBottom();
       }
     } catch(e) { console.warn('[FoundingChat] poll error', e.message); }
-  }, 4000);
+  }, 5000);
 }
 
+// ── Typing indicator (Fix 9) ───────────────────────────────────────────────
+function _startFoundingTypingListener() {
+  if (!window._sb || !currentUser || _foundingTypingCh) return;
+  try {
+    _foundingTypingCh = window._sb
+      .channel('founding-typing')
+      .on('postgres_changes', {
+        event: '*', schema: 'public', table: 'typing',
+        filter: 'conv_id=eq.founding_group'
+      }, function(payload) {
+        var d = payload.new || payload.old;
+        if (!d || !d.user_email) return;
+        if (d.user_email.toLowerCase() === currentUser.email.toLowerCase()) return;
+        var isTyping = d.is_typing && payload.eventType !== 'DELETE';
+        if (isTyping) {
+          var age = Date.now() - new Date(d.updated_at || Date.now()).getTime();
+          isTyping = age < 8000;
+        }
+        if (isTyping) {
+          _foundingTypersMap[d.user_email] = d.user_name || d.user_email.split('@')[0];
+        } else {
+          delete _foundingTypersMap[d.user_email];
+        }
+        _renderFoundingTypingIndicator();
+      })
+      .subscribe();
+  } catch(e) { console.warn('[FoundingChat] typing listener:', e.message); }
+}
+
+function _renderFoundingTypingIndicator() {
+  var container = document.getElementById('foundingChatMessages');
+  if (!container) return;
+  var existing = container.querySelector('.fc-typing-indicator');
+  var typers = Object.values(_foundingTypersMap);
+  if (typers.length === 0) {
+    if (existing) existing.remove();
+    return;
+  }
+  var names = typers.slice(0, 2).join(', ');
+  var suffix = typers.length > 2 ? ' e altri' : '';
+  var lbl = window.I18n ? I18n.t('founding.typing') : '{name} sta scrivendo…';
+  var text = lbl.replace('{name}', names + suffix);
+  if (!existing) {
+    existing = document.createElement('div');
+    existing.className = 'fc-typing-indicator';
+    existing.style.cssText = 'padding:0.3rem 1rem 0.2rem; font-size:0.7rem; color:var(--gold); font-style:italic; display:flex; align-items:center; gap:0.4rem;';
+    container.appendChild(existing);
+  }
+  existing.innerHTML = text + '<span class="conv-typing-dots"><span>.</span><span>.</span><span>.</span></span>';
+  _scrollFoundingToBottom();
+}
+
+// ── Broadcast own typing ────────────────────────────────────────────────────
+function _foundingBroadcastTyping(isTyping) {
+  if (!window._sb || !currentUser) return;
+  try {
+    window._sb.from('typing').upsert({
+      conv_id:    'founding_group',
+      user_email: currentUser.email,
+      user_name:  currentUser.name || currentUser.email,
+      is_typing:  isTyping,
+      updated_at: new Date().toISOString()
+    }, { onConflict: 'conv_id,user_email' }).then(null, function() {});
+  } catch(e) {}
+}
+
+// ── Status bar animation (Fix 10) ──────────────────────────────────────────
+function _updateFoundingStatus() {
+  var statusEl = document.getElementById('foundingChatStatus');
+  if (!statusEl) return;
+  var onlineCount = (ONLINE_MEMBERS || []).filter(function(m) {
+    return m.role === 'founding' || m.role === 'team' ||
+      (m.role && (m.role.toLowerCase().indexOf('founding') !== -1 || m.role.toLowerCase().indexOf('team') !== -1));
+  }).length;
+  var onlineLbl  = (window.I18n ? I18n.t('founding.online_count')   : 'online');
+  var channelLbl = (window.I18n ? I18n.t('founding.channel_status') : 'Canale esclusivo');
+  statusEl._onlineText  = onlineCount > 0 ? onlineCount + ' ' + onlineLbl : null;
+  statusEl._channelText = channelLbl;
+}
+
+function _startStatusAnimation() {
+  var statusEl = document.getElementById('foundingChatStatus');
+  if (!statusEl || _foundingStatusTimer) return;
+  var showOnline = true;
+  _updateFoundingStatus();
+
+  function _tick() {
+    if (!statusEl) return;
+    var txt = (showOnline && statusEl._onlineText) ? statusEl._onlineText : statusEl._channelText;
+    // Fade out
+    statusEl.style.transition = 'opacity 0.4s ease';
+    statusEl.style.opacity = '0';
+    setTimeout(function() {
+      statusEl.textContent = txt;
+      statusEl.style.opacity = '1';
+      showOnline = !showOnline;
+    }, 420);
+  }
+
+  _tick();
+  _foundingStatusTimer = setInterval(_tick, 4000);
+}
+
+// ── Send message ────────────────────────────────────────────────────────────
 async function sendFoundingMessage() {
   if (!currentUser) return;
   var input = document.getElementById('foundingChatInput');
   var text = (input ? input.value : '').trim();
   if (!text) return;
   if (input) input.value = '';
+  _foundingBroadcastTyping(false);
+  clearTimeout(_foundingTypingTimer);
 
   var now = new Date().toISOString();
   var optimistic = {
-    id: 'tmp_' + Date.now(),
+    id:      'tmp_' + Date.now(),
     author:  currentUser.name    || 'Founding Member',
-    initial: currentUser.initial || (currentUser.name || 'F')[0].toUpperCase(),
+    initial: (currentUser.initial || (currentUser.name || 'F')[0] || 'F').toUpperCase(),
     email:   currentUser.email,
     text: text, ts: now, own: true
   };
@@ -16789,7 +17025,7 @@ async function sendFoundingMessage() {
     try {
       var ins = await window._sb.from('founding_group_messages').insert({
         author_name:    currentUser.name    || 'Founding Member',
-        author_initial: currentUser.initial || (currentUser.name || 'F')[0].toUpperCase(),
+        author_initial: (currentUser.initial || (currentUser.name || 'F')[0] || 'F').toUpperCase(),
         author_email:   currentUser.email,
         text: text,
         created_at: now
@@ -16803,7 +17039,7 @@ async function sendFoundingMessage() {
     try {
       await fetch(GAS_URL + '?action=send_founding_group_message' +
         '&authorName='    + encodeURIComponent(currentUser.name || 'Founding Member') +
-        '&authorInitial=' + encodeURIComponent(currentUser.initial || 'F') +
+        '&authorInitial=' + encodeURIComponent((currentUser.initial || 'F').toUpperCase()) +
         '&authorEmail='   + encodeURIComponent(currentUser.email) +
         '&text='          + encodeURIComponent(text));
     } catch(e) {}
@@ -16811,9 +17047,14 @@ async function sendFoundingMessage() {
 }
 
 function handleFoundingChatKey(e) {
-  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendFoundingMessage(); }
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendFoundingMessage(); return; }
+  // Broadcast typing
+  _foundingBroadcastTyping(true);
+  clearTimeout(_foundingTypingTimer);
+  _foundingTypingTimer = setTimeout(function() { _foundingBroadcastTyping(false); }, 3500);
 }
 
+// ── Render messages (Fix 2: reactive i18n, Fix 3: show avatar for all) ─────
 function renderFoundingMessages() {
   var container = document.getElementById('foundingChatMessages');
   if (!container) return;
@@ -16822,6 +17063,7 @@ function renderFoundingMessages() {
     var _wTitle = window.I18n ? I18n.t('founding.welcome_title') : 'Benvenuto nel canale esclusivo';
     var _wName  = window.I18n ? I18n.t('founding.welcome_name')  : 'Founding Members';
     var _wSub   = window.I18n ? I18n.t('founding.welcome_sub')   : 'Scrivi il primo messaggio per iniziare.';
+    var _wNote  = window.I18n ? I18n.t('founding.retention_note') : 'I messaggi vengono eliminati automaticamente ogni 30 giorni.';
     container.innerHTML = '<div class="fc-empty">' +
       '<svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4">' +
       '<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>' +
@@ -16829,52 +17071,61 @@ function renderFoundingMessages() {
       '<path d="M23 21v-2a4 4 0 0 0-3-3.87"/>' +
       '<path d="M16 3.13a4 4 0 0 1 0 7.75"/>' +
       '</svg>' +
-      '<div>' + _wTitle + ' <strong style="color:var(--gold);">' + _wName + '</strong>.</div>' +
-      '<div style="font-size:0.7rem;color:var(--muted2);">' + _wSub + '</div>' +
+      '<div>' + _escHtmlFC(_wTitle) + ' <strong style="color:var(--gold);">' + _escHtmlFC(_wName) + '</strong>.</div>' +
+      '<div style="font-size:0.7rem;color:var(--muted2);">' + _escHtmlFC(_wSub) + '</div>' +
+      '<div class="fc-retention-note">' +
+      '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>' +
+      _escHtmlFC(_wNote) + '</div>' +
       '</div>';
     return;
   }
 
   var html = '';
+  // Retention notice banner at top (Fix 8)
+  var _note = window.I18n ? I18n.t('founding.retention_note') : 'I messaggi vengono eliminati automaticamente ogni 30 giorni.';
+  html += '<div class="fc-retention-banner">' +
+    '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg> ' +
+    _escHtmlFC(_note) + '</div>';
+
   var lastDate = '';
   var _today = new Date(); _today.setHours(0,0,0,0);
   var _yesterday = new Date(_today); _yesterday.setDate(_yesterday.getDate()-1);
   var _todayLbl     = window.I18n ? I18n.t('founding.date_today')     : 'Oggi';
   var _yesterdayLbl = window.I18n ? I18n.t('founding.date_yesterday') : 'Ieri';
+  var _lang         = window.I18n && I18n.getCurrentLanguage ? I18n.getCurrentLanguage() : 'it';
+
   _foundingMessages.forEach(function(msg) {
     var d = new Date(msg.ts);
     var dDay = new Date(d); dDay.setHours(0,0,0,0);
     var dateStr;
-    if (dDay.getTime() === _today.getTime()) {
-      dateStr = _todayLbl;
-    } else if (dDay.getTime() === _yesterday.getTime()) {
-      dateStr = _yesterdayLbl;
-    } else {
-      var lang = (window.I18n && I18n.getCurrentLanguage) ? I18n.getCurrentLanguage() : 'it';
-      dateStr = d.toLocaleDateString(lang, { day: '2-digit', month: 'long', year: 'numeric' });
-    }
+    if (dDay.getTime() === _today.getTime())     { dateStr = _todayLbl; }
+    else if (dDay.getTime() === _yesterday.getTime()) { dateStr = _yesterdayLbl; }
+    else { dateStr = d.toLocaleDateString(_lang, { day:'2-digit', month:'long', year:'numeric' }); }
+
     if (dateStr !== lastDate) {
-      html += '<div class="fc-date-sep">' + dateStr + '</div>';
+      html += '<div class="fc-date-sep">' + _escHtmlFC(dateStr) + '</div>';
       lastDate = dateStr;
     }
-    var timeStr = d.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
+
+    var timeStr = d.toLocaleTimeString(_lang, { hour:'2-digit', minute:'2-digit' });
+    // Fix 3: avatar shown for ALL messages (own messages show amber, others show gold)
+    var avatarStyle = msg.own
+      ? 'border-color:var(--amber);color:var(--amber);'
+      : 'border-color:var(--gold-dim);color:var(--gold);';
     html += '<div class="fc-msg' + (msg.own ? ' own' : '') + '">' +
-      '<div class="fc-avatar">' + msg.initial + '</div>' +
+      '<div class="fc-avatar" style="' + avatarStyle + '">' + _escHtmlFC(msg.initial) + '</div>' +
       '<div class="fc-bubble-wrap">' +
-      (!msg.own ? '<div class="fc-sender">' + _escHtmlFC(msg.author) + '</div>' : '') +
-      '<div class="fc-bubble">' + _escHtmlFC(msg.text) + '</div>' +
-      '<div class="fc-time">' + timeStr + '</div>' +
+        '<div class="fc-sender">' + _escHtmlFC(msg.author) + '</div>' +
+        '<div class="fc-bubble">' + _escHtmlFC(msg.text) + '</div>' +
+        '<div class="fc-time">' + timeStr + '</div>' +
       '</div></div>';
   });
+
   container.innerHTML = html;
 }
 
 function _escHtmlFC(s) {
-  return String(s)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/\n/g, '<br>');
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>');
 }
 
 function _scrollFoundingToBottom() {
@@ -16882,32 +17133,92 @@ function _scrollFoundingToBottom() {
   if (c) requestAnimationFrame(function() { c.scrollTop = c.scrollHeight; });
 }
 
+// ── Emoji picker ────────────────────────────────────────────────────────────
 function toggleFoundingEmojiPicker() {
   var wrap = document.getElementById('foundingEmojiPickerWrap');
   if (!wrap) return;
   _foundingEmojiOpen = !_foundingEmojiOpen;
   wrap.style.display = _foundingEmojiOpen ? 'block' : 'none';
   if (_foundingEmojiOpen) {
-    var grid = document.getElementById('foundingEpGrid');
-    var emojis = ['😀','😂','🥰','😎','👍','🎉','🔥','💎','⭐','✅','🏆','💬','🤝','💪','🙏','👏','🌟','✨'];
-    if (grid && !grid.children.length) {
-      grid.innerHTML = emojis.map(function(e) {
-        return '<button class="ep-btn" onclick="insertFoundingEmoji(\'' + e + '\')">' + e + '</button>';
-      }).join('');
-    }
+    epShowCatFounding(_fcCurrentCat || 'smileys',
+      document.querySelector('#foundingEpCats .ep-cat[data-cat="' + (_fcCurrentCat || 'smileys') + '"]'));
+    setTimeout(function() {
+      var inp = document.getElementById('foundingEpSearchInput');
+      if (inp) inp.focus();
+    }, 60);
   }
 }
 
 function insertFoundingEmoji(emoji) {
   var input = document.getElementById('foundingChatInput');
-  if (input) { input.value += emoji; input.focus(); }
+  if (input) {
+    var pos = input.selectionStart != null ? input.selectionStart : input.value.length;
+    input.value = input.value.slice(0, pos) + emoji + input.value.slice(pos);
+    input.focus();
+    try { input.selectionStart = input.selectionEnd = pos + emoji.length; } catch(e) {}
+  }
   var wrap = document.getElementById('foundingEmojiPickerWrap');
   if (wrap) wrap.style.display = 'none';
   _foundingEmojiOpen = false;
 }
 
-function epSearchFounding(q) {}
-function epShowCatFounding(cat, btn) {}
+/* ── Founding emoji picker: category switching ── */
+var _fcCurrentCat = 'smileys';
+
+function epShowCatFounding(cat, btnEl) {
+  _fcCurrentCat = cat;
+  var cats = document.getElementById('foundingEpCats');
+  if (cats) cats.querySelectorAll('.ep-cat').forEach(function(b) { b.classList.remove('active'); });
+  if (btnEl) btnEl.classList.add('active');
+  epRenderGridFounding(EP_DATA[cat] || []);
+  var inp = document.getElementById('foundingEpSearchInput');
+  if (inp) inp.value = '';
+}
+
+function epRenderGridFounding(emojis, emptyMsg) {
+  var grid = document.getElementById('foundingEpGrid');
+  if (!grid) return;
+  if (emptyMsg) {
+    grid.innerHTML = '<div style="grid-column:1/-1;padding:1.5rem 0.5rem;text-align:center;font-size:0.72rem;color:rgba(245,245,245,0.3);">' + emptyMsg + '</div>';
+    return;
+  }
+  grid.innerHTML = emojis.map(function(em) {
+    var safe = em.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+    return '<button class="ep-emoji" onclick="insertFoundingEmoji(\'' + safe + '\')" title="' + em + '">' + em + '</button>';
+  }).join('');
+}
+
+function epSearchFounding(q) {
+  var EMOJI_KEYWORDS = {'😀':'felice sorriso happy','😂':'ridere laugh lol','😍':'amore love cuore','🥰':'amore love','😊':'sorriso smile','😭':'piangere cry triste sad','😡':'arrabbiato angry','🤔':'pensare think','😴':'dormire sleep','🤗':'abbraccio hug','😘':'bacio kiss','🎉':'festa party congratulazioni','🔥':'fuoco fire caldo','💯':'cento perfect ok','👍':'bene ok pollice up like','👎':'male pollice down dislike','❤️':'cuore amore love heart','💔':'cuore spezzato broken heart','🙏':'grazie preghiera please','👏':'applauso bravo clap','💪':'forza muscle strong','🌟':'stella star','✨':'sparkle brillo shine','💎':'diamante diamond gemma','👑':'corona crown re king','🏆':'trofeo trophy winner'};
+  if (!q || !q.trim()) { epShowCatFounding(_fcCurrentCat, document.querySelector('#foundingEpCats .ep-cat.active')); return; }
+  var lower = q.toLowerCase().trim();
+  var all = Object.values(EP_DATA).flat();
+  var filtered = all.filter(function(em) {
+    return (EMOJI_KEYWORDS[em]||'').toLowerCase().indexOf(lower) !== -1 || em === lower;
+  });
+  epRenderGridFounding(filtered, filtered.length === 0 ? 'Nessun risultato per "' + q + '"' : null);
+}
+
+// ── Language change re-render (Fix 2 + 11) ─────────────────────────────────
+if (window.I18n && typeof I18n.onLanguageChange === 'function') {
+  I18n.onLanguageChange(function() {
+    var panelActive = document.getElementById('panel-founding-chat') &&
+      document.getElementById('panel-founding-chat').classList.contains('active');
+    if (panelActive) {
+      renderFoundingMessages();
+    }
+    // Always update status bar text
+    _updateFoundingStatus();
+    // Update header if currently showing founding chat
+    var headerEl = document.getElementById('headerTitle');
+    if (headerEl && headerEl.textContent.toLowerCase().indexOf('founding') !== -1) {
+      headerEl.textContent = window.I18n ? I18n.t('nav.founding_chat') : 'Founding Members';
+    }
+    // Update position label if visible
+    var posEl = document.getElementById('founderDashPosition');
+    if (posEl) posEl.textContent = _getFoundingPosition();
+  });
+}
 </script>
 </body>
 </html>
