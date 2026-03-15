@@ -10603,31 +10603,87 @@ function renderConversations() {
     return;
   }
 
-  container.innerHTML = convs.map(c => {
-    const isActive = currentConvPartnerEmail && c.partnerEmail.toLowerCase() === currentConvPartnerEmail.toLowerCase();
-    const isTeam = c.partnerRole === 'team';
-    const onlineM = ONLINE_MEMBERS.find(m => (m.email && m.email.toLowerCase() === c.partnerEmail.toLowerCase()) || (m.name && c.partnerName && m.name.toLowerCase() === c.partnerName.toLowerCase()));
-    const status = onlineM ? 'online' : 'offline';
-    const isTyping = !!_typingByEmail[c.partnerEmail.toLowerCase()];
+  // ── DOM DIFFING ─ niente innerHTML rebuild → nessun hover flash ──
+  // Mappiamo i nodi esistenti per email; aggiorniamo in-place.
+  const _existingNodes = {};
+  Array.from(container.children).forEach(nd => {
+    if (nd.dataset.convEmail) _existingNodes[nd.dataset.convEmail] = nd;
+  });
+
+  convs.forEach((c, i) => {
+    const emailKey  = c.partnerEmail.toLowerCase();
+    const isActive  = currentConvPartnerEmail && emailKey === currentConvPartnerEmail.toLowerCase();
+    const isTeam    = c.partnerRole === 'team';
+    const onlineM   = ONLINE_MEMBERS.find(m =>
+      (m.email && m.email.toLowerCase() === emailKey) ||
+      (m.name && c.partnerName && m.name.toLowerCase() === c.partnerName.toLowerCase()));
+    const status    = onlineM ? 'online' : 'offline';
+    const isTyping  = !!_typingByEmail[emailKey];
     const previewHtml = isTyping
       ? `<div class="conv-preview" style="color:var(--gold);font-style:italic;">${I18n.t('msg.typing')}<span class="conv-typing-dots"><span>.</span><span>.</span><span>.</span></span></div>`
       : `<div class="conv-preview">${c.lastMessage || '—'}</div>`;
-    return `
-    <div class="conv-item ${isActive ? 'active' : ''}" onclick="openConvByEmail('${c.partnerEmail}')">
-      <div class="conv-avatar" style="${isTeam ? 'border-color:var(--gold-dim);color:var(--gold);' : ''}">
-        ${c.partnerInitial}
-        <div class="om-status ${status}" style="position:absolute;bottom:-1px;right:-1px;width:9px;height:9px;border-radius:50%;background:${status==='online'?'var(--green)':'var(--dark4)'};border:2px solid var(--dark3);"></div>
-      </div>
-      <div class="conv-info">
-        <div class="conv-name">${c.partnerName}</div>
-        ${previewHtml}
-      </div>
-      <div class="conv-meta">
-        <div class="conv-time" style="${c.unread > 0 ? 'color:var(--gold);font-weight:600;' : ''}">${formatMsgTime(c.lastTs)}</div>
-        ${c.unread > 0 ? `<div class="conv-unread" title="${c.unread} messaggi non letti">${c.unread}</div>` : ''}
-      </div>
-    </div>`;
-  }).join('');
+
+    let nd = _existingNodes[emailKey];
+    if (!nd) {
+      // Prima volta: crea struttura completa
+      nd = document.createElement('div');
+      nd.className = 'conv-item';
+      nd.dataset.convEmail = emailKey;
+      nd.onclick = (function(ep) { return () => openConvByEmail(ep); })(c.partnerEmail);
+      nd.innerHTML =
+        '<div class="conv-avatar">' +
+          '<span class="_ci"></span>' +
+          '<div class="_cs om-status"></div>' +
+        '</div>' +
+        '<div class="conv-info">' +
+          '<div class="conv-name"></div>' +
+          '<div class="_cpw"></div>' +
+        '</div>' +
+        '<div class="conv-meta">' +
+          '<div class="conv-time"></div>' +
+          '<div class="_cuw"></div>' +
+        '</div>';
+    } else {
+      delete _existingNodes[emailKey];
+    }
+
+    // Aggiorna solo i valori cambiati (senza toccare il nodo radice → no hover reset)
+    if (isActive) nd.classList.add('active'); else nd.classList.remove('active');
+
+    const avEl  = nd.querySelector('.conv-avatar');
+    const dotEl = nd.querySelector('._cs');
+    const ciEl  = nd.querySelector('._ci');
+    const nmEl  = nd.querySelector('.conv-name');
+    const pwEl  = nd.querySelector('._cpw');
+    const tmEl  = nd.querySelector('.conv-time');
+    const uwEl  = nd.querySelector('._cuw');
+
+    if (avEl) avEl.style.cssText = isTeam ? 'border-color:var(--gold-dim);color:var(--gold);' : '';
+    if (dotEl) {
+      dotEl.className = '_cs om-status ' + status;
+      dotEl.style.cssText = 'position:absolute;bottom:-1px;right:-1px;width:9px;height:9px;border-radius:50%;background:' + (status === 'online' ? 'var(--green)' : 'var(--dark4)') + ';border:2px solid var(--dark3);';
+    }
+    if (ciEl && ciEl.textContent !== c.partnerInitial) ciEl.textContent = c.partnerInitial;
+    if (nmEl && nmEl.textContent !== c.partnerName) nmEl.textContent = c.partnerName;
+    if (pwEl) pwEl.innerHTML = previewHtml;
+    const newTime = formatMsgTime(c.lastTs);
+    if (tmEl) {
+      if (tmEl.textContent !== newTime) tmEl.textContent = newTime;
+      tmEl.style.color      = c.unread > 0 ? 'var(--gold)' : '';
+      tmEl.style.fontWeight = c.unread > 0 ? '600' : '';
+    }
+    if (uwEl) {
+      const newUnread = c.unread > 0 ? `<div class="conv-unread" title="${c.unread} messaggi non letti">${c.unread}</div>` : '';
+      if (uwEl.innerHTML !== newUnread) uwEl.innerHTML = newUnread;
+    }
+
+    // Riposiziona solo se necessario (niente layout thrashing se già in posizione)
+    const atIdx = container.children[i];
+    if (atIdx !== nd) container.insertBefore(nd, atIdx || null);
+  });
+
+  // Rimuovi nodi di conv non più in lista
+  Object.values(_existingNodes).forEach(nd => nd.remove());
 }
 
 /* ── Apri conversazione per email partner ── */
