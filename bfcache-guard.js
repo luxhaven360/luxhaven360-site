@@ -38,13 +38,18 @@
 
   if ('serviceWorker' in navigator) {
     /* Il SW è nella root, path assoluto */
-    navigator.serviceWorker.register('/sw.js', { scope: '/' })
+    /* updateViaCache:'none' forza sempre il check della nuova versione sw.js */
+    navigator.serviceWorker.register('/sw.js', {
+      scope: '/',
+      updateViaCache: 'none'
+    })
       .then(function (reg) {
         _swRegistration = reg;
+        /* Forza update immediato se c'è una nuova versione in attesa */
+        if (reg.waiting) reg.waiting.postMessage({ type: 'SKIP_WAITING' });
       })
       .catch(function (err) {
-        /* SW non disponibile (es. HTTP, cross-origin): il livello 2 copre */
-        console.warn('[BFCache Guard] SW non registrato:', err.message);
+        /* SW non disponibile: il livello 2 (AbortController JS) copre */
       });
   }
 
