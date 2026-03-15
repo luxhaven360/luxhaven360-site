@@ -6770,6 +6770,7 @@ const COMMUNITY_CACHE_TTL  = 5 * 60 * 1000; // 5 minuti (solo per posts/discussi
 const EVENTS_CACHE_KEY     = 'lh360_events_v1'; // cache eventi separata, senza TTL
 const ONLINE_CACHE_KEY     = 'lh360_online_v1'; // cache membri online, TTL breve (60s)
 const CONVS_CACHE_KEY      = 'lh360_convs_v2';  // FIX: cache conversazioni per caricamento immediato
+const FC_MSGS_CACHE_KEY    = 'lh360_fc_msgs_v1'; // Cache messaggi Founding Members (TTL 30 giorni)
 let _communityPollTimer    = null;
 
 function saveCommunityCache() {
@@ -6861,6 +6862,45 @@ function loadConvsCache() {
     const filtered = convs.filter(c => !tombstones.includes(c.partnerEmail.toLowerCase()));
     return filtered; // può essere [] — significa lista intenzionalmente vuota
   } catch(e) { return null; }
+}
+
+/* ── Cache messaggi Founding Members ── */
+function saveFoundingCache() {
+  try {
+    if (!currentUser) return;
+    // Salva solo i messaggi degli ultimi 30 giorni (non oltre)
+    var thirtyDaysAgo = Date.now() - 30 * 24 * 3600 * 1000;
+    var toSave = _foundingMessages.filter(function(m) {
+      return new Date(m.ts).getTime() >= thirtyDaysAgo;
+    });
+    localStorage.setItem(FC_MSGS_CACHE_KEY, JSON.stringify({
+      ts:    Date.now(),
+      email: currentUser.email,
+      msgs:  toSave
+    }));
+  } catch(e) {}
+}
+
+function loadFoundingCache() {
+  try {
+    var raw = localStorage.getItem(FC_MSGS_CACHE_KEY);
+    if (!raw) return null;
+    var obj = JSON.parse(raw);
+    if (!currentUser || obj.email !== currentUser.email) return null;
+    // TTL: 30 giorni (coerente con la retention policy del canale)
+    var thirtyDays = 30 * 24 * 3600 * 1000;
+    if (Date.now() - obj.ts > thirtyDays) return null;
+    var msgs = obj.msgs || [];
+    // Applica hidden timestamp personale se presente
+    if (_foundingHiddenTs) {
+      msgs = msgs.filter(function(m) { return m.ts > _foundingHiddenTs; });
+    }
+    return msgs.length > 0 ? msgs : null;
+  } catch(e) { return null; }
+}
+
+function clearFoundingCache() {
+  try { localStorage.removeItem(FC_MSGS_CACHE_KEY); } catch(e) {}
 }
 
 function loadOnlineCache() {
@@ -16831,6 +16871,7 @@ function clearFoundingHistory() {
   try { localStorage.setItem(_FC_HIDDEN_KEY, now); } catch(e) {}
   _foundingHiddenTs = now;
   _foundingMessages = [];
+  clearFoundingCache();  // remove cached messages so they don't reappear on refresh
   renderFoundingMessages();
   var lbl = window.I18n ? I18n.t('founding.history_cleared') : 'Cronologia eliminata.';
   if (typeof showToast === 'function') showToast('gold', '🗑️', lbl);
@@ -16851,28 +16892,50 @@ function _mapFoundingMsg(row) {
 
 // ── Load messages (Fix 1: global sync, hidden filter, 30-day window) ────────
 async function loadFoundingMessages() {
+  // ── Step 1: show cached messages immediately (zero-latency on refresh/re-open)
+  var cached = loadFoundingCache();
+  if (cached && cached.length > 0 && _foundingMessages.length === 0) {
+    _foundingMessages = cached;
+    renderFoundingMessages();
+    _scrollFoundingToBottom();
+  }
+
+  // ── Step 2: fetch from Supabase in background (ALL users, anon key, no auth needed)
   if (!window._sb) { _startFoundingPoll(); return; }
   try {
-    var q = window._sb
-      .from('founding_group_messages')
-      .select('*')
-      .order('created_at', { ascending: true })
-      .limit(200);
-    // 30-day auto-cleanup window (Fix 7)
     var thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString();
-    q = q.gte('created_at', thirtyDaysAgo);
-    var result = await q;
-    if (result.error) throw result.error;
+    var result = await window._sb
+      .from('founding_group_messages')
+      .select('id, author_name, author_initial, author_email, text, created_at')
+      .order('created_at', { ascending: true })
+      .gte('created_at', thirtyDaysAgo)
+      .limit(500);
+
+    if (result.error) {
+      console.warn('[FoundingChat] Supabase error:', result.error.message, result.error.code);
+      _startFoundingPoll();
+      return;
+    }
+
     var rows = result.data || [];
-    // Apply personal hidden timestamp (Fix 6)
+    console.log('[FoundingChat] Loaded', rows.length, 'messages from Supabase');
+
+    // Apply personal hidden timestamp only
     if (_foundingHiddenTs) {
       rows = rows.filter(function(r) { return (r.created_at || '') > _foundingHiddenTs; });
     }
-    _foundingMessages = rows.map(_mapFoundingMsg);
+
+    // Only update if we got data OR if previous load returned 0 (avoid clearing cache with empty result)
+    if (rows.length > 0 || _foundingMessages.length === 0) {
+      _foundingMessages = rows.map(_mapFoundingMsg);
+    }
+
+    saveFoundingCache();  // persist to localStorage for next refresh
     renderFoundingMessages();
     _scrollFoundingToBottom();
   } catch(e) {
     console.warn('[FoundingChat] load error:', e.message);
+    // Cache already shown in Step 1 — user sees messages while offline
     _startFoundingPoll();
   }
 }
@@ -16898,6 +16961,7 @@ function _startFoundingListener() {
         if (_foundingHiddenTs && msg.ts <= _foundingHiddenTs) return;
         if (!_foundingMessages.some(function(m) { return m.id === msg.id; })) {
           _foundingMessages.push(msg);
+          saveFoundingCache();  // persist immediately so refresh shows this message
           renderFoundingMessages();
           _scrollFoundingToBottom();
           var panelActive = document.getElementById('panel-founding-chat') &&
@@ -16933,8 +16997,12 @@ function _startFoundingPoll() {
         '&window=30d';
       var data = await fetch(url).then(function(r) { return r.json(); });
       if (data.success && Array.isArray(data.messages)) {
-        _foundingMessages = data.messages.map(_mapFoundingMsg)
+        var msgs = data.messages.map(_mapFoundingMsg)
           .filter(function(m) { return !_foundingHiddenTs || m.ts > _foundingHiddenTs; });
+        if (msgs.length > 0 || _foundingMessages.length === 0) {
+          _foundingMessages = msgs;
+        }
+        saveFoundingCache();
         renderFoundingMessages();
         _scrollFoundingToBottom();
       }
@@ -17088,6 +17156,7 @@ async function sendFoundingMessage() {
       if (!ins.error && ins.data) {
         var idx = _foundingMessages.findIndex(function(m) { return m.id === optimistic.id; });
         if (idx !== -1) _foundingMessages[idx].id = ins.data.id;
+        saveFoundingCache();  // persist confirmed id
       }
     } catch(e) { console.warn('[FoundingChat] send error:', e.message); }
   } else if (GAS_URL) {
