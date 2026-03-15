@@ -16773,15 +16773,52 @@ function _getFoundingPosition() {
 function initFoundingChat() {
   _loadFoundingHiddenTs();
   renderFoundingMessages();
-  loadFoundingMessages();
-  _startFoundingListener();
-  _startFoundingTypingListener();
   _startStatusAnimation();
   _updateFoundingStatus();
 
   // Reset badge
   var badge = document.getElementById('foundingChatBadge');
   if (badge) { badge.textContent = '0'; badge.classList.add('hidden'); }
+
+  // Always reload messages when panel opens (fresh data, handles re-open)
+  loadFoundingMessages();
+
+  if (window._sbReady && window._sb) {
+    // Supabase ready — start/restart listeners immediately
+    // Reset existing channels so they reconnect fresh on each panel open
+    if (_foundingSbChannel) {
+      try { _foundingSbChannel.unsubscribe(); } catch(e) {}
+      _foundingSbChannel = null;
+    }
+    if (_foundingTypingCh) {
+      try { _foundingTypingCh.unsubscribe(); } catch(e) {}
+      _foundingTypingCh = null;
+    }
+    _startFoundingListener();
+    _startFoundingTypingListener();
+  } else {
+    // Retry up to 20 times with 300ms interval (covers slow Supabase init)
+    var _retries = 0;
+    var _waitSb = setInterval(function() {
+      _retries++;
+      if (window._sbReady && window._sb) {
+        clearInterval(_waitSb);
+        if (_foundingSbChannel) {
+          try { _foundingSbChannel.unsubscribe(); } catch(e) {}
+          _foundingSbChannel = null;
+        }
+        if (_foundingTypingCh) {
+          try { _foundingTypingCh.unsubscribe(); } catch(e) {}
+          _foundingTypingCh = null;
+        }
+        _startFoundingListener();
+        _startFoundingTypingListener();
+      } else if (_retries >= 20) {
+        clearInterval(_waitSb);
+        console.warn('[FoundingChat] Supabase not ready after 6s — poll fallback active');
+      }
+    }, 300);
+  }
 }
 
 // ── Hidden timestamp (Fix 6: personal history clear) ───────────────────────
@@ -16842,7 +16879,16 @@ async function loadFoundingMessages() {
 
 // ── Realtime listener (Fix 1: INSERT + DELETE) ─────────────────────────────
 function _startFoundingListener() {
-  if (!window._sb || _foundingSbChannel) return;
+  if (!window._sb) return;
+  // If already subscribed and healthy, skip
+  if (_foundingSbChannel) {
+    // Re-subscribe if channel is closed/errored
+    var state = _foundingSbChannel.state;
+    if (state === 'joined' || state === 'joining') return;
+    // Channel is dead — unsubscribe and restart
+    try { _foundingSbChannel.unsubscribe(); } catch(e) {}
+    _foundingSbChannel = null;
+  }
   try {
     _foundingSbChannel = window._sb
       .channel('founding-group-chat-v2')
@@ -16900,28 +16946,34 @@ function _startFoundingPoll() {
 function _startFoundingTypingListener() {
   if (!window._sb || !currentUser || _foundingTypingCh) return;
   try {
+    // Use Supabase Broadcast (no DB table needed — no schema mismatch possible)
     _foundingTypingCh = window._sb
-      .channel('founding-typing')
-      .on('postgres_changes', {
-        event: '*', schema: 'public', table: 'typing',
-        filter: 'conv_id=eq.founding_group'
-      }, function(payload) {
-        var d = payload.new || payload.old;
-        if (!d || !d.user_email) return;
-        if (d.user_email.toLowerCase() === currentUser.email.toLowerCase()) return;
-        var isTyping = d.is_typing && payload.eventType !== 'DELETE';
-        if (isTyping) {
-          var age = Date.now() - new Date(d.updated_at || Date.now()).getTime();
-          isTyping = age < 8000;
-        }
-        if (isTyping) {
-          _foundingTypersMap[d.user_email] = d.user_name || d.user_email.split('@')[0];
+      .channel('founding-typing-broadcast')
+      .on('broadcast', { event: 'typing' }, function(payload) {
+        var d = payload.payload;
+        if (!d || !d.email) return;
+        if (d.email.toLowerCase() === currentUser.email.toLowerCase()) return;
+        if (d.is_typing) {
+          _foundingTypersMap[d.email] = d.name || d.email.split('@')[0];
+          // Auto-expire after 6s if no update
+          clearTimeout(_foundingTypersMap['__timer_' + d.email]);
+          _foundingTypersMap['__timer_' + d.email] = setTimeout(function() {
+            delete _foundingTypersMap[d.email];
+            delete _foundingTypersMap['__timer_' + d.email];
+            _renderFoundingTypingIndicator();
+          }, 6000);
         } else {
-          delete _foundingTypersMap[d.user_email];
+          clearTimeout(_foundingTypersMap['__timer_' + d.email]);
+          delete _foundingTypersMap[d.email];
+          delete _foundingTypersMap['__timer_' + d.email];
         }
         _renderFoundingTypingIndicator();
       })
-      .subscribe();
+      .subscribe(function(status) {
+        if (status === 'SUBSCRIBED') {
+          console.log('[FoundingChat] typing broadcast channel ready');
+        }
+      });
   } catch(e) { console.warn('[FoundingChat] typing listener:', e.message); }
 }
 
@@ -16950,16 +17002,19 @@ function _renderFoundingTypingIndicator() {
 
 // ── Broadcast own typing ────────────────────────────────────────────────────
 function _foundingBroadcastTyping(isTyping) {
-  if (!window._sb || !currentUser) return;
+  // Use Broadcast channel — same channel as the listener, no DB table required
+  if (!_foundingTypingCh || !currentUser) return;
   try {
-    window._sb.from('typing').upsert({
-      conv_id:    'founding_group',
-      user_email: currentUser.email,
-      user_name:  currentUser.name || currentUser.email,
-      is_typing:  isTyping,
-      updated_at: new Date().toISOString()
-    }, { onConflict: 'conv_id,user_email' }).then(null, function() {});
-  } catch(e) {}
+    _foundingTypingCh.send({
+      type:    'broadcast',
+      event:   'typing',
+      payload: {
+        email:     currentUser.email,
+        name:      currentUser.name || currentUser.email.split('@')[0],
+        is_typing: isTyping
+      }
+    });
+  } catch(e) { console.warn('[FoundingChat] broadcast typing error:', e.message); }
 }
 
 // ── Status bar animation (Fix 10) ──────────────────────────────────────────
