@@ -16823,7 +16823,7 @@ function initFoundingChat() {
   // Always reload messages when panel opens (fresh data, handles re-open)
   loadFoundingMessages();
 
-  if (window._sbReady && window._sb) {
+  if (_sbReady && _sb) {
     // Supabase ready — start/restart listeners immediately
     // Reset existing channels so they reconnect fresh on each panel open
     if (_foundingSbChannel) {
@@ -16841,7 +16841,7 @@ function initFoundingChat() {
     var _retries = 0;
     var _waitSb = setInterval(function() {
       _retries++;
-      if (window._sbReady && window._sb) {
+      if (_sbReady && _sb) {
         clearInterval(_waitSb);
         if (_foundingSbChannel) {
           try { _foundingSbChannel.unsubscribe(); } catch(e) {}
@@ -16901,10 +16901,10 @@ async function loadFoundingMessages() {
   }
 
   // ── Step 2: fetch from Supabase in background (ALL users, anon key, no auth needed)
-  if (!window._sb) { _startFoundingPoll(); return; }
+  if (!_sb) { _startFoundingPoll(); return; }
   try {
     var thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString();
-    var result = await window._sb
+    var result = await _sb
       .from('founding_group_messages')
       .select('id, author_name, author_initial, author_email, text, created_at')
       .order('created_at', { ascending: true })
@@ -16942,7 +16942,7 @@ async function loadFoundingMessages() {
 
 // ── Realtime listener (Fix 1: INSERT + DELETE) ─────────────────────────────
 function _startFoundingListener() {
-  if (!window._sb) return;
+  if (!_sb) return;
   // If already subscribed and healthy, skip
   if (_foundingSbChannel) {
     // Re-subscribe if channel is closed/errored
@@ -16953,7 +16953,7 @@ function _startFoundingListener() {
     _foundingSbChannel = null;
   }
   try {
-    _foundingSbChannel = window._sb
+    _foundingSbChannel = _sb
       .channel('founding-group-chat-v2')
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'founding_group_messages' }, function(payload) {
         var msg = _mapFoundingMsg(payload.new);
@@ -17012,10 +17012,10 @@ function _startFoundingPoll() {
 
 // ── Typing indicator (Fix 9) ───────────────────────────────────────────────
 function _startFoundingTypingListener() {
-  if (!window._sb || !currentUser || _foundingTypingCh) return;
+  if (!_sb || !currentUser || _foundingTypingCh) return;
   try {
     // Use Supabase Broadcast (no DB table needed — no schema mismatch possible)
-    _foundingTypingCh = window._sb
+    _foundingTypingCh = _sb
       .channel('founding-typing-broadcast')
       .on('broadcast', { event: 'typing' }, function(payload) {
         var d = payload.payload;
@@ -17144,9 +17144,9 @@ async function sendFoundingMessage() {
   renderFoundingMessages();
   _scrollFoundingToBottom();
 
-  if (window._sb) {
+  if (_sb) {
     try {
-      var ins = await window._sb.from('founding_group_messages').insert({
+      var ins = await _sb.from('founding_group_messages').insert({
         author_name:    currentUser.name    || 'Founding Member',
         author_initial: (currentUser.initial || (currentUser.name || 'F')[0] || 'F').toUpperCase(),
         author_email:   currentUser.email,
