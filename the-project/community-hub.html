@@ -2542,9 +2542,9 @@ Object.assign(window.I18N_TRANSLATIONS['it'] || (window.I18N_TRANSLATIONS['it']=
   'profile.notif_mentions_desc':'Notifica quando qualcuno ti menziona in una discussione',
   // ── Tempo relativo ──────────────────────────────────────────────────
   'time.now':               'Ora',
-  'time.min_ago':           '{n}m fa',
-  'time.hour_ago':          '{n}h fa',
-  'time.day_ago':           '{n}g fa',
+  'time.min_ago':           '{n}m',
+  'time.hour_ago':          '{n}h',
+  'time.day_ago':           '{n}g',
   'time.yesterday':         'Ieri',
   // ── Feed ────────────────────────────────────────────────────────────
   'feed.type.update':       '📢 Aggiornamento',
@@ -2853,9 +2853,9 @@ Object.assign(window.I18N_TRANSLATIONS['en'] || (window.I18N_TRANSLATIONS['en']=
   'profile.notif_mentions_desc':'Notification when someone mentions you in a discussion',
   // ── Time ────────────────────────────────────────────────────────────
   'time.now':               'Now',
-  'time.min_ago':           '{n}m ago',
-  'time.hour_ago':          '{n}h ago',
-  'time.day_ago':           '{n}d ago',
+  'time.min_ago':           '{n}m',
+  'time.hour_ago':          '{n}h',
+  'time.day_ago':           '{n}d',
   'time.yesterday':         'Yesterday',
   // ── Feed ────────────────────────────────────────────────────────────
   'feed.type.update':       '📢 Update',
@@ -9897,9 +9897,6 @@ function renderConversations() {
   if (!container) return;
 
   // ── SAFETY NET: la conv correntemente aperta non sparisce mai dalla sidebar ──
-  // Qualsiasi operazione asincrona che sovrascrive REAL_CONVS viene neutralizzata:
-  // se currentConvPartnerEmail è settato E il pannello messaggi è aperto E la conv
-  // non è in lista, viene reinserita come voce vuota prima del render.
   if (currentConvPartnerEmail && document.getElementById('panel-messages')?.classList.contains('active')) {
     const _inList = REAL_CONVS.some(c => c.partnerEmail.toLowerCase() === currentConvPartnerEmail.toLowerCase());
     if (!_inList) {
@@ -9922,31 +9919,122 @@ function renderConversations() {
     return;
   }
 
-  container.innerHTML = convs.map(c => {
-    const isActive = currentConvPartnerEmail && c.partnerEmail.toLowerCase() === currentConvPartnerEmail.toLowerCase();
-    const isTeam = c.partnerRole === 'team';
-    const onlineM = ONLINE_MEMBERS.find(m => (m.email && m.email.toLowerCase() === c.partnerEmail.toLowerCase()) || (m.name && c.partnerName && m.name.toLowerCase() === c.partnerName.toLowerCase()));
-    const status = onlineM ? 'online' : 'offline';
-    const isTyping = !!_typingByEmail[c.partnerEmail.toLowerCase()];
-    const previewHtml = isTyping
-      ? `<div class="conv-preview" style="color:var(--gold);font-style:italic;">${I18n.t('msg.typing')}<span class="conv-typing-dots"><span>.</span><span>.</span><span>.</span></span></div>`
-      : `<div class="conv-preview">${c.lastMessage || '—'}</div>`;
-    return `
-    <div class="conv-item ${isActive ? 'active' : ''}" onclick="openConvByEmail('${c.partnerEmail}')">
-      <div class="conv-avatar" style="${isTeam ? 'border-color:var(--gold-dim);color:var(--gold);' : ''}">
-        ${c.partnerInitial}
-        <div class="om-status ${status}" style="position:absolute;bottom:-1px;right:-1px;width:9px;height:9px;border-radius:50%;background:${status==='online'?'var(--green)':'var(--dark4)'};border:2px solid var(--dark3);"></div>
-      </div>
-      <div class="conv-info">
-        <div class="conv-name">${c.partnerName}</div>
-        ${previewHtml}
-      </div>
-      <div class="conv-meta">
-        <div class="conv-time" style="${c.unread > 0 ? 'color:var(--gold);font-weight:600;' : ''}">${formatMsgTime(c.lastTs)}</div>
-        ${c.unread > 0 ? `<div class="conv-unread" title="${c.unread} messaggi non letti">${c.unread}</div>` : ''}
-      </div>
-    </div>`;
-  }).join('');
+  // ── DOM DIFFING: aggiorna solo gli attributi/testi che cambiano ──────────────
+  // NON sovrascrivere innerHTML → preserva :hover, :focus, animazioni CSS attive.
+  // Causa del flash precedente: innerHTML wipe ogni 600ms uccideva lo stato hover.
+  const existingItems = {};
+  Array.from(container.querySelectorAll('.conv-item[data-email]')).forEach(el => {
+    existingItems[el.dataset.email] = el;
+  });
+
+  // Rimuovi voce "empty state" se presente
+  container.querySelector('.conv-empty-state')?.remove();
+
+  // Rimuovi gli elementi non più in lista + raccoglie email da tenere
+  const keepEmails = new Set(convs.map(c => c.partnerEmail.toLowerCase()));
+  Object.entries(existingItems).forEach(([em, el]) => {
+    if (!keepEmails.has(em)) el.remove();
+  });
+
+  convs.forEach((c, i) => {
+    const emailLow = c.partnerEmail.toLowerCase();
+    const isActive  = currentConvPartnerEmail && emailLow === currentConvPartnerEmail.toLowerCase();
+    const isTeam    = c.partnerRole === 'team';
+    const onlineM   = ONLINE_MEMBERS.find(m => (m.email && m.email.toLowerCase() === emailLow) ||
+      (m.name && c.partnerName && m.name.toLowerCase() === c.partnerName.toLowerCase()));
+    const status    = onlineM ? 'online' : 'offline';
+    const isTyping  = !!_typingByEmail[emailLow];
+    const timeStr   = formatMsgTime(c.lastTs);
+    const hasUnread = (c.unread || 0) > 0;
+
+    let el = existingItems[emailLow];
+    if (!el) {
+      // Crea nuovo elemento
+      el = document.createElement('div');
+      el.className = 'conv-item';
+      el.dataset.email = emailLow;
+      el.onclick = (function(email) { return function() { openConvByEmail(email); }; })(c.partnerEmail);
+      el.innerHTML =
+        '<div class="conv-avatar">' +
+          '<span class="ca-initial"></span>' +
+          '<div class="ca-status"></div>' +
+        '</div>' +
+        '<div class="conv-info">' +
+          '<div class="conv-name"></div>' +
+          '<div class="conv-preview"></div>' +
+        '</div>' +
+        '<div class="conv-meta">' +
+          '<div class="conv-time"></div>' +
+          '<div class="conv-unread" style="display:none;"></div>' +
+        '</div>';
+    }
+
+    // ── Aggiorna solo i campi che sono effettivamente cambiati ──
+    // active state
+    el.classList.toggle('active', !!isActive);
+
+    // avatar
+    const avatarEl  = el.querySelector('.conv-avatar');
+    const initialEl = el.querySelector('.ca-initial');
+    const statusEl  = el.querySelector('.ca-status');
+    const nameEl    = el.querySelector('.conv-name');
+    const previewEl = el.querySelector('.conv-preview');
+    const timeEl    = el.querySelector('.conv-time');
+    const unreadEl  = el.querySelector('.conv-unread');
+
+    if (avatarEl) {
+      const wantBorder = isTeam ? 'border-color:var(--gold-dim);color:var(--gold);' : '';
+      if (avatarEl.style.cssText !== wantBorder) avatarEl.style.cssText = wantBorder;
+    }
+    if (initialEl && initialEl.textContent !== c.partnerInitial) initialEl.textContent = c.partnerInitial;
+    if (statusEl) {
+      const wantBg = status === 'online' ? 'var(--green)' : 'var(--dark4)';
+      if (!statusEl.style.cssText.includes(wantBg)) {
+        statusEl.style.cssText = `position:absolute;bottom:-1px;right:-1px;width:9px;height:9px;border-radius:50%;background:${wantBg};border:2px solid var(--dark3);`;
+      }
+    }
+    if (nameEl && nameEl.textContent !== c.partnerName) nameEl.textContent = c.partnerName;
+
+    // preview (typing state)
+    if (previewEl) {
+      if (isTyping) {
+        if (!previewEl.querySelector('.conv-typing-dots')) {
+          previewEl.style.color = 'var(--gold)';
+          previewEl.style.fontStyle = 'italic';
+          previewEl.innerHTML = I18n.t('msg.typing') + '<span class="conv-typing-dots"><span>.</span><span>.</span><span>.</span></span>';
+        }
+      } else {
+        const wantText = c.lastMessage || '—';
+        if (previewEl.style.color || previewEl.textContent !== wantText) {
+          previewEl.style.color = '';
+          previewEl.style.fontStyle = '';
+          previewEl.textContent = wantText;
+        }
+      }
+    }
+
+    // time
+    if (timeEl) {
+      if (timeEl.textContent !== timeStr) timeEl.textContent = timeStr;
+      const wantColor = hasUnread ? 'color:var(--gold);font-weight:600;' : '';
+      if (timeEl.style.cssText !== wantColor) timeEl.style.cssText = wantColor;
+    }
+
+    // unread badge
+    if (unreadEl) {
+      if (hasUnread) {
+        const countStr = String(c.unread);
+        if (unreadEl.textContent !== countStr) unreadEl.textContent = countStr;
+        if (unreadEl.style.display === 'none') unreadEl.style.display = '';
+      } else {
+        if (unreadEl.style.display !== 'none') unreadEl.style.display = 'none';
+      }
+    }
+
+    // Posiziona nella posizione corretta senza rimuovere/reinserire se già lì
+    const atIndex = container.children[i];
+    if (atIndex !== el) container.insertBefore(el, atIndex || null);
+  });
 }
 
 /* ── Apri conversazione per email partner ── */
