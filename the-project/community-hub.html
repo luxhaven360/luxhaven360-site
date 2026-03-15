@@ -4058,7 +4058,7 @@ async function compressFoundingImage(file) {
         resolve(new File([blob], file.name.replace(/\.[^.]+$/, '.jpg'), {
           type: 'image/jpeg', lastModified: Date.now()
         }));
-      }, 'image/jpeg', 0.10); // 0.10 quality ≈ 90% compression
+      }, 'image/jpeg', 0.82); // 0.82 quality: ottima qualità visiva + ~85-90% riduzione vs PNG originale
     };
     img.onerror = () => { URL.revokeObjectURL(url); resolve(file); };
     img.src = url;
@@ -4124,6 +4124,139 @@ function _applyFoundingChannelTeamMode() {
   if (clearBtn)  { clearBtn.style.display = isTeam ? 'none' : ''; }
 }
 
+
+/* ══════════════════════════════════════════════════════════════
+   FOUNDING CHANNEL — Typing Indicator
+   Uses Supabase 'typing' table with conv_id = FOUNDING_GROUP_CONV_ID.
+   Shows "Name sta scrivendo…" (or multiple names) at the bottom of the chat.
+══════════════════════════════════════════════════════════════ */
+
+let _foundingTypingUsers  = {};   // { email: { name, initial, updatedAt } }
+let _foundingTypingSentAt = 0;
+let _foundingTypingTimer  = null;
+
+/**
+ * Send typing status to Supabase for the founding channel.
+ * Throttled to 800ms to avoid spam.
+ */
+function sendFoundingTypingStatus(isTyping) {
+  if (!_sbReady || !currentUser) return;
+  const now = Date.now();
+  if (isTyping && now - _foundingTypingSentAt < 800) return;
+  _foundingTypingSentAt = now;
+
+  const email = currentUser.email.toLowerCase();
+  const row = {
+    conv_id:    FOUNDING_GROUP_CONV_ID,
+    user_email: email,
+    is_typing:  isTyping,
+    updated_at: new Date().toISOString()
+  };
+  _sb.from('typing')
+    .upsert(row, { onConflict: 'conv_id,user_email' })
+    .then(null, () => {});
+}
+
+/**
+ * Start Supabase RT listener for typing events in the founding channel.
+ */
+function sbListenFoundingTyping() {
+  if (!_sbReady || !currentUser) return;
+
+  sbOff('founding_typing');
+  const ch = _sb.channel('founding_typing_' + FOUNDING_GROUP_CONV_ID)
+    .on('postgres_changes', {
+      event: '*', schema: 'public', table: 'typing',
+      filter: `conv_id=eq.${FOUNDING_GROUP_CONV_ID}`
+    }, (payload) => {
+      const d = payload.new;
+      if (!d) return;
+      if (d.user_email === currentUser.email.toLowerCase()) return; // ignore own
+
+      const age = Date.now() - new Date(d.updated_at).getTime();
+      if (d.is_typing && age < 6000) {
+        _foundingTypingUsers[d.user_email] = {
+          name:    d.user_name || d.user_email.split('@')[0],
+          initial: (d.user_name || d.user_email)[0].toUpperCase(),
+          ts:      Date.now()
+        };
+      } else {
+        delete _foundingTypingUsers[d.user_email];
+      }
+      _renderFoundingTypingIndicator();
+    })
+    .subscribe();
+
+  _sbChannels['founding_typing'] = ch;
+}
+
+/**
+ * Render the typing indicator bar below the founding channel messages.
+ */
+function _renderFoundingTypingIndicator() {
+  const container = document.getElementById('foundingChatMessages');
+  if (!container) return;
+
+  // Remove stale typers (>6s old)
+  const now = Date.now();
+  Object.keys(_foundingTypingUsers).forEach(email => {
+    if (now - (_foundingTypingUsers[email].ts || 0) > 6000) {
+      delete _foundingTypingUsers[email];
+    }
+  });
+
+  const existing = document.getElementById('foundingTypingIndicator');
+  const typers   = Object.values(_foundingTypingUsers);
+
+  if (typers.length === 0) {
+    if (existing) existing.remove();
+    return;
+  }
+
+  let text;
+  if (typers.length === 1) {
+    const name = typers[0].name.split(' ')[0];
+    text = `${name} ${I18n && I18n.t ? I18n.t('typing.is_typing') : 'sta scrivendo…'}`;
+  } else if (typers.length === 2) {
+    const n1 = typers[0].name.split(' ')[0];
+    const n2 = typers[1].name.split(' ')[0];
+    text = `${n1} e ${n2} ${I18n && I18n.t ? I18n.t('typing.are_typing') : 'stanno scrivendo…'}`;
+  } else {
+    text = I18n && I18n.t ? I18n.t('typing.many_typing') : 'Più persone stanno scrivendo…';
+  }
+
+  if (existing) {
+    existing.querySelector('.founding-typing-text').textContent = text;
+    return;
+  }
+
+  const el = document.createElement('div');
+  el.id = 'foundingTypingIndicator';
+  el.style.cssText = `
+    display:flex;align-items:center;gap:0.5rem;
+    padding:0.35rem 0.5rem;margin-top:0.25rem;
+    font-size:0.68rem;color:var(--muted2);font-style:italic;`;
+  el.innerHTML = `
+    <div class="typing-dots" style="transform:scale(0.8);transform-origin:left;">
+      <div class="typing-dot"></div>
+      <div class="typing-dot"></div>
+      <div class="typing-dot"></div>
+    </div>
+    <span class="founding-typing-text">${text}</span>`;
+
+  container.appendChild(el);
+  container.scrollTop = container.scrollHeight;
+}
+
+/**
+ * Clear own typing status when sending a message or navigating away.
+ */
+function clearFoundingTypingStatus() {
+  if (_foundingTypingTimer) { clearTimeout(_foundingTypingTimer); _foundingTypingTimer = null; }
+  sendFoundingTypingStatus(false);
+}
+
+
 async function sendFoundingMessage() {
   const input = document.getElementById('foundingChatInput');
   const text = (input?.value || '').trim();
@@ -4142,6 +4275,7 @@ async function sendFoundingMessage() {
   const sendBtn = document.querySelector('#panel-founding-chat .chat-send-btn');
   if (sendBtn) { sendBtn.disabled = true; sendBtn.style.opacity = '0.5'; }
   if (input) input.value = '';
+  clearFoundingTypingStatus(); // FIX 1: stop typing indicator
 
   let mediaUrl = null, mediaType = null;
   if (hasMedia) {
@@ -4281,9 +4415,10 @@ async function handleFoundingMediaSelect(input) {
 
   const savedKB  = Math.round((rawFile.size - compressed.size) / 1024);
   const savedPct = Math.round(100 - (compressed.size / rawFile.size * 100));
-  if (savedKB > 10) {
-    showToast('green', '✅', 
-      `${I18n && I18n.t ? I18n.t('founding.media_compressed') : 'File compresso.'} (-${savedPct}%)`);
+  if (savedKB > 5) {
+    const compressedLabel = I18n && I18n.t ? I18n.t('founding.media_compressed') : 'File ottimizzato.';
+    const detail = savedPct > 0 ? ` (-${savedPct}%)` : '';
+    showToast('green', '✅', `${compressedLabel}${detail}`);
   }
 
   _foundingPendingMedia = { file: compressed, name: compressed.name, type: isVideo ? 'video' : 'image' };
@@ -4682,7 +4817,7 @@ function removeFoundingMedia() {
               </button>
             </div>
             <input class="chat-input" id="foundingChatInput" placeholder="Scrivi un messaggio al gruppo…" data-i18n-placeholder="founding.write_placeholder" 
-              onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendFoundingMessage();}">
+              oninput="if(currentUser&&currentUser.role!=='team'){if(_foundingTypingTimer)clearTimeout(_foundingTypingTimer);sendFoundingTypingStatus(true);_foundingTypingTimer=setTimeout(()=>sendFoundingTypingStatus(false),4000);}" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();clearFoundingTypingStatus();sendFoundingMessage();}">
             <button class="chat-send-btn" onclick="sendFoundingMessage()">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
             </button>
@@ -6493,6 +6628,7 @@ function initApp() {
     sbListenConversations();
     // Avvia listener canale founding (solo founding + team)
     sbListenFoundingGroup();
+    sbListenFoundingTyping();  // FIX 1: typing indicator
   }
 
   // ── Carica e ascolta platform_settings in real-time ──────────────────
@@ -6642,6 +6778,12 @@ function initApp() {
         _lxUpdateTranslateVisibility(document.getElementById('surveysContainer'));
         _lxUpdateTranslateVisibility(document.getElementById('upcomingEvents'));
       }, 100);
+
+      // ── FIX 3: Aggiorna IMMEDIATAMENTE il titolo dell'header al cambio lingua ──
+      // Il titolo (headerTitle) è impostato dinamicamente da showPanel() e non ha
+      // data-i18n, quindi non viene tradotto automaticamente dall'i18n system.
+      // Lo aggiorniamo qui ogni volta che la lingua cambia.
+      _updateHeaderTitleForLanguage();
     });
   }
 
@@ -7026,12 +7168,15 @@ function showPanel(id, navEl) {
     notifications:'Centro Notifiche', profile:'Il Mio Profilo',
     members:'Gestione Membri', broadcast:'Comunicazioni', moderation:'Moderazione', analytics:'Analytics'
   };
+  // FIX 3: usa la funzione centralizzata per il titolo header (aggiornata al cambio lingua)
   if (id === 'founding-chat') {
     document.getElementById('headerTitle').textContent =
-      I18n && I18n.t ? I18n.t('founding.channel_title') : 'Canale Founding';
+      I18n && I18n.t ? I18n.t('founding.channel_title') : 'Canale Founding Member';
   } else {
     document.getElementById('headerTitle').textContent = titles[id] || id;
   }
+  // Salva il pannello corrente per _updateHeaderTitleForLanguage
+  window._currentPanelId = id;
 
   // Clear badges when viewing
   if (id === 'notifications') { notifCount = 0; updateNotifBadge(); renderNotifications(); }
@@ -7044,6 +7189,8 @@ function showPanel(id, navEl) {
     const fb = document.getElementById('foundingChatBadge');
     if (fb) { fb.textContent = '0'; fb.classList.add('hidden'); }
     if (typeof loadFoundingGroupMessages === 'function') loadFoundingGroupMessages();
+    // FIX 1: start typing listener when panel opens
+    if (typeof sbListenFoundingTyping === 'function') sbListenFoundingTyping();
   }
 
   if (id === 'messages') {
@@ -7247,6 +7394,86 @@ function _refreshDashboardPosition() {
   // Aggiorna anche il profilo se visibile
   const profilePosEl = document.getElementById('profileFoundingPosition');
   if (profilePosEl) profilePosEl.textContent = '#' + _getFoundingPosition();
+}
+
+
+/**
+ * FIX 3: Aggiorna il testo del titolo dell'header (headerTitle) in base
+ * alla lingua corrente e al pannello attivo.
+ * Chiamata sia da showPanel() sia dall'hook onLanguageChange().
+ */
+function _updateHeaderTitleForLanguage() {
+  const headerEl = document.getElementById('headerTitle');
+  if (!headerEl) return;
+
+  // Trova il pannello attivo corrente
+  const activePanel = document.querySelector('.panel.active');
+  if (!activePanel) return;
+  const panelId = activePanel.id.replace('panel-', '');
+
+  // Mappa pannello → chiave i18n (priorità) o stringa fissa (fallback)
+  const I18N_PANEL_KEYS = {
+    dashboard:       'dash.title',
+    feed:            'nav.feed',
+    discussions:     'nav.discussions',
+    messages:        'nav.messages',
+    'founding-chat': 'founding.channel_title',
+    listings:        'nav.listings',
+    surveys:         'nav.surveys',
+    notifications:   'nav.notifications',
+    profile:         'nav.my_profile',
+    members:         'nav.members',
+    broadcast:       'nav.broadcast',
+    moderation:      'nav.moderation',
+    analytics:       'nav.analytics',
+  };
+
+  const key = I18N_PANEL_KEYS[panelId];
+  if (key && window.I18n && I18n.t) {
+    const translated = I18n.t(key);
+    // Se la chiave non esiste (restituisce la key stessa), usa il fallback
+    if (translated && translated !== key) {
+      headerEl.textContent = translated;
+      return;
+    }
+  }
+
+  // Fallback: titoli fissi della lingua corrente
+  const lang = (window.I18n && I18n.getCurrentLanguage) ? I18n.getCurrentLanguage() : 'it';
+  const FALLBACK = {
+    it: { dashboard:'Dashboard', feed:'Feed Aggiornamenti', discussions:'Discussioni',
+          messages:'Messaggi', 'founding-chat':'Canale Founding Member',
+          listings:'Listing Esclusivi', surveys:'Sondaggi & Feedback',
+          notifications:'Centro Notifiche', profile:'Il Mio Profilo',
+          members:'Gestione Membri', broadcast:'Comunicazioni',
+          moderation:'Moderazione', analytics:'Analytics' },
+    en: { dashboard:'Dashboard', feed:'Updates Feed', discussions:'Discussions',
+          messages:'Messages', 'founding-chat':'Founding Member Channel',
+          listings:'Exclusive Listings', surveys:'Surveys & Feedback',
+          notifications:'Notification Center', profile:'My Profile',
+          members:'Member Management', broadcast:'Communications',
+          moderation:'Moderation', analytics:'Analytics' },
+    fr: { dashboard:'Tableau de bord', feed:'Fil d'actualités', discussions:'Discussions',
+          messages:'Messages', 'founding-chat':'Canal des Founding Members',
+          listings:'Annonces Exclusives', surveys:'Sondages & Retours',
+          notifications:'Centre de Notifications', profile:'Mon Profil',
+          members:'Gestion des Membres', broadcast:'Communications',
+          moderation:'Modération', analytics:'Analytiques' },
+    de: { dashboard:'Dashboard', feed:'Aktualisierungs-Feed', discussions:'Diskussionen',
+          messages:'Nachrichten', 'founding-chat':'Founding-Member-Kanal',
+          listings:'Exklusive Inserate', surveys:'Umfragen & Feedback',
+          notifications:'Benachrichtigungszentrum', profile:'Mein Profil',
+          members:'Mitgliederverwaltung', broadcast:'Kommunikation',
+          moderation:'Moderation', analytics:'Analytik' },
+    es: { dashboard:'Panel', feed:'Feed de Actualizaciones', discussions:'Discusiones',
+          messages:'Mensajes', 'founding-chat':'Canal de Founding Members',
+          listings:'Listados Exclusivos', surveys:'Encuestas & Feedback',
+          notifications:'Centro de Notificaciones', profile:'Mi Perfil',
+          members:'Gestión de Miembros', broadcast:'Comunicaciones',
+          moderation:'Moderación', analytics:'Analíticas' },
+  };
+  const titles = FALLBACK[lang] || FALLBACK['it'];
+  if (titles[panelId]) headerEl.textContent = titles[panelId];
 }
 
 function renderDashboard() {
