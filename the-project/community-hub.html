@@ -2543,6 +2543,8 @@ Object.assign(window.I18N_TRANSLATIONS['it'] || (window.I18N_TRANSLATIONS['it']=
   'profile.notif_founding_chat':     'Canale Founding Members',
   'profile.notif_founding_chat_desc':'Notifiche per i messaggi e le menzioni nel canale esclusivo',
   'notif.type.founding_chat':        'canale Founding Members',
+  'notif.founding_mention':          '{sender} ti ha menzionato nel canale Founding Members',
+  'notif.founding_message':          '{sender} ha scritto nel canale Founding Members',
   'founding.mention_placeholder':    'Scrivi un messaggio o usa @ per menzionare…',
   // ── Tempo relativo ──────────────────────────────────────────────────
   'time.now':               'Ora',
@@ -2858,6 +2860,8 @@ Object.assign(window.I18N_TRANSLATIONS['en'] || (window.I18N_TRANSLATIONS['en']=
   'profile.notif_founding_chat':     'Founding Members Channel',
   'profile.notif_founding_chat_desc':'Notifications for messages and mentions in the exclusive channel',
   'notif.type.founding_chat':        'Founding Members channel',
+  'notif.founding_mention':          '{sender} mentioned you in the Founding Members channel',
+  'notif.founding_message':          '{sender} wrote in the Founding Members channel',
   'founding.mention_placeholder':    'Write a message or use @ to mention someone…',
   // ── Time ────────────────────────────────────────────────────────────
   'time.now':               'Now',
@@ -3111,6 +3115,10 @@ Object.assign(window.I18N_TRANSLATIONS['fr'] || (window.I18N_TRANSLATIONS['fr']=
   'profile.notif_founding_chat':     'Canal Founding Members',
   'profile.notif_founding_chat_desc':'Notifications pour les messages et mentions dans le canal exclusif',
   'notif.type.founding_chat':        'canal Founding Members',
+  'notif.founding_mention':          '{sender} te mencionó en el canal Founding Members',
+  'notif.founding_message':          '{sender} escribió en el canal Founding Members',
+  'notif.founding_mention':          '{sender} vous a mentionné dans le canal Founding Members',
+  'notif.founding_message':          '{sender} a écrit dans le canal Founding Members',
   'founding.mention_placeholder':    'Écrivez un message ou utilisez @ pour mentionner…',
   'time.now':               'Maintenant',
   'time.min_ago':           '{n}min',
@@ -3349,6 +3357,8 @@ Object.assign(window.I18N_TRANSLATIONS['de'] || (window.I18N_TRANSLATIONS['de']=
   'profile.notif_founding_chat':     'Founding-Members-Kanal',
   'profile.notif_founding_chat_desc':'Benachrichtigungen für Nachrichten und Erwähnungen im exklusiven Kanal',
   'notif.type.founding_chat':        'Founding-Members-Kanal',
+  'notif.founding_mention':          '{sender} hat dich im Founding-Members-Kanal erwähnt',
+  'notif.founding_message':          '{sender} hat im Founding-Members-Kanal geschrieben',
   'founding.mention_placeholder':    'Nachricht schreiben oder @ für Erwähnung verwenden…',
   'time.now':               'Jetzt',
   'time.min_ago':           '{n}Min',
@@ -6062,6 +6072,14 @@ function initApp() {
   if (_sbReady && currentUser) {
     sbListenInbox();
     sbListenConversations();
+    // Start founding channel listener globally — notifications must arrive
+    // regardless of whether the user has ever opened the Founding Members panel.
+    // Only for founding and team roles (others have no access to the channel).
+    if (currentUser.role === 'founding' || currentUser.role === 'team' ||
+        (currentUser.role && (currentUser.role.toLowerCase().indexOf('founding') !== -1 ||
+                               currentUser.role.toLowerCase().indexOf('team') !== -1))) {
+      _startFoundingGlobalListener();
+    }
   }
 
   // ── Carica e ascolta platform_settings in real-time ──────────────────
@@ -7543,6 +7561,8 @@ async function loadDashboardStats() {
     saveStatsCache(data);
     applyDashboardStats(data);
   } catch (err) {
+    // AbortError = fetch cancelled by browser (page refresh/navigation) — not a real GAS failure
+    if (err.name === 'AbortError' || (err.message && err.message.toLowerCase().includes('aborted'))) return;
     loadDashboardStats._failCount = (loadDashboardStats._failCount || 0) + 1;
     if (loadDashboardStats._failCount < 3) {
       console.warn('[Stats] GAS non raggiungibile:', err.message);
@@ -17227,6 +17247,69 @@ async function loadFoundingMessages() {
   }
 }
 
+/* ── Global founding notifications listener (always active, any panel) ── */
+var _foundingGlobalCh = null;
+
+function _startFoundingGlobalListener() {
+  if (!window._sb || !currentUser) return;
+  if (_foundingGlobalCh) return; // already active
+
+  try {
+    _foundingGlobalCh = window._sb
+      .channel('founding-notif-' + currentUser.email.replace(/[^a-z0-9]/gi, '_'))
+      .on('postgres_changes', {
+        event: 'INSERT', schema: 'public', table: 'founding_group_messages'
+      }, function(payload) {
+        var row = payload.new;
+        if (!row || !row.text) return;
+
+        // Ignore own messages
+        if (row.author_email &&
+            row.author_email.toLowerCase() === currentUser.email.toLowerCase()) return;
+
+        // Don't double-notify if founding panel is open AND already rendered the message
+        var panelActive = document.getElementById('panel-founding-chat') &&
+          document.getElementById('panel-founding-chat').classList.contains('active');
+        if (panelActive) return;
+
+        if (typeof isNotifEnabled !== 'function' || !isNotifEnabled('founding_chat')) return;
+
+        var senderFirst = (row.author_name || 'Founding Member').split(' ')[0];
+        var myName    = currentUser.name || '';
+        var myFirst   = myName.split(' ')[0].toLowerCase();
+
+        // Full-name match + first-name match (handles "@Mario Rossi" and "@Mario")
+        var fullNameLow = myName.toLowerCase();
+        var textLow     = (row.text || '').toLowerCase();
+        var _isMentioned = myFirst.length > 0 && (
+          textLow.indexOf('@' + myFirst) !== -1 ||
+          (fullNameLow.length > myFirst.length && textLow.indexOf('@' + fullNameLow) !== -1)
+        );
+
+        var _notifText;
+        if (_isMentioned) {
+          var _mentionTpl = window.I18n ? I18n.t('notif.founding_mention') : '{sender} ti ha menzionato nel canale Founding Members';
+          _notifText = '<strong>' + senderFirst + '</strong> ' + _mentionTpl.replace('{sender}', '').trim();
+        } else {
+          var _msgTpl = window.I18n ? I18n.t('notif.founding_message') : '{sender} ha scritto nel canale Founding Members';
+          _notifText = '<strong>' + senderFirst + '</strong> ' + _msgTpl.replace('{sender}', '').trim();
+        }
+        addRealNotification('founding_chat', '◈', _notifText, null);
+      })
+      .subscribe(function(status) {
+        if (status === 'SUBSCRIBED') {
+          console.log('[FoundingChat] notif listener ready');
+        } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+          console.warn('[FoundingChat] notif listener error, retrying...');
+          _foundingGlobalCh = null;
+          setTimeout(_startFoundingGlobalListener, 3000);
+        }
+      });
+  } catch(e) {
+    console.warn('[FoundingChat] global listener error:', e.message);
+  }
+}
+
 // ── Realtime listener (Fix 1: INSERT + DELETE) ─────────────────────────────
 function _startFoundingListener() {
   if (!window._sb) return;
@@ -17259,27 +17342,8 @@ function _startFoundingListener() {
               badge.classList.remove('hidden');
               badge.textContent = (parseInt(badge.textContent || '0') + 1).toString();
             }
-            // Notify the RECEIVER (= currentUser on this client) if relevant.
-            // This is the correct pattern: each client runs this code independently.
-            if (typeof addRealNotification === 'function' && typeof isNotifEnabled === 'function') {
-              if (isNotifEnabled('founding_chat')) {
-                var senderFirst = (msg.author || 'Founding Member').split(' ')[0];
-                var myName = currentUser && currentUser.name ? currentUser.name : '';
-                var myFirst = myName.split(' ')[0].toLowerCase();
-                // Check if this client's user is mentioned in the message
-                var _isMentioned = myFirst.length > 0 && msg.text &&
-                  msg.text.toLowerCase().indexOf('@' + myFirst) !== -1;
-                if (_isMentioned) {
-                  // Mention notification — higher priority
-                  addRealNotification('founding_chat', '◈',
-                    '<strong>' + senderFirst + '</strong> ti ha menzionato nel canale Founding Members', null);
-                } else {
-                  // Generic new message notification
-                  addRealNotification('founding_chat', '◈',
-                    '<strong>' + senderFirst + '</strong> ha scritto nel canale Founding Members', null);
-                }
-              }
-            }
+            // Note: notifications are handled exclusively by _startFoundingGlobalListener
+            // which runs independently of whether this panel is open.
           }
         }
       })
