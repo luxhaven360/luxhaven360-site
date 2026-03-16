@@ -17259,17 +17259,22 @@ function _startFoundingListener() {
               badge.classList.remove('hidden');
               badge.textContent = (parseInt(badge.textContent || '0') + 1).toString();
             }
-            // System notification (respects founding_chat pref)
+            // Notify the RECEIVER (= currentUser on this client) if relevant.
+            // This is the correct pattern: each client runs this code independently.
             if (typeof addRealNotification === 'function' && typeof isNotifEnabled === 'function') {
               if (isNotifEnabled('founding_chat')) {
                 var senderFirst = (msg.author || 'Founding Member').split(' ')[0];
-                // Check if current user is mentioned
-                var _isMentioned = currentUser && msg.text &&
-                  msg.text.toLowerCase().indexOf('@' + (currentUser.name || '').split(' ')[0].toLowerCase()) !== -1;
+                var myName = currentUser && currentUser.name ? currentUser.name : '';
+                var myFirst = myName.split(' ')[0].toLowerCase();
+                // Check if this client's user is mentioned in the message
+                var _isMentioned = myFirst.length > 0 && msg.text &&
+                  msg.text.toLowerCase().indexOf('@' + myFirst) !== -1;
                 if (_isMentioned) {
+                  // Mention notification — higher priority
                   addRealNotification('founding_chat', '◈',
                     '<strong>' + senderFirst + '</strong> ti ha menzionato nel canale Founding Members', null);
                 } else {
+                  // Generic new message notification
                   addRealNotification('founding_chat', '◈',
                     '<strong>' + senderFirst + '</strong> ha scritto nel canale Founding Members', null);
                 }
@@ -17543,27 +17548,8 @@ async function sendFoundingMessage() {
   var now = new Date().toISOString();
   _hideFcMentionDropdown();
 
-  // Extract mentions and fire notifications
-  var _fcMentions = _extractMentions ? _extractMentions(text) : [];
-  if (_fcMentions.length > 0 && isNotifEnabled('founding_chat')) {
-    _fcMentions.forEach(function(mentionName) {
-      // Find mentioned user
-      var mentioned = (ONLINE_MEMBERS || []).concat(REAL_MEMBERS || []).find(function(m) {
-        return m.name && m.name.toLowerCase() === mentionName.toLowerCase();
-      });
-      // Only notify if not ourselves and user has founding_chat notif enabled
-      if (mentioned && mentioned.email &&
-          mentioned.email.toLowerCase() !== currentUser.email.toLowerCase()) {
-        // Local notification if the mentioned user is looking at this page
-        // (For cross-device: would need server-side push — using local for now)
-        if (currentUser.name) {
-          addRealNotification('founding_chat', '◈',
-            '<strong>' + currentUser.name.split(' ')[0] + '</strong> ti ha menzionato nel canale Founding Members',
-            null);
-        }
-      }
-    });
-  }
+  // Note: mention notifications are fired by the RT INSERT listener on the RECEIVER's client.
+  // Do NOT fire addRealNotification here — this code runs on the SENDER, not the mentioned user.
 
   var optimistic = {
     id:      'tmp_' + Date.now(),
@@ -17644,9 +17630,9 @@ function _onFoundingChatInput(e) {
   if (!input) return;
   var val    = input.value;
   var cursor = input.selectionStart || 0;
-  // Detect @query
   var before = val.substring(0, cursor);
-  var atMatch = before.match(/@(\w[\wÀ-ÿ ]*)$/);
+  // Match @ followed by zero or more word chars — shows list immediately on bare @
+  var atMatch = before.match(/@([\wÀ-ÿ]*)$/);
   if (atMatch) {
     _fcMentionQuery = atMatch[1];
     _fcMentionStart = cursor - atMatch[0].length;
@@ -17656,12 +17642,34 @@ function _onFoundingChatInput(e) {
   }
 }
 
+function _fcGetMentionCandidates() {
+  // Only founding + team members online (founding channel is exclusive)
+  var seen = {};
+  var myEmail = currentUser ? currentUser.email.toLowerCase() : '';
+  return (ONLINE_MEMBERS || []).filter(function(m) {
+    if (!m || !m.name || !m.email) return false;
+    var key = m.email.toLowerCase();
+    if (key === myEmail || seen[key]) return false;
+    var isFoundingOrTeam = m.role === 'founding' || m.role === 'team' ||
+      (m.role && (m.role.toLowerCase().indexOf('founding') !== -1 ||
+                  m.role.toLowerCase().indexOf('team') !== -1));
+    if (!isFoundingOrTeam) return false;
+    seen[key] = true;
+    return true;
+  }).map(function(m) {
+    return { name: m.name, initial: m.initial || m.name[0] || '?', role: m.role || '' };
+  });
+}
+
 function _showFcMentionDropdown(query) {
   var dd = document.getElementById('foundingMentionDropdown');
   if (!dd) return;
-  var all = _getMentionCandidates();
+  var all = _fcGetMentionCandidates();
   var q   = query.toLowerCase();
-  var filtered = q ? all.filter(function(m) { return m.name.toLowerCase().indexOf(q) !== -1; }).slice(0,6) : all.slice(0,6);
+  // query empty → show all; otherwise filter
+  var filtered = q
+    ? all.filter(function(m) { return m.name.toLowerCase().indexOf(q) !== -1; }).slice(0, 8)
+    : all.slice(0, 8);
   if (filtered.length === 0) { _hideFcMentionDropdown(); return; }
   var roleLabel = function(r) { return r === 'team' ? 'Team' : r === 'founding' ? 'Founding' : 'Candidate'; };
   dd.innerHTML = filtered.map(function(m, i) {
