@@ -9241,24 +9241,48 @@ function _selectMention(name) {
 
 // Naviga il dropdown con frecce e conferma con Enter/Tab
 function _onThreadComposeKeydown(e) {
-  // Delega anche a handleThreadKey per Ctrl+Enter
+  // Ctrl/Cmd+Enter always submits (ignores mention state)
   if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { submitThreadReply(); return; }
-  if (!_mentionVisible) return;
-  const dropdown = document.getElementById('mentionDropdown');
-  const items = dropdown ? dropdown.querySelectorAll('.mention-item') : [];
-  if (e.key === 'ArrowDown') {
-    e.preventDefault();
-    _mentionSelIdx = Math.min(_mentionSelIdx + 1, items.length - 1);
-    items.forEach((el, i) => el.classList.toggle('selected', i === _mentionSelIdx));
-  } else if (e.key === 'ArrowUp') {
-    e.preventDefault();
-    _mentionSelIdx = Math.max(_mentionSelIdx - 1, 0);
-    items.forEach((el, i) => el.classList.toggle('selected', i === _mentionSelIdx));
-  } else if ((e.key === 'Enter' || e.key === 'Tab') && _mentionSelIdx >= 0) {
-    e.preventDefault();
-    items[_mentionSelIdx]?.click();
-  } else if (e.key === 'Escape') {
-    _hideMentionDropdown();
+
+  if (_mentionVisible) {
+    const dropdown = document.getElementById('mentionDropdown');
+    const items = dropdown ? dropdown.querySelectorAll('.mention-item') : [];
+
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      _mentionSelIdx = Math.min(_mentionSelIdx + 1, items.length - 1);
+      items.forEach((el, i) => el.classList.toggle('selected', i === _mentionSelIdx));
+      return;
+    }
+    if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      _mentionSelIdx = Math.max(_mentionSelIdx - 1, 0);
+      items.forEach((el, i) => el.classList.toggle('selected', i === _mentionSelIdx));
+      return;
+    }
+    if (e.key === 'Tab') {
+      e.preventDefault();
+      // Tab: select highlighted item or first if none highlighted
+      const target = _mentionSelIdx >= 0 ? items[_mentionSelIdx] : items[0];
+      if (target) target.click();
+      return;
+    }
+    if (e.key === 'Enter') {
+      e.preventDefault(); // always block Enter when mention list is open
+      if (items.length === 1) {
+        // Only one suggestion → auto-complete it
+        items[0].click();
+      } else if (_mentionSelIdx >= 0) {
+        // Multiple suggestions, one highlighted → complete it
+        items[_mentionSelIdx].click();
+      }
+      // Multiple suggestions, none highlighted → block send, do nothing (user must pick)
+      return;
+    }
+    if (e.key === 'Escape') {
+      _hideMentionDropdown();
+      return;
+    }
   }
 }
 
@@ -17659,25 +17683,41 @@ var _fcMentionVisible = false;
 var _fcMentionQuery  = '';
 
 function handleFoundingChatKey(e) {
-  // Mention dropdown navigation
   if (_fcMentionVisible) {
-    var dd = document.getElementById('foundingMentionDropdown');
+    var dd    = document.getElementById('foundingMentionDropdown');
     var items = dd ? dd.querySelectorAll('.mention-item') : [];
+
     if (e.key === 'ArrowDown') {
       e.preventDefault();
       _fcMentionSelIdx = Math.min(_fcMentionSelIdx + 1, items.length - 1);
       items.forEach(function(el, i) { el.classList.toggle('selected', i === _fcMentionSelIdx); });
       return;
-    } else if (e.key === 'ArrowUp') {
+    }
+    if (e.key === 'ArrowUp') {
       e.preventDefault();
       _fcMentionSelIdx = Math.max(_fcMentionSelIdx - 1, 0);
       items.forEach(function(el, i) { el.classList.toggle('selected', i === _fcMentionSelIdx); });
       return;
-    } else if ((e.key === 'Enter' || e.key === 'Tab') && _fcMentionSelIdx >= 0) {
+    }
+    if (e.key === 'Tab') {
       e.preventDefault();
-      if (items[_fcMentionSelIdx]) items[_fcMentionSelIdx].click();
+      var target = _fcMentionSelIdx >= 0 ? items[_fcMentionSelIdx] : items[0];
+      if (target) target.click();
       return;
-    } else if (e.key === 'Escape') {
+    }
+    if (e.key === 'Enter') {
+      e.preventDefault(); // always block Enter when mention list is open
+      if (items.length === 1) {
+        // Only one suggestion → auto-complete
+        items[0].click();
+      } else if (_fcMentionSelIdx >= 0) {
+        // Multiple suggestions, one highlighted → complete it
+        items[_fcMentionSelIdx].click();
+      }
+      // Multiple suggestions, none highlighted → block send, wait for user selection
+      return;
+    }
+    if (e.key === 'Escape') {
       _hideFcMentionDropdown();
       return;
     }
