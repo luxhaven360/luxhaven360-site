@@ -5728,8 +5728,45 @@ function initApp() {
         renderNotifDropdown();
         renderNotifications();
         showToast(notif.icon, notif.emoji || '🔔', _buildNotifDisplayText(notif));
+
+        // ── Fallback aggiornamento ruolo in tempo reale ────────────────────
+        // Se il broadcast Supabase arriva prima che la subscription sia attiva
+        // (es. rete lenta), la notifica di promozione/retrocessione attiva
+        // comunque _applyRoleUpgrade garantendo l'aggiornamento istantaneo.
+        if (notif.icon === 'gold' &&
+            notif.text && notif.text.includes('Founding Member') &&
+            notif.text.includes('promosso') &&
+            currentUser && currentUser.role !== 'founding' && currentUser.role !== 'team') {
+          // Piccolo delay per lasciare che il broadcast principale arrivi prima
+          // (evita doppio trigger se entrambi i canali rispondono)
+          setTimeout(() => _applyRoleUpgrade('founding', null), 400);
+        }
+        if (notif.icon === 'amber' &&
+            notif.text && notif.text.includes('Founder Candidate') &&
+            notif.text.includes('aggiornato') &&
+            currentUser && currentUser.role === 'founding') {
+          setTimeout(() => _applyRoleUpgrade('candidate', null), 400);
+        }
       }).subscribe();
     _sbChannels['notifications_rt'] = notifCh;
+
+    // ── Listener cambio ruolo in tempo reale (broadcast canale dedicato) ──
+    // Quando il Team promuove o retrocede un utente, viene inviato un evento
+    // broadcast su 'lh360_role_updates'. L'utente interessato lo riceve qui
+    // e aggiorna immediatamente la propria UI senza refresh né re-login.
+    sbOff('role_update_rt');
+    const roleUpdateCh = _sb.channel('lh360_role_updates')
+      .on('broadcast', { event: 'role_change' }, ({ payload }) => {
+        if (!payload || !payload.email) return;
+        if (!currentUser) return;
+        // Reagisce solo se l'evento riguarda l'utente corrente
+        if (payload.email !== currentUser.email.toLowerCase()) return;
+        // Applica il nuovo ruolo solo se è effettivamente diverso da quello attuale
+        if (payload.newRole && payload.newRole !== currentUser.role) {
+          _applyRoleUpgrade(payload.newRole, payload.promoterName || null);
+        }
+      }).subscribe();
+    _sbChannels['role_update_rt'] = roleUpdateCh;
 
     // ── Listener notifiche broadcast (user_email='__broadcast__') ──────────
     // Il fondatore pubblica listing/sondaggi → inserisce una notifica con user_email='__broadcast__'
@@ -12866,6 +12903,95 @@ function _timeAgo(raw) {
 }
 
 /* ── Promozione a Founding Member ── */
+/* ══════════════════════════════════════════════════════════════════
+   AGGIORNAMENTO RUOLO IN TEMPO REALE — lato utente promosso/retrocesso
+   Aggiorna currentUser, la sessione, la sidebar, il badge, i nav item
+   e ri-renderizza tutti i pannelli role-dipendenti senza richiedere
+   alcun refresh, logout o nuovo login.
+══════════════════════════════════════════════════════════════════ */
+function _applyRoleUpgrade(newRole, promoterName) {
+  if (!currentUser) return;
+  if (currentUser.role === newRole) return; // già applicato — evita doppio trigger
+
+  const prevRole = currentUser.role;
+
+  // 1. Aggiorna currentUser in memoria
+  currentUser.role  = newRole;
+  currentUser.level = newRole;
+  if (newRole === 'founding') {
+    currentUser.title = window.I18n ? I18n.t('role.founding') : 'Founding Member';
+  } else if (newRole === 'candidate') {
+    currentUser.title = window.I18n ? I18n.t('role.candidate') : 'Founder Candidate';
+  } else if (newRole === 'team') {
+    currentUser.title = window.I18n ? I18n.t('role.team') : 'Team LuxHaven360';
+  }
+  window.currentUser = currentUser;
+
+  // 2. Persiste la sessione aggiornata (next load avrà già il nuovo ruolo)
+  saveSession(currentUser);
+
+  // 3. Aggiorna classe sidebar (CSS governa la visibilità di TUTTI i nav item)
+  const sidebar = document.getElementById('sidebar');
+  if (sidebar) {
+    sidebar.className = `role-${newRole === 'team' ? 'team' : newRole === 'founding' ? 'founding' : 'candidate'}`;
+  }
+
+  // 4. Aggiorna header badge
+  const badge = document.getElementById('headerBadge');
+  if (badge) {
+    if (newRole === 'team') {
+      badge.textContent = window.I18n ? I18n.t('badge.team') : '⬡ Team LuxHaven360';
+      badge.className   = 'level-badge team';
+    } else if (newRole === 'founding') {
+      badge.textContent = window.I18n ? I18n.t('badge.founding') : '★ Founding Member';
+      badge.className   = 'level-badge founding';
+    } else {
+      badge.textContent = window.I18n ? I18n.t('badge.candidate') : '◈ Founder Candidate';
+      badge.className   = 'level-badge candidate';
+    }
+  }
+
+  // 5. Aggiorna etichetta ruolo nella sidebar in basso
+  const roleEl = document.getElementById('sidebarRole');
+  if (roleEl) {
+    roleEl.textContent = currentUser.title;
+    roleEl.className   = 'user-role-sm ' + (newRole === 'team' ? 'gold' : newRole === 'founding' ? 'green' : 'amber');
+  }
+
+  // 6. Sblocca/blocca nav item Listing e Founding-only
+  if (newRole === 'founding' || newRole === 'team') {
+    const memberListingNav = document.querySelector('.nav-item.member-plus[onclick*="listings"]');
+    if (memberListingNav) memberListingNav.style.display = 'flex';
+    const lockedNav = document.getElementById('listingsLockedNav');
+    if (lockedNav) lockedNav.style.display = 'none';
+  } else {
+    const memberListingNav = document.querySelector('.nav-item.member-plus[onclick*="listings"]');
+    if (memberListingNav) memberListingNav.style.display = 'none';
+    const lockedNav = document.getElementById('listingsLockedNav');
+    if (lockedNav) lockedNav.style.display = 'flex';
+  }
+
+  // 7. Ri-renderizza tutti i pannelli role-dipendenti
+  if (typeof renderDashboard   === 'function') renderDashboard();
+  if (typeof renderProfile     === 'function') renderProfile();
+  if (typeof renderListings    === 'function') renderListings();
+  if (typeof renderNotifications === 'function') renderNotifications();
+  if (typeof renderRightPanel  === 'function') renderRightPanel();
+
+  // 8. Avvia il listener del canale Founding se appena promosso
+  if (newRole === 'founding' && prevRole !== 'founding' && _sbReady) {
+    if (typeof _startFoundingGlobalListener === 'function') {
+      _startFoundingGlobalListener();
+    }
+  }
+
+  // 9. Toast di benvenuto al nuovo ruolo (solo per promozioni, non retrocessioni)
+  if (newRole === 'founding' && prevRole !== 'founding') {
+    const _wByName = promoterName ? ` da <strong>${promoterName}</strong>` : '';
+    showToast('gold', '🏆', `Sei ora un <strong>Founding Member</strong>! Accesso immediato a tutte le funzionalità esclusive.`);
+  }
+}
+
 async function promoteMember(emailEnc, nameEnc, btnEl) {
   const email = decodeURIComponent(emailEnc);
   const name  = decodeURIComponent(nameEnc);
@@ -12874,14 +13000,14 @@ async function promoteMember(emailEnc, nameEnc, btnEl) {
     if (GAS_URL) {
       await fetch(`${GAS_URL}?action=update_role&email=${encodeURIComponent(email)}&role=founding`).then(r => r.json()).catch(()=>{});
     }
-    // Aggiorna localmente
+    // Aggiorna localmente nella tabella admin
     const m = REAL_MEMBERS.find(m => m.email === email);
     if (m) { m.level = 'founding'; m.role = 'founding'; }
     renderMembersTable();
     showToast('gold','⭐', I18n.t('mod.promote_ok', { name }));
     logActivity('gold', `<strong>${name}</strong> è diventato Founding Member`);
     _writeActivityToSupabase('gold', `<strong>${name}</strong> è diventato Founding Member`);
-    // Notifica al membro (Supabase) — errori silenziosi
+    // Notifica al membro (Supabase) — funge anche da fallback per l'aggiornamento RT
     if (_sbReady) {
       try {
         await _sb.from('notifications').insert({
@@ -12890,7 +13016,22 @@ async function promoteMember(emailEnc, nameEnc, btnEl) {
           text: `Congratulazioni! Sei stato promosso a <strong>Founding Member</strong> da ${currentUser?.name || 'il Founder'}.`,
           created_at: new Date().toISOString(), read: false
         });
-      } catch(_sbErr) { /* silenzioso — Supabase non critico per questa operazione */ }
+      } catch(_sbErr) { /* silenzioso */ }
+
+      // ── Broadcast immediato del cambio ruolo (canale dedicato, zero latenza) ──
+      // L'utente promosso riceve questo evento in tempo reale e aggiorna la UI
+      // senza dover fare refresh, logout o nuovo login.
+      try {
+        await _sb.channel('lh360_role_updates').send({
+          type:    'broadcast',
+          event:   'role_change',
+          payload: {
+            email:        email.toLowerCase(),
+            newRole:      'founding',
+            promoterName: currentUser?.name || 'Team'
+          }
+        });
+      } catch(_bcastErr) { /* silenzioso — la notifica Supabase funge da fallback */ }
     }
   } catch(e) {
     console.warn('[promoteMember]', e.message);
@@ -12913,7 +13054,7 @@ async function demoteMember(emailEnc, nameEnc, btnEl) {
     showToast('amber','↓', I18n.t('mod.demote_ok', { name }));
     logActivity('amber', `<strong>${name}</strong> è tornato Founder Candidate`);
     _writeActivityToSupabase('amber', `<strong>${name}</strong> è tornato Founder Candidate`);
-    // Notifica al membro (Supabase) — errori silenziosi
+    // Notifica al membro (Supabase) — funge anche da fallback per l'aggiornamento RT
     if (_sbReady) {
       try {
         await _sb.from('notifications').insert({
@@ -12922,7 +13063,20 @@ async function demoteMember(emailEnc, nameEnc, btnEl) {
           text: `Il tuo livello è stato aggiornato a <strong>Founder Candidate</strong> da ${currentUser?.name || 'il Founder'}.`,
           created_at: new Date().toISOString(), read: false
         });
-      } catch(_sbErr) { /* silenzioso — Supabase non critico per questa operazione */ }
+      } catch(_sbErr) { /* silenzioso */ }
+
+      // ── Broadcast immediato del cambio ruolo ──
+      try {
+        await _sb.channel('lh360_role_updates').send({
+          type:    'broadcast',
+          event:   'role_change',
+          payload: {
+            email:        email.toLowerCase(),
+            newRole:      'candidate',
+            promoterName: currentUser?.name || 'Team'
+          }
+        });
+      } catch(_bcastErr) { /* silenzioso */ }
     }
   } catch(e) {
     console.warn('[demoteMember]', e.message);
