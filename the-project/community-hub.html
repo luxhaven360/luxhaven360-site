@@ -5522,7 +5522,7 @@ function initApp() {
   // Non richiedono TESTTRAD — il team può inserire traduzioni in qualsiasi momento.
   const _roleLC = role ? role.toLowerCase() : '';
   const _isTeamRole = _roleLC.includes('team') || _roleLC.includes('admin') ||
-                      _roleLC.includes('fondatore') || _roleLC.includes('founder');
+                      _roleLC.includes('founder');
   if (_isTeamRole) {
     document.body.classList.add('lx-trans-forms-visible');
   }
@@ -5591,7 +5591,6 @@ function initApp() {
         isTeam: p.isTeam || !!(p.role && (
           p.role.toLowerCase().includes('team') ||
           p.role.toLowerCase().includes('admin') ||
-          p.role.toLowerCase().includes('fondatore') ||
           p.role.toLowerCase().includes('founder')
         ))
       }));
@@ -6545,7 +6544,7 @@ async function _lxPublishForAll(enable) {
   if (!_sbReady || !_sb) { showToast('red', '⚠️', 'Supabase non disponibile.'); return; }
   const _pubRole = (currentUser && currentUser.role) ? currentUser.role.toLowerCase() : '';
   const _isTeam  = _pubRole.includes('team') || _pubRole.includes('admin') ||
-                   _pubRole.includes('fondatore') || _pubRole.includes('founder');
+                   _pubRole.includes('founder');
   if (!currentUser || !_isTeam) {
     showToast('red', '🔒', 'Solo il team può modificare questa impostazione.');
     return;
@@ -7010,7 +7009,7 @@ function applyRemoteData(data) {
           })(),
           comments: Math.max(p.comments || 0, (localCommentsMap[p.id] || []).length),
           // Preserva/inferisce isTeam per Ultimi Aggiornamenti
-          isTeam: p.isTeam || !!(p.role && (p.role.toLowerCase().includes('team') || p.role.toLowerCase().includes('admin') || p.role.toLowerCase().includes('fondatore') || p.role.toLowerCase().includes('founder')))
+          isTeam: p.isTeam || !!(p.role && (p.role.toLowerCase().includes('team') || p.role.toLowerCase().includes('admin') || p.role.toLowerCase().includes('founder')))
         };
       });
     // Aggiorna cache nomi autori team ricavati dai post (che hanno isTeam corretto)
@@ -7073,7 +7072,6 @@ function applyRemoteData(data) {
           isTeam: d.isTeam || !!(d.role && (
             d.role.toLowerCase().includes('team') ||
             d.role.toLowerCase().includes('admin') ||
-            d.role.toLowerCase().includes('fondatore') ||
             d.role.toLowerCase().includes('founder')
           )),
           lastReplyTs: finalLastReplyTs,
@@ -7783,7 +7781,6 @@ function renderFeedPreview() {
       p.role.toLowerCase().includes('team') ||
       p.role.toLowerCase().includes('admin') ||
       p.role.toLowerCase().includes('community') ||
-      p.role.toLowerCase().includes('fondatore') ||
       p.role.toLowerCase().includes('founder')
     )))
     .sort((a, b) => (b.ts || 0) - (a.ts || 0))
@@ -7846,7 +7843,6 @@ function _initContentSnapshots() {
     const isTeam = p.isTeam || (p.role && (
       p.role.toLowerCase().includes('team') ||
       p.role.toLowerCase().includes('admin') ||
-      p.role.toLowerCase().includes('fondatore') ||
       p.role.toLowerCase().includes('founder')
     ));
     if (isTeam) _lastKnownTeamPostIds.add(p.id);
@@ -7866,7 +7862,7 @@ function _detectNewContentAndNotify(data) {
   // dall'autore e ricevuta via RT dagli altri. Chiamare logActivity qui causerebbe duplicati.
   FEED_POSTS.forEach(p => {
     if (!p.role) return;
-    const isTeam = p.isTeam || (p.role && (p.role.toLowerCase().includes('team') || p.role.toLowerCase().includes('admin') || p.role.toLowerCase().includes('fondatore') || p.role.toLowerCase().includes('founder')));
+    const isTeam = p.isTeam || (p.role && (p.role.toLowerCase().includes('team') || p.role.toLowerCase().includes('admin') || p.role.toLowerCase().includes('founder')));
     if (isTeam && !_lastKnownTeamPostIds.has(p.id)) {
       _lastKnownTeamPostIds.add(p.id);
       // FIX #2: notifica solo se non è l'autore del post
@@ -8700,7 +8696,7 @@ function renderDiscussions(filter) {
     if (d.author && _TEAM_AUTHORS.has(d.author.toLowerCase())) return true;
     if (d.role) {
       const r = d.role.toLowerCase();
-      if (r.includes('team') || r.includes('admin') || r.includes('fondatore') || r.includes('founder')) return true;
+      if (r.includes('team') || r.includes('admin') || r.includes('founder')) return true;
     }
     return false;
   }
@@ -9137,7 +9133,7 @@ function _renderMentions(text) {
   const knownNames = _getMentionNames();
   if (knownNames.length === 0) {
     // Fallback: cattura nomi composti da parole che iniziano con maiuscola o cifra
-    // (es. "@Fondatore LuxHaven360") senza inglobare parole minuscole successive
+    // (es. "@Andrea Montanaro") senza inglobare parole minuscole successive
     return escaped.replace(/@([A-ZÀ-Ÿ][A-Za-zÀ-ÿ0-9.]*(?:\s[A-ZÀ-Ÿ0-9][A-Za-zÀ-ÿ0-9.]*){0,3})(?=\s|$|[^A-Za-zÀ-ÿ0-9\s])/g,
       (match, name) => `<span class="mention-chip" onclick="_scrollToMention('${name.trim().replace(/'/g,"\'")}')">@${name.trim()}</span>`
     );
@@ -11901,14 +11897,13 @@ async function requestLevelUpgrade() {
   const userShort = userName.split(' ')[0] + ' ' + (userName.split(' ')[1]||'?')[0] + '.';
   const notifText = `<strong>${userShort}</strong> ha richiesto il passaggio al livello superiore (Founding Member)`;
 
-  // Trova tutti i membri team da REAL_MEMBERS; fallback all'email hardcoded
+  // Trova tutti i membri team da REAL_MEMBERS; fallback a lista vuota se non trovati
   const teamMembers = (REAL_MEMBERS || []).filter(m =>
-    m.role === 'team' ||
-    (m.email && m.email.toLowerCase().includes('fondatore'))
+    m.role === 'team'
   );
   const teamEmails = teamMembers.length > 0
     ? [...new Set(teamMembers.map(m => m.email.toLowerCase()))]
-    : ['fondatore@luxhaven360.com'];
+    : [];
 
   // 1. Supabase (se disponibile)
   if (_sbReady) {
@@ -11957,16 +11952,23 @@ async function bookListing(listingId, listingTitle) {
     }
   } catch(e) { console.warn('[bookListing] GAS error:', e.message); }
 
-  // 2. Notifica Supabase al team (user_email = fondatore)
+  // 2. Notifica Supabase al team (routing dinamico sui membri con ruolo team)
   if (_sbReady) {
     try {
-      await _sb.from('notifications').insert({
-        user_email:   'fondatore@luxhaven360.com',
-        author_email: currentUser.email,
-        icon: 'gold', emoji: '📋',
-        text: `<strong>${currentUser.name}</strong> ha prenotato il listing: <strong>${listingTitle}</strong>`,
-        created_at: new Date().toISOString(), read: false
-      });
+      const _bookTeamMembers = (REAL_MEMBERS || []).filter(m => m.role === 'team');
+      const _bookTeamEmails  = _bookTeamMembers.length > 0
+        ? [...new Set(_bookTeamMembers.map(m => m.email.toLowerCase()))]
+        : [];
+      if (_bookTeamEmails.length > 0) {
+        const _bookRows = _bookTeamEmails.map(email => ({
+          user_email:   email,
+          author_email: currentUser.email,
+          icon: 'gold', emoji: '📋',
+          text: `<strong>${currentUser.name}</strong> ha prenotato il listing: <strong>${listingTitle}</strong>`,
+          created_at: new Date().toISOString(), read: false
+        }));
+        await _sb.from('notifications').insert(_bookRows);
+      }
     } catch(e) { console.warn('[bookListing] Supabase notif error:', e.message); }
   }
 
@@ -12732,8 +12734,11 @@ function renderMembersTable() {
   // Usa solo i dati reali — nessun fallback su dati statici
   const source = REAL_MEMBERS;
 
-  // Escludi sempre i membri con ruolo "team" dalla vista Gestione Membri
-  const isTeamMember = m => m.level === 'team' || m.role === 'team';
+  // Escludi sempre i membri con ruolo "team" o "fondatore" dalla vista Gestione Membri
+  const isTeamMember = m =>
+    m.level === 'team' || m.role === 'team' ||
+    m.level === 'fondatore' || m.role === 'fondatore' ||
+    (m.email && m.email.toLowerCase().includes('fondatore'));
 
   // Filtra per ruolo
   let filtered = source.filter(m => {
@@ -13684,9 +13689,9 @@ function previewBroadcast() {
   }
 
   // Autore
-  const authorName    = currentUser?.name || 'Fondatore LuxHaven360';
-  const authorInitial = currentUser?.initial || 'F';
-  const authorTitle   = currentUser?.title || 'FONDATORE';
+  const authorName    = currentUser?.name || 'Team LuxHaven360';
+  const authorInitial = currentUser?.initial || 'T';
+  const authorTitle   = currentUser?.title || 'TEAM';
 
   const lockBadge = isLocked
     ? `<span style="display:inline-flex;align-items:center;gap:0.3rem;font-size:0.62rem;color:var(--muted2);border:1px solid var(--border2);border-radius:10px;padding:0.1rem 0.5rem;">
@@ -14513,12 +14518,11 @@ async function requestFoundingUpgrade(postId) {
 
   // Trova TUTTI i membri team (non solo il primo)
   const teamMembers = (REAL_MEMBERS || []).filter(m =>
-    m.role === 'team' ||
-    (m.email && m.email.toLowerCase().includes('fondatore'))
+    m.role === 'team'
   );
   const teamEmails = teamMembers.length > 0
     ? [...new Set(teamMembers.map(m => m.email.toLowerCase()))]
-    : ['fondatore@luxhaven360.com'];
+    : [];
 
   // 1. Supabase (se disponibile) — NON fa return se non disponibile
   if (_sbReady) {
@@ -16260,7 +16264,7 @@ async function _commentTranslate(btn, contentId, sourceLang) {
     // 1. Verifica ruolo — solo team/admin/fondatore ottengono le funzioni di traduzione
     var _role  = (window.currentUser && window.currentUser.role) ? window.currentUser.role.toLowerCase() : '';
     var isTeam = _role.includes('team') || _role.includes('admin') ||
-                 _role.includes('fondatore') || _role.includes('founder');
+                 _role.includes('founder');
 
     // Non-team: esce silenziosamente senza fare nulla di visibile
     if (!isTeam) return;
