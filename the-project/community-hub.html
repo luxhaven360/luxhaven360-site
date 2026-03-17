@@ -5478,29 +5478,30 @@ function loadStatsCache() {
       });
     }
   } else {
-    // Nessuna cache: fetch real-time PRIMA di mostrare la dashboard
-    if (typeof GAS_URL !== 'undefined' && GAS_URL && !GAS_URL.includes('YOUR_GAS')) {
-      try {
-        const r = await fetch(`${GAS_URL}?action=get_dashboard_stats`);
-        if (r.ok) {
-          const d = await r.json();
-          if (d && d.success) {
-            saveStatsCache(d);
-            applyDashboardStats(d);
-          }
-        }
-      } catch (_e) { /* GAS non raggiungibile: le card rimarranno con —, ma è raro */ }
-    }
-    // Avvia l'app dopo il fetch (o subito se GAS non configurato)
-    if (document.readyState === 'complete' || document.readyState === 'interactive') {
-      // Banner: auto-auth → rispetta il cooldown da 6 ore
+    // Nessuna cache: avvia initApp() IMMEDIATAMENTE senza attendere il fetch GAS.
+    // Il fetch stats avviene in parallelo (fire-and-forget) e aggiorna la UI
+    // appena risponde — elimina il ritardo di 1-3s visibile quando si arriva
+    // da index.html tramite il pulsante MEMBERS.
+    const _runInitNow = () => {
       if (typeof window._lxInitBannerAfterAutoAuth === 'function') window._lxInitBannerAfterAutoAuth();
       initApp();
+      // Fetch stats in background: aggiorna le card non appena il GAS risponde
+      if (typeof GAS_URL !== 'undefined' && GAS_URL && !GAS_URL.includes('YOUR_GAS')) {
+        fetch(`${GAS_URL}?action=get_dashboard_stats`)
+          .then(r => r.ok ? r.json() : null)
+          .then(d => {
+            if (d && d.success) {
+              saveStatsCache(d);
+              applyDashboardStats(d);
+            }
+          })
+          .catch(() => { /* GAS non raggiungibile — valori di default già mostrati */ });
+      }
+    };
+    if (document.readyState === 'complete' || document.readyState === 'interactive') {
+      _runInitNow();
     } else {
-      document.addEventListener('DOMContentLoaded', function() {
-        if (typeof window._lxInitBannerAfterAutoAuth === 'function') window._lxInitBannerAfterAutoAuth();
-        initApp();
-      });
+      document.addEventListener('DOMContentLoaded', _runInitNow);
     }
   }
 })();
@@ -17074,7 +17075,7 @@ function _lxApplyManualTransToEl(el, translatedText) {
   <div id="searchBox">
     <div id="searchInputWrap">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-      <input id="searchInput" type="text" placeholder="Cerca post, sondaggi, thread, listing…" data-i18n-placeholder="search.placeholder" autocomplete="off" oninput="runSearch(this.value)" onkeydown="searchKeyNav(event)"/>
+      <input id="searchInput" type="text" placeholder="Cerca post, sondaggi, thread, listing, utenti…" data-i18n-placeholder="search.placeholder" autocomplete="off" oninput="runSearch(this.value)" onkeydown="searchKeyNav(event)"/>
       <kbd onclick="closeSearch()">Esc</kbd>
     </div>
     <div id="searchResults"><div class="sr-empty" data-i18n="search.hint">Inizia a digitare per cercare nella Community.</div></div>
