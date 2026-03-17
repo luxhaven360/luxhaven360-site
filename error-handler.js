@@ -277,10 +277,13 @@
 
   // ─── Determina la root path per il link Home ──────────────
   function getHomePath() {
-    const path = window.location.pathname;
-    // Se siamo in /product-details/ o una sottocartella, risaliamo
-    if (path.includes('/product-details/')) return '../index.html';
-    return 'index.html';
+    // Usa URL assoluto con prefisso lingua — funziona da qualsiasi sottocartella
+    var lang = 'it';
+    try {
+      var stored = localStorage.getItem('lh360_lang');
+      if (stored && TRANSLATIONS[stored]) lang = stored;
+    } catch(e) {}
+    return 'https://luxhaven360.com/' + lang + '/';
   }
 
   // ─── Costruisce e mostra l'overlay ────────────────────────
