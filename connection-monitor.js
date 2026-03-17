@@ -371,7 +371,8 @@ if (errorOverlay && errorOverlay.classList.contains('show')) {
     if (reconnectNotif && reconnectNotif.classList.contains('show')) {
         const title = reconnectNotif.querySelector('.lh-banner-text strong');
         if (title) {
-            title.textContent = window.i18n ? window.i18n().t('connection_restored') : title.textContent;
+            const i18nInst = getI18nInstance();
+            title.textContent = i18nInst ? i18nInst.t('connection_restored') : title.textContent;
         }
     }
 }
