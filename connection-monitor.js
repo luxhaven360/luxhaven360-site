@@ -4,14 +4,70 @@
  * - Check intelligente: avvisa rapidamente solo se connessione davvero lenta
  * - Ridotti falsi positivi al primo caricamento
  * - Notifica verde solo per riconnessioni reali
+ * - Traduzioni self-contained: funziona su ogni pagina indipendentemente dal sistema i18n
  */
 
-    /**
- * Helper: Ottiene istanza i18n corretta in base alla pagina
+/* ──────────────────────────────────────────────────────────────
+   TRADUZIONI SELF-CONTAINED
+   Non dipende da nessun sistema i18n esterno.
+   Legge la lingua attiva da localStorage ('lh360_lang').
+────────────────────────────────────────────────────────────── */
+const _CM_TRANSLATIONS = {
+    it: {
+        slow:          'Connessione Lenta',
+        unstable:      'Connessione Instabile',
+        warning_text:  'Potrebbero verificarsi rallentamenti durante la navigazione',
+        offline_title: 'Connessione Assente',
+        offline_text:  'Impossibile connettersi a Internet.<br>Verifica la tua connessione e ricarica la pagina.',
+        offline_btn:   'Ricarica Pagina',
+        restored:      'Connessione Ristabilita',
+    },
+    en: {
+        slow:          'Slow Connection',
+        unstable:      'Unstable Connection',
+        warning_text:  'You may experience slowdowns while browsing',
+        offline_title: 'No Connection',
+        offline_text:  'Unable to connect to the Internet.<br>Check your connection and reload the page.',
+        offline_btn:   'Reload Page',
+        restored:      'Connection Restored',
+    },
+    fr: {
+        slow:          'Connexion Lente',
+        unstable:      'Connexion Instable',
+        warning_text:  'Des ralentissements pourraient se produire lors de la navigation',
+        offline_title: 'Connexion Absente',
+        offline_text:  'Impossible de se connecter à Internet.<br>Vérifiez votre connexion et rechargez la page.',
+        offline_btn:   'Recharger la Page',
+        restored:      'Connexion Rétablie',
+    },
+    de: {
+        slow:          'Langsame Verbindung',
+        unstable:      'Instabile Verbindung',
+        warning_text:  'Beim Surfen können Verlangsamungen auftreten',
+        offline_title: 'Keine Verbindung',
+        offline_text:  'Keine Internetverbindung möglich.<br>Prüfen Sie Ihre Verbindung und laden Sie die Seite neu.',
+        offline_btn:   'Seite Neu Laden',
+        restored:      'Verbindung Wiederhergestellt',
+    },
+    es: {
+        slow:          'Conexión Lenta',
+        unstable:      'Conexión Inestable',
+        warning_text:  'Pueden producirse ralentizaciones durante la navegación',
+        offline_title: 'Sin Conexión',
+        offline_text:  'No es posible conectarse a Internet.<br>Comprueba tu conexión y recarga la página.',
+        offline_btn:   'Recargar Página',
+        restored:      'Conexión Restablecida',
+    },
+};
+
+/**
+ * Restituisce il dizionario di stringhe per la lingua attiva.
+ * Legge da localStorage (chiave 'lh360_lang') — funziona su tutte le pagine.
  */
-function getI18nInstance() {
-    // Prova prima i18nPDP (pdp-products.html), poi i18n (index.html)
-    return window.i18nPDP?.() || window.i18n?.() || null;
+function _cmT() {
+    let lang = 'it';
+    try { lang = localStorage.getItem('lh360_lang') || 'it'; } catch(e) {}
+    return _CM_TRANSLATIONS[lang] || _CM_TRANSLATIONS.it;
 }
 
 class LuxHavenConnectionMonitor {
@@ -40,6 +96,19 @@ class LuxHavenConnectionMonitor {
            console.log('🌐 Lingua cambiata, aggiorno avvisi connessione');
            this.updateWarningsLanguage();
         });
+
+        // Hook per sistemi i18n che non sparano 'languageChanged' DOM event
+        // (es. community-hub usa window.I18n con listeners interni)
+        if (typeof window.I18n !== 'undefined' && typeof window.I18n.onLanguageChange === 'function') {
+            window.I18n.onLanguageChange(() => this.updateWarningsLanguage());
+        } else {
+            // Se I18n non è ancora disponibile al momento dell'init, aspetta DOMContentLoaded
+            document.addEventListener('DOMContentLoaded', () => {
+                if (typeof window.I18n !== 'undefined' && typeof window.I18n.onLanguageChange === 'function') {
+                    window.I18n.onLanguageChange(() => this.updateWarningsLanguage());
+                }
+            });
+        }
         
         // ✅ BFCACHE FIX:
         // "beforeunload" disabilita la BFCache di Chrome → causa RESULT_CODE_HUNG.
@@ -230,10 +299,9 @@ class LuxHavenConnectionMonitor {
     showWeakConnectionWarning(quality) {
     this.hideAllWarnings();
 
-    const i18n = getI18nInstance(); // ✅ MODIFICATO
-    const titleKey = quality === 'fair' ? 'connection_slow' : 'connection_unstable';
-    const title = i18n ? i18n.t(titleKey) : (quality === 'fair' ? 'Connessione Lenta' : 'Connessione Instabile');
-    const text = i18n ? i18n.t('connection_warning_text') : 'Potrebbero verificarsi rallentamenti durante la navigazione';
+    const t = _cmT();
+    const title = quality === 'fair' ? t.slow : t.unstable;
+    const text = t.warning_text;
 
     const warningHTML = `
         <div id="lh-connection-warning" class="lh-connection-banner weak">
@@ -264,10 +332,10 @@ class LuxHavenConnectionMonitor {
     showOfflineError() {
     this.hideAllWarnings();
 
-    const i18n = getI18nInstance(); // ✅ MODIFICATO
-    const title = i18n ? i18n.t('connection_offline_title') : 'Connessione Assente';
-    const text = i18n ? i18n.t('connection_offline_text') : 'Impossibile connettersi a Internet.<br>Verifica la tua connessione e ricarica la pagina.';
-    const btnText = i18n ? i18n.t('connection_offline_btn') : 'Ricarica Pagina';
+    const t = _cmT();
+    const title = t.offline_title;
+    const text = t.offline_text;
+    const btnText = t.offline_btn;
 
     const errorHTML = `
         <div id="lh-connection-error" class="lh-connection-overlay">
@@ -296,8 +364,7 @@ class LuxHavenConnectionMonitor {
     showReconnectedNotification() {
     console.log('✅ Mostro notifica riconnessione');
     
-    const i18n = getI18nInstance(); // ✅ MODIFICATO
-    const title = i18n ? i18n.t('connection_restored') : 'Connessione Ristabilita';
+    const title = _cmT().restored;
     
     const notifHTML = `
         <div id="lh-reconnect-notif" class="lh-connection-banner success">
@@ -330,50 +397,33 @@ class LuxHavenConnectionMonitor {
  * ✅ NUOVA FUNZIONE: Aggiorna lingua avvisi visibili
  */
 updateWarningsLanguage() {
-    const i18n = getI18nInstance(); // ✅ AGGIUNTO all'inizio
-    
+    const t = _cmT();
+
     // Aggiorna avviso connessione debole/lenta
     const warningBanner = document.getElementById('lh-connection-warning');
     if (warningBanner && warningBanner.classList.contains('show')) {
-        const title = warningBanner.querySelector('.lh-banner-text strong');
-        const text = warningBanner.querySelector('.lh-banner-text span');
-        
-        if (title && text) {
-            const titleKey = this.connectionQuality === 'fair' ? 'connection_slow' : 'connection_unstable';
-            title.textContent = i18n ? i18n.t(titleKey) : title.textContent;
-            text.textContent = i18n ? i18n.t('connection_warning_text') : text.textContent;
-        }
+        const titleEl = warningBanner.querySelector('.lh-banner-text strong');
+        const textEl  = warningBanner.querySelector('.lh-banner-text span');
+        if (titleEl) titleEl.textContent = this.connectionQuality === 'fair' ? t.slow : t.unstable;
+        if (textEl)  textEl.textContent  = t.warning_text;
     }
-    
+
     // Aggiorna overlay errore offline
-const errorOverlay = document.getElementById('lh-connection-error');
-if (errorOverlay && errorOverlay.classList.contains('show')) {
-    const errorTitle = errorOverlay.querySelector('.lh-error-title');
-    const errorText = errorOverlay.querySelector('.lh-error-text');
-    const errorBtn = errorOverlay.querySelector('.lh-error-btn');
-    
-    if (errorTitle) {
-        errorTitle.textContent = i18n ? i18n.t('connection_offline_title') : errorTitle.textContent;
+    const errorOverlay = document.getElementById('lh-connection-error');
+    if (errorOverlay && errorOverlay.classList.contains('show')) {
+        const errorTitle = errorOverlay.querySelector('.lh-error-title');
+        const errorText  = errorOverlay.querySelector('.lh-error-text');
+        const errorBtn   = errorOverlay.querySelector('.lh-error-btn');
+        if (errorTitle) errorTitle.textContent = t.offline_title;
+        if (errorText)  errorText.innerHTML    = t.offline_text;
+        if (errorBtn)   errorBtn.innerHTML     = `🔄 ${t.offline_btn}`;
     }
-    if (errorText) {
-        const text = i18n ? i18n.t('connection_offline_text') : errorText.innerHTML;
-        errorText.innerHTML = text;
-    }
-    if (errorBtn) {
-        const btnText = i18n ? i18n.t('connection_offline_btn') : 'Ricarica Pagina';
-        // Mantieni l'emoji 🔄 e aggiorna solo il testo
-        errorBtn.innerHTML = `🔄 ${btnText}`;
-    }
-}
-    
+
     // Aggiorna notifica riconnessione (se visibile)
     const reconnectNotif = document.getElementById('lh-reconnect-notif');
     if (reconnectNotif && reconnectNotif.classList.contains('show')) {
-        const title = reconnectNotif.querySelector('.lh-banner-text strong');
-        if (title) {
-            const i18nInst = getI18nInstance();
-            title.textContent = i18nInst ? i18nInst.t('connection_restored') : title.textContent;
-        }
+        const titleEl = reconnectNotif.querySelector('.lh-banner-text strong');
+        if (titleEl) titleEl.textContent = t.restored;
     }
 }
 
