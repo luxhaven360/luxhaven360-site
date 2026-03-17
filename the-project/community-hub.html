@@ -12985,18 +12985,90 @@ function _applyRoleUpgrade(newRole, promoterName) {
     }
   }
 
-  // 8b. Chiudi il listener Founding e disabilita il canale chat se retrocesso
+  // 8b. Chiudi il listener Founding, svuota il canale e rimuovi conv Team se retrocesso
   if (prevRole === 'founding' && newRole !== 'founding' && newRole !== 'team') {
-    // Chiudi il global notification listener del canale Founding
+
+    // ── Chiudi il global notification listener del canale Founding ──
     if (typeof _foundingGlobalCh !== 'undefined' && _foundingGlobalCh) {
       try { _foundingGlobalCh.unsubscribe(); } catch(_e) {}
       _foundingGlobalCh = null;
     }
-    // Se il pannello Founding chat è aperto, torna alla Dashboard
+
+    // ── Svuota immediatamente i contenuti del pannello Founding chat ──
+    // (prima del click sulla Dashboard per evitare anche un frame visibile)
+    const foundingMsgEl = document.getElementById('foundingChatMessages');
+    if (foundingMsgEl) foundingMsgEl.innerHTML = '';
+    const foundingInputEl = document.getElementById('foundingChatInput');
+    if (foundingInputEl) { foundingInputEl.value = ''; foundingInputEl.disabled = true; }
+    if (typeof _foundingMessages !== 'undefined') {
+      // Svuota l'array in-place senza riassegnarlo (preserva i riferimenti)
+      if (Array.isArray(window._foundingMessages)) window._foundingMessages.length = 0;
+    }
+
+    // ── Se il pannello Founding chat è aperto, chiudilo subito e passa alla Dashboard ──
+    // FIX: il nav Dashboard non ha data-panel="dashboard", quindi il vecchio selettore
+    // restituiva null e il panel restava active. Chiamiamo showPanel() direttamente
+    // e rimuoviamo subito la classe active dal panel per evitare qualsiasi flash visivo.
     const foundingPanel = document.getElementById('panel-founding-chat');
-    if (foundingPanel && foundingPanel.classList.contains('active')) {
-      const dashNav = document.querySelector('.nav-item[data-panel="dashboard"]');
-      if (dashNav) dashNav.click();
+    if (foundingPanel) {
+      // 1. Rimuovi active immediatamente (zero flash) — anche se il panel non era visibile
+      foundingPanel.classList.remove('active');
+    }
+    // 2. Attiva la Dashboard tramite showPanel (aggiorna header, nav active, ecc.)
+    if (typeof showPanel === 'function') {
+      const _dashNavEl = document.querySelector('.nav-item[onclick*=\'dashboard\']');
+      showPanel('dashboard', _dashNavEl || null);
+    }
+
+    // ── Rimuovi le conversazioni con i membri Team da REAL_CONVS ──
+    // I candidati non devono vedere le conv Team nel pannello Messaggi.
+    const teamEmailsBefore = new Set(
+      (REAL_MEMBERS || [])
+        .filter(m => m.role === 'team')
+        .map(m => m.email.toLowerCase())
+    );
+    // Aggiungi anche i team member da ONLINE_MEMBERS come fallback
+    (ONLINE_MEMBERS || []).forEach(m => {
+      if (m.role === 'team' && m.email) teamEmailsBefore.add(m.email.toLowerCase());
+    });
+
+    if (teamEmailsBefore.size > 0) {
+      // Se la conv aperta è con un membro Team, chiudila prima
+      if (currentConvPartnerEmail && teamEmailsBefore.has(currentConvPartnerEmail.toLowerCase())) {
+        currentConvPartnerEmail = null;
+        // Svuota il pannello messaggi aperto
+        const msgArea = document.getElementById('chatMessages');
+        if (msgArea) msgArea.innerHTML = '';
+        const chatHeader = document.getElementById('chatHeaderName');
+        if (chatHeader) chatHeader.textContent = '';
+        // Nascondi l'area chat e mostra il placeholder
+        const convChat = document.querySelector('.conv-chat');
+        const convEmpty = document.querySelector('.conv-empty');
+        if (convChat)  convChat.style.display = 'none';
+        if (convEmpty) convEmpty.style.display = 'flex';
+      }
+      // Rimuovi le conv Team dalla lista
+      REAL_CONVS = REAL_CONVS.filter(c =>
+        !teamEmailsBefore.has((c.partnerEmail || '').toLowerCase())
+      );
+      // FIX: persisti subito la cache senza i team conv — altrimenti la prossima
+      // apertura del pannello Messaggi rileggeva la cache stantia e le riaggiungeva.
+      if (typeof saveConvsCache === 'function') saveConvsCache();
+      if (typeof renderConversations === 'function') renderConversations();
+      if (typeof updateMsgBadge === 'function') updateMsgBadge();
+    }
+  }
+
+  // 8c. Inietta le conv Team immediatamente se appena promosso a Founding Member
+  if (newRole === 'founding' && prevRole !== 'founding') {
+    // _injectTeamConvsForFounding legge già il ruolo aggiornato da currentUser
+    if (typeof _injectTeamConvsForFounding === 'function') {
+      _injectTeamConvsForFounding();
+      // FIX: persisti subito la cache con i team conv iniettati — così alla prossima
+      // apertura del pannello Messaggi li trova già senza dover ri-iniettare da zero.
+      if (typeof saveConvsCache === 'function') saveConvsCache();
+      if (typeof renderConversations === 'function') renderConversations();
+      if (typeof updateMsgBadge === 'function') updateMsgBadge();
     }
   }
 
