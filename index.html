@@ -798,7 +798,12 @@
     }, 80);
 
     // ✅ Carica tassi di cambio E prodotti in parallelo
-    const ratesPromise = loadExchangeRates();
+    // Guardia difensiva: se script.js non fosse ancora eseguito (edge case),
+    // evita il ReferenceError e risolve subito con Promise.resolve().
+    const _loadRates = typeof loadExchangeRates === 'function'
+        ? loadExchangeRates
+        : (typeof window.loadExchangeRates === 'function' ? window.loadExchangeRates : null);
+    const ratesPromise = _loadRates ? _loadRates() : Promise.resolve();
     const dataPromise = typeof initDynamicProducts === 'function' 
         ? initDynamicProducts() 
         : Promise.resolve();
@@ -1154,6 +1159,64 @@
         window.addEventListener('pageshow', function() {
             setTimeout(() => window.scrollTo(0, 0), 0);
         });
+
+        // ════════════════════════════════════════════════════════════════
+        // PRE-WARM CACHE COMMUNITY-HUB
+        // Se l'utente ha una sessione con ruolo privilegiato, recupera in
+        // background le statistiche dal GAS e le scrive nella stessa chiave
+        // lh360_stats_cache che community-hub.html legge al caricamento.
+        // Così quando clicca MEMBERS trova la cache già pronta: zero trattini.
+        // ════════════════════════════════════════════════════════════════
+        (function _prewarmCommunityHub() {
+            var PRIV_ROLES = ['founding','candidate','team','founder','admin'];
+            var GAS = EARLY_ACCESS_URL; // stesso endpoint di community-hub (GAS_URL)
+            var CACHE_KEY  = 'lh360_stats_cache';
+            var CACHE_TTL  = 90 * 1000; // considera fresca per 90s
+            var SESSION_KEY = 'lh360_community_session';
+            var SESSION_MAX_AGE = 30 * 24 * 60 * 60 * 1000; // 30 giorni
+
+            // 1. Controlla sessione utente
+            var _userHasAccess = false;
+            try {
+                var _raw = localStorage.getItem(SESSION_KEY);
+                if (_raw) {
+                    var _sess = JSON.parse(_raw);
+                    if (_sess && _sess.user && _sess.user.role &&
+                        (Date.now() - (_sess.timestamp || 0)) < SESSION_MAX_AGE) {
+                        var _r = _sess.user.role.toLowerCase().trim();
+                        _userHasAccess = PRIV_ROLES.some(function(p) {
+                            return _r === p || _r.indexOf(p) !== -1;
+                        });
+                    }
+                }
+            } catch(e) {}
+
+            if (!_userHasAccess) return; // utente non privilegiato: nessun pre-warm
+
+            // 2. Cache già fresca? Nessuna richiesta necessaria
+            try {
+                var _cached = JSON.parse(localStorage.getItem(CACHE_KEY) || 'null');
+                if (_cached && _cached.ts && (Date.now() - _cached.ts) < CACHE_TTL) return;
+            } catch(e) {}
+
+            // 3. Fetch in background: fire-and-forget, non blocca nulla
+            fetch(GAS + '?action=get_dashboard_stats&t=' + Date.now(), {
+                method: 'GET', mode: 'cors', cache: 'no-store'
+            })
+            .then(function(r) { return r.ok ? r.json() : null; })
+            .then(function(data) {
+                if (!data || !data.success) return;
+                // Scrivi nella stessa struttura { data: ..., ts: ... } che
+                // loadStatsCache() di community-hub si aspetta
+                try {
+                    localStorage.setItem(CACHE_KEY, JSON.stringify({
+                        data: data,
+                        ts:   Date.now()
+                    }));
+                } catch(e) {}
+            })
+            .catch(function() {}); // silenzioso — non critico
+        })();
     </script>
 </body>
 </html>
