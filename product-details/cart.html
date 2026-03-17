@@ -1527,22 +1527,24 @@ window.addEventListener('DOMContentLoaded', () => {
  * ✅ Calcola soglia spedizione convertita nella valuta corrente
  */
 function getShippingThreshold() {
-    const baseThreshold = 150; // Sempre in EUR
+    const BASE_EUR = 150; // soglia sempre in EUR — fonte di verità
     const i18n = window.i18nPDP && window.i18nPDP();
-    
-    if (!i18n) return baseThreshold;
-    
-    // Configurazione valute per lingua
+
+    if (!i18n) return BASE_EUR;
+
+    // Legge il tasso dinamico da i18n.exchangeRates (caricato da GAS/Frankfurter)
+    // Stessa logica usata da formatPrice: (amount / fromRate) * toRate
     const currencyConfig = {
-        it: { currency: 'EUR', rate: 1 },
-        fr: { currency: 'EUR', rate: 1 },
-        de: { currency: 'EUR', rate: 1 },
-        es: { currency: 'EUR', rate: 1 },
-        en: { currency: 'USD', rate: 1.17 }
+        it: 'EUR', fr: 'EUR', de: 'EUR', es: 'EUR', en: 'USD'
     };
-    
-    const config = currencyConfig[i18n.currentLang] || { currency: 'EUR', rate: 1 };
-    return baseThreshold * config.rate;
+    const targetCurrency = currencyConfig[i18n.currentLang] || 'EUR';
+
+    if (targetCurrency === 'EUR') return BASE_EUR;
+
+    const rates      = i18n.exchangeRates || {};
+    const fromRate   = rates['EUR'] || 1;          // sempre 1
+    const toRate     = rates[targetCurrency] || 1; // tasso reale BCE
+    return (BASE_EUR / fromRate) * toRate;          // identico a formatPrice
 }
 
     function hasCouponBeenUsed(couponCode) {
