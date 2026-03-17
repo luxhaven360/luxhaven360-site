@@ -147,6 +147,36 @@
     };
     </script>
 
+    <!-- ═══════════════════════════════════════════════════════════════
+         REDIRECT AUTOMATICO → community-hub
+         Utenti già autenticati con ruolo founding/candidate/team vengono
+         reindirizzati immediatamente a community-hub.html prima ancora
+         che il resto della pagina venga reso, garantendo zero flash.
+    ════════════════════════════════════════════════════════════════ -->
+    <script>
+    (function() {
+      try {
+        var _raw = localStorage.getItem('lh360_community_session');
+        if (!_raw) return; // nessuna sessione → rimane su community.html
+        var _data = JSON.parse(_raw);
+        // Sessione scaduta (>30 giorni)?
+        if (!_data || !_data.timestamp || (Date.now() - _data.timestamp) > 30 * 24 * 60 * 60 * 1000) return;
+        var _user = _data.user;
+        if (!_user || !_user.role) return;
+        var _role = (_user.role || '').toLowerCase();
+        var _hasAccess = _role === 'founding' || _role === 'candidate' ||
+                         _role === 'team' || _role.indexOf('founding') !== -1 ||
+                         _role.indexOf('candidate') !== -1 || _role.indexOf('team') !== -1;
+        if (!_hasAccess) return;
+        // Preserva il prefisso lingua nell'URL di destinazione
+        var _lang = localStorage.getItem('lh360_lang') || 'it';
+        var _SUPPORTED = ['it', 'en', 'fr', 'de', 'es'];
+        if (_SUPPORTED.indexOf(_lang) === -1) _lang = 'it';
+        window.location.replace('https://luxhaven360.com/' + _lang + '/the-project/community-hub');
+      } catch(e) { /* silenzioso — non bloccare community.html se localStorage non disponibile */ }
+    })();
+    </script>
+
     <!-- ⑤ flag-icons CSS — non-bloccante (media trick) -->
     <link rel="stylesheet" href="../connection-monitor.css" />
     <link rel="stylesheet"
@@ -1561,6 +1591,16 @@
                     </svg>
                     <span data-i18n="banner_cta">Diventa Founding Member</span>
                 </a>
+                <a href="javascript:void(0)"
+                   onclick="(function(){ var l=localStorage.getItem('lh360_lang')||'it'; window.location.href='https://luxhaven360.com/'+l+'/the-project/community-hub'; })()"
+                   class="comm-preview-access-btn"
+                   style="margin-top:0.6rem; background:rgba(212,175,55,0.12); border-color:rgba(212,175,55,0.55); color:var(--gold,#D4AF37); font-weight:500;">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                         style="width:12px;height:12px">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M15 9l6 6-6 6M21 15H3"/>
+                    </svg>
+                    <span data-i18n="hub_access_cta">Accedi alla Community Hub →</span>
+                </a>
             </div>
 
         </div>
@@ -1576,6 +1616,25 @@
     <!-- ⑥ Traduzioni in file esterno — defer evita il blocco del parser -->
     <script src="community-translations.js" defer></script>
     <script src="../connection-monitor.js"></script>
+
+    <!-- Traduzioni aggiuntive: chiave hub_access_cta in tutte le lingue -->
+    <script>
+    document.addEventListener('DOMContentLoaded', function() {
+      var _hubTranslations = {
+        it: 'Accedi alla Community Hub →',
+        en: 'Enter Community Hub →',
+        fr: 'Accéder au Community Hub →',
+        de: 'Community Hub betreten →',
+        es: 'Acceder al Community Hub →'
+      };
+      var T = window.COMM_TRANSLATIONS;
+      if (T) {
+        Object.keys(_hubTranslations).forEach(function(lang) {
+          if (T[lang]) T[lang].hub_access_cta = _hubTranslations[lang];
+        });
+      }
+    });
+    </script>
 
     <!-- ⑦ Logica i18n e init — defer + attende il caricamento delle traduzioni -->
     <script defer>
