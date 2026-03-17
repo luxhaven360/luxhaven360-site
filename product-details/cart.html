@@ -4312,12 +4312,80 @@ document.addEventListener('DOMContentLoaded', function () {
         const cart = JSON.parse(localStorage.getItem('lh360_cart') || '[]');
         if (cart.length === 1) cartSkuOnLangChange = cart[0].sku || null;
       } catch(e) {}
-      // Applica subito da cache locale, poi ri-verifica vs server
       window.lhApplyReservationUI(cartSkuOnLangChange, 'cart');
       if (typeof window.lhVerifyReservationState === 'function') {
         window.lhVerifyReservationState(cartSkuOnLangChange, 'cart');
       }
     }
+
+    // ── Aggiorna il riepilogo prezzi nella nuova lingua ──────────────────
+    // Legge dati già calcolati da localStorage (nessuna chiamata async)
+    try {
+      const i18n = window.i18nPDP && window.i18nPDP();
+      if (!i18n) return;
+
+      // Ricalcola subtotale dalla cart locale
+      const cartItems = JSON.parse(localStorage.getItem('lh360_cart') || '[]');
+      let subtotal = 0;
+      cartItems.forEach(item => {
+        const price = (item.discountPrice && item.discountPrice < item.price) ? item.discountPrice : item.price;
+        subtotal += price * (item.qty || 1);
+      });
+
+      // Legge lo sconto già verificato dal server (nessuna nuova chiamata)
+      const saved       = JSON.parse(localStorage.getItem('lh360_applied_discounts') || '{}');
+      const totalDiscount = saved.totalDiscount || 0;
+      const isCombo     = !!(saved.isComboActive);
+
+      // Ricalcola spedizione e totale
+      const shippingThreshold = (() => { try { return getShippingThreshold(); } catch(e) { return 150; } })();
+      const totalAfterDiscount = subtotal - totalDiscount;
+      const shipping = totalAfterDiscount >= shippingThreshold ? 0 : 15;
+      const total    = subtotal + shipping - totalDiscount;
+
+      // Aggiorna tutti i valori del riepilogo
+      const elSubtotal  = document.getElementById('subtotal');
+      const elShipping  = document.getElementById('shipping');
+      const elTotal     = document.getElementById('total');
+      const elThreshold = document.getElementById('shippingThreshold');
+      const elDiscount  = document.getElementById('discount');
+      const elDiscountRow  = document.getElementById('discountRow');
+      const elComboBadge   = document.getElementById('comboBadge');
+      const elDiscountLabel = document.querySelector('#discountRow [data-i18n="cart_summary_discount"]');
+
+      if (elSubtotal)  elSubtotal.textContent  = i18n.formatPrice(subtotal);
+      if (elShipping)  elShipping.textContent  = shipping === 0 ? i18n.t('cart_summary_shipping_free') : i18n.formatPrice(shipping);
+      if (elTotal)     elTotal.textContent     = i18n.formatPrice(total);
+      if (elThreshold) elThreshold.textContent = i18n.formatPrice(shippingThreshold);
+
+      // Label "Sconto / Discount / Remise..."
+      if (elDiscountLabel) elDiscountLabel.textContent = i18n.t('cart_summary_discount');
+
+      // Valore sconto + badge COMBO
+      if (totalDiscount > 0) {
+        if (elDiscount)    elDiscount.textContent     = `- ${i18n.formatPrice(totalDiscount)}`;
+        if (elDiscountRow) elDiscountRow.classList.add('discount-active');
+        if (elComboBadge) {
+          if (isCombo) {
+            elComboBadge.textContent    = i18n.t('cart_combo_badge');
+            elComboBadge.style.display  = 'inline-block';
+          } else {
+            elComboBadge.style.display = 'none';
+          }
+        }
+      } else {
+        if (elDiscount)    elDiscount.textContent     = `- ${i18n.formatPrice(0)}`;
+        if (elDiscountRow) elDiscountRow.classList.remove('discount-active');
+        if (elComboBadge)  elComboBadge.style.display = 'none';
+      }
+
+      // Aggiorna conteggio articoli
+      const itemCount = cartItems.reduce((s, it) => s + (it.qty || 1), 0);
+      const elCount   = document.getElementById('itemCount');
+      if (elCount) elCount.textContent = itemCount === 1 ? i18n.t('cart_items_count_one') : i18n.t('cart_items_count_many', { n: itemCount });
+
+    } catch(e) { console.warn('[LH] languageChanged summary update error:', e); }
+
     // Ri-renderizza il banner combo nella nuova lingua
     try {
       const cartItems = JSON.parse(localStorage.getItem('lh360_cart') || '[]');
