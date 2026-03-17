@@ -781,7 +781,7 @@ btn.dataset.title = prod.title || '';
  * 💱 Carica tassi di cambio aggiornati dal backend
  * Chiamata UNA VOLTA all'avvio dell'app
  */
-  async function loadExchangeRates() {
+async function loadExchangeRates() {
     const CACHE_KEY = 'lh360_exchange_rates';
     const CACHE_TTL = 3600000; // 1 ora in ms
 
@@ -803,6 +803,7 @@ btn.dataset.title = prod.title || '';
     // ── 2. Nessuna cache valida: carica dal server ──
     await _fetchAndCacheExchangeRates(CACHE_KEY);
 }
+window.loadExchangeRates = loadExchangeRates; // esposta come globale esplicita
 
 async function _fetchAndCacheExchangeRates(cacheKey) {
     try {
