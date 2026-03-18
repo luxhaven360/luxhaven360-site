@@ -5726,14 +5726,14 @@ function autoModerateText(text, sourceType, sourceId, authorName, authorEmail) {
 // Track sessioni oggi
 function trackSessionToday() {
   try {
-    // ── DEDUPLICAZIONE: una sola sessione per caricamento di pagina ──────────
-    // sessionStorage persiste finché la scheda è aperta, si azzera alla chiusura.
-    // Garantisce: refresh = stessa sessione | nuova scheda/riapertura = nuova sessione.
-    const SESSION_GUARD = 'lh360_session_tracked_' + new Date().toDateString();
-    if (sessionStorage.getItem(SESSION_GUARD)) return; // già contata in questa scheda oggi
+    // ── DEDUPLICAZIONE per-utente: una sola sessione per utente per scheda al giorno ──
+    const userKey = (currentUser && currentUser.email) ? currentUser.email : 'anonymous';
+    const SESSION_GUARD = 'lh360_sess_' + userKey + '_' + new Date().toDateString();
+    if (sessionStorage.getItem(SESSION_GUARD)) return; // già contata per questo utente oggi
     sessionStorage.setItem(SESSION_GUARD, '1');
-    // ─────────────────────────────────────────────────────────────────────────
+    // ─────────────────────────────────────────────────────────────────────────────────
 
+    // 1. Aggiorna contatore locale (fallback immediato, nessuna latenza UI)
     const today = new Date().toDateString();
     const raw = localStorage.getItem(SESSION_COUNT_KEY);
     let data = raw ? JSON.parse(raw) : { date: today, count: 0, yesterday: 0 };
@@ -5743,8 +5743,70 @@ function trackSessionToday() {
       data.count++;
     }
     localStorage.setItem(SESSION_COUNT_KEY, JSON.stringify(data));
+
+    // 2. Persiste su Supabase → dati reali cross-utente/cross-dispositivo
+    if (_sbReady && _sb && currentUser) {
+      _sb.from('community_activity').insert({
+        user_email: currentUser.email.toLowerCase(),
+        user_name:  currentUser.name,
+        dot_color:  'session',
+        text:       'session_start',
+        created_at: new Date().toISOString()
+      }).then(null, () => {});
+    }
   } catch(e) {}
 }
+
+function getSessionStats() {
+  // Prima: prova a leggere il dato reale da Supabase (asincrono, aggiorna la UI dopo)
+  if (_sbReady && _sb) {
+    const todayIso = new Date();
+    todayIso.setHours(0, 0, 0, 0);
+    const yesterdayIso = new Date(todayIso.getTime() - 86400000);
+
+    _sb.from('community_activity')
+      .select('created_at', { count: 'exact', head: false })
+      .eq('text', 'session_start')
+      .gte('created_at', todayIso.toISOString())
+      .then(({ count: todayCount }) => {
+        _sb.from('community_activity')
+          .select('created_at', { count: 'exact', head: false })
+          .eq('text', 'session_start')
+          .gte('created_at', yesterdayIso.toISOString())
+          .lt('created_at', todayIso.toISOString())
+          .then(({ count: yestCount }) => {
+            const t = todayCount || 0;
+            const y = yestCount  || 0;
+            // Aggiorna localStorage con i dati reali
+            const today = new Date().toDateString();
+            try {
+              localStorage.setItem(SESSION_COUNT_KEY, JSON.stringify({
+                date: today, count: t, yesterday: y, fromSupabase: true
+              }));
+            } catch(_e) {}
+            // Aggiorna la UI se il pannello analytics è visibile
+            const sessEl = document.getElementById('analyticsSessionsToday');
+            const sessChangeEl = document.getElementById('analyticsSessionsChange');
+            if (sessEl) sessEl.textContent = t;
+            if (sessChangeEl && window.I18n) {
+              const diff = t - y;
+              const pct  = y > 0 ? Math.round((diff / y) * 100) : 0;
+              if (y === 0) {
+                sessChangeEl.className = 'stat-change neutral';
+                sessChangeEl.textContent = I18n.t('analytics.first_session');
+              } else if (diff >= 0) {
+                sessChangeEl.className = 'stat-change up';
+                sessChangeEl.textContent = I18n.t('analytics.up_vs_yesterday', { pct });
+              } else {
+                sessChangeEl.className = 'stat-change down';
+                sessChangeEl.textContent = I18n.t('analytics.down_vs_yesterday', { pct });
+              }
+            }
+          });
+      });
+  }
+
+  // Fallback sincrono da localStorage (mostrato subito, poi sovrascritto dal dato Supabase)
   try {
     const raw = localStorage.getItem(SESSION_COUNT_KEY);
     if (!raw) return { today: 1, yesterday: 0 };
@@ -15613,6 +15675,8 @@ function trackMessageSent() {
 }
 
 function getSessionStats() {
+  // Definizione canonica in zona analytics (~r.5750) — questa è una ridondanza rimossa.
+  // Deleghiamo alla logica principale che gestisce anche l'aggiornamento Supabase.
   try {
     const raw = localStorage.getItem(SESSION_COUNT_KEY);
     if (!raw) return { today: 1, yesterday: 0 };
@@ -15624,13 +15688,16 @@ function getSessionStats() {
 }
 
 function trackSessionToday() {
+  // Definizione canonica in zona analytics (~r.5727).
+  // Questa copia ridondante è mantenuta per compatibilità con eventuali chiamate
+  // da altre zone del file, ma delega alla stessa logica di deduplicazione.
+  const userKey = (currentUser && currentUser.email) ? currentUser.email : 'anonymous';
+  const SESSION_GUARD = 'lh360_sess_' + userKey + '_' + new Date().toDateString();
+  if (typeof sessionStorage !== 'undefined' && sessionStorage.getItem(SESSION_GUARD)) return;
+  // Lascia che la definizione principale gestisca tutto il lavoro
+  // (verrà eseguita solo se la guardia non è già impostata — qui gestiamo solo il check)
   try {
-    // ── DEDUPLICAZIONE: una sola sessione per caricamento di pagina ──────────
-    const SESSION_GUARD = 'lh360_session_tracked_' + new Date().toDateString();
-    if (sessionStorage.getItem(SESSION_GUARD)) return;
-    sessionStorage.setItem(SESSION_GUARD, '1');
-    // ─────────────────────────────────────────────────────────────────────────
-
+    if (typeof sessionStorage !== 'undefined') sessionStorage.setItem(SESSION_GUARD, '1');
     const today = new Date().toDateString();
     const raw = localStorage.getItem(SESSION_COUNT_KEY);
     let data = raw ? JSON.parse(raw) : { date: today, count: 0, yesterday: 0 };
@@ -15640,6 +15707,15 @@ function trackSessionToday() {
       data.count++;
     }
     localStorage.setItem(SESSION_COUNT_KEY, JSON.stringify(data));
+    if (_sbReady && _sb && currentUser) {
+      _sb.from('community_activity').insert({
+        user_email: currentUser.email.toLowerCase(),
+        user_name:  currentUser.name,
+        dot_color:  'session',
+        text:       'session_start',
+        created_at: new Date().toISOString()
+      }).then(null, () => {});
+    }
   } catch(e) {}
 }
 
