@@ -59,10 +59,15 @@
         window.addEventListener('pageshow', function(e) {
             if (e.persisted && !_bfReloadFired) {
                 _bfReloadFired = true;
-                // Ritardo minimo per garantire che il browser sia pronto
+                // Usa replace() invece di reload() — più affidabile su mobile
+                // e non causa RESULT_CODE_HUNG su Chrome Android
                 setTimeout(function() {
-                    try { window.location.reload(); } catch(err) {}
-                }, 80);
+                    try {
+                        window.location.replace(window.location.href.split('#')[0]);
+                    } catch(err) {
+                        try { window.location.reload(); } catch(e2) {}
+                    }
+                }, 200);
             }
         });
 
@@ -1077,13 +1082,29 @@
         .comm-preview-access-text { font-size: 0.85rem; color: rgba(245,245,245,0.5); }
         .comm-preview-access-text strong { color: var(--gold); font-weight: 500; }
         .comm-preview-access-btn {
-            display: inline-flex; align-items: center; gap: 0.5rem;
-            padding: 0.7rem 1.6rem; border: 1px solid rgba(212,175,55,0.35);
+            display: inline-flex; align-items: center; justify-content: center; gap: 0.5rem;
+            padding: 0.85rem 1.8rem; border: 1px solid rgba(212,175,55,0.35);
             color: var(--gold); text-decoration: none;
             font-size: 0.72rem; letter-spacing: 0.14em; text-transform: uppercase;
-            border-radius: 2px; transition: background 0.3s ease, border-color 0.3s ease; white-space: nowrap;
+            border-radius: 2px; transition: background 0.3s ease, border-color 0.3s ease;
+            white-space: nowrap;
+            min-height: 48px; /* tap target minimo Apple/Google HIG */
+            touch-action: manipulation;
+            -webkit-tap-highlight-color: transparent;
+            user-select: none;
+            font-family: Georgia, serif;
         }
         .comm-preview-access-btn:hover { background: rgba(212,175,55,0.08); border-color: rgba(212,175,55,0.6); }
+        .comm-preview-access-btn:active { opacity: 0.75; }
+        .comm-preview-access-btn--primary {
+            background: rgba(212,175,55,0.1);
+            border-color: rgba(212,175,55,0.5);
+            font-weight: 500;
+        }
+        .comm-preview-access-btn--primary:hover {
+            background: rgba(212,175,55,0.18);
+            border-color: var(--gold);
+        }
 
         /* ─── FOOTER ─── */
         .comm-footer {
@@ -1103,11 +1124,85 @@
         }
         .cm-reveal.visible { opacity: 1; transform: translateY(0); }
 
-        /* ─── RESPONSIVE ─── */
-        @media (max-width: 480px) {
-            .comm-nav { padding: 1rem 4%; }
-            .comm-nav-logo { display: none; }
+        /* ─── RESPONSIVE — MOBILE OTTIMIZZATO ─── */
+
+        /* Tablet / phablet */
+        @media (max-width: 768px) {
+            .comm-hero { padding: 6rem 5% 4rem; }
+            .comm-hero-text { font-size: 0.95rem; margin-bottom: 2.5rem; }
             .comm-section { padding: 5rem 5%; }
+            .comm-preview-access-banner {
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 1.2rem;
+                padding: 1.4rem 1.4rem;
+            }
+        }
+
+        /* Smartphone ≤ 480px */
+        @media (max-width: 480px) {
+            .comm-nav { padding: 1rem 4%; gap: 0.75rem; }
+            .comm-nav-logo { display: none; }
+            .comm-section { padding: 4.5rem 4% 3.5rem; }
+
+            .comm-hero { padding: 5.5rem 4% 3.5rem; }
+            .comm-hero-text { font-size: 0.92rem; }
+            .comm-section-title { font-size: clamp(1.5rem, 5vw, 2rem); }
+            .comm-section-desc { font-size: 0.88rem; }
+
+            .comm-preview-access-banner {
+                flex-direction: column;
+                align-items: stretch;
+                gap: 1rem;
+                padding: 1.2rem;
+                margin-top: 2rem;
+            }
+
+            /* Pulsanti: colonna su mobile, full-width, tap-friendly */
+            .comm-preview-access-banner > div {
+                display: flex !important;
+                flex-direction: column !important;
+                gap: 0.65rem !important;
+                width: 100% !important;
+            }
+            .comm-preview-access-btn {
+                width: 100% !important;
+                justify-content: center;
+                padding: 0.95rem 1.2rem;
+                font-size: 0.69rem;
+                letter-spacing: 0.12em;
+                min-height: 52px;
+            }
+
+            /* Benefici */
+            .comm-benefit-item { padding: 1.1rem 0; gap: 0.8rem; }
+            .comm-benefit-name { font-size: 0.88rem; }
+            .comm-benefit-desc { font-size: 0.76rem; }
+            .comm-excluded-block { padding: 1.4rem 1.2rem; }
+
+            /* Badge hero */
+            .comm-badge { font-size: 0.62rem; padding: 0.4rem 1rem; margin-bottom: 1.6rem; }
+
+            /* Phase cards */
+            .comm-phase-card { padding: 1.8rem 1.4rem; }
+            .comm-phase-name { font-size: 1.2rem; }
+
+            /* Footer */
+            .comm-footer { padding: 2rem 4%; }
+        }
+
+        /* Small phones ≤ 360px */
+        @media (max-width: 360px) {
+            .comm-nav { padding: 0.9rem 3.5%; }
+            .comm-section { padding: 4rem 3.5% 3rem; }
+            .comm-hero { padding: 5rem 3.5% 3rem; }
+            .comm-preview-access-btn { font-size: 0.65rem; min-height: 50px; }
+        }
+
+        /* Forza tap highlight disabilitato su tutti i link interattivi */
+        a, button {
+            -webkit-tap-highlight-color: transparent;
+            touch-action: manipulation;
         }
     </style>
 </head>
@@ -1603,10 +1698,9 @@
                     </a>
                     <a href="javascript:void(0)"
                        onclick="(function(){ var l=localStorage.getItem('lh360_lang')||'it'; window.location.href='https://luxhaven360.com/'+l+'/the-project/community-hub'; })()"
-                       class="comm-preview-access-btn"
-                       style="background:rgba(212,175,55,0.12); border-color:rgba(212,175,55,0.55); font-weight:500;">
+                       class="comm-preview-access-btn comm-preview-access-btn--primary">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-                             style="width:12px;height:12px">
+                             style="width:13px;height:13px;flex-shrink:0">
                             <path stroke-linecap="round" stroke-linejoin="round" d="M15 9l6 6-6 6M21 15H3"/>
                         </svg>
                         <span data-i18n="hub_access_cta">Accedi alla Community Hub</span>
