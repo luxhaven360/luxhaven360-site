@@ -294,8 +294,49 @@ body {
 .demo-role.candidate { color: var(--amber); }
 .demo-credentials { color: var(--muted2); font-size: 0.68rem; }
 
+/* ── Header: selettore lingua integrato ── */
+
+/* Il selettore nell'header deve essere compatto e allineato agli altri controlli */
+#headerLangSelector .ls-wrapper { z-index: 200; }
+#headerLangSelector .ls-btn {
+  padding: 5px 9px 5px 7px;
+  font-size: 0.68rem;
+  border-radius: 7px;
+}
+/* Dropdown: si apre verso il basso */
+#headerLangSelector .ls-dropdown {
+  top: calc(100% + 6px);
+  bottom: auto;
+  right: 0;
+  /* z-index sopra il contenuto della hub ma sotto i modal */
+  z-index: 300;
+}
+
+/* Mobile: nascondi level-badge (ridondante), mantieni lang selector compatto */
+@media (max-width: 768px) {
+  #headerBadge { display: none; }
+
+  /* Lang selector nell'header: ancora più compatto */
+  #headerLangSelector .ls-btn {
+    padding: 5px 8px;
+    gap: 5px;
+  }
+  #headerLangSelector .ls-label {
+    font-size: 0.65rem;
+  }
+  /* Dropdown: in larghezza ridotta su mobile piccolo */
+  #headerLangSelector .ls-dropdown {
+    min-width: 170px;
+    right: -0.5rem;
+  }
+}
+
+/* Assicura che il floating legacy (se già montato) non sia visibile */
+#ls-floating { display: none !important; }
+
 /* ── Mobile hamburger — nascosto su desktop ── */
 #mobileMenuBtn { display: none; }
+
 
 /* ── Sidebar overlay per mobile ── */
 #sidebarOverlay {
@@ -4364,7 +4405,12 @@ Object.assign(window.I18N_TRANSLATIONS['es'] || (window.I18N_TRANSLATIONS['es']=
       <input type="text" data-i18n-placeholder="search.placeholder" placeholder="Cerca nella Community…" id="globalSearch" readonly onclick="openSearch()" onfocus="openSearch()"/>
     </div>
     <div class="header-actions">
+      <!-- Level badge: visibile su desktop, nascosto su mobile (sostituito dal lang selector) -->
       <div class="level-badge" id="headerBadge">—</div>
+      <!-- Selettore lingua — montato da language-selector.js via autoMount().
+           Essendo presente [data-lang-selector] in pagina, mountFloating() NON viene
+           chiamato da i18n-init.js: nessun widget floating che si sovrappone al tasto invio. -->
+      <span data-lang-selector id="headerLangSelector"></span>
       <div style="position:relative">
         <button class="header-btn" id="notifBell" onclick="toggleNotifDropdown()">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg>
@@ -5680,6 +5726,14 @@ function autoModerateText(text, sourceType, sourceId, authorName, authorEmail) {
 // Track sessioni oggi
 function trackSessionToday() {
   try {
+    // ── DEDUPLICAZIONE: una sola sessione per caricamento di pagina ──────────
+    // sessionStorage persiste finché la scheda è aperta, si azzera alla chiusura.
+    // Garantisce: refresh = stessa sessione | nuova scheda/riapertura = nuova sessione.
+    const SESSION_GUARD = 'lh360_session_tracked_' + new Date().toDateString();
+    if (sessionStorage.getItem(SESSION_GUARD)) return; // già contata in questa scheda oggi
+    sessionStorage.setItem(SESSION_GUARD, '1');
+    // ─────────────────────────────────────────────────────────────────────────
+
     const today = new Date().toDateString();
     const raw = localStorage.getItem(SESSION_COUNT_KEY);
     let data = raw ? JSON.parse(raw) : { date: today, count: 0, yesterday: 0 };
@@ -5691,8 +5745,6 @@ function trackSessionToday() {
     localStorage.setItem(SESSION_COUNT_KEY, JSON.stringify(data));
   } catch(e) {}
 }
-
-function getSessionStats() {
   try {
     const raw = localStorage.getItem(SESSION_COUNT_KEY);
     if (!raw) return { today: 1, yesterday: 0 };
@@ -15573,6 +15625,12 @@ function getSessionStats() {
 
 function trackSessionToday() {
   try {
+    // ── DEDUPLICAZIONE: una sola sessione per caricamento di pagina ──────────
+    const SESSION_GUARD = 'lh360_session_tracked_' + new Date().toDateString();
+    if (sessionStorage.getItem(SESSION_GUARD)) return;
+    sessionStorage.setItem(SESSION_GUARD, '1');
+    // ─────────────────────────────────────────────────────────────────────────
+
     const today = new Date().toDateString();
     const raw = localStorage.getItem(SESSION_COUNT_KEY);
     let data = raw ? JSON.parse(raw) : { date: today, count: 0, yesterday: 0 };
@@ -18822,56 +18880,6 @@ if (window.I18n && typeof I18n.onLanguageChange === 'function') {
     var el = document.querySelector(sel);
     if (el) el.style.webkitOverflowScrolling = 'touch';
   });
-
-  /* ── LANGUAGE SELECTOR: riposizionamento su mobile ─────────────
-     Il widget iniettato da language-selector.js è fixed bottom-right.
-     Su mobile si sovrappone al chat-send-btn. Usiamo un MutationObserver
-     per intercettarlo non appena viene aggiunto al DOM e spostarlo.
-  ─────────────────────────────────────────────────────────────── */
-  if (window.innerWidth <= 768) {
-    function _patchLangSelector(el) {
-      if (!el || !el.style) return;
-      var cs = window.getComputedStyle(el);
-      if (cs.position === 'fixed' &&
-          (parseInt(cs.bottom) < 200 || el.style.bottom) &&
-          (parseInt(cs.right) < 200 || el.style.right)) {
-        // Sposta in header area invece di bottom-right
-        el.style.setProperty('bottom', 'auto', 'important');
-        el.style.setProperty('top', 'calc(var(--header-h, 52px) + 6px)', 'important');
-        el.style.setProperty('right', '0.75rem', 'important');
-        el.style.setProperty('z-index', '150', 'important');
-      }
-    }
-
-    // Observer per elementi aggiunti dopo load
-    var _langObs = new MutationObserver(function(mutations) {
-      mutations.forEach(function(m) {
-        m.addedNodes.forEach(function(node) {
-          if (node.nodeType === 1) {
-            // Controlla il nodo e i suoi figli
-            [node].concat(Array.from(node.querySelectorAll ? node.querySelectorAll('*') : [])).forEach(function(el) {
-              var id = el.id || '';
-              var cls = el.className || '';
-              if ((id.toLowerCase().indexOf('lang') !== -1 ||
-                   cls.toLowerCase().indexOf('lang') !== -1) &&
-                  el.style && el.style.position === 'fixed') {
-                _patchLangSelector(el);
-              }
-            });
-          }
-        });
-      });
-    });
-    _langObs.observe(document.body, { childList: true, subtree: true });
-
-    // Patcha eventuali elementi già presenti
-    setTimeout(function() {
-      document.querySelectorAll('[id*="lang"],[id*="Lang"],[class*="lang"],[class*="Lang"]').forEach(function(el) {
-        _patchLangSelector(el);
-      });
-      _langObs.disconnect();
-    }, 2000);
-  }
 
   /* ── VIEWPORT: evita zoom su input focus (iOS) ── */
   var metaViewport = document.querySelector('meta[name="viewport"]');
