@@ -9,11 +9,13 @@ const VIMEO_IDS = {
 /**
  * Genera URL embed Vimeo in background mode
  * background=1  → autoplay silenzioso, loop, nessun controllo UI
- * quality=1080p → forza alta qualità su connessioni adeguate
- * dnt=1         → salta analytics Vimeo (riduce overhead iniziale)
+ * dnt=1  → salta analytics Vimeo (riduce overhead iniziale ~200ms)
+ * NO quality forzata: Vimeo adaptive bitrate sceglie automaticamente
+ *         la risoluzione ottimale per la connessione — evita lag su
+ *         connessioni non gigabit quando si forza 1080p.
  */
 function vimeoBackgroundUrl(videoId) {
-    return `https://player.vimeo.com/video/${videoId}?background=1&autoplay=1&loop=1&muted=1&autopause=0&badge=0&dnt=1&quality=1080p&app_id=58479`;
+    return `https://player.vimeo.com/video/${videoId}?background=1&autoplay=1&loop=1&muted=1&autopause=0&badge=0&dnt=1&app_id=58479`;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -64,16 +66,23 @@ function initVimeoPreloader() {
 }
 
 /**
- * Attiva gli slot Vimeo in una sezione appena diventa visibile.
+ * Attiva gli slot Vimeo in un container (sezione o grid).
  * Sposta l'iframe precaricato dal cache al container visibile,
  * poi triggera il fade-in via classe CSS.
- * @param {HTMLElement} section - Elemento sezione appena mostrato
+ *
+ * Può essere chiamato sia quando la sezione è già visibile
+ * (da _showSectionInternal) sia quando è ancora nascosta
+ * (da _renderProducts) — in entrambi i casi funziona correttamente.
+ *
+ * @param {HTMLElement} container - Elemento che contiene slot [data-vimeo-id]
  */
-function activateVimeoEmbed(section) {
-    if (!section) return;
+function activateVimeoEmbed(container) {
+    if (!container) return;
 
-    section.querySelectorAll('.empty-hero-video[data-vimeo-id]').forEach(slot => {
-        if (slot.querySelector('iframe')) return; // già attivato, skip
+    container.querySelectorAll('.empty-hero-video[data-vimeo-id]').forEach(slot => {
+        // ✅ Già attivato: non creare un secondo iframe
+        if (slot.dataset.vimeoActivated === '1') return;
+        slot.dataset.vimeoActivated = '1';
 
         const videoId = slot.dataset.vimeoId;
         const cache = document.getElementById('vimeo-preload-cache');
@@ -87,7 +96,7 @@ function activateVimeoEmbed(section) {
             slot.appendChild(preloaded);
             console.log(`✅ Vimeo iframe precaricato attivato: ID ${videoId}`);
         } else {
-            // ⚡ Fallback: crea iframe fresco (nessun preload disponibile)
+            // ⚡ Fallback: crea iframe fresco (preloader non ancora eseguito)
             const iframe = document.createElement('iframe');
             iframe.src = vimeoBackgroundUrl(videoId);
             iframe.setAttribute('frameborder', '0');
@@ -99,8 +108,7 @@ function activateVimeoEmbed(section) {
             console.log(`⚡ Vimeo iframe creato (fallback): ID ${videoId}`);
         }
 
-        // Doppio rAF → forza reflow tra append e aggiunta classe,
-        // garantendo che la transition CSS parta correttamente
+        // requestAnimationFrame × 2: garantisce reflow prima della transition
         requestAnimationFrame(() => {
             requestAnimationFrame(() => {
                 slot.classList.add('vimeo-active');
@@ -1453,8 +1461,13 @@ function _renderProducts(shopData, bookableData, grids) {
         if (!countBySection[section.id] && grids[section.id]) {
             if (section.id === 'properties') {
                 grids[section.id].innerHTML = generatePropertiesEmptyState();
+                // ✅ FIX TIMING: attiva l'embed Vimeo subito dopo aver iniettato
+                // lo slot nel DOM — indipendentemente dal fatto che la sezione
+                // sia già visibile o no. Il preloader ha già bufferizzato il video.
+                activateVimeoEmbed(grids[section.id]);
             } else if (section.id === 'stays') {
                 grids[section.id].innerHTML = generateExperiencesEmptyState();
+                activateVimeoEmbed(grids[section.id]);
             } else {
                 grids[section.id].innerHTML = '<div class="empty" style="grid-column: 1/-1; text-align: center; padding: 3rem; opacity: 0.5;">Nessun prodotto disponibile al momento.</div>';
             }
