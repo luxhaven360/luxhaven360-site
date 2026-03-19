@@ -1,19 +1,112 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // 🎬 VIMEO CONFIGURATION
-// Sostituisci gli ID se aggiungi video separati per le sezioni
 // ─────────────────────────────────────────────────────────────────────────────
 const VIMEO_IDS = {
     immobili:   '1175247244',   // Video "immobili" — vimeo.com/1175247244
-    esperienze: '1175247244'    // Stesso video finché non ne carichi uno dedicato
+    esperienze: '1175247244'    // Stesso video (aggiorna quando ne hai uno dedicato)
 };
 
 /**
- * Genera URL embed Vimeo in background mode (autoplay silenzioso, loop, no UI)
- * @param {string} videoId - ID numerico del video Vimeo
- * @returns {string} URL pronto per l'iframe
+ * Genera URL embed Vimeo in background mode
+ * background=1  → autoplay silenzioso, loop, nessun controllo UI
+ * quality=1080p → forza alta qualità su connessioni adeguate
+ * dnt=1         → salta analytics Vimeo (riduce overhead iniziale)
  */
 function vimeoBackgroundUrl(videoId) {
-    return `https://player.vimeo.com/video/${videoId}?background=1&autoplay=1&loop=1&muted=1&autopause=0&badge=0&app_id=58479`;
+    return `https://player.vimeo.com/video/${videoId}?background=1&autoplay=1&loop=1&muted=1&autopause=0&badge=0&dnt=1&quality=1080p&app_id=58479`;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 🚀 VIMEO PRELOADER
+// Problema: i browser non caricano iframe in sezioni con display:none.
+// Soluzione: un container off-screen (opacity:0.001, 1×1 px) è tecnicamente
+// "visibile" → il browser scarica e buferizza il video subito al caricamento
+// della pagina. Quando l'utente apre la sezione, l'iframe è già caldo.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Inizializza il preloader: crea iframe nascosti appena il DOM è pronto.
+ * Chiamato automaticamente alla fine di questo file.
+ */
+function initVimeoPreloader() {
+    if (document.getElementById('vimeo-preload-cache')) return; // già eseguito
+
+    const cache = document.createElement('div');
+    cache.id = 'vimeo-preload-cache';
+    cache.setAttribute('aria-hidden', 'true');
+    // opacity:0.001 (non 0!) → il browser lo considera visibile e carica il contenuto
+    cache.style.cssText = [
+        'position:fixed',
+        'width:1px',
+        'height:1px',
+        'top:0',
+        'left:0',
+        'overflow:hidden',
+        'opacity:0.001',
+        'pointer-events:none',
+        'z-index:-9999'
+    ].join(';');
+
+    // Crea un iframe per ogni ID unico (evita duplicati se condividono lo stesso video)
+    const uniqueIds = [...new Set(Object.values(VIMEO_IDS))];
+    uniqueIds.forEach(id => {
+        const iframe = document.createElement('iframe');
+        iframe.src = vimeoBackgroundUrl(id);
+        iframe.setAttribute('frameborder', '0');
+        iframe.setAttribute('allow', 'autoplay; fullscreen; picture-in-picture');
+        iframe.dataset.vimeoId = id;
+        iframe.style.cssText = 'width:1px;height:1px;border:none;display:block;';
+        cache.appendChild(iframe);
+        console.log(`🎬 Vimeo preload avviato: ID ${id}`);
+    });
+
+    document.body.appendChild(cache);
+}
+
+/**
+ * Attiva gli slot Vimeo in una sezione appena diventa visibile.
+ * Sposta l'iframe precaricato dal cache al container visibile,
+ * poi triggera il fade-in via classe CSS.
+ * @param {HTMLElement} section - Elemento sezione appena mostrato
+ */
+function activateVimeoEmbed(section) {
+    if (!section) return;
+
+    section.querySelectorAll('.empty-hero-video[data-vimeo-id]').forEach(slot => {
+        if (slot.querySelector('iframe')) return; // già attivato, skip
+
+        const videoId = slot.dataset.vimeoId;
+        const cache = document.getElementById('vimeo-preload-cache');
+        const preloaded = cache
+            ? cache.querySelector(`iframe[data-vimeo-id="${videoId}"]`)
+            : null;
+
+        if (preloaded) {
+            // ✅ Percorso ideale: iframe già bufferizzato → spostalo nel slot
+            preloaded.style.cssText = ''; // rimuovi override 1×1 px
+            slot.appendChild(preloaded);
+            console.log(`✅ Vimeo iframe precaricato attivato: ID ${videoId}`);
+        } else {
+            // ⚡ Fallback: crea iframe fresco (nessun preload disponibile)
+            const iframe = document.createElement('iframe');
+            iframe.src = vimeoBackgroundUrl(videoId);
+            iframe.setAttribute('frameborder', '0');
+            iframe.setAttribute('allow', 'autoplay; fullscreen; picture-in-picture; clipboard-write; encrypted-media');
+            iframe.setAttribute('referrerpolicy', 'strict-origin-when-cross-origin');
+            iframe.setAttribute('aria-hidden', 'true');
+            iframe.dataset.vimeoId = videoId;
+            slot.appendChild(iframe);
+            console.log(`⚡ Vimeo iframe creato (fallback): ID ${videoId}`);
+        }
+
+        // Doppio rAF → forza reflow tra append e aggiunta classe,
+        // garantendo che la transition CSS parta correttamente
+        requestAnimationFrame(() => {
+            requestAnimationFrame(() => {
+                slot.classList.add('vimeo-active');
+            });
+        });
+    });
 }
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -65,6 +158,8 @@ function _showSectionInternal(sectionId) {
             
             setTimeout(() => {
                 playVideosInSection(el);
+                // Attiva embed Vimeo (slot → iframe precaricato, con fade-in)
+                activateVimeoEmbed(el);
             }, 100);
         }
         
@@ -1126,21 +1221,14 @@ function restoreBookableFilters() {
 
 /**
  * 🏰 Empty State Premium - IMMOBILI
- * Video hosting: Vimeo (background mode — autoplay silenzioso, loop, no UI)
+ * Il video Vimeo viene attivato da activateVimeoEmbed() quando la sezione
+ * diventa visibile — l'iframe è già precaricato e bufferizzato.
  */
 function generatePropertiesEmptyState() {
     return `
         <div class="premium-empty-state">
-            <div class="empty-hero-video">
-                <iframe
-                    src="${vimeoBackgroundUrl(VIMEO_IDS.immobili)}"
-                    frameborder="0"
-                    allow="autoplay; fullscreen; picture-in-picture; clipboard-write; encrypted-media"
-                    referrerpolicy="strict-origin-when-cross-origin"
-                    title="LuxHaven360 Immobili"
-                    loading="lazy"
-                    aria-hidden="true">
-                </iframe>
+            <div class="empty-hero-video" data-vimeo-id="${VIMEO_IDS.immobili}">
+                <!-- L'iframe Vimeo viene iniettato da activateVimeoEmbed() -->
             </div>
             
             <!-- Content Editoriale -->
@@ -1175,21 +1263,14 @@ function generatePropertiesEmptyState() {
 
 /**
  * 🎭 Empty State Premium - ESPERIENZE
- * Video hosting: Vimeo (background mode — autoplay silenzioso, loop, no UI)
+ * Il video Vimeo viene attivato da activateVimeoEmbed() quando la sezione
+ * diventa visibile — l'iframe è già precaricato e bufferizzato.
  */
 function generateExperiencesEmptyState() {
     return `
         <div class="premium-empty-state">
-            <div class="empty-hero-video">
-                <iframe
-                    src="${vimeoBackgroundUrl(VIMEO_IDS.esperienze)}"
-                    frameborder="0"
-                    allow="autoplay; fullscreen; picture-in-picture; clipboard-write; encrypted-media"
-                    referrerpolicy="strict-origin-when-cross-origin"
-                    title="LuxHaven360 Esperienze"
-                    loading="lazy"
-                    aria-hidden="true">
-                </iframe>
+            <div class="empty-hero-video" data-vimeo-id="${VIMEO_IDS.esperienze}">
+                <!-- L'iframe Vimeo viene iniettato da activateVimeoEmbed() -->
             </div>
             
             <!-- Content Editoriale -->
@@ -1887,4 +1968,16 @@ function updateAllBriefDescriptionsForLanguage() {
     });
     
     console.log(`✅ ${updatedCount} descrizioni brevi aggiornate`);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 🚀 AVVIO PRELOADER VIMEO
+// Eseguito appena il DOM è pronto (o subito se già pronto).
+// I video iniziano a bufferizzare prima che l'utente navighi alla sezione.
+// ─────────────────────────────────────────────────────────────────────────────
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initVimeoPreloader);
+} else {
+    // DOM già pronto (script caricato dopo DOMContentLoaded)
+    initVimeoPreloader();
 }
