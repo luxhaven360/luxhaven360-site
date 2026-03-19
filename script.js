@@ -1,7 +1,26 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// 🎬 VIMEO CONFIGURATION
+// Sostituisci gli ID se aggiungi video separati per le sezioni
+// ─────────────────────────────────────────────────────────────────────────────
+const VIMEO_IDS = {
+    immobili:   '1175247244',   // Video "immobili" — vimeo.com/1175247244
+    esperienze: '1175247244'    // Stesso video finché non ne carichi uno dedicato
+};
+
+/**
+ * Genera URL embed Vimeo in background mode (autoplay silenzioso, loop, no UI)
+ * @param {string} videoId - ID numerico del video Vimeo
+ * @returns {string} URL pronto per l'iframe
+ */
+function vimeoBackgroundUrl(videoId) {
+    return `https://player.vimeo.com/video/${videoId}?background=1&autoplay=1&loop=1&muted=1&autopause=0&badge=0&app_id=58479`;
+}
+// ─────────────────────────────────────────────────────────────────────────────
+
 function _showSectionInternal(sectionId) {
     console.log(`🔀 Cambio sezione: ${sectionId}`);
     
-    // ✅ STEP 1: PAUSA TUTTI I VIDEO ATTIVI (cleanup)
+    // ✅ STEP 1: PAUSA TUTTI I VIDEO NATIVI ATTIVI (cleanup — i Vimeo iframe si gestiscono da soli)
     document.querySelectorAll('video').forEach(video => {
         video.pause();
         video.currentTime = 0;
@@ -1107,14 +1126,21 @@ function restoreBookableFilters() {
 
 /**
  * 🏰 Empty State Premium - IMMOBILI
+ * Video hosting: Vimeo (background mode — autoplay silenzioso, loop, no UI)
  */
 function generatePropertiesEmptyState() {
     return `
         <div class="premium-empty-state">
             <div class="empty-hero-video">
-                <video autoplay loop muted playsinline webkit-playsinline>
-                    <source src="assets/videos/immobili.mp4" type="video/mp4">
-                </video>
+                <iframe
+                    src="${vimeoBackgroundUrl(VIMEO_IDS.immobili)}"
+                    frameborder="0"
+                    allow="autoplay; fullscreen; picture-in-picture; clipboard-write; encrypted-media"
+                    referrerpolicy="strict-origin-when-cross-origin"
+                    title="LuxHaven360 Immobili"
+                    loading="lazy"
+                    aria-hidden="true">
+                </iframe>
             </div>
             
             <!-- Content Editoriale -->
@@ -1149,14 +1175,21 @@ function generatePropertiesEmptyState() {
 
 /**
  * 🎭 Empty State Premium - ESPERIENZE
+ * Video hosting: Vimeo (background mode — autoplay silenzioso, loop, no UI)
  */
 function generateExperiencesEmptyState() {
     return `
         <div class="premium-empty-state">
             <div class="empty-hero-video">
-                <video autoplay loop muted playsinline webkit-playsinline>
-                    <source src="assets/videos/immobili.mp4" type="video/mp4">
-                </video>
+                <iframe
+                    src="${vimeoBackgroundUrl(VIMEO_IDS.esperienze)}"
+                    frameborder="0"
+                    allow="autoplay; fullscreen; picture-in-picture; clipboard-write; encrypted-media"
+                    referrerpolicy="strict-origin-when-cross-origin"
+                    title="LuxHaven360 Esperienze"
+                    loading="lazy"
+                    aria-hidden="true">
+                </iframe>
             </div>
             
             <!-- Content Editoriale -->
