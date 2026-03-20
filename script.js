@@ -1393,8 +1393,14 @@ async function _fetchAndCacheProducts(cacheKey) {
  * ── Helper: Renderizza shopData e bookableData nelle griglie ──
  */
 function _renderProducts(shopData, bookableData, grids) {
-    // Pulizia griglie
-    Object.values(grids).forEach(g => g.innerHTML = '');
+    // Pulizia griglie — preserva iframe Vimeo già presenti (distruggerli causa reload completo del video)
+    Object.values(grids).forEach(g => {
+        Array.from(g.children).forEach(child => {
+            if (!child.querySelector('iframe[data-vimeo-id]') && !child.classList.contains('premium-empty-state')) {
+                child.remove();
+            }
+        });
+    });
 
     const countBySection = {};
 
@@ -1437,12 +1443,18 @@ function _renderProducts(shopData, bookableData, grids) {
     SECTIONS.forEach(section => {
         if (!countBySection[section.id] && grids[section.id]) {
             if (section.id === 'properties') {
-                grids[section.id].innerHTML = generatePropertiesEmptyState();
+                // Inietta solo se l'iframe non è già presente — evita reload Vimeo
+                if (!grids[section.id].querySelector('iframe[data-vimeo-id]')) {
+                    grids[section.id].innerHTML = generatePropertiesEmptyState();
+                }
                 // iframe già nell'HTML — nessuna ulteriore azione necessaria.
                 // activateVimeoSection() verrà chiamata da _showSectionInternal
                 // quando l'utente aprirà la sezione.
             } else if (section.id === 'stays') {
-                grids[section.id].innerHTML = generateExperiencesEmptyState();
+                // Inietta solo se l'iframe non è già presente — evita reload Vimeo
+                if (!grids[section.id].querySelector('iframe[data-vimeo-id]')) {
+                    grids[section.id].innerHTML = generateExperiencesEmptyState();
+                }
             } else {
                 grids[section.id].innerHTML = '<div class="empty" style="grid-column: 1/-1; text-align: center; padding: 3rem; opacity: 0.5;">Nessun prodotto disponibile al momento.</div>';
             }
