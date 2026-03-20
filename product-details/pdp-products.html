@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="it">
 <head>
-<script src="../bfcache-guard.js?v=2"></script>
+<script src="../bfcache-guard.js?v=5"></script>
 
   <!-- ✅ BASE HREF: ancora i path relativi all'URL reale (fix dopo replaceState) -->
   <base href="https://luxhaven360.com/product-details/">
@@ -18,8 +18,9 @@
       try{history.replaceState({},'','/'+lang+clean+qs+window.location.hash);}catch(e){}
     })();
     </script>
-    <script src="../error-handler.js" defer></script>
 <script src="../siteguard-client.js"></script>
+    <script src="../lux-resilience.js"></script>
+    <script src="../error-handler.js" defer></script>
     <meta charset="utf-8" />
     <!-- PERFORMANCE: preconnect GAS -->
     <link rel="preconnect" href="https://script.google.com" crossorigin>
@@ -3185,30 +3186,15 @@ if (!emailDomain || !validDomains.includes(emailDomain)) {
         }
     }
 
-        // ✅ FIX: aggiunto retry automatico con backoff progressivo.
-        // Prima una singola chiamata GAS fallita (cold start, timeout) mostrava
-        // subito "Prodotto non trovato" all'utente — ora si ritenta fino a 3 volte.
-        async function _fetchProductAndCache(sku, cacheKey, _retryCount) {
-            _retryCount = _retryCount || 0;
+        async function _fetchProductAndCache(sku, cacheKey) {
             const apiUrl = `${WEB_APP_URL}?action=get_product_details&sku=${encodeURIComponent(sku)}`;
-            try {
-                const response = await fetch(apiUrl, { method: 'GET', redirect: 'follow' });
-                if (!response.ok) throw new Error(`Errore HTTP: ${response.status}`);
-                const data = await response.json();
-                if (data.success && data.product) {
-                    try { localStorage.setItem(cacheKey, JSON.stringify({ data, ts: Date.now() })); } catch(_) {}
-                }
-                return data;
-            } catch (error) {
-                // Ritenta fino a 2 volte con backoff (4s, 8s) prima di alzare l'errore
-                if (_retryCount < 2) {
-                    const delay = [4000, 8000][_retryCount];
-                    console.warn(`[PDP] Tentativo ${_retryCount + 1} fallito, riprovo tra ${delay}ms:`, error.message);
-                    await new Promise(r => setTimeout(r, delay));
-                    return _fetchProductAndCache(sku, cacheKey, _retryCount + 1);
-                }
-                throw error;
+            const response = await fetch(apiUrl, { method: 'GET', redirect: 'follow' });
+            if (!response.ok) throw new Error(`Errore HTTP: ${response.status}`);
+            const data = await response.json();
+            if (data.success && data.product) {
+                try { localStorage.setItem(cacheKey, JSON.stringify({ data, ts: Date.now() })); } catch(_) {}
             }
+            return data;
         }
 
         // Helper per nascondere il loader in caso di errore immediato
