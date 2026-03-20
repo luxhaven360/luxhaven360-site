@@ -1,31 +1,34 @@
 /**
  * ╔══════════════════════════════════════════════════════════════════╗
  * ║  siteguard-client.js — LuxHaven360                              ║
- * ║  v3 — Unified: Stabilizzazione + Monitoring Frontend           ║
+ * ║  v4 — Sistema di monitoring + stabilizzazione unificato        ║
  * ╠══════════════════════════════════════════════════════════════════╣
  * ║                                                                  ║
- * ║  INCLUDE TUTTE LE FUNZIONALITÀ DI v1 + v2                       ║
+ * ║  PREREQUISITO: bfcache-guard.js deve essere caricato PRIMA.    ║
+ * ║  bfcache-guard inizializza LuxFetchBus e _originalFetch.       ║
  * ║                                                                  ║
- * ║  STABILIZZAZIONE (ex v2)                                         ║
- * ║   A. Fetch timeout GAS (20s) → previene RESULT_CODE_HUNG        ║
- * ║   B. BFCache handler (pageshow persisted) → rilascia blocchi    ║
- * ║   C. visibilitychange → chiude spinner su back-navigation       ║
- * ║   D. GAS warm-up al primo idle → riduce cold start              ║
- * ║   E. Safety timer 12s → sblocca body nascosto                   ║
+ * ║  COSA FA:                                                        ║
+ * ║  A. Timeout GAS (20s) + emit eventi su LuxFetchBus             ║
+ * ║     → connection-monitor ascolta gli eventi invece di          ║
+ * ║       wrappare fetch (fix del bug di doppio-wrapping v3)       ║
+ * ║  B. BFCache handler (pageshow persisted) → rilascia blocchi    ║
+ * ║  C. visibilitychange → chiude spinner su back-navigation       ║
+ * ║  D. GAS warm-up al primo idle → riduce cold start              ║
+ * ║  E. Safety timer 12s → sblocca body nascosto                   ║
+ * ║  1. Cattura errori JS globali + Promise rejection              ║
+ * ║     AbortError FILTRATO (è comportamento atteso)               ║
+ * ║  2. Performance pagina (pageLoad, TTFB, domReady)              ║
+ * ║  3. Monitoraggio checkout GAS                                   ║
+ * ║  4. Monitoraggio sistema i18n personalizzato                    ║
+ * ║  5. Monitoraggio Exchange Rates                                 ║
+ * ║  6. fetchWithRetry (3 tentativi, backoff progressivo)          ║
+ * ║  7. Preconnect automatico a Stripe                              ║
  * ║                                                                  ║
- * ║  MONITORING (ex v1)                                              ║
- * ║   1. Cattura errori JS globali + Promise rejection              ║
- * ║   2. Performance pagina (pageLoad, TTFB, domReady)              ║
- * ║   3. Monitoraggio checkout GAS                                   ║
- * ║   4. Monitoraggio sistema i18n personalizzato                    ║
- * ║   5. Monitoraggio Exchange Rates                                 ║
- * ║   6. fetchWithRetry (3 tentativi, backoff 1.2s)                 ║
- * ║   7. Preconnect automatico a Stripe                              ║
- * ║                                                                  ║
- * ║  INSTALLAZIONE                                                   ║
- * ║  Questo file deve essere il PRIMO <script> di ogni pagina:      ║
- * ║    <script src="siteguard-client.js"></script>        ← root    ║
- * ║    <script src="../siteguard-client.js"></script>     ← sub     ║
+ * ║  NOVITÀ v4 rispetto a v3:                                       ║
+ * ║  - Non inizializza LuxFetchBus (spostato in bfcache-guard)     ║
+ * ║  - Non wrappa window.fetch (già fatto da bfcache-guard)        ║
+ * ║  - Aggiunge emit eventi GAS su LuxFetchBus per connection-mon  ║
+ * ║  - AbortError filtrato ovunque (unhandledrejection + monitoring)║
  * ╚══════════════════════════════════════════════════════════════════╝
  */
 
@@ -37,16 +40,12 @@
   window.__SiteGuardLoaded = true;
 
   /* ── Configurazione ──────────────────────────────────────────── */
-  // GAS (Google Apps Script) cold start può richiedere 10-20s.
-  // Con 8s il timeout scattava prima che GAS rispondesse → AbortError a cascata.
-  // 20s garantisce che i cold start GAS completino prima dello scadere del timeout.
-  var FETCH_TIMEOUT_MS = 20000;
   var DEBUG = false;
 
-  /* URL monitoring backend (v1) */
+  /* URL monitoring backend */
   var SITEGUARD_URL = 'https://script.google.com/macros/s/AKfycbyLT41A8PPuQwyjCHkFA6anJhp-ywVJhy7TlMpxydaw3osPuplcsfafiNANA3s1hzk7/exec';
 
-  /* URL GAS warm-up (v2) */
+  /* URL GAS warm-up */
   var GAS_WARMUP_URLS = [
     'https://script.google.com/macros/s/AKfycbwr79RkXIEocpuOKaM6uMJqE6VFs9wjlUPvrr__FvDbDDrD2ELB1NbfrWP3BCYpHj2u/exec?action=ping',
     'https://script.google.com/macros/s/AKfycbyLb-E_43gf3inu4cC062Cn-OpbXK1fM8QiflQ8k6F_uxRrorcTVhWVUOgOWTJrOFwa/exec?action=ping'
@@ -60,87 +59,85 @@
     }
   }
 
-  /* ══════════════════════════════════════════════════════════════
-     STEP 0 — Salva riferimento alla fetch originale PRIMA di
-     qualsiasi patch, così i metodi interni di monitoring la usano
-     direttamente ed evitano loop o timeout indesiderati.
-  ══════════════════════════════════════════════════════════════ */
-  window._originalFetch = window.fetch.bind(window);
+  /* ── Helper: safe access a LuxFetchBus ──────────────────────── */
+  function _emit(event, data) {
+    try {
+      if (window.LuxFetchBus) window.LuxFetchBus.emit(event, data);
+    } catch (e) {}
+  }
 
+  /* ── Traccia fetch attive per BFCache handler ────────────────── */
+  var _activeFetches  = 0;
+  var _lastFetchStart = 0;
 
   /* ══════════════════════════════════════════════════════════════
-     A. FETCH INTERCEPTOR — timeout globale (ex v2)
-     Aggiunge AbortController con timeout di 20s SOLO alle chiamate GAS
-     (script.google.com) che non hanno già un signal esplicito.
-     Le fetch verso Vimeo, ipapi.co, Stripe, immagini e altri servizi
-     NON vengono wrappate: ognuno gestisce i propri timeout nativamente.
-     Questo elimina i falsi AbortError che si vedevano in console.
+     NOTA: window.fetch NON viene wrappato qui.
+     Il wrapping GAS (timeout 20s + AbortController) è già fatto
+     da bfcache-guard.js che si carica PRIMA.
+     Questo evita il triple-wrapping che causava loop in v3.
+
+     Aggiungiamo solo un layer contatore + emit LuxFetchBus sopra
+     la fetch già wrappata da bfcache-guard.
   ══════════════════════════════════════════════════════════════ */
-  if (typeof window.fetch === 'function' && !window._sgFetchPatched) {
-    var _origFetch = window._originalFetch;
+  if (!window._sgFetchPatched && typeof window.fetch === 'function') {
+    var _prevFetch = window.fetch;
 
     window.fetch = function (input, init) {
-      // Fetch con signal esplicito: passa invariato — il chiamante gestisce il proprio abort
-      if (init && init.signal) {
-        return _origFetch(input, init);
-      }
+      _activeFetches++;
+      _lastFetchStart = Date.now();
 
-      // ✅ FIX: applica timeout GAS SOLO alle chiamate verso Google Apps Script.
-      // Prima il timeout era globale (su TUTTE le fetch), causando AbortError
-      // su Vimeo, favicon, exchange-rates, tracking-icon, ecc. ogni volta
-      // che un servizio esterno rispondeva in >8s.
       var url = typeof input === 'string' ? input
               : (input && input.url) ? input.url : '';
       var isGAS = url.indexOf('script.google.com') !== -1;
+      var t0    = Date.now();
 
-      if (!isGAS) {
-        return _origFetch(input, init); // Non-GAS: nessun timeout artificiale
-      }
-
-      var controller = new AbortController();
-      var timeoutId  = setTimeout(function () { controller.abort(); }, FETCH_TIMEOUT_MS);
-      // Registra il controller con bfcache-guard per abort su pagehide
-      if (window.__lhReg) window.__lhReg(controller);
-      var mergedInit = Object.assign({}, init || {}, { signal: controller.signal });
-      return _origFetch(input, mergedInit).finally(function () {
-        clearTimeout(timeoutId);
-        if (window.__lhUnreg) window.__lhUnreg(controller);
-      });
+      return _prevFetch(input, init)
+        .then(function (response) {
+          _activeFetches = Math.max(0, _activeFetches - 1);
+          var elapsed = Date.now() - t0;
+          if (isGAS) {
+            if (elapsed > 5000) {
+              _emit('gas:slow', { url: url, elapsed: elapsed });
+              sendMetric('fetch_slow', elapsed, { url: url });
+            } else {
+              _emit('gas:success', { url: url, elapsed: elapsed });
+            }
+          }
+          return response;
+        })
+        .catch(function (err) {
+          _activeFetches = Math.max(0, _activeFetches - 1);
+          /* Non emette eventi per AbortError — sono attesi (timeout GAS, pagehide) */
+          if (err.name !== 'AbortError') {
+            if (isGAS) {
+              _emit('gas:error', { url: url, error: err });
+              sendError('GAS fetch error: ' + err.message, url);
+            } else {
+              _emit('net:error', { url: url, error: err });
+            }
+          }
+          throw err;
+        });
     };
 
     window._sgFetchPatched = true;
   }
 
-  /* ── Traccia fetch attive per BFCache handler ─────────────── */
-  var _activeFetches  = 0;
-  var _lastFetchStart = 0;
-
-  if (window._sgFetchPatched) {
-    var _timedFetch = window.fetch;
-    window.fetch = function (input, init) {
-      _activeFetches++;
-      _lastFetchStart = Date.now();
-      return _timedFetch(input, init).finally(function () {
-        _activeFetches = Math.max(0, _activeFetches - 1);
-      });
-    };
-  }
-
 
   /* ══════════════════════════════════════════════════════════════
-     B. BFCACHE HANDLER — pageshow con persisted=true (ex v2)
+     B. BFCACHE HANDLER — pageshow con persisted=true
+     Nota: bfcache-guard gestisce già l'abort delle fetch GAS.
+     Qui gestiamo solo il ripristino della UI (loader, spinner).
   ══════════════════════════════════════════════════════════════ */
-  // ✅ FIX: rimosso location.reload() che causava loop BFCache → "Uffa!"
-  // bfcache-guard.js gestisce il ripristino corretto su pageshow.
   window.addEventListener('pageshow', function (e) {
     if (!e.persisted) return;
-    _activeFetches = 0; // reset contatore (potrebbe essere sporco da BFCache)
+    _activeFetches = 0;
     _closeAllLoadingUI();
   });
 
 
   /* ══════════════════════════════════════════════════════════════
-     C. VISIBILITYCHANGE — back-navigation mobile (ex v2)
+     C. VISIBILITYCHANGE — back-navigation mobile
   ══════════════════════════════════════════════════════════════ */
   document.addEventListener('visibilitychange', function () {
     if (document.visibilityState !== 'visible') return;
@@ -149,7 +146,9 @@
 
 
   /* ══════════════════════════════════════════════════════════════
-     D. GAS WARM-UP — riduce cold start (ex v2)
+     D. GAS WARM-UP — riduce cold start
+     Usa _originalFetch (fetch nativa) per non passare attraverso
+     i wrapper applicativi e non inquinare i contatori.
   ══════════════════════════════════════════════════════════════ */
   function warmupGAS() {
     GAS_WARMUP_URLS.forEach(function (url) {
@@ -166,7 +165,7 @@
 
 
   /* ══════════════════════════════════════════════════════════════
-     E. SAFETY TIMER — sblocca body dopo 12s (ex v2)
+     E. SAFETY TIMER — sblocca body dopo 12s
   ══════════════════════════════════════════════════════════════ */
   document.addEventListener('DOMContentLoaded', function () {
     setTimeout(function () {
@@ -182,7 +181,7 @@
 
 
   /* ══════════════════════════════════════════════════════════════
-     HELPER: chiude tutti i loading UI noti del sito (ex v2)
+     HELPER: chiude tutti i loading UI noti del sito
   ══════════════════════════════════════════════════════════════ */
   function _closeAllLoadingUI() {
     try {
@@ -203,14 +202,12 @@
       loaders.forEach(function (el) {
         if (el.style.display !== 'none') el.style.display = 'none';
       });
-    } catch (err) {
-      /* Non interferire mai con il rendering principale */
-    }
+    } catch (err) {}
   }
 
 
   /* ══════════════════════════════════════════════════════════════
-     1. CATTURA ERRORI JS GLOBALI (ex v1)
+     1. CATTURA ERRORI JS GLOBALI
   ══════════════════════════════════════════════════════════════ */
   window.addEventListener('error', function (event) {
     if (!event.filename || event.filename.includes('extension://')) return;
@@ -223,21 +220,25 @@
   });
 
   window.addEventListener('unhandledrejection', function (event) {
-    var msg = event.reason instanceof Error
-      ? event.reason.message
-      : String(event.reason || 'Unhandled rejection');
-    // ✅ FIX: ignora AbortError — sono errori ATTESI (timeout GAS, pagehide, navigazione).
-    // Prima questi errori venivano loggati come bug, ingolfando il monitoring.
-    if (event.reason && event.reason.name === 'AbortError') return;
-    if (msg.toLowerCase().includes('aborted') ||
+    var reason = event.reason;
+    if (!reason) return;
+
+    /* AbortError è SEMPRE atteso (timeout GAS, pagehide, navigazione) — ignora */
+    if (reason.name === 'AbortError') return;
+
+    var msg = reason instanceof Error ? reason.message : String(reason);
+
+    /* Errori di rete transitori — ignorati (gestiti da connection-monitor) */
+    if (msg.toLowerCase().includes('failed to fetch') ||
         msg.toLowerCase().includes('network') ||
-        msg.toLowerCase().includes('failed to fetch')) return;
+        msg.toLowerCase().includes('aborted')) return;
+
     sendError('Unhandled Promise: ' + msg, 'promise');
   });
 
 
   /* ══════════════════════════════════════════════════════════════
-     2. PERFORMANCE PAGINA (ex v1)
+     2. PERFORMANCE PAGINA
   ══════════════════════════════════════════════════════════════ */
   window.addEventListener('load', function () {
     setTimeout(function () {
@@ -245,10 +246,10 @@
         var nav = performance.getEntriesByType('navigation')[0];
         if (!nav) return;
         var metrics = {
-          pageLoadMs:  Math.round(nav.loadEventEnd - nav.startTime),
-          ttfbMs:      Math.round(nav.responseStart - nav.requestStart),
-          domReadyMs:  Math.round(nav.domContentLoadedEventEnd - nav.responseEnd),
-          page:        window.location.pathname,
+          pageLoadMs: Math.round(nav.loadEventEnd - nav.startTime),
+          ttfbMs:     Math.round(nav.responseStart - nav.requestStart),
+          domReadyMs: Math.round(nav.domContentLoadedEventEnd - nav.responseEnd),
+          page:       window.location.pathname,
         };
         log('Performance:', metrics);
         sendMetric('page_load', metrics.pageLoadMs, metrics);
@@ -264,7 +265,7 @@
 
 
   /* ══════════════════════════════════════════════════════════════
-     3. MONITORAGGIO CHECKOUT GAS (ex v1)
+     3. MONITORAGGIO CHECKOUT GAS
   ══════════════════════════════════════════════════════════════ */
   var _checkoutStartTime = null;
 
@@ -288,7 +289,7 @@
 
 
   /* ══════════════════════════════════════════════════════════════
-     4. MONITORAGGIO i18n (ex v1)
+     4. MONITORAGGIO i18n
   ══════════════════════════════════════════════════════════════ */
   function i18nReady(ok, lang) {
     if (ok === undefined) ok = true;
@@ -306,7 +307,7 @@
 
 
   /* ══════════════════════════════════════════════════════════════
-     5. MONITORAGGIO EXCHANGE RATES (ex v1)
+     5. MONITORAGGIO EXCHANGE RATES
   ══════════════════════════════════════════════════════════════ */
   function exchangeRatesFetched(ok, rates) {
     if (ok === undefined) ok = true;
@@ -324,9 +325,9 @@
 
 
   /* ══════════════════════════════════════════════════════════════
-     6. FETCH WITH RETRY (ex v1)
-     Usa _originalFetch per bypassare il timeout globale e avere
-     il pieno controllo sui tentativi.
+     6. FETCH WITH RETRY
+     Usa _originalFetch (fetch nativa) per avere pieno controllo
+     sui tentativi, senza passare per i wrapper applicativi.
   ══════════════════════════════════════════════════════════════ */
   function fetchWithRetry(url, options, maxRetries) {
     options    = options    || {};
@@ -344,10 +345,13 @@
         if (elapsed > 5000) sendMetric('fetch_slow', elapsed, { url: url });
         return response;
       }).catch(function (err) {
+        /* Non riprova su AbortError — è intenzionale */
+        if (err.name === 'AbortError') throw err;
         log('Tentativo', attempt + '/' + maxRetries, 'fallito:', err.message);
         if (attempt < maxRetries) {
+          var delay = [4000, 8000, 15000][attempt - 1] || 15000;
           return new Promise(function (resolve) {
-            setTimeout(resolve, 1200 * attempt);
+            setTimeout(resolve, delay);
           }).then(tryOnce);
         }
         sendError('fetchWithRetry esaurito: ' + err.message, url);
@@ -360,13 +364,13 @@
 
 
   /* ══════════════════════════════════════════════════════════════
-     7. PRECONNECT A STRIPE (ex v1)
+     7. PRECONNECT A STRIPE
   ══════════════════════════════════════════════════════════════ */
   function addPreconnectIfMissing(origin) {
     if (document.querySelector('link[rel="preconnect"][href="' + origin + '"]')) return;
-    var link       = document.createElement('link');
-    link.rel       = 'preconnect';
-    link.href      = origin;
+    var link = document.createElement('link');
+    link.rel = 'preconnect';
+    link.href = origin;
     link.crossOrigin = 'anonymous';
     document.head.appendChild(link);
     log('Preconnect aggiunto:', origin);
@@ -377,9 +381,9 @@
 
 
   /* ══════════════════════════════════════════════════════════════
-     SEND HELPERS — comunicazione backend monitoring (ex v1)
-     Usano _originalFetch: bypassano timeout globale e contatore
-     fetch attive, così non interferiscono con BFCache handler.
+     SEND HELPERS — comunicazione backend monitoring
+     Usano _originalFetch (fetch nativa) per non attivare i wrapper
+     applicativi e non interferire con BFCache handler.
   ══════════════════════════════════════════════════════════════ */
   function sendToGuard(payload) {
     try {
@@ -391,9 +395,7 @@
         headers: { 'Content-Type': 'text/plain' },
       }).catch(function () {});
       log('Inviato:', payload.action, payload.name || payload.message || '');
-    } catch (_) {
-      /* Mai bloccare il sito per colpa del monitoring */
-    }
+    } catch (_) {}
   }
 
   function sendMetric(name, value, meta) {
@@ -409,7 +411,6 @@
      API PUBBLICA → window.SiteGuard
   ══════════════════════════════════════════════════════════════ */
   window.SiteGuard = {
-    /* Monitoring */
     checkoutStart:        checkoutStart,
     checkoutEnd:          checkoutEnd,
     i18nReady:            i18nReady,
@@ -419,6 +420,6 @@
     sendError:            sendError,
   };
 
-  log('✅ SiteGuard v3 (unified) attivo su:', window.location.pathname);
+  log('✅ SiteGuard v4 attivo su:', window.location.pathname);
 
 })();
