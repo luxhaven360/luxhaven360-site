@@ -3,7 +3,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 const VIMEO_IDS = {
     immobili:   '1175247244',   // Video "immobili" — vimeo.com/1175247244
-    esperienze: '---'    // Stesso video (aggiorna quando ne hai uno dedicato)
+    esperienze: '1175525988'    // Stesso video (aggiorna quando ne hai uno dedicato)
 };
 
 /**
