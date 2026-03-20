@@ -1559,12 +1559,10 @@ async function initDynamicContent() {
 }
 
 /* Fetch dati e aggiorna UI — usato sia all'avvio che dal polling */
-async function _fetchAndRender(silent = false) {
+async function _fetchAndRender(silent = false, _retryCount = 0) {
   if (!silent) setLoadingStatus(getTranslation('loading.connecting'));
 
   try {
-    // In preview mode, invia il token → il backend restituisce TUTTI i record
-    // inclusi quelli con Attivo=FALSE (bozze, contenuti in preparazione)
     const previewParam = PREVIEW_MODE ? '&preview=' + PREVIEW_TOKEN : '';
     const response = await fetch(APPS_SCRIPT_URL + '?action=all' + previewParam, {
       method: 'GET',
@@ -1603,11 +1601,18 @@ async function _fetchAndRender(silent = false) {
     renderDynamicContent();
     sheetsLoaded = true;
 
-    // In preview mode: aggiorna il timestamp dell'ultimo refresh
     if (PREVIEW_MODE) updatePreviewTimestamp(data.timestamp);
 
   } catch (err) {
-    console.warn('LuxHaven360: caricamento Sheets fallito, uso dati statici.', err.message);
+    // ✅ FIX: retry automatico con backoff (2 tentativi: 4s, 8s) prima di usare dati statici.
+    // Prima qualsiasi errore GAS saltava subito al fallback statico anche su cold start temporaneo.
+    if (_retryCount < 2) {
+      const delay = [4000, 8000][_retryCount];
+      console.warn(`[Showcase] Tentativo ${_retryCount + 1} fallito, riprovo tra ${delay}ms:`, err.message);
+      await new Promise(r => setTimeout(r, delay));
+      return _fetchAndRender(silent, _retryCount + 1);
+    }
+    console.warn('LuxHaven360: caricamento Sheets fallito dopo 3 tentativi, uso dati statici.', err.message);
   } finally {
     if (!silent) hideLoding();
   }
@@ -2077,15 +2082,9 @@ async function submitInterestForm() {
     document.getElementById('form-success').style.display = 'block';
 
   } catch(err) {
-    // Ignora abort da navigazione (BFCache pagehide)
-    if (window.__lhIsNavAbort && window.__lhIsNavAbort(err)) return;
     btn.disabled = false;
     btn.querySelector('span').textContent = 'Invia richiesta';
-    if (window.LuxError) {
-      LuxError.safeShow('generic');
-    } else {
-      alert('Errore durante l\'invio. Riprova o contattaci direttamente.');
-    }
+    alert('Errore durante l\'invio. Riprova o contattaci direttamente.');
   }
 }
 
