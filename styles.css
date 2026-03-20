@@ -1706,11 +1706,12 @@ footer {
     height: 500px;
     overflow: hidden;
     border-bottom: 1px solid rgba(212, 175, 55, 0.15);
-    /* Placeholder scuro con shimmer dorato — copre ogni schermata nera */
     background: #0a0a0a;
+    /* Isolates layout reflow — elimina lag durante lo scroll */
+    contain: layout style paint;
 }
 
-/* Shimmer dorato visibile finché il video non è pronto */
+/* Shimmer dorato durante il buffering (scompare con vimeo-active) */
 .empty-hero-video::before {
     content: '';
     position: absolute;
@@ -1723,16 +1724,16 @@ footer {
         #111 60%,
         #0a0a0a 100%
     );
-    background-size: 200% 200%;
-    animation: vimeo-shimmer 2.5s ease-in-out infinite;
+    background-size: 300% 300%;
+    animation: vimeo-shimmer 2.8s ease-in-out infinite;
     z-index: 0;
-    transition: opacity 0.6s ease;
+    transition: opacity 0.5s ease;
     pointer-events: none;
 }
 
-/* Nasconde lo shimmer quando il video è attivo */
 .empty-hero-video.vimeo-active::before {
     opacity: 0;
+    animation: none; /* libera CPU quando il video è attivo */
 }
 
 @keyframes vimeo-shimmer {
@@ -1740,27 +1741,27 @@ footer {
     100% { background-position: -200% -200%; }
 }
 
-/* ── Vimeo background embed: copertura totale come object-fit: cover ── */
+/* ── Vimeo iframe: copertura totale (object-fit: cover equivalente) ── */
 .empty-hero-video iframe {
     position: absolute;
     top: 50%;
     left: 50%;
-    /* Mantiene rapporto 16:9 e copre sempre l'intero contenitore */
-    width: 177.78vh;   /* altezza × 16/9 */
+    /* Copre il container mantenendo aspect ratio 16:9 */
+    width: 177.78vh;
     min-width: 100%;
-    height: 56.25vw;   /* larghezza × 9/16 */
+    height: 56.25vw;
     min-height: 100%;
-    transform: translate(-50%, -50%);
+    transform: translate(-50%, -50%) translateZ(0); /* GPU layer promotion */
     border: none;
     pointer-events: none;
     opacity: 0;
-    /* Fade più breve (0.8s): il video è già bufferizzato, non serve più 1.4s */
-    transition: opacity 0.8s ease;
-    will-change: opacity;
+    transition: opacity 0.7s ease;
     z-index: 1;
+    /* NON usare will-change:opacity — entra in conflitto con translateZ(0) */
+    backface-visibility: hidden; /* riduce flickering GPU */
 }
 
-/* Fade-in + filtro cinematografico quando iframe è pronto */
+/* Fade-in + filtro cinematografico all'attivazione */
 .empty-hero-video.vimeo-active iframe {
     opacity: 1;
     filter: brightness(0.72) contrast(1.08);
