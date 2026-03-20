@@ -1,172 +1,128 @@
 /**
- * ================================================================
- *  LuxHaven360 — BFCache Guard  v5.0
- *  File: bfcache-guard.js
- *  Da includere come PRIMO <script> in ogni pagina del sito.
- * ================================================================
- *
- *  PERCHÉ v4.0:
- *  Le versioni precedenti tracciavano i setInterval e li
- *  "ripristinavano" su pageshow (BFCache restore). Questo causava
- *  un'accumulo di intervalli: ogni ciclo back/forward creava nuovi
- *  ID che non potevano più essere rimossi da clearInterval() del
- *  codice originale. Dopo 10-15 cicli, decine di polling paralleli
- *  saturavano le richieste GAS → RESULT_CODE_HUNG.
- *
- *  SOLUZIONE v4.0:
- *  - setInterval NON più tracciato (causa dell'accumulo)
- *  - Solo fetch GAS viene intercettato e abortito su pagehide
- *  - connection-monitor.js gestisce autonomamente il proprio
- *    ciclo di vita su pagehide/pageshow
- *  - community-hub: Supabase RT gestito su pageshow
- * ================================================================
+ * ╔══════════════════════════════════════════════════════════════════════╗
+ * ║  bfcache-guard.js  —  LuxHaven360                                    ║
+ * ║  v5.0 — Registry-only: zero fetch wrapping                          ║
+ * ╠══════════════════════════════════════════════════════════════════════╣
+ * ║                                                                      ║
+ * ║  RESPONSABILITÀ:                                                     ║
+ * ║   1. Registro AbortController attivi (__lhReg / __lhUnreg)          ║
+ * ║   2. pagehide → abort di tutte le fetch pendenti                    ║
+ * ║   3. pageshow → restore state per community-hub (Supabase)          ║
+ * ║                                                                      ║
+ * ║  NON FA:                                                             ║
+ * ║   - NON wrappa window.fetch (delegato a siteguard-client.js)        ║
+ * ║   - NON gestisce timeout (delegato a siteguard-client.js)           ║
+ * ║   - NON monitora la connessione (delegato a connection-monitor.js)  ║
+ * ║                                                                      ║
+ * ║  ORDINE DI CARICAMENTO: PRIMO script in ogni pagina                 ║
+ * ║   <script src="bfcache-guard.js"></script>                          ║
+ * ╚══════════════════════════════════════════════════════════════════════╝
  */
 (function (global) {
   'use strict';
 
+  /* ── Singleton guard ─────────────────────────────────────────────── */
   if (global.__lhBFCacheGuard) return;
   global.__lhBFCacheGuard = true;
 
-  /* ══════════════════════════════════════════════════════════════
-     0. LuxFetchBus — event bus inter-modulo
-     Inizializzato qui perché bfcache-guard è il PRIMO script.
-     Tutti i moduli (siteguard, connection-monitor, lux-resilience)
-     possono pubblicare/sottoscrivere eventi senza race condition.
-  ══════════════════════════════════════════════════════════════ */
-  if (!global.LuxFetchBus) {
-    var _busListeners = {};
-    global.LuxFetchBus = {
-      on: function (event, fn) {
-        if (!_busListeners[event]) _busListeners[event] = [];
-        _busListeners[event].push(fn);
-      },
-      emit: function (event, data) {
-        var listeners = _busListeners[event] || [];
-        for (var i = 0; i < listeners.length; i++) {
-          try { listeners[i](data); } catch (e) {}
-        }
-      },
-    };
-  }
-
-  /* ══════════════════════════════════════════════════════════════
-     1b. Salva riferimento alla fetch NATIVA del browser PRIMA
-     di qualsiasi patch. Tutti i moduli interni usano
-     window._originalFetch per le chiamate di monitoring/warm-up,
-     bypassando i wrapper applicativi.
-  ══════════════════════════════════════════════════════════════ */
-  global._originalFetch = global.fetch.bind(global);
-
-  /* ══════════════════════════════════════════════════════════════
-     1. REGISTRO AbortController — fetch GAS
-     __lhReg/__lhUnreg usati da siteguard-client.js
-  ══════════════════════════════════════════════════════════════ */
+  /* ════════════════════════════════════════════════════════════════════
+     1. REGISTRO ABORTCONTROLLER
+     Usato da siteguard-client.js per registrare ogni fetch attiva.
+     Su pagehide, abortiremo tutto ciò che è in volo.
+  ════════════════════════════════════════════════════════════════════ */
   var _controllers = new Set();
 
-  global.__lhReg   = function (c) { if (c && c.abort) _controllers.add(c); };
-  global.__lhUnreg = function (c) { _controllers.delete(c); };
+  /** Registra un AbortController. Chiamato da siteguard-client.js. */
+  global.__lhReg = function (c) {
+    if (c && typeof c.abort === 'function') _controllers.add(c);
+  };
 
-  /* ══════════════════════════════════════════════════════════════
-     2. WRAP window.fetch
-     Ogni chiamata GAS senza signal esplicito riceve un
-     AbortController registrato in _controllers.
-  ══════════════════════════════════════════════════════════════ */
-  if (typeof global.fetch === 'function' && !global.__lhFetchWrapped) {
+  /** Deregistra un AbortController al completamento della fetch. */
+  global.__lhUnreg = function (c) {
+    _controllers.delete(c);
+  };
 
-    var _origFetch = global._originalFetch || global.fetch;
+  /** Restituisce il numero di fetch attive (utile per debug). */
+  global.__lhActiveFetches = function () {
+    return _controllers.size;
+  };
 
-    global.fetch = function (input, init) {
-      /* Fetch con signal esplicito: passa invariato */
-      if (init && init.signal) {
-        return _origFetch(input, init);
-      }
-
-      var url = typeof input === 'string' ? input
-              : (input && input.url) ? input.url : '';
-
-      if (url.indexOf('script.google.com') !== -1) {
-        var ctrl    = new AbortController();
-        /* Timeout 20s — GAS cold start può richiedere fino a ~20s */
-        var tid     = setTimeout(function () { ctrl.abort(); }, 20000);
-        _controllers.add(ctrl);
-        var merged  = Object.assign({}, init || {}, { signal: ctrl.signal });
-
-        return _origFetch(input, merged).finally(function () {
-          clearTimeout(tid);
-          _controllers.delete(ctrl);
-        });
-      }
-
-      return _origFetch(input, init);
-    };
-
-    global.__lhFetchWrapped = true;
-  }
-
-  /* ══════════════════════════════════════════════════════════════
-     3. PAGEHIDE — abort fetch GAS + cleanup Supabase
-     NON tocca setInterval: ogni modulo gestisce autonomamente
-     i propri intervalli via pagehide (connection-monitor lo fa già).
-  ══════════════════════════════════════════════════════════════ */
+  /* ════════════════════════════════════════════════════════════════════
+     2. PAGEHIDE — abort fetch pendenti + cleanup terze parti
+     NON usiamo beforeunload: disabiliterebbe la BFCache di Chrome
+     causando RESULT_CODE_HUNG.
+  ════════════════════════════════════════════════════════════════════ */
   global.addEventListener('pagehide', function () {
 
-    /* Abort tutti i fetch GAS pendenti */
+    /* 2a. Abort tutte le fetch registrate */
     _controllers.forEach(function (c) {
-      try { c.abort(); } catch (e) {}
+      try { c.abort(); } catch (_) {}
     });
     _controllers.clear();
 
-    /* Rimuovi tag <script> JSONP verso GAS (tracking-order) */
+    /* 2b. Rimuovi tag <script> JSONP residui verso GAS (tracking-order) */
     try {
       document.querySelectorAll('script[src*="script.google.com"]')
-        .forEach(function (s) { try { s.remove(); } catch (e) {} });
-    } catch (e) {}
+        .forEach(function (s) { try { s.remove(); } catch (_) {} });
+    } catch (_) {}
 
-    /* Chiudi canali Supabase Realtime (community-hub) */
+    /* 2c. Chiudi canali Supabase Realtime (community-hub) */
     try {
       if (global._sbChannels && typeof global._sbChannels === 'object') {
         Object.values(global._sbChannels).forEach(function (ch) {
-          try { if (ch && ch.unsubscribe) ch.unsubscribe(); } catch (e) {}
+          try { if (ch && ch.unsubscribe) ch.unsubscribe(); } catch (_) {}
         });
       }
-    } catch (e) {}
+    } catch (_) {}
 
     try {
       if (global._sb && typeof global._sb.removeAllChannels === 'function') {
         global._sb.removeAllChannels();
       }
-    } catch (e) {}
+    } catch (_) {}
 
   }, { capture: true });
 
-  /* ══════════════════════════════════════════════════════════════
-     4. PAGESHOW — ripristino Supabase RT dopo BFCache restore
-     (solo community-hub; le altre pagine non necessitano azione)
-  ══════════════════════════════════════════════════════════════ */
+  /* ════════════════════════════════════════════════════════════════════
+     3. PAGESHOW — restore dopo BFCache (community-hub Supabase RT)
+  ════════════════════════════════════════════════════════════════════ */
   global.addEventListener('pageshow', function (e) {
     if (!e.persisted) return;
 
+    /* Reset contatore fetch (potrebbe essere sporco dal BFCache snapshot) */
+    _controllers.clear();
+
+    /* Restore canali Supabase solo su community-hub */
     setTimeout(function () {
       try {
         var session = null;
-        try { session = localStorage.getItem('lh360_community_session'); } catch (x) {}
+        try { session = localStorage.getItem('lh360_community_session'); } catch (_) {}
         if (!session || !global.currentUser) return;
 
-        /* Pulisci canali residui prima di ricrearli */
         try {
           if (global._sbChannels) {
             Object.values(global._sbChannels).forEach(function (ch) {
-              try { if (ch && ch.unsubscribe) ch.unsubscribe(); } catch (x) {}
+              try { if (ch && ch.unsubscribe) ch.unsubscribe(); } catch (_) {}
             });
             global._sbChannels = {};
           }
-        } catch (x) {}
+        } catch (_) {}
 
-        /* Riavvia logica RT tramite initApp() */
         if (typeof global.initApp === 'function') global.initApp();
-      } catch (x) {}
+      } catch (_) {}
     }, 80);
 
   }, { capture: true });
+
+  /* ════════════════════════════════════════════════════════════════════
+     4. VISIBILITYCHANGE — reset UI loading su back-navigation mobile
+  ════════════════════════════════════════════════════════════════════ */
+  document.addEventListener('visibilitychange', function () {
+    if (document.visibilityState !== 'visible') return;
+    /* Notifica siteguard-client che può chiudere spinner residui */
+    try {
+      if (typeof global.__lhOnVisible === 'function') global.__lhOnVisible();
+    } catch (_) {}
+  });
 
 }(window));
