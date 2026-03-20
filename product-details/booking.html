@@ -2386,9 +2386,7 @@ function calculateIndividualComboPrices(comboBasePrice) {
         console.log('✅ Caricamento pagina completato con successo');
         
     } catch (error) {
-        // Non mostrare overlay per abort da navigazione (BFCache pagehide)
-        if (window.LuxError && window.LuxError.isNavAbort(error)) return;
-        if (window.LuxError) LuxError.safeShow('generic');
+        if (window.LuxError) LuxError.show('generic');
         console.error('❌ ERRORE GLOBALE:', error);
         console.error('   Message:', error.message);
         console.error('   Stack:', error.stack);
@@ -2459,7 +2457,10 @@ window.addEventListener('resize', () => {
     return _fetchBookableAndCache(sku, CACHE_KEY);
     }
 
-    async function _fetchBookableAndCache(sku, cacheKey) {
+    // ✅ FIX: aggiunto retry automatico (2 tentativi con backoff 4s/8s).
+    // Prima una singola chiamata GAS fallita mostrava subito un errore all'utente.
+    async function _fetchBookableAndCache(sku, cacheKey, _retryCount) {
+    _retryCount = _retryCount || 0;
     const url = `${WEB_APP_URL}?action=get_bookable_product_details&sku=${encodeURIComponent(sku)}`;
     
     console.log('🔗 Fetching product details:', url);
@@ -2512,6 +2513,14 @@ window.addEventListener('resize', () => {
         }
         return data.product;
     } catch (error) {
+        // ✅ FIX: ritenta fino a 2 volte con backoff progressivo prima di mostrare errore.
+        if (_retryCount < 2) {
+            const delay = [4000, 8000][_retryCount];
+            console.warn(`[Booking] Tentativo ${_retryCount + 1} fallito, riprovo tra ${delay}ms:`, error.message);
+            await new Promise(r => setTimeout(r, delay));
+            return _fetchBookableAndCache(sku, cacheKey, _retryCount + 1);
+        }
+
         console.error('❌ Fetch error details:', {
             message: error.message,
             stack: error.stack,
@@ -2543,7 +2552,7 @@ window.addEventListener('resize', () => {
         `;
         
         document.body.appendChild(errorModal);
-                if (window.LuxError) LuxError.safeShow('loading', () => window.location.reload());
+                if (window.LuxError) LuxError.show('loading', () => window.location.reload());
         throw error;
     }
 }
@@ -8198,10 +8207,12 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     } catch(e) {}
 
-    // 3. Fetch con timeout 8s via AbortController — evita RESULT_CODE_HUNG da GAS cold start
+    // 3. Fetch con timeout 20s via AbortController — evita RESULT_CODE_HUNG da GAS cold start
+    // ✅ FIX: aumentato da 8s a 20s — allineato con siteguard-client.js.
+    // GAS cold start può richiedere 10-20s; con 8s si abortiva prima del tempo.
     try {
       const controller = new AbortController();
-      const timeoutId  = setTimeout(() => controller.abort(), 8000);
+      const timeoutId  = setTimeout(() => controller.abort(), 20000);
       const r = await fetch(GAS_URL + '?action=get_payment_status&t=' + Date.now(), {
         signal: controller.signal
       });
