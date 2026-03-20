@@ -1,21 +1,46 @@
 /**
  * ============================================================
- *  error-handler.js — LuxHaven360 Global Error Handler
+ *  error-handler.js — LuxHaven360 Global Error Handler  v1.1
  * ============================================================
  *
  *  Mostra un messaggio di errore elegante, multilingua e
  *  non tecnico in caso di errori interni o di caricamento.
  *
- *  SETUP (una tantum per ogni pagina):
+ *  CHANGELOG v1.1:
+ *
+ *  ✅ FIX 1 — unhandledrejection: filtra AbortError e TimeoutError
+ *     Le rejection da AbortController (navigazione BFCache o timeout
+ *     GAS) non sono errori applicativi. Vengono silenziosamente
+ *     ignorati senza attivare nessuna logica di overlay.
+ *
+ *  ✅ FIX 2 — LuxError.isNavAbort(err)
+ *     Funzione di utilità pubblica. script.js e altri script
+ *     devono chiamarla all'inizio di ogni catch() prima di
+ *     decidere se mostrare l'overlay o meno.
+ *     USO:
+ *       .catch(function(err) {
+ *         if (LuxError.isNavAbort(err)) return;
+ *         LuxError.show('loading', retryFn);
+ *       });
+ *
+ *  ✅ FIX 3 — LuxError.safeShow(type, retryCallback)
+ *     Variante "sicura" di LuxError.show() che:
+ *     • controlla automaticamente se la pagina sta per essere
+ *       congelata (window.__lhPageHiding) prima di mostrare l'overlay
+ *     • verifica che l'overlay non sia già visibile
+ *     Sostituisce le chiamate dirette a LuxError.show() nei
+ *     catch() delle fetch in script.js per massima sicurezza.
+ *
+ *  SETUP (invariato):
  *   Aggiungi questo script PRIMA di tutti gli altri script:
  *   <script src="../error-handler.js"></script>    (da product-details/)
  *   <script src="error-handler.js"></script>       (da root)
  *
  *  USO NEL CODICE:
- *   LuxError.show();                     // Errore generico
- *   LuxError.show('network');            // Problema di rete
- *   LuxError.show('loading');            // Errore caricamento
- *   LuxError.show('generic', callback);  // Con pulsante Riprova che chiama callback
+ *   LuxError.show('network');                 // overlay immediato
+ *   LuxError.safeShow('loading', retryFn);   // ✅ preferito nei catch()
+ *   LuxError.isNavAbort(err);                // → true/false
+ *   LuxError.hide();                         // nasconde overlay
  * ============================================================
  */
 
@@ -75,13 +100,10 @@
 
   // ─── Determina la lingua corrente ─────────────────────────
   function getLang() {
-    // 1. Prova da i18n se disponibile
     if (window.i18nPDP && window.i18nPDP()) return window.i18nPDP().currentLang || 'it';
     if (window.i18n && window.i18n()) return window.i18n().currentLang || 'it';
-    // 2. Prova da localStorage
     const stored = localStorage.getItem('lh360_lang');
     if (stored && TRANSLATIONS[stored]) return stored;
-    // 3. Prova da navigator.language
     const nav = (navigator.language || '').slice(0, 2).toLowerCase();
     if (TRANSLATIONS[nav]) return nav;
     return 'it';
@@ -277,7 +299,6 @@
 
   // ─── Determina la root path per il link Home ──────────────
   function getHomePath() {
-    // Usa URL assoluto con prefisso lingua — funziona da qualsiasi sottocartella
     var lang = 'it';
     try {
       var stored = localStorage.getItem('lh360_lang');
@@ -291,7 +312,6 @@
     type = type || 'generic';
     injectStyles();
 
-    // Rimuovi overlay precedente se esiste
     const existing = document.getElementById('lux-error-overlay');
     if (existing) existing.remove();
 
@@ -329,12 +349,10 @@
 
     document.body.appendChild(overlay);
 
-    // Animazione entrata
     requestAnimationFrame(() => {
       requestAnimationFrame(() => overlay.classList.add('lux-visible'));
     });
 
-    // Bottone Riprova
     if (hasRetry) {
       const retryBtn = overlay.querySelector('#lux-retry-btn');
       retryBtn.addEventListener('click', () => {
@@ -354,15 +372,12 @@
   }
 
   // ─── Aggiorna testi se cambia lingua ─────────────────────
-  // Ascolta l'evento languageChanged usato dal sito
   document.addEventListener('languageChanged', () => {
     const overlay = document.getElementById('lux-error-overlay');
     if (!overlay) return;
-    // Aggiorna tutti i testi traducibili nell'overlay
     const card = overlay.querySelector('.lux-error-card');
     if (!card) return;
     const titleEl   = card.querySelector('.lux-error-title');
-    const msgEl     = card.querySelector('.lux-error-message');
     const retryBtn  = card.querySelector('#lux-retry-btn');
     const homeBtn   = card.querySelector('a.lux-error-btn-primary, a.lux-error-btn-secondary');
     const supportEl = card.querySelector('.lux-error-support');
@@ -370,24 +385,72 @@
     if (retryBtn)  retryBtn.textContent  = t('retry');
     if (homeBtn)   homeBtn.textContent   = t('home');
     if (supportEl) supportEl.innerHTML = `${t('support')} <a href="mailto:${SUPPORT_EMAIL}">${SUPPORT_EMAIL}</a>`;
-    // Il messaggio non viene aggiornato perché dipende dal tipo salvato nell'istanza
   });
 
   // ─── Intercetta errori JS globali non gestiti ─────────────
-  // Solo errori gravi (non logging silenzioso per TypeError normali)
   window.addEventListener('unhandledrejection', function (event) {
-    // Ignora errori di rete / fetch / GAS (già gestiti dal retry logic)
     const reason = event.reason;
     if (!reason) return;
+
+    /*
+     * ✅ FIX 1: filtra AbortError e TimeoutError.
+     * Provengono da navigazione BFCache (bfcache-guard pagehide)
+     * o da timeout GAS (siteguard wrap A). Non sono errori
+     * applicativi e non devono attivare nessuna logica di errore.
+     */
+    const name = reason.name || '';
+    if (name === 'AbortError' || name === 'TimeoutError') return;
+
     const msg = (reason.message || '').toLowerCase();
-    const isNetworkErr = msg.includes('failed to fetch') || msg.includes('networkerror') || msg.includes('connection');
-    if (isNetworkErr) return; // gestito da connection-monitor.js
-    // Errori applicativi non gestiti: mostra overlay
-    // (commentato di default per non essere invadente — decommenta se vuoi)
+    const isNetworkErr = msg.includes('failed to fetch') ||
+                         msg.includes('networkerror')    ||
+                         msg.includes('connection');
+    if (isNetworkErr) return;
+
+    /* Errori applicativi non gestiti: opzionale — decommenta se necessario */
     // show('generic');
   });
 
+  // ─── isNavAbort — utilità pubblica ────────────────────────
+  /*
+   * ✅ FIX 2: LuxError.isNavAbort(err)
+   * Ritorna true se err è un AbortError o TimeoutError da sistema
+   * (navigazione, pagehide, timeout GAS). Usare nei catch():
+   *
+   *   .catch(function(err) {
+   *     if (LuxError.isNavAbort(err)) return;   // silenzioso
+   *     LuxError.show('loading', retryFn);
+   *   });
+   */
+  function isNavAbort(err) {
+    if (!err) return false;
+    var name = err.name || '';
+    /* Delega a __lhIsNavAbort se disponibile (bfcache-guard) */
+    if (typeof window.__lhIsNavAbort === 'function') {
+      return window.__lhIsNavAbort(err);
+    }
+    /* Fallback: qualsiasi AbortError o TimeoutError è da navigazione */
+    return name === 'AbortError' || name === 'TimeoutError';
+  }
+
+  // ─── safeShow — show() con guard automatico ───────────────
+  /*
+   * ✅ FIX 3: LuxError.safeShow(type, retryCallback)
+   * Prima di mostrare l'overlay verifica:
+   *  1. La pagina NON sta per essere congelata (BFCache pagehide)
+   *  2. L'overlay non è già visibile
+   * Sostituisce le chiamate dirette a LuxError.show() in script.js
+   * per evitare overlay spurî durante la navigazione back/forward.
+   */
+  function safeShow(type, retryCallback) {
+    /* Non mostrare se la pagina sta per andare in BFCache */
+    if (window.__lhPageHiding) return;
+    /* Non mostrare se l'overlay è già visibile */
+    if (document.getElementById('lux-error-overlay')) return;
+    show(type, retryCallback);
+  }
+
   // ─── API pubblica ─────────────────────────────────────────
-  window.LuxError = { show, hide };
+  window.LuxError = { show, hide, isNavAbort, safeShow };
 
 })();
