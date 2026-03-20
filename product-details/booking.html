@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="it">
 <head>
-<script src="../bfcache-guard.js?v=2"></script>
+<script src="../bfcache-guard.js?v=5"></script>
 
   <!-- ✅ BASE HREF: ancora i path relativi all'URL reale (fix dopo replaceState) -->
   <base href="https://luxhaven360.com/product-details/">
@@ -18,8 +18,9 @@
       try{history.replaceState({},'','/'+lang+clean+qs+window.location.hash);}catch(e){}
     })();
     </script>
-    <script src="../error-handler.js" defer></script>
 <script src="../siteguard-client.js"></script>
+    <script src="../lux-resilience.js"></script>
+    <script src="../error-handler.js" defer></script>
     <meta charset="UTF-8">
     <!-- PERFORMANCE: preconnect GAS -->
     <link rel="preconnect" href="https://script.google.com" crossorigin>
@@ -2457,10 +2458,7 @@ window.addEventListener('resize', () => {
     return _fetchBookableAndCache(sku, CACHE_KEY);
     }
 
-    // ✅ FIX: aggiunto retry automatico (2 tentativi con backoff 4s/8s).
-    // Prima una singola chiamata GAS fallita mostrava subito un errore all'utente.
-    async function _fetchBookableAndCache(sku, cacheKey, _retryCount) {
-    _retryCount = _retryCount || 0;
+    async function _fetchBookableAndCache(sku, cacheKey) {
     const url = `${WEB_APP_URL}?action=get_bookable_product_details&sku=${encodeURIComponent(sku)}`;
     
     console.log('🔗 Fetching product details:', url);
@@ -2513,14 +2511,6 @@ window.addEventListener('resize', () => {
         }
         return data.product;
     } catch (error) {
-        // ✅ FIX: ritenta fino a 2 volte con backoff progressivo prima di mostrare errore.
-        if (_retryCount < 2) {
-            const delay = [4000, 8000][_retryCount];
-            console.warn(`[Booking] Tentativo ${_retryCount + 1} fallito, riprovo tra ${delay}ms:`, error.message);
-            await new Promise(r => setTimeout(r, delay));
-            return _fetchBookableAndCache(sku, cacheKey, _retryCount + 1);
-        }
-
         console.error('❌ Fetch error details:', {
             message: error.message,
             stack: error.stack,
@@ -8207,12 +8197,10 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     } catch(e) {}
 
-    // 3. Fetch con timeout 20s via AbortController — evita RESULT_CODE_HUNG da GAS cold start
-    // ✅ FIX: aumentato da 8s a 20s — allineato con siteguard-client.js.
-    // GAS cold start può richiedere 10-20s; con 8s si abortiva prima del tempo.
+    // 3. Fetch con timeout 8s via AbortController — evita RESULT_CODE_HUNG da GAS cold start
     try {
       const controller = new AbortController();
-      const timeoutId  = setTimeout(() => controller.abort(), 20000);
+      const timeoutId  = setTimeout(() => controller.abort(), 8000);
       const r = await fetch(GAS_URL + '?action=get_payment_status&t=' + Date.now(), {
         signal: controller.signal
       });
