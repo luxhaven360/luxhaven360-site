@@ -1,24 +1,63 @@
 /**
- * LuxHaven360 — Service Worker (disattivato)
- * 
- * Questo file sostituisce il precedente sw.js che causava
- * unhandled AbortError rejections durante la navigazione rapida,
- * destabilizzando Chrome dopo ~10-20 cicli di back/forward.
- * 
- * La gestione dei fetch GAS è ora interamente delegata a
- * bfcache-guard.js (livello JS, AbortController).
+ * ╔══════════════════════════════════════════════════════════════════════╗
+ * ║  sw.js  —  LuxHaven360 Service Worker                               ║
+ * ║  v2.0 — Passivo: zero intercettazione fetch, cache-free             ║
+ * ╠══════════════════════════════════════════════════════════════════════╣
+ * ║                                                                      ║
+ * ║  PERCHÉ PASSIVO:                                                     ║
+ * ║  Il sito usa GAS (Google Apps Script) come backend. GAS richiede    ║
+ * ║  redirect multipli prima di rispondere. Un SW che intercetta fetch  ║
+ * ║  può bloccare questi redirect, causare AbortError non gestiti e      ║
+ * ║  disabilitare la BFCache di Chrome (RESULT_CODE_HUNG).              ║
+ * ║                                                                      ║
+ * ║  COSA FA:                                                            ║
+ * ║   • install  → skipWaiting() (attivazione immediata)               ║
+ * ║   • activate → rimuove TUTTE le cache precedenti + clients.claim()  ║
+ * ║   • fetch    → NON intercettato (pass-through alla rete)            ║
+ * ║                                                                      ║
+ * ║  PERCHÉ CANCELLA LE CACHE:                                          ║
+ * ║  Versioni precedenti del SW mettevano in cache risorse statiche.    ║
+ * ║  Cache stale (asset vecchi, script obsoleti) causano comportamenti  ║
+ * ║  imprevedibili. Questo SW v2 fa pulizia completa e poi si mette     ║
+ * ║  da parte, lasciando HTTP cache control gestire la CDN.             ║
+ * ╚══════════════════════════════════════════════════════════════════════╝
  */
 'use strict';
 
-self.addEventListener('install', () => self.skipWaiting());
+/* ════════════════════════════════════════════════════════════════════
+   INSTALL — attivazione immediata senza attendere chiusura tab
+════════════════════════════════════════════════════════════════════ */
+self.addEventListener('install', function (event) {
+  event.waitUntil(self.skipWaiting());
+});
 
-self.addEventListener('activate', event => {
-  /* Rimuovi tutte le cache precedenti del SW */
+/* ════════════════════════════════════════════════════════════════════
+   ACTIVATE — elimina TUTTE le cache + claim clients
+════════════════════════════════════════════════════════════════════ */
+self.addEventListener('activate', function (event) {
   event.waitUntil(
-    caches.keys().then(keys =>
-      Promise.all(keys.map(k => caches.delete(k)))
-    ).then(() => self.clients.claim())
+    caches.keys()
+      .then(function (keys) {
+        return Promise.all(
+          keys.map(function (key) {
+            return caches.delete(key);
+          })
+        );
+      })
+      .then(function () {
+        return self.clients.claim();
+      })
   );
 });
 
-/* Nessuna intercettazione fetch — tutto passa direttamente alla rete */
+/* ════════════════════════════════════════════════════════════════════
+   FETCH — pass-through totale (nessuna intercettazione)
+
+   Il SW è registrato ma non intercetta nulla. Questo garantisce:
+   - BFCache funzionante (Chrome non rileva fetch-handlers attivi)
+   - GAS redirect non bloccati
+   - Nessun AbortError spurio da SW
+   - Zero cache stale
+════════════════════════════════════════════════════════════════════ */
+
+/* Nessun listener 'fetch' registrato — pass-through automatico */
