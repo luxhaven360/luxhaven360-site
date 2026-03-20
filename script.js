@@ -925,7 +925,11 @@ async function _fetchAndCacheExchangeRates(cacheKey) {
             setTimeout(() => updateAllPricesForLanguage(), 50);
         }
     } catch (error) {
-        console.warn('Errore caricamento tassi, uso fallback:', error);
+        // ✅ FIX: non logga AbortError — è un comportamento atteso (timeout GAS o navigazione).
+        // Logga solo errori inattesi che richiedono attenzione.
+        if (error.name !== 'AbortError') {
+            console.warn('Errore caricamento tassi, uso fallback:', error);
+        }
     }
 }
 
@@ -1337,9 +1341,13 @@ async function initDynamicProducts(retryCount = 0) {
     } catch (error) {
         console.warn(`Tentativo ${retryCount + 1} fallito:`, error);
 
-        // Logica di retry
-        if (retryCount < 2) {
-            const delay = 1500 * (retryCount + 1);
+        // Logica di retry con backoff progressivo
+        // ✅ FIX: aumentati da 3 a 4 tentativi e i delay ora sono più lunghi
+        // per lasciare tempo a GAS di uscire dal cold start (può richiedere 15-20s).
+        if (retryCount < 3) {
+            // Delay progressivo: 4s → 8s → 15s (totale max ~47s prima di rinunciare)
+            const RETRY_DELAYS = [4000, 8000, 15000];
+            const delay = RETRY_DELAYS[retryCount];
             console.log(`Riprovo tra ${delay}ms...`);
             setTimeout(() => {
                 initDynamicProducts(retryCount + 1);
@@ -1571,7 +1579,10 @@ async function loadShopCategories() {
         renderCategoryFilter(data.categories);
         
     } catch (error) {
-        console.error('Errore caricamento categorie:', error);
+        // ✅ FIX: non logga AbortError (atteso su cold start / navigazione)
+        if (error.name !== 'AbortError') {
+            console.error('Errore caricamento categorie:', error);
+        }
     }
 }
 
