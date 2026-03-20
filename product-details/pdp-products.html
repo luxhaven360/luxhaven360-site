@@ -3170,11 +3170,9 @@ if (!emailDomain || !validDomains.includes(emailDomain)) {
             loadReviews(sku);
             completeLoader();
         } catch (error) {
-            // Non mostrare overlay per abort da navigazione (BFCache pagehide)
-            if (window.LuxError && window.LuxError.isNavAbort(error)) { hideGlobalLoader(); return; }
             console.error('Errore LoadProduct:', error);
             if (window.LuxError) {
-                LuxError.safeShow('loading', () => window.location.reload());
+                LuxError.show('loading', () => window.location.reload());
             } else {
                 document.querySelector('.container').innerHTML = `
                     <div style="padding:4rem;color:#fca5a5;text-align:center;">
@@ -3187,15 +3185,30 @@ if (!emailDomain || !validDomains.includes(emailDomain)) {
         }
     }
 
-        async function _fetchProductAndCache(sku, cacheKey) {
+        // ✅ FIX: aggiunto retry automatico con backoff progressivo.
+        // Prima una singola chiamata GAS fallita (cold start, timeout) mostrava
+        // subito "Prodotto non trovato" all'utente — ora si ritenta fino a 3 volte.
+        async function _fetchProductAndCache(sku, cacheKey, _retryCount) {
+            _retryCount = _retryCount || 0;
             const apiUrl = `${WEB_APP_URL}?action=get_product_details&sku=${encodeURIComponent(sku)}`;
-            const response = await fetch(apiUrl, { method: 'GET', redirect: 'follow' });
-            if (!response.ok) throw new Error(`Errore HTTP: ${response.status}`);
-            const data = await response.json();
-            if (data.success && data.product) {
-                try { localStorage.setItem(cacheKey, JSON.stringify({ data, ts: Date.now() })); } catch(_) {}
+            try {
+                const response = await fetch(apiUrl, { method: 'GET', redirect: 'follow' });
+                if (!response.ok) throw new Error(`Errore HTTP: ${response.status}`);
+                const data = await response.json();
+                if (data.success && data.product) {
+                    try { localStorage.setItem(cacheKey, JSON.stringify({ data, ts: Date.now() })); } catch(_) {}
+                }
+                return data;
+            } catch (error) {
+                // Ritenta fino a 2 volte con backoff (4s, 8s) prima di alzare l'errore
+                if (_retryCount < 2) {
+                    const delay = [4000, 8000][_retryCount];
+                    console.warn(`[PDP] Tentativo ${_retryCount + 1} fallito, riprovo tra ${delay}ms:`, error.message);
+                    await new Promise(r => setTimeout(r, delay));
+                    return _fetchProductAndCache(sku, cacheKey, _retryCount + 1);
+                }
+                throw error;
             }
-            return data;
         }
 
         // Helper per nascondere il loader in caso di errore immediato
