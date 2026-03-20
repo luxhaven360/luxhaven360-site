@@ -5,22 +5,20 @@
  *  Da includere come PRIMO <script> in ogni pagina del sito.
  * ================================================================
  *
- *  COSA FA:
- *  1. Inizializza LuxFetchBus — event bus leggero per comunicazione
- *     tra moduli (siteguard → connection-monitor, ecc.) senza
- *     bisogno di wrapper fetch aggiuntivi.
- *  2. Salva window._originalFetch = browser nativo PRIMA di qualsiasi
- *     patch, garantendo che i moduli interni usino sempre la fetch
- *     nativa per le proprie chiamate di monitoring.
- *  3. Wrappa window.fetch per le sole chiamate GAS (script.google.com)
- *     con AbortController + timeout 20s + registro per abort su pagehide.
- *  4. Su pagehide: aborta tutte le fetch GAS pendenti (BFCache compat).
- *  5. Su pageshow(persisted): ripristina canali Supabase RT se presenti.
+ *  PERCHÉ v4.0:
+ *  Le versioni precedenti tracciavano i setInterval e li
+ *  "ripristinavano" su pageshow (BFCache restore). Questo causava
+ *  un'accumulo di intervalli: ogni ciclo back/forward creava nuovi
+ *  ID che non potevano più essere rimossi da clearInterval() del
+ *  codice originale. Dopo 10-15 cicli, decine di polling paralleli
+ *  saturavano le richieste GAS → RESULT_CODE_HUNG.
  *
- *  PERCHÉ v5.0 rispetto a v4:
- *  - Aggiunta init LuxFetchBus (prima era in siteguard, causava
- *    race condition se si cambiava l'ordine di caricamento)
- *  - Nessun'altra modifica funzionale a v4
+ *  SOLUZIONE v4.0:
+ *  - setInterval NON più tracciato (causa dell'accumulo)
+ *  - Solo fetch GAS viene intercettato e abortito su pagehide
+ *  - connection-monitor.js gestisce autonomamente il proprio
+ *    ciclo di vita su pagehide/pageshow
+ *  - community-hub: Supabase RT gestito su pageshow
  * ================================================================
  */
 (function (global) {
@@ -30,48 +28,37 @@
   global.__lhBFCacheGuard = true;
 
   /* ══════════════════════════════════════════════════════════════
-     0. LuxFetchBus — event bus inter-modulo (init anticipato)
+     0. LuxFetchBus — event bus inter-modulo
      Inizializzato qui perché bfcache-guard è il PRIMO script.
-     Tutti i moduli successivi (siteguard, connection-monitor,
-     lux-resilience) possono pubblicare/sottoscrivere eventi senza
-     rischi di race condition.
+     Tutti i moduli (siteguard, connection-monitor, lux-resilience)
+     possono pubblicare/sottoscrivere eventi senza race condition.
   ══════════════════════════════════════════════════════════════ */
   if (!global.LuxFetchBus) {
     var _busListeners = {};
     global.LuxFetchBus = {
-      /**
-       * Sottoscrive un evento.
-       * @param {string}   event - 'gas:error' | 'gas:slow' | 'gas:success' |
-       *                           'net:error' | 'net:offline' | 'net:restored'
-       * @param {function} fn    - callback(data)
-       */
       on: function (event, fn) {
         if (!_busListeners[event]) _busListeners[event] = [];
         _busListeners[event].push(fn);
       },
-      /**
-       * Emette un evento verso tutti i subscriber.
-       * @param {string} event
-       * @param {*}      data
-       */
       emit: function (event, data) {
         var listeners = _busListeners[event] || [];
         for (var i = 0; i < listeners.length; i++) {
-          try { listeners[i](data); } catch (e) { /* mai bloccare il sito */ }
+          try { listeners[i](data); } catch (e) {}
         }
       },
     };
   }
 
   /* ══════════════════════════════════════════════════════════════
-     1. Salva riferimento alla fetch NATIVA del browser.
-     Usato internamente da tutti i moduli per le chiamate di
-     monitoring/warm-up, bypassando i wrapper applicativi.
+     1b. Salva riferimento alla fetch NATIVA del browser PRIMA
+     di qualsiasi patch. Tutti i moduli interni usano
+     window._originalFetch per le chiamate di monitoring/warm-up,
+     bypassando i wrapper applicativi.
   ══════════════════════════════════════════════════════════════ */
   global._originalFetch = global.fetch.bind(global);
 
   /* ══════════════════════════════════════════════════════════════
-     2. REGISTRO AbortController — fetch GAS
+     1. REGISTRO AbortController — fetch GAS
      __lhReg/__lhUnreg usati da siteguard-client.js
   ══════════════════════════════════════════════════════════════ */
   var _controllers = new Set();
@@ -80,17 +67,16 @@
   global.__lhUnreg = function (c) { _controllers.delete(c); };
 
   /* ══════════════════════════════════════════════════════════════
-     3. WRAP window.fetch — solo chiamate GAS (script.google.com)
-     con AbortController + timeout 20s.
-     - Chiamate non-GAS: passano invariate alla fetch nativa.
-     - Chiamate con signal esplicito: passano invariate.
+     2. WRAP window.fetch
+     Ogni chiamata GAS senza signal esplicito riceve un
+     AbortController registrato in _controllers.
   ══════════════════════════════════════════════════════════════ */
   if (typeof global.fetch === 'function' && !global.__lhFetchWrapped) {
 
-    var _origFetch = global._originalFetch;
+    var _origFetch = global._originalFetch || global.fetch;
 
     global.fetch = function (input, init) {
-      /* Fetch con signal esplicito: il chiamante gestisce il proprio abort */
+      /* Fetch con signal esplicito: passa invariato */
       if (init && init.signal) {
         return _origFetch(input, init);
       }
@@ -98,13 +84,12 @@
       var url = typeof input === 'string' ? input
               : (input && input.url) ? input.url : '';
 
-      /* Solo chiamate verso Google Apps Script ricevono il timeout GAS */
       if (url.indexOf('script.google.com') !== -1) {
-        var ctrl = new AbortController();
+        var ctrl    = new AbortController();
         /* Timeout 20s — GAS cold start può richiedere fino a ~20s */
-        var tid  = setTimeout(function () { ctrl.abort(); }, 20000);
+        var tid     = setTimeout(function () { ctrl.abort(); }, 20000);
         _controllers.add(ctrl);
-        var merged = Object.assign({}, init || {}, { signal: ctrl.signal });
+        var merged  = Object.assign({}, init || {}, { signal: ctrl.signal });
 
         return _origFetch(input, merged).finally(function () {
           clearTimeout(tid);
@@ -112,7 +97,6 @@
         });
       }
 
-      /* Tutte le altre fetch (Vimeo, Stripe, ipapi, ecc.): nessun wrapper */
       return _origFetch(input, init);
     };
 
@@ -120,8 +104,9 @@
   }
 
   /* ══════════════════════════════════════════════════════════════
-     4. PAGEHIDE — abort fetch GAS + cleanup Supabase
-     NON usa beforeunload (disabiliterebbe BFCache di Chrome).
+     3. PAGEHIDE — abort fetch GAS + cleanup Supabase
+     NON tocca setInterval: ogni modulo gestisce autonomamente
+     i propri intervalli via pagehide (connection-monitor lo fa già).
   ══════════════════════════════════════════════════════════════ */
   global.addEventListener('pagehide', function () {
 
@@ -139,12 +124,13 @@
 
     /* Chiudi canali Supabase Realtime (community-hub) */
     try {
-      if (global._sbChannels) {
+      if (global._sbChannels && typeof global._sbChannels === 'object') {
         Object.values(global._sbChannels).forEach(function (ch) {
           try { if (ch && ch.unsubscribe) ch.unsubscribe(); } catch (e) {}
         });
       }
     } catch (e) {}
+
     try {
       if (global._sb && typeof global._sb.removeAllChannels === 'function') {
         global._sb.removeAllChannels();
@@ -154,7 +140,8 @@
   }, { capture: true });
 
   /* ══════════════════════════════════════════════════════════════
-     5. PAGESHOW — ripristino Supabase RT dopo BFCache restore
+     4. PAGESHOW — ripristino Supabase RT dopo BFCache restore
+     (solo community-hub; le altre pagine non necessitano azione)
   ══════════════════════════════════════════════════════════════ */
   global.addEventListener('pageshow', function (e) {
     if (!e.persisted) return;
@@ -165,6 +152,7 @@
         try { session = localStorage.getItem('lh360_community_session'); } catch (x) {}
         if (!session || !global.currentUser) return;
 
+        /* Pulisci canali residui prima di ricrearli */
         try {
           if (global._sbChannels) {
             Object.values(global._sbChannels).forEach(function (ch) {
@@ -174,6 +162,7 @@
           }
         } catch (x) {}
 
+        /* Riavvia logica RT tramite initApp() */
         if (typeof global.initApp === 'function') global.initApp();
       } catch (x) {}
     }, 80);
