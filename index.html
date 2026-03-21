@@ -832,6 +832,22 @@
                 activateVimeoSection(activeSection);
             }
         }, 150);
+
+        // ✅ PRELOAD VIDEO in background: 3.5s dopo che i prodotti sono pronti,
+        // avvia silenziosamente il caricamento degli iframe Vimeo nelle sezioni
+        // nascoste. Quando l'utente clicca su IMMOBILI o ESPERIENZE il video
+        // è già bufferizzato → avvio istantaneo invece di attendere 2-4 secondi.
+        // Il timer usa requestIdleCallback dove disponibile (non blocca il main thread).
+        const _scheduleVimeoPreload = () => {
+            if (typeof _vimeoPreloadAll === 'function') {
+                _vimeoPreloadAll();
+            }
+        };
+        if (window.requestIdleCallback) {
+            setTimeout(() => requestIdleCallback(_scheduleVimeoPreload, { timeout: 5000 }), 3500);
+        } else {
+            setTimeout(_scheduleVimeoPreload, 3500);
+        }
         
         clearInterval(fakeLoaderInterval);
         
@@ -854,6 +870,28 @@
     });
 
             loadShopCategories();
+
+            // ✅ HOVER PRELOAD: avvia caricamento Vimeo al primo hover su IMMOBILI/ESPERIENZE.
+            // Copre il caso in cui l'utente clicchi prima che scattino i 3.5 secondi.
+            // Il browser ha tipicamente 150-400ms di tempo (hover → click) per aprire
+            // la connessione, sufficienti a ridurre quasi completamente il ritardo iniziale.
+            (function _initHoverPreload() {
+                const vimeoSections = ['properties', 'stays'];
+                document.querySelectorAll('a[onclick], button[onclick]').forEach(link => {
+                    const onclick = link.getAttribute('onclick') || '';
+                    const match = vimeoSections.find(s => onclick.includes(`'${s}'`) || onclick.includes(`"${s}"`));
+                    if (!match) return;
+                    link.addEventListener('mouseenter', function onHover() {
+                        link.removeEventListener('mouseenter', onHover); // una sola volta
+                        if (typeof _vimeoPreloadAll === 'function') _vimeoPreloadAll();
+                    }, { passive: true });
+                    // Touch devices: touchstart anticipa il click
+                    link.addEventListener('touchstart', function onTouch() {
+                        link.removeEventListener('touchstart', onTouch);
+                        if (typeof _vimeoPreloadAll === 'function') _vimeoPreloadAll();
+                    }, { passive: true });
+                });
+            })();
 
             const hash = window.location.hash.substring(1);
             // ✅ FIX: passa false per evitare pushState durante il caricamento iniziale.
