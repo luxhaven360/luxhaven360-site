@@ -821,6 +821,17 @@
         console.log('🔄 Refresh finale prezzi dopo caricamento completo');
         updateAllPricesForLanguage();
     }, 300); // ← Aumentato da 100 a 300ms
+
+        // ✅ FIX: Re-attiva Vimeo nella sezione già visibile (race condition hash).
+        // Quando la pagina viene aperta con /#properties o /#stays,
+        // showSection() scatta prima che _renderProducts inietti l'iframe.
+        // Qui i prodotti sono già caricati, quindi l'iframe c'è: attiviamolo.
+        setTimeout(() => {
+            const activeSection = document.querySelector('.section.active');
+            if (activeSection && typeof activateVimeoSection === 'function') {
+                activateVimeoSection(activeSection);
+            }
+        }, 150);
         
         clearInterval(fakeLoaderInterval);
         
@@ -914,9 +925,9 @@
                     clearInterval(waitForProducts);
                     
                     // Considera caricato anche se ci sono empty state con iframe Vimeo
-                    // (le sezioni vuote non hanno .card[data-sku] ma sono già pronte)
                     const hasProducts = document.querySelectorAll('.card[data-sku]').length > 0
-                                     || document.querySelectorAll('iframe[data-vimeo-id]').length > 0;
+                                     || document.querySelectorAll('iframe[data-vimeo-id]').length > 0
+                                     || document.querySelectorAll('.premium-empty-state').length > 0;
                     
                     if (!hasProducts) {
                         console.log('⚠️ Prodotti non trovati dopo timeout, ricarico dinamicamente');
