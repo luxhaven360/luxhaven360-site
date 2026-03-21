@@ -580,6 +580,13 @@
         global._REMOVED_IDS.add(type + ':' + id);
         global._REMOVED_IDS.add(type + ':' + Number(id));
       }
+      // ── Propagazione globale: scrive su Supabase content_removals ──────────
+      // Il listener RT content_removals_rt in tutti i client connessi riceve
+      // immediatamente l'evento INSERT e rimuove il contenuto dal proprio DOM.
+      // Questo è l'unico meccanismo che garantisce rimozione istantanea globale.
+      if (typeof global._writeRemovalToSupabase === 'function') {
+        global._writeRemovalToSupabase(type, String(id));
+      }
     },
 
     // Notifica silenziosa all'autore del contenuto rimosso/segnalato.
