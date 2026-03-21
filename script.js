@@ -20,17 +20,23 @@ const VIDEO_URLS = {
 
 /**
  * Genera il tag <video> per background video.
- * preload="none" — non scarica nulla finché la sezione non è attiva.
- * Al click su IMMOBILI/ESPERIENZE, activateVideoSection() chiama video.load()
- * + video.play() — avvio immediato senza latenza iframe.
+ *
+ * Attributi necessari per autoplay mobile:
+ *  • autoplay   — richiesto da iOS Safari e Android Chrome per avvio automatico
+ *  • muted      — obbligatorio per autoplay senza gesto utente
+ *  • playsinline — iOS: evita fullscreen automatico
+ *  • loop       — riproduzione continua
+ *  • preload="auto" — inizia il download subito (necessario su mobile)
  */
 function videoHTML(src, title) {
     return `<video
         src="${src}"
-        preload="none"
+        preload="auto"
+        autoplay
         muted
         loop
         playsinline
+        disablepictureinpicture
         aria-hidden="true"
         title="${title}"
         data-bg-video>
@@ -47,11 +53,38 @@ function activateVimeoSection(container) {
     container.querySelectorAll('.empty-hero-video').forEach(slot => {
         const video = slot.querySelector('video[data-bg-video]');
         if (!video) return;
-        if (video.readyState === 0) video.load();
-        video.play().then(() => {
-            // Avvisa tutte le altre tab/finestre di fermarsi
-            if (_videoChannel) _videoChannel.postMessage('playing');
-        }).catch(() => {});
+
+        // Assicura gli attributi necessari per mobile (nel caso fossero stati persi)
+        video.muted = true;
+        video.playsInline = true;
+
+        const tryPlay = () => {
+            video.play().then(() => {
+                // Avvisa tutte le altre tab/finestre di fermarsi
+                if (_videoChannel) _videoChannel.postMessage('playing');
+            }).catch(() => {
+                // Mobile: autoplay bloccato prima del gesto utente.
+                // Registra un listener una-tantum: al primo touch/click riprova.
+                const unlockPlay = () => {
+                    video.play().then(() => {
+                        if (_videoChannel) _videoChannel.postMessage('playing');
+                    }).catch(() => {});
+                    document.removeEventListener('touchstart', unlockPlay);
+                    document.removeEventListener('click', unlockPlay);
+                };
+                document.addEventListener('touchstart', unlockPlay, { once: true, passive: true });
+                document.addEventListener('click', unlockPlay, { once: true });
+            });
+        };
+
+        if (video.readyState === 0) {
+            // Video non ancora caricato: aspetta i metadati poi avvia
+            video.addEventListener('loadedmetadata', tryPlay, { once: true });
+            video.load();
+        } else {
+            tryPlay();
+        }
+
         requestAnimationFrame(() => {
             requestAnimationFrame(() => {
                 slot.classList.add('vimeo-active');
@@ -101,7 +134,6 @@ function _resumeActiveVideos() {
     document.querySelectorAll('.section.active video[data-bg-video]')
         .forEach(v => {
             v.play().then(() => {
-                // Avvisa tutte le altre tab che stiamo riproducendo
                 if (_videoChannel) _videoChannel.postMessage('playing');
             }).catch(() => {});
         });
@@ -2071,4 +2103,3 @@ function updateAllBriefDescriptionsForLanguage() {
     
     console.log(`✅ ${updatedCount} descrizioni brevi aggiornate`);
 }
-
