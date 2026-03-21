@@ -44,9 +44,17 @@ function videoHTML(src, title) {
 }
 
 /**
- * Attiva il video nella sezione: avvia la riproduzione e aggiunge
- * la classe video-active per il fade-in CSS.
- * Se il video era già in riproduzione (cambio sezione ripetuto), riprende.
+ * Attiva il video nella sezione.
+ *
+ * REGOLA iOS Safari:
+ *   video.play() deve essere chiamato DIRETTAMENTE dentro il click handler,
+ *   non dentro un callback asincrono (loadedmetadata, setTimeout, ecc.).
+ *   Se viene chiamato fuori dal gesto utente, iOS lo rifiuta silenziosamente.
+ *
+ * SOLUZIONE:
+ *   Chiamiamo play() subito (dentro il contesto del click).
+ *   Il browser mette in coda la riproduzione e la esegue appena i dati
+ *   sono disponibili — funziona su tutti i browser mobili e desktop.
  */
 function activateVimeoSection(container) {
     if (!container) return;
@@ -54,35 +62,30 @@ function activateVimeoSection(container) {
         const video = slot.querySelector('video[data-bg-video]');
         if (!video) return;
 
-        // Assicura gli attributi necessari per mobile (nel caso fossero stati persi)
+        // Attributi obbligatori per mobile — impostati anche via JS
+        // perché alcuni browser ignorano gli attributi HTML su elementi dinamici
         video.muted = true;
         video.playsInline = true;
+        video.autoplay = true;
 
-        const tryPlay = () => {
-            video.play().then(() => {
-                // Avvisa tutte le altre tab/finestre di fermarsi
+        // Chiama play() immediatamente — siamo dentro il click handler (contesto utente)
+        // Non aspettiamo loadedmetadata: il browser gestisce il buffering internamente
+        const playPromise = video.play();
+
+        if (playPromise !== undefined) {
+            playPromise.then(() => {
                 if (_videoChannel) _videoChannel.postMessage('playing');
             }).catch(() => {
-                // Mobile: autoplay bloccato prima del gesto utente.
-                // Registra un listener una-tantum: al primo touch/click riprova.
-                const unlockPlay = () => {
+                // Fallback: alcuni browser bloccano anche con muted+autoplay
+                // Al primo tocco successivo riprova
+                const unlock = () => {
                     video.play().then(() => {
                         if (_videoChannel) _videoChannel.postMessage('playing');
                     }).catch(() => {});
-                    document.removeEventListener('touchstart', unlockPlay);
-                    document.removeEventListener('click', unlockPlay);
                 };
-                document.addEventListener('touchstart', unlockPlay, { once: true, passive: true });
-                document.addEventListener('click', unlockPlay, { once: true });
+                document.addEventListener('touchstart', unlock, { once: true, passive: true });
+                document.addEventListener('click', unlock, { once: true });
             });
-        };
-
-        if (video.readyState === 0) {
-            // Video non ancora caricato: aspetta i metadati poi avvia
-            video.addEventListener('loadedmetadata', tryPlay, { once: true });
-            video.load();
-        } else {
-            tryPlay();
         }
 
         requestAnimationFrame(() => {
