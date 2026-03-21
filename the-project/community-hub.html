@@ -6547,6 +6547,8 @@ function initApp() {
       }, (payload) => {
         const a = payload.new;
         if (!a || !a.text) return;
+        // Ignora session_start — non deve apparire nell'attività recente
+        if (a.text === 'session_start') return;
         // Evita duplicati: controlla se questa attività è già nell'array globale
         const tsMs = a.created_at ? new Date(a.created_at).getTime() : Date.now();
         const isDuplicate = GLOBAL_ACTIVITIES.some(g => g.text === a.text && Math.abs(g.ts - tsMs) < 5000);
@@ -8376,7 +8378,7 @@ function renderActivityFeed() {
   const displayCutoff = Date.now() - ACTIVITY_DISPLAY_DAYS * 24 * 60 * 60 * 1000;
 
   const activities = GLOBAL_ACTIVITIES
-    .filter(e => e.ts >= displayCutoff && e.ts > userClearTs) // FIX #1: rispetta clear per-utente
+    .filter(e => e.ts >= displayCutoff && e.ts > userClearTs && e.text !== 'session_start') // esclude session_start
     .slice(0, ACTIVITY_DISPLAY_MAX)                           // FIX #3: max 5
     .map(e => ({ dot: e.dotColor, text: e.text, time: formatTimeAgo(e.ts) }));
 
@@ -8999,7 +9001,7 @@ async function _loadGlobalActivitiesFromSupabase() {
       if (raw) {
         const parsed = JSON.parse(raw);
         if (Array.isArray(parsed) && parsed.length > 0) {
-          GLOBAL_ACTIVITIES = parsed;
+          GLOBAL_ACTIVITIES = parsed.filter(e => e.text !== 'session_start');
           renderActivityFeed();
         }
       }
@@ -9024,11 +9026,13 @@ async function _loadGlobalActivitiesFromSupabase() {
     // Supabase ha risposto correttamente — il suo risultato è la fonte di verità
     // Anche se l'array è vuoto (DB svuotato), si rispetta quel valore
     if (Array.isArray(data)) {
-      GLOBAL_ACTIVITIES = data.map(a => ({
-        dotColor: a.dot_color || 'blue',
-        text: a.text,
-        ts: a.created_at ? new Date(a.created_at).getTime() : Date.now()
-      }));
+      GLOBAL_ACTIVITIES = data
+        .filter(a => a.text !== 'session_start')  // session_start non va nell'attività visibile
+        .map(a => ({
+          dotColor: a.dot_color || 'blue',
+          text: a.text,
+          ts: a.created_at ? new Date(a.created_at).getTime() : Date.now()
+        }));
       // Aggiorna anche localStorage con i dati reali (per coerenza in caso di successivi fallback)
       try { localStorage.setItem(ACTIVITY_LOG_KEY, JSON.stringify(GLOBAL_ACTIVITIES.slice(0, 20))); } catch(e) {}
       renderActivityFeed();
