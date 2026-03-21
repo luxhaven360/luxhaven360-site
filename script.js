@@ -1,67 +1,57 @@
 // ═════════════════════════════════════════════════════════════════════════════
-// 🎬 VIMEO VIDEO SYSTEM — v4
+// 🎬 VIDEO SYSTEM — Backblaze B2 + Cloudflare CDN
 //
 // ARCHITETTURA:
-//   L'iframe viene iniettato DIRETTAMENTE nell'HTML delle sezioni vuote,
-//   non lazy. Chrome e Firefox caricano gli iframe anche dentro sezioni
-//   display:none — il video buferizza in background mentre l'utente è
-//   su Home. Quando arriva su Immobili/Esperienze, il video è già pronto.
+//   Tag <video> HTML nativo con sorgente su cdn.luxhaven360.com (Cloudflare CDN
+//   davanti a Backblaze B2). Nessun iframe, nessun postMessage cross-origin,
+//   nessun player JavaScript esterno.
 //
-//   NON si spostano mai iframe nel DOM: spostare un iframe causa il
-//   ricaricamento completo del suo contenuto in tutti i browser.
+//   Vantaggi vs Vimeo iframe:
+//   • Avvio istantaneo — video.play() è sincrono, zero latenza cross-origin
+//   • Scalabilità illimitata — CDN globale, nessun limite stream concorrenti
+//   • Costo ~0 — traffico B2→Cloudflare gratuito (Bandwidth Alliance)
+//   • Codice 10x più semplice — niente workaround postMessage
 // ═════════════════════════════════════════════════════════════════════════════
 
-const VIMEO_IDS = {
-    immobili:   '1175247244',   // Video Immobili  — vimeo.com/1175247244
-    esperienze: '1175525988'    // Video Esperienze — vimeo.com/1175525988
+const VIDEO_URLS = {
+    immobili:   'https://cdn.luxhaven360.com/file/luxhaven360-videos/immobili.mp4',
+    esperienze: 'https://cdn.luxhaven360.com/file/luxhaven360-videos/esperienze.mp4'
 };
 
 /**
- * URL embed Vimeo ottimizzato per background video.
- * quality=720p: cap a 720p — risoluzione sufficiente per un background fullscreen,
- * riduce il bitrate del ~40% rispetto a 1080p senza differenza visiva percepibile.
- * Questo abbassa il consumo di banda per ogni stream attivo.
+ * Genera il tag <video> per background video.
+ * preload="none" — non scarica nulla finché la sezione non è attiva.
+ * Al click su IMMOBILI/ESPERIENZE, activateVideoSection() chiama video.load()
+ * + video.play() — avvio immediato senza latenza iframe.
  */
-function vimeoBackgroundUrl(videoId) {
-    return `https://player.vimeo.com/video/${videoId}?background=1&autoplay=1&loop=1&muted=1&autopause=0&transparent=0&badge=0&dnt=1&quality=720p&app_id=58479`;
-}
-
-/**
- * Genera il tag <iframe> Vimeo con LAZY SRC.
- * Parte con src="about:blank" — nessun stream HLS finché la sezione
- * non diventa attiva. Il vero URL è in data-src.
- * _vimeoInit() sposta data-src → src alla prima attivazione.
- * Vantaggi: 0 stream al caricamento, solo 1 stream alla volta.
- */
-function vimeoIframeHTML(videoId, title) {
-    return `<iframe
-        src="about:blank"
-        data-src="${vimeoBackgroundUrl(videoId)}"
-        frameborder="0"
-        allow="autoplay; fullscreen; picture-in-picture; clipboard-write; encrypted-media"
-        referrerpolicy="strict-origin-when-cross-origin"
-        title="${title}"
+function videoHTML(src, title) {
+    return `<video
+        src="${src}"
+        preload="none"
+        muted
+        loop
+        playsinline
         aria-hidden="true"
-        data-vimeo-id="${videoId}">
-    </iframe>`;
+        title="${title}"
+        data-bg-video>
+    </video>`;
 }
 
 /**
- * Rende visibile il video Vimeo nella sezione e lo avvia se non ancora caricato.
- *
- * Caso A — precaricato (src reale già impostata, video in riproduzione silenziosa):
- *   → aggiunge solo vimeo-active (fade-in CSS). Nessun postMessage, nessun ritardo.
- *
- * Caso B — non ancora caricato (src="about:blank"):
- *   → imposta il vero src; autoplay=1 nell'URL avvia la riproduzione automaticamente.
+ * Attiva il video nella sezione: avvia la riproduzione e aggiunge
+ * la classe video-active per il fade-in CSS.
+ * Se il video era già in riproduzione (cambio sezione ripetuto), riprende.
  */
 function activateVimeoSection(container) {
     if (!container) return;
     container.querySelectorAll('.empty-hero-video').forEach(slot => {
-        const iframe = slot.querySelector('iframe[data-vimeo-id]');
-        if (!iframe) return;
-        _vimeoInit(iframe);
-        // Doppio rAF garantisce che display:block sia applicato prima della transition
+        const video = slot.querySelector('video[data-bg-video]');
+        if (!video) return;
+        // Se non ancora caricato, carica e avvia
+        if (video.readyState === 0) {
+            video.load();
+        }
+        video.play().catch(() => {}); // silenzioso se autoplay bloccato
         requestAnimationFrame(() => {
             requestAnimationFrame(() => {
                 slot.classList.add('vimeo-active');
@@ -70,110 +60,30 @@ function activateVimeoSection(container) {
     });
 }
 
-/**
- * Prima attivazione: imposta src da data-src (avvia stream, autoplay=1 nell'URL).
- * Già caricato: il video sta girando silenziosamente — non serve postMessage.
- */
-function _vimeoInit(iframe) {
-    if (!iframe) return;
-    const alreadyLoaded = iframe.src && iframe.src !== 'about:blank' && iframe.src !== '';
-    if (!alreadyLoaded) {
-        const dataSrc = iframe.getAttribute('data-src');
-        if (dataSrc) {
-            iframe.src = dataSrc; // autoplay=1 nell'URL avvia da solo
-        }
-    }
-    // Se già caricato: il video sta già girando (preload silenzioso mai interrotto)
-    // → nessuna azione necessaria, vimeo-active lo renderà visibile
-}
-
-/**
- * Invia il comando "play" all'iframe Vimeo via postMessage.
- * Risolve il lag dopo cambio tab / cambio finestra.
- * Silenzioso: non genera errori se l'iframe non ha ancora caricato.
- */
-function _vimeoPlay(iframe) {
-    try {
-        if (iframe && iframe.contentWindow) {
-            iframe.contentWindow.postMessage('{"method":"play"}', 'https://player.vimeo.com');
-        }
-    } catch (e) { /* cross-origin — silenzioso */ }
-}
-
-/**
- * Invia il comando "pause" all'iframe Vimeo via postMessage.
- * Ferma lo streaming HLS degli iframe nelle sezioni nascoste —
- * evita che due video scarichino contemporaneamente saturando la banda.
- */
-function _vimeoPause(iframe) {
-    try {
-        if (iframe && iframe.contentWindow) {
-            iframe.contentWindow.postMessage('{"method":"pause"}', 'https://player.vimeo.com');
-        }
-    } catch (e) { /* cross-origin — silenzioso */ }
-}
-
-// ── Gestione cambio visibilità tab ───────────────────────────────────────────
+// ── Pausa video quando la tab va in background, riprendi al ritorno ──────────
 document.addEventListener('visibilitychange', () => {
     if (document.hidden) {
-        // Tab in background: pausa SOLO l'iframe attivo (quelli precaricati girano già
-        // in background — fermarli richiederebbe un play cross-origin inaffidabile al ritorno)
-        document.querySelectorAll('.section.active, .hero.active').forEach(activeEl => {
-            activeEl.querySelectorAll('iframe[data-vimeo-id]').forEach(iframe => _vimeoPause(iframe));
-        });
+        document.querySelectorAll('.section.active video[data-bg-video]')
+            .forEach(v => v.pause());
         return;
     }
-    // Tab tornata attiva: riprendi l'iframe della sezione visibile
-    document.querySelectorAll('.section.active, .hero.active').forEach(activeEl => {
-        activeEl.querySelectorAll('.empty-hero-video.vimeo-active iframe[data-vimeo-id]')
-            .forEach(iframe => _vimeoPlay(iframe));
-    });
-    console.log('👁 Tab tornata attiva — ripresa Vimeo sezione attiva');
+    document.querySelectorAll('.section.active video[data-bg-video]')
+        .forEach(v => v.play().catch(() => {}));
 });
 
-// ── Preconnect JS (rinforza i tag <link> già nel <head>) ────────────────────
-// Utile se il browser non ha ancora aperto la connessione TCP/TLS a Vimeo.
-(function _vimeoPreconnect() {
-    const hosts = ['https://player.vimeo.com', 'https://f.vimeocdn.com', 'https://i.vimeocdn.com'];
-    hosts.forEach(href => {
-        if (!document.querySelector(`link[rel="preconnect"][href="${href}"]`)) {
-            const l = document.createElement('link');
-            l.rel = 'preconnect'; l.href = href; l.crossOrigin = '';
-            document.head.appendChild(l);
-        }
-    });
-})();
-
 /**
- * ── Preload MIRATO: avvia il video di UNA sezione specifica on-hover ─────────
- *
- * Viene chiamato solo quando l'utente fa hover sul link IMMOBILI o ESPERIENZE.
- * Carica solo il video corrispondente alla sezione su cui sta per cliccare,
- * NON tutti i video in background per tutti gli utenti.
- *
- * Questo è radicalmente diverso dal preload automatico rimosso:
- *  • 1 stream per utente attivo (non 2×N stream per N utenti su Home)
- *  • Solo quando c'è reale intenzione di navigare
- *  • 150-400ms di anticipo (hover→click) sono sufficienti per aprire HLS
+ * Preload on-hover: inizia il download del video quando l'utente
+ * fa hover sul link IMMOBILI o ESPERIENZE (150-400ms di anticipo).
  */
 function _vimeoPreloadForSection(sectionId) {
-    // Mappa sezione → id Vimeo
-    const sectionToVimeoId = { properties: VIMEO_IDS.immobili, stays: VIMEO_IDS.esperienze };
-    const targetVimeoId = sectionToVimeoId[sectionId];
-    if (!targetVimeoId) return;
-
-    // Trova l'iframe corrispondente (non quello della sezione attiva)
-    const iframe = document.querySelector(
-        `iframe[data-vimeo-id="${targetVimeoId}"]:not(.section.active iframe)`
-    );
-    if (!iframe) return;
-    if (iframe.src && iframe.src !== 'about:blank' && iframe.src !== '') return; // già caricato
-
-    const dataSrc = iframe.getAttribute('data-src');
-    if (dataSrc) {
-        iframe.src = dataSrc;
-        console.log(`🎬 Vimeo preload on-hover: sezione=${sectionId}`);
-    }
+    const sectionToUrl = { properties: VIDEO_URLS.immobili, stays: VIDEO_URLS.esperienze };
+    const url = sectionToUrl[sectionId];
+    if (!url) return;
+    const video = document.querySelector(`video[src="${url}"][data-bg-video]`);
+    if (!video || video.readyState > 0) return; // già caricato
+    video.preload = 'auto';
+    video.load();
+    console.log(`🎬 Video preload on-hover: sezione=${sectionId}`);
 }
 // ═════════════════════════════════════════════════════════════════════════════
 
@@ -186,11 +96,9 @@ function _showSectionInternal(sectionId) {
         video.currentTime = 0;
     });
 
-    // ✅ STEP 1b: PAUSA SOLO IL VIMEO DELLA SEZIONE ATTIVA (non quelli precaricati)
-    // I precaricati girano silenziosamente in background (muted, nascosti) —
-    // fermarli e riattivarli via postMessage cross-origin introduce il ritardo.
+    // ✅ STEP 1b: PAUSA SOLO IL VIDEO DELLA SEZIONE ATTIVA
     document.querySelectorAll('.section.active, .hero.active').forEach(activeEl => {
-        activeEl.querySelectorAll('iframe[data-vimeo-id]').forEach(iframe => _vimeoPause(iframe));
+        activeEl.querySelectorAll('video[data-bg-video]').forEach(v => v.pause());
     });
     
     // ✅ STEP 2: NASCONDI TUTTE LE SEZIONI E HERO
@@ -1305,7 +1213,7 @@ function generatePropertiesEmptyState() {
     return `
         <div class="premium-empty-state">
             <div class="empty-hero-video">
-                ${vimeoIframeHTML(VIMEO_IDS.immobili, 'LuxHaven360 — Immobili')}
+                ${videoHTML(VIDEO_URLS.immobili, 'LuxHaven360 — Immobili')}
             </div>
             <div class="empty-content-wrapper">
                 <h2 class="empty-main-title" data-i18n="empty_properties_title" data-i18n-html="true">Immobili Selezionati.<br>Non Cataloghi.</h2>
@@ -1341,7 +1249,7 @@ function generateExperiencesEmptyState() {
     return `
         <div class="premium-empty-state">
             <div class="empty-hero-video">
-                ${vimeoIframeHTML(VIMEO_IDS.esperienze, 'LuxHaven360 — Esperienze')}
+                ${videoHTML(VIDEO_URLS.esperienze, 'LuxHaven360 — Esperienze')}
             </div>
             <div class="empty-content-wrapper">
                 <h2 class="empty-main-title" data-i18n="empty_stays_title" data-i18n-html="true">Esperienze Esclusive<br>su Misura</h2>
@@ -1489,7 +1397,7 @@ function _renderProducts(shopData, bookableData, grids) {
             const emptyState = grids[section.id].querySelector('.premium-empty-state');
             if (emptyState) {
                 savedEmptyStates[section.id] = emptyState;
-                emptyState.remove(); // detach: iframe vivo in memoria, non nel DOM
+                emptyState.remove();
             }
         }
     });
@@ -1564,12 +1472,11 @@ function _renderProducts(shopData, bookableData, grids) {
         } else {
             // Sezione con prodotti: ferma e scarta il video (non serve più)
             if (savedEmptyStates[section.id]) {
-                const iframe = savedEmptyStates[section.id].querySelector('iframe[data-vimeo-id]');
-                if (iframe) {
-                    _vimeoPause(iframe);
-                    iframe.src = 'about:blank'; // ferma lo stream HLS definitivamente
+                const video = savedEmptyStates[section.id].querySelector('video[data-bg-video]');
+                if (video) {
+                    video.pause();
+                    video.src = ''; // ferma il download definitivamente
                 }
-                // L'elemento viene garbage-collected (nessun riferimento rimasto)
             }
         }
     });
