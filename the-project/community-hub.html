@@ -7757,13 +7757,28 @@ function applyRemoteData(data) {
   // ── Listing Esclusivi ─────────────────────────────────────────────
   if (Array.isArray(data.listings)) {
     // Preserva listing pubblicati ottimisticamente (non ancora confermati da GAS).
-    // Se il server non ha ancora l'item (polling arriva prima della risposta GAS),
-    // lo manteniamo localmente per evitare la sparizione immediata.
-    const serverListingIds = new Set(data.listings.map(l => l.id));
-    const pendingLocal = LISTINGS.filter(l => _pendingListingIds.has(l.id) && !serverListingIds.has(l.id));
+    // Doppia protezione:
+    //  1. _pendingListingIds: ID esplicitamente marcati come in attesa di conferma
+    //  2. Safety net temporale: listing pubblicati negli ultimi 5 minuti non ancora
+    //     sul server vengono preservati anche se _pendingListingIds è desincrono
+    //     (es. dopo un rapido ciclo di GAS publish_listing che aggiorna l'ID prima
+    //     che il polling successivo veda il listing su get_community_data).
+    const serverListingIds = new Set(data.listings.map(l => String(l.id)));
+    const _nowMs = Date.now();
+    const _LISTING_GRACE_MS = 5 * 60 * 1000; // 5 minuti
+    const pendingLocal = LISTINGS.filter(l => {
+      const lIdStr = String(l.id);
+      if (serverListingIds.has(lIdStr)) return false; // già sul server → non duplicare
+      if (_pendingListingIds.has(l.id) || _pendingListingIds.has(lIdStr)) return true; // esplicitamente pending
+      // Safety net: listing pubblicato molto di recente (ultimi 5 min) → mantieni
+      const lTs = l.ts ? new Date(l.ts).getTime() : 0;
+      return lTs > 0 && (_nowMs - lTs) < _LISTING_GRACE_MS;
+    });
     LISTINGS = [...pendingLocal, ...data.listings];
-    // Rimuovi dai pending gli item che il server ha confermato
-    _pendingListingIds.forEach(id => { if (serverListingIds.has(id)) _pendingListingIds.delete(id); });
+    // Rimuovi dai pending gli item che il server ha confermato (confronto tollerante al tipo)
+    _pendingListingIds.forEach(id => {
+      if (serverListingIds.has(String(id))) _pendingListingIds.delete(id);
+    });
   }
 
   // ── Risposte thread ──────────────────────────────────────────────
@@ -9066,10 +9081,17 @@ function renderFeed() {
         <span class="reaction-item" style="margin-left:0.5rem" id="react-comments-${post.id}">💬 ${post.comments}</span>
       </div>
       <div class="post-actions">
+        ${(currentUser && currentUser.role === 'team' && post.isTeam) ? `
+        <button class="post-action-btn" style="opacity:0.35;cursor:not-allowed;" disabled title="I membri del team non possono mettere like ai post del team">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z"/></svg>
+          ${I18n.t('feed.like')} (${post.likes})
+        </button>
+        ` : `
         <button class="post-action-btn ${post.liked ? 'liked' : ''}" onclick="toggleLike(${post.id}, this)">
           <svg viewBox="0 0 24 24" fill="${post.liked ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="1.8"><path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z"/></svg>
           ${post.liked ? I18n.t('feed.liked') : I18n.t('feed.like')} (${post.likes})
         </button>
+        `}
         <button class="post-action-btn" onclick="toggleComments(${post.id})">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
           ${I18n.t('feed.comment_btn')} (${post.comments})
@@ -9151,7 +9173,11 @@ function toggleLike(postId, btn) {
   const post = FEED_POSTS.find(p => p.id === postId);
   if (!post) return;
 
-  // Ottimistic update immediato
+  // I membri del team non possono mettere like ai post del team
+  if (currentUser && currentUser.role === 'team' && post.isTeam) {
+    showToast('red', '🚫', 'I membri del team non possono mettere like ai propri post.');
+    return;
+  }
   post.liked  = !post.liked;
   post.likes += post.liked ? 1 : -1;
 
@@ -10467,7 +10493,11 @@ async function loadConversations() {
   const cachedConvs = loadConvsCache();
   if (cachedConvs !== null && REAL_CONVS.length === 0) {
     // cachedConvs può essere [] (lista intenzionalmente vuota dopo eliminazione)
-    REAL_CONVS = cachedConvs;
+    REAL_CONVS = cachedConvs.filter(c => {
+      if (!currentUser || currentUser.role === 'founding' || currentUser.role === 'team') return true;
+      const pRole = (c.partnerRole || '').toLowerCase();
+      return pRole !== 'team' && !pRole.includes('admin');
+    });
     _injectTeamConvsForFounding();
     renderConversations();
     updateMsgBadge();
@@ -10510,6 +10540,12 @@ async function loadConversations() {
       REAL_CONVS = data.conversations
         // Filtra tombstone: conv eliminate localmente non devono riapparire da GAS
         .filter(c => !tombstones.includes(c.partnerEmail.toLowerCase()))
+        // Filtra accesso ruolo: i candidati non hanno accesso alle conv con il team
+        .filter(c => {
+          if (!currentUser || currentUser.role === 'founding' || currentUser.role === 'team') return true;
+          const pRole = (c.partnerRole || '').toLowerCase();
+          return pRole !== 'team' && !pRole.includes('admin');
+        })
         .map(c => {
           const info = getPartnerInfo(c.partnerEmail);
           const _mem = _memByEmail.get(c.partnerEmail.toLowerCase()); // entry in-memoria
@@ -10576,11 +10612,27 @@ function renderConversations() {
   if (!container) return;
 
   // ── SAFETY NET: la conv correntemente aperta non sparisce mai dalla sidebar ──
+  // ECCEZIONE: se l'utente è candidato, non può vedere le conv con il team —
+  // la safety net non va applicata in quel caso (altrimenti le conv riappaiono
+  // anche dopo la retrocessione del ruolo, finché il pannello resta aperto).
   if (currentConvPartnerEmail && document.getElementById('panel-messages')?.classList.contains('active')) {
     const _inList = REAL_CONVS.some(c => c.partnerEmail.toLowerCase() === currentConvPartnerEmail.toLowerCase());
     if (!_inList) {
       const _si = getPartnerInfo(currentConvPartnerEmail);
-      REAL_CONVS.unshift({ partnerEmail: currentConvPartnerEmail, partnerName: _si.name, partnerInitial: _si.initial, partnerRole: _si.role, lastMessage: '', lastTs: new Date().toISOString(), unread: 0 });
+      // Verifica accesso ruolo prima di reinserire
+      const _pRoleLc = (_si.role || '').toLowerCase();
+      const _isPartnerTeam = _pRoleLc === 'team' || _pRoleLc.includes('admin');
+      const _canSeeTeam = currentUser && (currentUser.role === 'founding' || currentUser.role === 'team');
+      if (!_isPartnerTeam || _canSeeTeam) {
+        REAL_CONVS.unshift({ partnerEmail: currentConvPartnerEmail, partnerName: _si.name, partnerInitial: _si.initial, partnerRole: _si.role, lastMessage: '', lastTs: new Date().toISOString(), unread: 0 });
+      } else {
+        // Partner è team ma utente non ha accesso → resetta la conv aperta
+        currentConvPartnerEmail = null;
+        const convChat = document.querySelector('.conv-chat');
+        const convEmpty = document.querySelector('.conv-empty');
+        if (convChat)  convChat.style.display = 'none';
+        if (convEmpty) convEmpty.style.display = 'flex';
+      }
     }
   }
 
@@ -14369,7 +14421,10 @@ async function publishListing() {
         if (idx !== -1) { LISTINGS[idx].id = realId; saveCommunityCache(); }
         _pendingListingIds.delete(tempId);
         _pendingListingIds.add(realId);
-        setTimeout(() => _pendingListingIds.delete(realId), 60000);
+        // Aggiungi anche la versione stringa per sicurezza (GAS può restituire numeri o stringhe)
+        if (typeof realId === 'number') _pendingListingIds.add(String(realId));
+        else if (typeof realId === 'string') _pendingListingIds.add(Number(realId) || realId);
+        setTimeout(() => { _pendingListingIds.delete(realId); _pendingListingIds.delete(String(realId)); _pendingListingIds.delete(Number(realId)); }, 60000);
         // ── Salva traduzioni manuali (TESTTRAD) ──────────────────────────
         if (window._lxTestModeActive && typeof _lxSaveManualTranslations === 'function') {
           _lxSaveManualTranslations('listing', String(realId), _lxReadTransFields('listingTrans'), 'listingTransBadge');
