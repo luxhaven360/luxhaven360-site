@@ -823,31 +823,16 @@
     }, 300); // ← Aumentato da 100 a 300ms
 
         // ✅ FIX: Re-attiva Vimeo nella sezione già visibile (race condition hash).
-        // Quando la pagina viene aperta con /#properties o /#stays,
-        // showSection() scatta prima che _renderProducts inietti l'iframe.
-        // Qui i prodotti sono già caricati, quindi l'iframe c'è: attiviamolo.
         setTimeout(() => {
             const activeSection = document.querySelector('.section.active');
             if (activeSection && typeof activateVimeoSection === 'function') {
                 activateVimeoSection(activeSection);
             }
         }, 150);
-
-        // ✅ PRELOAD VIDEO in background: 3.5s dopo che i prodotti sono pronti,
-        // avvia silenziosamente il caricamento degli iframe Vimeo nelle sezioni
-        // nascoste. Quando l'utente clicca su IMMOBILI o ESPERIENZE il video
-        // è già bufferizzato → avvio istantaneo invece di attendere 2-4 secondi.
-        // Il timer usa requestIdleCallback dove disponibile (non blocca il main thread).
-        const _scheduleVimeoPreload = () => {
-            if (typeof _vimeoPreloadAll === 'function') {
-                _vimeoPreloadAll();
-            }
-        };
-        if (window.requestIdleCallback) {
-            setTimeout(() => requestIdleCallback(_scheduleVimeoPreload, { timeout: 5000 }), 3500);
-        } else {
-            setTimeout(_scheduleVimeoPreload, 3500);
-        }
+        // NOTA: il preload automatico dei video (timer 3.5s) è stato rimosso
+        // perché con utenti multipli generava N×2 stream simultanei su Vimeo,
+        // saturando i limiti di banda dell'account. Il preload resta attivo
+        // solo on-hover (1 stream per utente, solo quando necessario).
         
         clearInterval(fakeLoaderInterval);
         
@@ -871,24 +856,27 @@
 
             loadShopCategories();
 
-            // ✅ HOVER PRELOAD: avvia caricamento Vimeo al primo hover su IMMOBILI/ESPERIENZE.
-            // Copre il caso in cui l'utente clicchi prima che scattino i 3.5 secondi.
-            // Il browser ha tipicamente 150-400ms di tempo (hover → click) per aprire
-            // la connessione, sufficienti a ridurre quasi completamente il ritardo iniziale.
+            // ✅ HOVER PRELOAD MIRATO: precarica solo il video della sezione su cui
+            // l'utente sta per cliccare (non tutti i video per tutti gli utenti).
             (function _initHoverPreload() {
                 const vimeoSections = ['properties', 'stays'];
                 document.querySelectorAll('a[onclick], button[onclick]').forEach(link => {
                     const onclick = link.getAttribute('onclick') || '';
-                    const match = vimeoSections.find(s => onclick.includes(`'${s}'`) || onclick.includes(`"${s}"`));
-                    if (!match) return;
+                    const sectionId = vimeoSections.find(s =>
+                        onclick.includes(`'${s}'`) || onclick.includes(`"${s}"`)
+                    );
+                    if (!sectionId) return;
                     link.addEventListener('mouseenter', function onHover() {
-                        link.removeEventListener('mouseenter', onHover); // una sola volta
-                        if (typeof _vimeoPreloadAll === 'function') _vimeoPreloadAll();
+                        link.removeEventListener('mouseenter', onHover);
+                        if (typeof _vimeoPreloadForSection === 'function') {
+                            _vimeoPreloadForSection(sectionId);
+                        }
                     }, { passive: true });
-                    // Touch devices: touchstart anticipa il click
                     link.addEventListener('touchstart', function onTouch() {
                         link.removeEventListener('touchstart', onTouch);
-                        if (typeof _vimeoPreloadAll === 'function') _vimeoPreloadAll();
+                        if (typeof _vimeoPreloadForSection === 'function') {
+                            _vimeoPreloadForSection(sectionId);
+                        }
                     }, { passive: true });
                 });
             })();
