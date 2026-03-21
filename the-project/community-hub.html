@@ -11277,10 +11277,8 @@ async function sendMessage() {
   if (!currentUser) { showToast('red', '⚠️', I18n.t('msg.session_expired')); return; }
   if (!currentConvPartnerEmail) { showToast('red', '⚠️', I18n.t('msg.no_conv')); return; }
 
-  // ── Moderazione automatica messaggi privati ───────────────────────────────
-  if (text) {
-    autoModerateText(text, 'dm_message', 'dm_' + Date.now(), currentUser.name, currentUser.email);
-  }
+  // Moderazione automatica DM disabilitata — i messaggi privati sono conversazioni
+  // personali tra utenti. La segnalazione avviene solo manualmente tramite il pulsante 🚩.
 
   const sendBtn = document.querySelector('.chat-send-btn');
   if (sendBtn) { sendBtn.disabled = true; sendBtn.style.opacity = '0.5'; }
@@ -11584,9 +11582,28 @@ function sbListenMessages(partnerEmail) {
       }
     });
 
-  // Ascolta nuovi messaggi in RT
+  // Ascolta nuovi messaggi + cancellazioni in RT
   sbOff('messages');
   const ch = _sb.channel('messages_' + cid)
+    .on('postgres_changes', {
+      event: 'DELETE', schema: 'public', table: 'messages',
+      filter: `conv_id=eq.${cid}`
+    }, (payload) => {
+      // Un messaggio è stato eliminato (es. da auto-mod) → rimuovilo dal DOM e dalla cache
+      const deletedId = payload.old && payload.old.id;
+      if (!deletedId) return;
+      const cacheKey = partnerEmail.toLowerCase();
+      if (_msgCache[cacheKey]) {
+        _msgCache[cacheKey] = _msgCache[cacheKey].filter(m => String(m.id) !== String(deletedId));
+      }
+      const panelOpen = document.getElementById('panel-messages')?.classList.contains('active');
+      const isThisConv = panelOpen && currentConvPartnerEmail &&
+        currentConvPartnerEmail.toLowerCase() === partnerEmail.toLowerCase();
+      if (isThisConv) {
+        // Re-render dalla cache aggiornata (rimuove il messaggio dalla UI)
+        renderChatMessages(_msgCache[cacheKey] || [], partnerEmail);
+      }
+    })
     .on('postgres_changes', {
       event: 'INSERT', schema: 'public', table: 'messages',
       filter: `conv_id=eq.${cid}`
@@ -11613,24 +11630,8 @@ function sbListenMessages(partnerEmail) {
         ts: m.created_at, deletedFor: m.deleted_for || []
       };
 
-      // ── Moderazione automatica messaggi ricevuti in RT ─────────────────────
-      // Eseguita lato ricevente: blocca la visualizzazione se il messaggio è critico/high.
-      // Nota: la lingua viene rilevata automaticamente dal modulo multilingua.
-      if (msg.text && typeof window.LH360Mod !== 'undefined') {
-        const _rtSenderRole = (function() {
-          const _pi = getPartnerInfo(m.sender_email || '');
-          return _pi && _pi.role ? _pi.role : 'candidate';
-        })();
-        const _rtMod = window.LH360Mod.moderate(
-          msg.text, 'dm_message', String(m.id || Date.now()),
-          m.sender_name || 'Utente', m.sender_email || '',
-          _rtSenderRole
-        );
-        if (_rtMod.action === 'remove' || _rtMod.action === 'warn') {
-          // Messaggio segnalato: non mostrarlo nel chat, il team lo vedrà nella coda
-          return;
-        }
-      }
+      // Moderazione automatica DM lato ricezione disabilitata — contesto privato.
+      // La segnalazione avviene solo manualmente tramite il pulsante 🚩.
 
       // Aggiorna cache in memoria
       const cacheKey = partnerEmail.toLowerCase();
