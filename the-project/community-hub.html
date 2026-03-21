@@ -1492,6 +1492,18 @@ mark.hl { background: rgba(212,175,55,0.22); color: var(--gold-light); border-ra
 }
 .survey-option:hover { border-color: var(--gold-dim); }
 .survey-option.voted { border-color: var(--gold-dim); cursor: default; }
+.survey-option.team-view {
+  cursor: not-allowed; opacity: 0.88;
+  border-color: rgba(212,175,55,0.18);
+}
+.survey-option.team-view:hover { border-color: rgba(212,175,55,0.28); }
+.survey-team-notice {
+  display: flex; align-items: center; gap: 0.45rem;
+  font-size: 0.68rem; color: var(--gold); opacity: 0.75;
+  margin-top: 0.6rem; padding: 0.4rem 0.6rem;
+  background: rgba(212,175,55,0.05); border-radius: 6px;
+  border: 1px solid rgba(212,175,55,0.15);
+}
 .survey-progress {
   position: absolute; top: 0; left: 0; height: 100%;
   background: rgba(212,175,55,0.06); transition: width 0.6s ease;
@@ -12541,28 +12553,52 @@ function renderSurveys() {
     container.innerHTML = `<div style="text-align:center;padding:3rem 1rem;color:var(--muted2);font-size:0.82rem;">${I18n.t('survey.no_surveys')}</div>`;
     return;
   }
-  container.innerHTML = surveys.map(s => `
+  const _isTeamViewer = role === 'team';
+
+  container.innerHTML = surveys.map(s => {
+    // Il team vede sempre le percentuali (come se avesse già votato), ma non può votare
+    const _teamShowResults = _isTeamViewer;
+    const _showPct = s.voted || _teamShowResults;
+
+    return `
     <div class="survey-card" id="survey-${s.id}">
       <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:0.5rem; margin-bottom:0.8rem;">
         <div class="post-type-tag survey">${I18n.t('survey.active_tag')}</div>
+        ${_isTeamViewer ? `<div style="font-size:0.62rem;color:var(--gold);opacity:0.7;letter-spacing:0.05em;">👁 Sola lettura</div>` : ''}
       </div>
       <div class="survey-title" data-content-id="survey-title-${s.id}" data-content-lang="${s.lang||'it'}">${s.title}</div>
       <div class="survey-desc" data-content-id="survey-desc-${s.id}" data-content-lang="${s.lang||'it'}">${s.desc || s.question || ''}</div>
       ${s.options.map((o, i) => {
-        const pct = s.voted && s.total > 0 ? Math.round(o.votes / s.total * 100) : 0;
+        const pct = _showPct && s.total > 0 ? Math.round(o.votes / s.total * 100) : 0;
+        const isMyVote = s.voted && s.myVote === i;
+        // Team: mostra barre risultati ma no click, no stato voted personale
+        const optClass = _isTeamViewer
+          ? 'survey-option team-view'
+          : `survey-option ${isMyVote ? 'voted' : ''}`;
+        const optClick = _isTeamViewer
+          ? 'event.preventDefault();event.stopPropagation();'
+          : `voteSurvey(${s.id}, ${i})`;
         return `
-        <div class="survey-option ${s.voted && s.myVote === i ? 'voted' : ''}" onclick="voteSurvey(${s.id}, ${i})">
-          <div class="survey-progress" style="width:${pct}%"></div>
+        <div class="${optClass}" onclick="${optClick}">
+          <div class="survey-progress" style="width:${(_showPct ? pct : 0)}%"></div>
           <div class="survey-option-text" data-content-id="survey-opt-${s.id}-${i}" data-content-lang="${s.lang||'it'}">${o.text}</div>
-          ${s.voted ? `<div class="survey-option-pct">${pct}%</div>` : ''}
+          ${_showPct ? `<div class="survey-option-pct">${pct}%</div>` : ''}
         </div>`;
       }).join('')}
+      ${_isTeamViewer ? `
+      <div class="survey-team-notice">
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+        Il team può visualizzare i risultati ma non votare
+      </div>` : ''}
       <div class="survey-footer">
         <span>${(s.total||0) === 1 ? I18n.t('survey.total_one',{n:s.total||0}) : I18n.t('survey.total',{n:s.total||0})}</span>
-        ${s.voted ? `<span class="text-gold">${I18n.t('survey.voted')}</span>` : `<span>${I18n.t('survey.vote_cta')}</span>`}
+        ${_isTeamViewer
+          ? `<span style="color:var(--gold);opacity:0.7;font-size:0.65rem;">📊 ${s.options.filter(o=>o.votes>0).length}/${s.options.length} opzioni con voti</span>`
+          : (s.voted ? `<span class="text-gold">${I18n.t('survey.voted')}</span>` : `<span>${I18n.t('survey.vote_cta')}</span>`)
+        }
       </div>
     </div>
-  `).join('');
+  `; }).join('');
   // Ripristina traduzioni attive e aggiorna visibilità pulsanti dopo ogni re-render
   _lxRestoreTranslations(container);
   _lxUpdateTranslateVisibility(container);
@@ -12666,6 +12702,11 @@ async function bookListing(listingId, listingTitle) {
 }
 
 async function voteSurvey(surveyId, optionIndex) {
+  // Il ruolo Team non può votare — può solo visualizzare i risultati
+  if (currentUser && currentUser.role === 'team') {
+    showToast('amber', '👁', 'Il team può solo visualizzare i sondaggi, non votare.');
+    return;
+  }
   const s = SURVEYS.find(s => s.id === surveyId);
   if (!s || s.voted) return;
   // Ottimistic update
@@ -18861,7 +18902,7 @@ function renderFoundingMessages() {
     var _fcIsTeam = msg.isTeam || (typeof _TEAM_AUTHORS !== 'undefined' && msg.author && _TEAM_AUTHORS.has(msg.author.toLowerCase()));
     var _fcCanReport = !msg.own && !_fcIsTeam && (typeof _canReport === 'function' ? _canReport(msg.author || '', _fcIsTeam) : true);
     var _fcReportBtn = _fcCanReport
-      ? '<button onclick="event.stopPropagation();reportFcMessage('' + _escHtmlFC(msg.id || '') + '','' + _escHtmlFC(msg.author || '') + '')" style="background:none;border:none;color:var(--red);opacity:0;cursor:pointer;font-size:0.6rem;padding:2px 4px;transition:opacity 0.2s;margin-left:auto;" class="fc-report-btn" title="Segnala messaggio">🚩</button>'
+      ? '<button onclick="event.stopPropagation();reportFcMessage(\'' + _escHtmlFC(msg.id || '') + '\',\'' + _escHtmlFC(msg.author || '') + '\')" style="background:none;border:none;color:var(--red);opacity:0;cursor:pointer;font-size:0.6rem;padding:2px 4px;transition:opacity 0.2s;margin-left:auto;" class="fc-report-btn" title="Segnala messaggio">🚩</button>'
       : '';
     html += '<div class="fc-msg' + (msg.own ? ' own' : '') + '"' +
       (_fcCanReport ? ' onmouseenter="var b=this.querySelector(\'.fc-report-btn\');if(b)b.style.opacity=\'0.6\'" onmouseleave="var b=this.querySelector(\'.fc-report-btn\');if(b)b.style.opacity=\'0\'"' : '') + '>' +
@@ -19135,4 +19176,3 @@ if (window.I18n && typeof I18n.onLanguageChange === 'function') {
 </script>
 </body>
 </html>
-
