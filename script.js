@@ -137,6 +137,38 @@ document.addEventListener('visibilitychange', () => {
         }
     });
 })();
+
+/**
+ * ── Preload silenzioso di tutti gli iframe Vimeo in background ──────────────
+ *
+ * Viene chiamato ~3.5 secondi dopo che i prodotti sono stati caricati
+ * (l'utente è ancora su Home). Imposta il vero src su tutti gli iframe
+ * con src="about:blank" nelle sezioni NON attive, in modo che il player
+ * Vimeo carichi e bufferizzi il video silenziosamente.
+ *
+ * Quando l'utente clicca su IMMOBILI o ESPERIENZE, _vimeoInit trova
+ * alreadyLoaded=true e manda solo postMessage "play" → avvio istantaneo.
+ *
+ * Note:
+ *  • I video sono in pausa (background=1 + muted=1): nessun audio, nessuna UI.
+ *  • Il player HLS di Vimeo bufferizza ~30s di video con bitrate adattivo.
+ *  • Il costo banda è minimo rispetto al beneficio UX premium.
+ *  • Se la sezione diventa attiva prima del preload, _vimeoInit gestisce tutto.
+ */
+function _vimeoPreloadAll() {
+    document.querySelectorAll('iframe[data-vimeo-id]').forEach(iframe => {
+        // Salta iframe già caricati (src reale già impostata)
+        if (iframe.src && iframe.src !== 'about:blank' && iframe.src !== '') return;
+        const dataSrc = iframe.getAttribute('data-src');
+        if (!dataSrc) return;
+        // Salta la sezione già attiva (è già gestita da activateVimeoSection)
+        const section = iframe.closest('.section');
+        if (section && section.classList.contains('active')) return;
+        // Imposta src reale — il player Vimeo carica e bufferizza in background
+        iframe.src = dataSrc;
+        console.log(`🎬 Vimeo preload background: ${iframe.getAttribute('data-vimeo-id')}`);
+    });
+}
 // ═════════════════════════════════════════════════════════════════════════════
 
 function _showSectionInternal(sectionId) {
