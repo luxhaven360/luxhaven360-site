@@ -5706,6 +5706,25 @@ function autoModerateText(text, sourceType, sourceId, authorName, authorEmail) {
   if (!text) return;
   // Il team è il moderatore — i suoi contenuti non vengono moderati automaticamente
   if (currentUser && currentUser.role === 'team') return;
+
+  // Se community-moderation.js è caricato, usa il motore avanzato e triggera re-render se necessario
+  if (typeof window.LH360Mod !== 'undefined') {
+    const _modResult = window.LH360Mod.moderate(text, sourceType, sourceId, authorName, authorEmail, currentUser ? currentUser.role : 'candidate');
+    if (_modResult && (_modResult.action === 'remove' || _modResult.action === 'warn')) {
+      // Triggera re-render del pannello attivo per aggiornare la UI immediatamente
+      requestAnimationFrame(() => {
+        const _ap = document.querySelector('.panel.active');
+        const _pid = _ap ? _ap.id.replace('panel-', '') : '';
+        if (_pid === 'feed')        { if (typeof renderFeed === 'function') renderFeed(); }
+        if (_pid === 'discussions') { if (typeof renderDiscussions === 'function') renderDiscussions(); }
+        if (typeof saveModData === 'function') saveModData();
+        const _mb = document.getElementById('modBadge');
+        if (_mb && typeof REPORTS !== 'undefined') { _mb.textContent = REPORTS.length; _mb.classList.remove('hidden'); }
+      });
+    }
+    return; // non eseguire anche le AUTO_MOD_RULES legacy
+  }
+
   for (const rule of AUTO_MOD_RULES) {
     if (rule.pattern.test(text)) {
       const alreadyReported = REPORTS.some(r => r.sourceId === sourceId && r.sourceType === sourceType);
@@ -11258,6 +11277,11 @@ async function sendMessage() {
   if (!currentUser) { showToast('red', '⚠️', I18n.t('msg.session_expired')); return; }
   if (!currentConvPartnerEmail) { showToast('red', '⚠️', I18n.t('msg.no_conv')); return; }
 
+  // ── Moderazione automatica messaggi privati ───────────────────────────────
+  if (text) {
+    autoModerateText(text, 'dm_message', 'dm_' + Date.now(), currentUser.name, currentUser.email);
+  }
+
   const sendBtn = document.querySelector('.chat-send-btn');
   if (sendBtn) { sendBtn.disabled = true; sendBtn.style.opacity = '0.5'; }
   input.value = '';
@@ -11588,6 +11612,26 @@ function sbListenMessages(partnerEmail) {
         text: m.text || '', media_url: m.media_url || null, media_type: m.media_type || null,
         ts: m.created_at, deletedFor: m.deleted_for || []
       };
+
+      // ── Moderazione automatica messaggi ricevuti in RT ─────────────────────
+      // Eseguita lato ricevente: blocca la visualizzazione se il messaggio è critico/high.
+      // Nota: la lingua viene rilevata automaticamente dal modulo multilingua.
+      if (msg.text && typeof window.LH360Mod !== 'undefined') {
+        const _rtSenderRole = (function() {
+          const _pi = getPartnerInfo(m.sender_email || '');
+          return _pi && _pi.role ? _pi.role : 'candidate';
+        })();
+        const _rtMod = window.LH360Mod.moderate(
+          msg.text, 'dm_message', String(m.id || Date.now()),
+          m.sender_name || 'Utente', m.sender_email || '',
+          _rtSenderRole
+        );
+        if (_rtMod.action === 'remove' || _rtMod.action === 'warn') {
+          // Messaggio segnalato: non mostrarlo nel chat, il team lo vedrà nella coda
+          return;
+        }
+      }
+
       // Aggiorna cache in memoria
       const cacheKey = partnerEmail.toLowerCase();
       if (!_msgCache[cacheKey]) _msgCache[cacheKey] = [];
@@ -18388,6 +18432,21 @@ function _startFoundingListener() {
         // Skip if user has cleared history before this message
         if (_foundingHiddenTs && msg.ts <= _foundingHiddenTs) return;
         if (!_foundingMessages.some(function(m) { return m.id === msg.id; })) {
+          // ── Moderazione automatica messaggi Founding in arrivo ─────────────
+          if (msg.text && !msg.own && typeof window.LH360Mod !== 'undefined') {
+            var _fcSenderRole = (typeof getPartnerInfo === 'function')
+              ? (getPartnerInfo(msg.email || '').role || 'founding')
+              : 'founding';
+            var _fcMod = window.LH360Mod.moderate(
+              msg.text, 'fc_message', String(msg.id || Date.now()),
+              msg.author || 'Utente', msg.email || '',
+              _fcSenderRole
+            );
+            if (_fcMod.action === 'remove' || _fcMod.action === 'warn') {
+              // Messaggio segnalato: non mostrarlo nel canale, il team lo vedrà in coda
+              return;
+            }
+          }
           _foundingMessages.push(msg);
           saveFoundingCache();  // persist immediately so refresh shows this message
           renderFoundingMessages();
@@ -18663,6 +18722,10 @@ async function sendFoundingMessage() {
   var input = document.getElementById('foundingChatInput');
   var text = (input ? input.value : '').trim();
   if (!text) return;
+
+  // ── Moderazione automatica canale Founding Members ────────────────────────
+  autoModerateText(text, 'fc_message', 'fc_' + Date.now(), currentUser.name, currentUser.email);
+
   if (input) input.value = '';
   _foundingBroadcastTyping(false);
   clearTimeout(_foundingTypingTimer);
