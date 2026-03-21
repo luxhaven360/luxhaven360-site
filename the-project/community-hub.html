@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html lang="it">
 <head>
+<script src="community-moderation.js"></script>
 <script src="../bfcache-guard.js?v=2"></script>
 
 <!-- ✅ BASE HREF: ancora i path relativi indipendentemente da replaceState -->
@@ -9121,7 +9122,7 @@ function renderFeed() {
                 <span ${cts ? `data-ts="${cts}"` : ''}>${ctimeStr}</span>
                 <div style="display:flex;align-items:center;gap:0.5rem;">
                   ${window.I18n && I18n.getCurrentLanguage() !== (c.lang || 'it') ? `<button class="comment-translate-btn" onclick="event.stopPropagation();_commentTranslate(this,'comment-${c.id||''}','${c.lang||'it'}')" style="background:none;border:none;color:var(--muted2);cursor:pointer;font-size:0.62rem;padding:0;text-decoration:underline;text-underline-offset:2px;white-space:nowrap;">${_commentTranslateBtnLabel('translate')}</button>` : ''}
-                  ${!c.isTeam ? `<button onclick="reportContentById('comment','${c.id || post.id + '_c_' + Math.random().toString(36).slice(2)}','${post.id}')" style="background:none;border:none;color:var(--red);opacity:0.6;cursor:pointer;font-size:0.62rem;padding:0;">🚩 ${I18n.t('feed.report')}</button>` : ''}
+                  ${_canReport(c.author, !!c.isTeam) ? `<button onclick="reportContentById('comment','${c.id || post.id + '_c_' + Math.random().toString(36).slice(2)}','${post.id}')" style="background:none;border:none;color:var(--red);opacity:0.6;cursor:pointer;font-size:0.62rem;padding:0;">🚩 ${I18n.t('feed.report')}</button>` : ''}
                 </div>
               </div>
             </div>
@@ -9293,7 +9294,7 @@ function renderPostComments(post, container) {
           <span ${ts ? `data-ts="${ts}"` : ''}>${timeStr}</span>
           <div style="display:flex;align-items:center;gap:0.5rem;">
             ${window.I18n && I18n.getCurrentLanguage() !== (c.lang || 'it') ? `<button class="comment-translate-btn" onclick="event.stopPropagation();_commentTranslate(this,'comment-${c.id||''}','${c.lang||'it'}')" style="background:none;border:none;color:var(--muted2);cursor:pointer;font-size:0.62rem;padding:0;text-decoration:underline;text-underline-offset:2px;white-space:nowrap;">${_commentTranslateBtnLabel('translate')}</button>` : ''}
-            ${!c.isTeam ? `<button onclick="reportContentById('comment','${c.id || post.id + '_c_' + Math.random().toString(36).slice(2)}','${post.id}')" style="background:none;border:none;color:var(--red);opacity:0.6;cursor:pointer;font-size:0.62rem;padding:0;">🚩 ${I18n.t('feed.report')}</button>` : ''}
+            ${_canReport(c.author, !!c.isTeam) ? `<button onclick="reportContentById('comment','${c.id || post.id + '_c_' + Math.random().toString(36).slice(2)}','${post.id}')" style="background:none;border:none;color:var(--red);opacity:0.6;cursor:pointer;font-size:0.62rem;padding:0;">🚩 ${I18n.t('feed.report')}</button>` : ''}
           </div>
         </div>
       </div>
@@ -10930,13 +10931,20 @@ function renderChatMessages(messages, partnerEmail) {
     // Render media se presente
     const mediaHtml = msg.media_url ? renderMediaBubble(msg.media_url, msg.media_type) : '';
 
+    // Pulsante segnala: solo per messaggi ricevuti, non del team, non propri
+    const _msgPartnerIsTeam = partnerRole;
+    const _canReportMsg = !isSent && !_msgPartnerIsTeam && _canReport(partnerInfo.name || '', false);
+    const _msgReportBtn = _canReportMsg
+      ? `<button onclick="event.stopPropagation();reportDmMessage('${msg.id||''}','${msg.from||''}',this)" style="background:none;border:none;color:var(--red);opacity:0;cursor:pointer;font-size:0.6rem;padding:2px 4px;transition:opacity 0.2s;" class="dm-report-btn" title="Segnala messaggio">🚩</button>`
+      : '';
+
     html += `
-      <div class="msg ${isSent ? 'sent' : 'received'}">
+      <div class="msg ${isSent ? 'sent' : 'received'}" ${_canReportMsg ? 'onmouseenter="this.querySelector(\'.dm-report-btn\')&&(this.querySelector(\'.dm-report-btn\').style.opacity=\'0.6\')" onmouseleave="this.querySelector(\'.dm-report-btn\')&&(this.querySelector(\'.dm-report-btn\').style.opacity=\'0\')"' : ''}>
         ${!isSent ? `<div class="msg-avatar" style="${avatarStyle}${avatarVisible}">${avatarInitial}</div>` : ''}
         <div class="msg-bubble-wrap">
           ${mediaHtml}
           ${msg.text ? `<div class="msg-bubble" data-translatable="true" data-content-lang="${msg.lang || 'it'}" data-content-id="msg-${msg.id||''}">${escapeHtml(msg.text)}</div>` : ''}
-          <div class="msg-time">${timeLabel}</div>
+          <div class="msg-time" style="display:flex;align-items:center;gap:0.4rem;">${_msgReportBtn}${timeLabel}</div>
         </div>
         ${isSent ? `<div class="msg-avatar" style="${avatarStyle}${avatarVisible}">${avatarInitial}</div>` : ''}
       </div>`;
@@ -11424,18 +11432,26 @@ function appendMessageToChat(msg, isSent) {
 
   const partnerRole = partnerInfo.role === 'team';
   const el = document.createElement('div');
+  const _appendCanReport = !isSent && !partnerRole && _canReport(partnerInfo.name || '', false);
   el.className = `msg ${isSent ? 'sent' : 'received'}`;
+  if (_appendCanReport) {
+    el.onmouseenter = function() { const b = this.querySelector('.dm-report-btn'); if (b) b.style.opacity = '0.6'; };
+    el.onmouseleave = function() { const b = this.querySelector('.dm-report-btn'); if (b) b.style.opacity = '0'; };
+  }
   const avStyle = isSent
     ? 'color:var(--gold);border-color:var(--gold-dim);'
     : (partnerRole ? 'color:var(--gold);border-color:var(--gold-dim);' : '');
   const avInitial = isSent ? currentUser.initial : partnerInfo.initial;
   const mediaHtml = msg.media_url ? renderMediaBubble(msg.media_url, msg.media_type) : '';
+  const _appendReportBtn = _appendCanReport
+    ? `<button onclick="event.stopPropagation();reportDmMessage('${msg.id||''}','${msg.from||''}',this)" style="background:none;border:none;color:var(--red);opacity:0;cursor:pointer;font-size:0.6rem;padding:2px 4px;transition:opacity 0.2s;" class="dm-report-btn" title="Segnala messaggio">🚩</button>`
+    : '';
   el.innerHTML = `
     ${!isSent ? `<div class="msg-avatar" style="${avStyle}">${avInitial}</div>` : ''}
     <div class="msg-bubble-wrap">
       ${mediaHtml}
       ${msg.text ? `<div class="msg-bubble" data-translatable="true" data-content-lang="${msg.lang || 'it'}" data-content-id="msg-${msg.id||Date.now()}">${escapeHtml(msg.text)}</div>` : ''}
-      <div class="msg-time">${timeLabel}</div>
+      <div class="msg-time" style="display:flex;align-items:center;gap:0.4rem;">${_appendReportBtn}${timeLabel}</div>
     </div>
     ${isSent ? `<div class="msg-avatar" style="${avStyle}">${avInitial}</div>` : ''}`;
   messagesEl.appendChild(el);
@@ -16021,8 +16037,8 @@ function searchKeyNav(e) {
 ═══════════════════════════════════════════ */
 let _reportPending = null; // { sourceType, sourceId, parentId }
 
-function openReportModal(sourceType, sourceId, parentId) {
-  _reportPending = { sourceType, sourceId, parentId };
+function openReportModal(sourceType, sourceId, parentId, extraData) {
+  _reportPending = { sourceType, sourceId, parentId, extraData: extraData || null };
   // Reset UI
   document.querySelectorAll('.report-cat-btn').forEach(b => b.classList.remove('selected'));
   const otherTA = document.getElementById('reportOtherText');
@@ -16094,6 +16110,13 @@ function submitReport() {
       if (msg) { isTeam = !!msg.isTeam; authorName = msg.author || ''; contentText = (msg.text || '').substring(0, 200); }
     }
     if (!authorName) { showToast('amber','ℹ', I18n.t('report.reply_not_found')); closeReportModal(); return; }
+  } else if (sourceType === 'dm_message' || sourceType === 'fc_message') {
+    // Metadati iniettati da reportDmMessage / reportFcMessage
+    const _ed = _reportPending.extraData || {};
+    authorName  = _ed.authorName  || 'Utente';
+    authorEmail = _ed.authorEmail || '';
+    contentText = _ed.contentText || '(messaggio)';
+    isTeam      = false; // già verificato prima di aprire il modal
   }
 
   if (isTeam) { showToast('red','⚠', I18n.t('report.team_content')); closeReportModal(); return; }
@@ -16120,6 +16143,62 @@ function submitReport() {
   if (modBadge) { modBadge.textContent = REPORTS.length; modBadge.classList.remove('hidden'); }
   showToast('green','✓', I18n.t('report.submit_ok'));
   closeReportModal();
+}
+
+/* ── Segnalazione messaggio privato (DM) ──────────────────────────
+   Chiamata dal pulsante 🚩 nei messaggi ricevuti nel pannello Messaggi.
+   Non può segnalare: propri messaggi, messaggi del team.           */
+function reportDmMessage(msgId, senderEmail, btnEl) {
+  if (!currentUser) return;
+  // Individua il messaggio dalla cache in-memoria
+  const _cacheKey = currentConvPartnerEmail ? currentConvPartnerEmail.toLowerCase() : '';
+  const _msgs = (typeof _msgCache !== 'undefined' && _cacheKey) ? (_msgCache[_cacheKey] || []) : [];
+  let msg = _msgs.find(m => String(m.id) === String(msgId));
+
+  // Ricava info mittente
+  const partnerInfo = getPartnerInfo(currentConvPartnerEmail || senderEmail || '');
+  const authorName  = (msg && msg.senderName) || partnerInfo.name || senderEmail || 'Utente';
+  const authorEmail = senderEmail || currentConvPartnerEmail || '';
+  const contentText = (msg && msg.text) ? msg.text.substring(0, 200) : '(messaggio privato)';
+  const isTeam      = partnerInfo.role === 'team';
+
+  if (!_canReport(authorName, isTeam)) {
+    if (isTeam) showToast('red','⚠', window.I18n ? I18n.t('report.team_content') : 'Non puoi segnalare messaggi del team.');
+    else        showToast('amber','ℹ', window.I18n ? I18n.t('report.own_content') : 'Non puoi segnalare i tuoi messaggi.');
+    return;
+  }
+
+  // Usa il modal di segnalazione centralizzato
+  const sourceId = msgId || ('dm_' + Date.now());
+  openReportModal('dm_message', String(sourceId), null, { authorName, authorEmail, contentText });
+}
+
+/* ── Segnalazione messaggio Founding Members ──────────────────────
+   Chiamata dal pulsante 🚩 nei messaggi del canale Founding Members.
+   Non può segnalare: propri messaggi, messaggi del team.           */
+function reportFcMessage(msgId, authorName) {
+  if (!currentUser) return;
+
+  // Individua il messaggio dall'array _foundingMessages
+  let msg = null;
+  if (typeof _foundingMessages !== 'undefined') {
+    msg = _foundingMessages.find(function(m) { return String(m.id) === String(msgId); });
+  }
+
+  const _authorName  = authorName || (msg && msg.author) || 'Utente';
+  const _authorEmail = (msg && msg.email) || '';
+  const _contentText = (msg && msg.text) ? msg.text.substring(0, 200) : '(messaggio canale Founding)';
+  const _isTeam      = !!(msg && msg.isTeam) ||
+    (typeof _TEAM_AUTHORS !== 'undefined' && _authorName && _TEAM_AUTHORS.has(_authorName.toLowerCase()));
+
+  if (!_canReport(_authorName, _isTeam)) {
+    if (_isTeam) showToast('red','⚠', window.I18n ? I18n.t('report.team_content') : 'Non puoi segnalare messaggi del team.');
+    else         showToast('amber','ℹ', window.I18n ? I18n.t('report.own_content') : 'Non puoi segnalare i tuoi messaggi.');
+    return;
+  }
+
+  const sourceId = msgId || ('fc_' + Date.now());
+  openReportModal('fc_message', String(sourceId), null, { authorName: _authorName, authorEmail: _authorEmail, contentText: _contentText });
 }
 
 // Override reportContentById to open the modal instead of reporting directly
@@ -18778,12 +18857,19 @@ function renderFoundingMessages() {
     var avatarStyle = msg.own
       ? 'border-color:var(--amber);color:var(--amber);'
       : 'border-color:var(--gold-dim);color:var(--gold);';
-    html += '<div class="fc-msg' + (msg.own ? ' own' : '') + '">' +
+    // Pulsante segnala: solo messaggi altrui, non del team
+    var _fcIsTeam = msg.isTeam || (typeof _TEAM_AUTHORS !== 'undefined' && msg.author && _TEAM_AUTHORS.has(msg.author.toLowerCase()));
+    var _fcCanReport = !msg.own && !_fcIsTeam && (typeof _canReport === 'function' ? _canReport(msg.author || '', _fcIsTeam) : true);
+    var _fcReportBtn = _fcCanReport
+      ? '<button onclick="event.stopPropagation();reportFcMessage('' + _escHtmlFC(msg.id || '') + '','' + _escHtmlFC(msg.author || '') + '')" style="background:none;border:none;color:var(--red);opacity:0;cursor:pointer;font-size:0.6rem;padding:2px 4px;transition:opacity 0.2s;margin-left:auto;" class="fc-report-btn" title="Segnala messaggio">🚩</button>'
+      : '';
+    html += '<div class="fc-msg' + (msg.own ? ' own' : '') + '"' +
+      (_fcCanReport ? ' onmouseenter="var b=this.querySelector(\'.fc-report-btn\');if(b)b.style.opacity=\'0.6\'" onmouseleave="var b=this.querySelector(\'.fc-report-btn\');if(b)b.style.opacity=\'0\'"' : '') + '>' +
       '<div class="fc-avatar" style="' + avatarStyle + '">' + _escHtmlFC(msg.initial) + '</div>' +
       '<div class="fc-bubble-wrap">' +
         '<div class="fc-sender">' + _escHtmlFC(msg.author) + '</div>' +
-        '<div class="fc-bubble">' + _renderFcMentions(msg.text) + '</div>' +
-        '<div class="fc-time">' + timeStr + '</div>' +
+        '<div class="fc-bubble" data-fc-msg-id="' + _escHtmlFC(msg.id || '') + '">' + _renderFcMentions(msg.text, msg.id) + '</div>' +
+        '<div class="fc-time" style="display:flex;align-items:center;gap:0.3rem;">' + _fcReportBtn + timeStr + '</div>' +
       '</div></div>';
   });
 
@@ -18794,25 +18880,52 @@ function _escHtmlFC(s) {
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>');
 }
 
-/* Render @mentions as highlight chips in founding chat messages */
-function _renderFcMentions(text) {
+/* Render @mentions as highlight chips in founding chat messages.
+   Clicking a chip scrolls to the last message by that author. */
+function _renderFcMentions(text, msgId) {
   if (!text) return '';
   var escaped = _escHtmlFC(text);
-  // Use same _getMentionNames if available, else simple pattern
+  var _buildChip = function(name) {
+    var safeName = name.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+    return '<span class="mention-chip" style="cursor:pointer;" onclick="event.stopPropagation();scrollToFcMention(\'' + safeName + '\')" title="Vai al messaggio di @' + name + '">@' + _escHtmlFC(name) + '</span>';
+  };
   if (typeof _getMentionNames === 'function') {
     var names = _getMentionNames();
     if (names.length > 0) {
       var pattern = new RegExp('@(' + names.map(function(n) {
         return n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
       }).join('|') + ')(?=$|\s|[^A-Za-z\xC0-\xFF0-9])', 'g');
-      return escaped.replace(pattern, function(m, name) {
-        return '<span class="mention-chip">@' + name + '</span>';
-      });
+      return escaped.replace(pattern, function(m, name) { return _buildChip(name); });
     }
   }
-  // Fallback: match capitalized names
   return escaped.replace(/@([A-Z\xC0-\xDF][A-Za-z\xC0-\xFF0-9]*(?: [A-Z\xC0-\xDF][A-Za-z\xC0-\xFF0-9]*){0,2})(?=\s|$|[^A-Za-z\xC0-\xFF0-9\s])/g,
-    function(m, name) { return '<span class="mention-chip">@' + name + '</span>'; });
+    function(m, name) { return _buildChip(name); });
+}
+
+/* Scroll verso il messaggio dell'autore menzionato nel canale Founding Members */
+function scrollToFcMention(authorName) {
+  var container = document.getElementById('foundingChatMessages');
+  if (!container) return;
+  var nameLc = (authorName || '').toLowerCase();
+  var target = null;
+  container.querySelectorAll('.fc-msg').forEach(function(el) {
+    var senderEl = el.querySelector('.fc-sender');
+    if (senderEl && senderEl.textContent.toLowerCase().indexOf(nameLc) !== -1) {
+      target = el; // prende l'ultimo match
+    }
+  });
+  if (!target) return;
+  target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  var bubble = target.querySelector('.fc-bubble');
+  if (bubble) {
+    var origBg = bubble.style.background || '';
+    bubble.style.transition = 'background 0.35s';
+    bubble.style.background = 'rgba(212,175,55,0.22)';
+    setTimeout(function() {
+      bubble.style.background = origBg;
+      setTimeout(function() { bubble.style.transition = ''; }, 400);
+    }, 1600);
+  }
 }
 
 function _scrollFoundingToBottom() {
@@ -19022,3 +19135,4 @@ if (window.I18n && typeof I18n.onLanguageChange === 'function') {
 </script>
 </body>
 </html>
+
