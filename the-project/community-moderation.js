@@ -670,6 +670,8 @@
 
     _runPipeline(text, sourceType, sourceId, authorName, authorEmail, authorRole) {
       const role = authorRole || 'candidate';
+      // Contenuti del team esclusi dalla moderazione automatica (brand voice autorizzato)
+      if (role === 'team') return { action: 'allow', score: 0, level: 'safe', flags: [] };
       const safeId = String(sourceId || Date.now());
 
       // 1. Registra il messaggio nello spam detector
@@ -708,7 +710,8 @@
     },
 
     // ── API pubblica ────────────────────────────────────
-    /** Sostituisce la vecchia autoModerateText di community-hub */
+    /** Sostituisce la vecchia autoModerateText di community-hub.
+     *  NB: contenuti con authorRole='team' vengono bypassati automaticamente. */
     moderateText(text, sourceType, sourceId, authorName, authorEmail, authorRole) {
       return ContentListener.processSync(text, sourceType, sourceId, authorName, authorEmail, authorRole);
     },
@@ -767,6 +770,9 @@
      Il nuovo engine fa tutto quello che il vecchio faceva + molto di più.  */
   global.autoModerateText = function(text, sourceType, sourceId, authorName, authorEmail) {
     const authorRole = (global.currentUser && global.currentUser.role) || 'candidate';
+    // Il team NON viene moderato dal bot automatico — è il moderatore stesso.
+    // I contenuti del team sono considerati brand voice autorizzato.
+    if (authorRole === 'team') return;
     ModBridge.moderateText(text, sourceType, sourceId, authorName, authorEmail, authorRole);
     // Non restituisce nulla per compatibilità (le chiamate esistenti ignorano il return)
   };
