@@ -1,33 +1,28 @@
 /**
  * ═══════════════════════════════════════════════════════════════════════════
- *  LUXHAVEN360 — COMMUNITY MODERATION ENGINE  v2.0
+ *  LUXHAVEN360 — COMMUNITY MODERATION ENGINE  v3.0  (multilingual)
  *  community-moderation.js
  *
- *  Architettura modulare, completamente separata da community-hub.html.
- *  Si integra con il sistema esistente tramite window.LH360Mod.
- *
  *  MODULI:
- *    1. ContentListener   — intercetta contenuti in ingresso (hook)
- *    2. TextNormalizer    — normalizzazione testo, anti-evasione
- *    3. TextAnalyzer      — analisi testuale + semantica + fuzzy
- *    4. SpamDetector      — flood, ripetizioni, link sospetti
- *    5. LinkAnalyzer      — URL inspection
- *    6. UserRiskTracker   — user risk score dinamico
- *    7. ContextEvaluator  — ruolo, contesto conversazione
- *    8. ScoringEngine     — punteggio finale 0–100
- *    9. ActionDispatcher  — azioni automatiche in base al punteggio
- *   10. ReviewQueue       — coda revisione manuale + logging
- *   11. LearningAdapter   — adattamento sensibilità nel tempo
- *   12. ModBridge         — ponte con community-hub.html
+ *    1. TextNormalizer     — normalizzazione testo, anti-evasione
+ *    2. LanguageDetector   — rilevamento lingua (IT/EN/FR/DE/ES)
+ *    3. MultiLangBlacklist — blacklist per lingua + fuzzy cross-lingua
+ *    4. TextAnalyzer       — analisi testuale + semantica
+ *    5. SpamDetector       — flood, ripetizioni, link
+ *    6. LinkAnalyzer       — URL inspection
+ *    7. UserRiskTracker    — user risk score dinamico
+ *    8. ContextEvaluator   — ruolo utente
+ *    9. ScoringEngine      — punteggio finale 0–100
+ *   10. ActionDispatcher   — azioni automatiche
+ *   11. ReviewQueue        — coda revisione manuale
+ *   12. LearningAdapter    — adattamento sensibilità
+ *   13. ModBridge          — pipeline + API pubblica
  * ═══════════════════════════════════════════════════════════════════════════
  */
 
 (function (global) {
   'use strict';
 
-  /* ─────────────────────────────────────────────────────────
-     CONSTANTS & STORAGE KEYS
-  ───────────────────────────────────────────────────────── */
   const STORAGE_KEY_RISK      = 'lh360_mod_user_risk_v2';
   const STORAGE_KEY_QUEUE     = 'lh360_mod_queue_v2';
   const STORAGE_KEY_DECISIONS = 'lh360_mod_decisions_v2';
@@ -35,100 +30,240 @@
   const MAX_QUEUE_SIZE        = 500;
   const MAX_DECISIONS_SIZE    = 1000;
 
-  /* ─────────────────────────────────────────────────────────
-     1. TEXT NORMALIZER — anti-evasione, normalizzazione
-  ───────────────────────────────────────────────────────── */
+  /* ── 1. TEXT NORMALIZER ─────────────────────────────────── */
   const TextNormalizer = {
-    // Mappatura leet-speak e simboli sostitutivi
     _leetMap: {
       '0':'o','1':'i','3':'e','4':'a','5':'s','6':'g','7':'t','8':'b','9':'g',
-      '@':'a','$':'s','!':'i','|':'i','+':'t','(':'c',')':'o',
-      'ph':'f','ck':'k','qu':'k','x':'cs'
+      '@':'a','$':'s','!':'i','|':'i','+':'t','(':'c',')':'o','ph':'f'
     },
-
     normalize(text) {
       if (!text) return '';
       let t = String(text).toLowerCase();
-      // Rimuove diacritici → normalizza caratteri accentati
       t = t.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-      // Rimuove spazi tra lettere singole (es. "v i o l e n z a")
       t = t.replace(/\b(\w)\s+(?=(\w\s){1,}\w\b)/g, '$1');
-      // Normalizza leet-speak
       t = t.replace(/[013456789@$!|+()]/g, ch => this._leetMap[ch] || ch);
-      // Rimuove caratteri speciali ripetuti usati come spaziatura
       t = t.replace(/([^\w\s])\1+/g, '$1');
-      // Rimuove underscore, trattini, punti frapposti a lettere (v.i.o.l.e.n.z.a)
       t = t.replace(/([a-z])[_\-\.]+([a-z])/g, '$1$2');
+      t = t.replace(/\s+/g, ' ');
       return t.trim();
     },
-
-    // Versione "stripped" per matching fuzzy: solo alfanumerici
     strip(text) {
       return this.normalize(text).replace(/[^a-z0-9]/g, '');
     }
   };
 
-  /* ─────────────────────────────────────────────────────────
-     2. TEXT ANALYZER — blacklist, pattern semantici
-  ───────────────────────────────────────────────────────── */
-  const TextAnalyzer = {
-    // ── A. BLACKLIST parole ──────────────────────────────
-    _blacklist: {
+  /* ── 2. LANGUAGE DETECTOR ───────────────────────────────── */
+  const LanguageDetector = {
+    _markers: {
+      it: /\b(che\s|non\s|una\s|del\s|nella\s|della\s|sono\s|hai\s|questo\s|quello\s|perch[eé]|anche|tutto|molto|quando|come\s|fare\s|essere|siamo|vostro|nostro)\b/gi,
+      en: /\b(the\s|and\s|you\s|that\s|have\s|for\s|not\s|with\s|this\s|are\s|your\s|will\s|from\s|they\s|just\s|there\s|their\s|about\s|would\s|could\s)\b/gi,
+      fr: /\b(les\s|des\s|dans\s|est\s|pas\s|vous\s|pour\s|sur\s|avec\s|que\s|sont\s|mais\s|comme\s|bien\s|tout\s|aussi\s|chez\s|tr[eè]s\s|moi\s|toi\s)\b/gi,
+      de: /\b(der\s|die\s|das\s|und\s|ist\s|nicht\s|ich\s|sie\s|mit\s|f[uü]r\s|auf\s|sich\s|aber\s|auch\s|wenn\s|dich\s|wir\s|mir\s|ihr\s|hast\s)\b/gi,
+      es: /\b(los\s|las\s|que\s|con\s|por\s|para\s|como\s|pero\s|m[aá]s\s|esto\s|est[aá]\s|eres\s|hay\s|muy\s|todo\s|bien\s|cuando\s|tambi[eé]n\s)\b/gi,
+    },
+    detect(text) {
+      if (!text || text.length < 8) return 'und';
+      const scores = {};
+      for (const [lang, re] of Object.entries(this._markers)) {
+        // Rebuild regex each time to reset lastIndex (g-flag regexes maintain state)
+        const freshRe = new RegExp(re.source, re.flags);
+        scores[lang] = (text.match(freshRe) || []).length;
+      }
+      const best = Object.entries(scores).sort((a, b) => b[1] - a[1]);
+      return best[0][1] === 0 ? 'und' : best[0][0];
+    }
+  };
+
+  /* ── 3. MULTILINGUAL BLACKLIST ──────────────────────────── */
+  const MultiLangBlacklist = {
+
+    universal: {
       critical: [
-        // Minacce fisiche
-        /\b(ti (ammazzo|uccido|faccio del male|spacco la faccia|taglio|brucio)|so dove (abiti|vivi)|ti (trovo|vengo a cercare|rovino la vita))\b/i,
-        // Hate speech
-        /\b(nazi|fascis[mt]|razzis[mt]a|odia[re]? i (neri|ebrei|musulmani|gay)|morte (ai|agli)|eliminare i|inferiori di razza|white power|heil)\b/i,
-        // Contenuto illegale
-        /\b(compra(re)? (droga|cocaina|eroina|meth|crack|canna|hashish)|spacci(are|atore)|armi in vendita|pistol[ae] (compra|vend)|bom[be] (artigianali|fai da te))\b/i,
-        // CSAM hint
-        /\b(minori|bambini|under ?1[0-8]).{0,30}(nude?|sex|porn|foto|video)\b/i,
+        /\b(nazi|fascis[mt]|white\s?power|heil\s?hitler|kkk|kill\s?all|death\s?to)\b/i,
+        /\b(under\s?1[0-8]|minors?|child(ren)?).{0,30}(nude?|naked|sex|porn|xxx)\b/i,
+        /\b(fuck\s?you|motherfucker|go\s?fuck\s?yourself)\b/i,
       ],
       high: [
-        // Insulti forti
-        /\b(vaffanculo|fanculo|va[' ]?fanculo|cazzo|stronzo|bastardo|figlio di (puttana|troia)|coglione|imbecille|idiota|ritardato|scemo di merda)\b/i,
-        // Volgare sessuale
-        /\b(puttana|troia|baldracca|mignotta|battona|prostituta).{0,10}(sei|fai|vai|sembri)\b/i,
-        // Incitamento
-        /\b(dovrebbero (morire|sparire|essere eliminati)|andate a (morire|fanculo))\b/i,
+        /\b(wtf|stfu|kys|kms|gtfo)\b/i,
       ],
       medium: [
-        // Spam promozionale
-        /\b(compra ora|acquista subito|offerta (limitata|esclusiva)|guadagna \d+[€$k]|clicca (qui|subito)|promo esclusiva|sconto \d+%|free money|guadagni facili)\b/i,
-        // Crypto/scam
-        /\b(bitcoin (investimento|pump|dump)|cripto (pump|dump|scam)|nft gratis|airdrop (gratis|gratuito)|manda[re] (soldi|btc|eth) per ricevere)\b/i,
-        // Siti adulti/azzardo
-        /\b(casino online|scommesse (sportive|online)|sito di incontri|video adulti|xxx|pornhub|onlyfans)\b/i,
-        // Insulti moderati
-        /\b(sfigato|minus(culolo)?|deficiente|patetico|schifo|fai schifo|sei uno schifo)\b/i,
-      ],
-      low: [
-        // Link non approvati con call-to-action
-        /https?:\/\/(?!(?:luxhaven360|localhost))[^\s]{15,}.{0,30}\b(visita|registrati|iscriviti|guarda|scarica|clicca)\b/i,
-        // Flood caratteri
+        /\b(spam|scam|phishing|ponzi)\b/i,
+        /\b(onlyfans\.com|pornhub\.com|xvideos\.com|redtube\.com)\b/i,
         /(.)\1{6,}/,
-        // Caps lock eccessivo (>60% maiuscole su testi >10 char)
       ]
     },
 
-    // ── B. PATTERN SEMANTICI — tono/aggressività ────────
-    _semanticPatterns: [
-      { re: /\b(ti (pentirai|odio|faccio (vedere|capire))|vedrai (cosa ti succede|cosa faccio))\b/i, score: 45, label: 'Minaccia velata' },
-      { re: /\b(nessuno ti (vuole|crede|capisce)|(sei|siete) (inutili?|incompetenti?|da eliminare))\b/i, score: 35, label: 'Tossicità' },
-      { re: /\b(riferimento|riferisco|denuncio|vi (porto|porto in) tribunale)\b/i, score: 10, label: 'Contenzioso' },
+    it: {
+      critical: [
+        /\b(ti (ammazzo|uccido|faccio del male|spacco la faccia|taglio|brucio)|so dove (abiti|vivi)|ti (trovo|vengo a cercare|rovino la vita))\b/i,
+        /\b(razzis[mt]a|morte (ai|agli)|eliminare i|inferiori di razza)\b/i,
+        /\b(cocaina|eroina|meth|crack|hashish).{0,20}(compra|vendi|spacci)\b/i,
+        /\b(armi in vendita|pistol[ae] (compra|vend)|bomb[ae] artigianali)\b/i,
+      ],
+      high: [
+        /\b(vaffanculo|fanculo|va[' ]?fanculo|cazzo|stronzo|bastardo|figlio di (puttana|troia)|coglione|imbecille|idiota|ritardato|scemo di merda)\b/i,
+        /\b(puttana|troia|baldracca|mignotta|battona).{0,15}(sei|fai|vai|sembri)\b/i,
+        /\b(dovrebbero (morire|sparire|essere eliminati)|andate a (morire|fanculo))\b/i,
+        /\b(lurido|schifoso|verme|parassita|pezzo di (merda|spazzatura))\b/i,
+      ],
+      medium: [
+        /\b(compra ora|acquista subito|offerta (limitata|esclusiva)|guadagna \d+[€$k]|clicca (qui|subito)|sconto \d+%|free money|guadagni facili)\b/i,
+        /\b(bitcoin (pump|dump)|cripto (scam|pump)|nft gratis|airdrop gratu|manda[re] (soldi|btc|eth) per ricevere)\b/i,
+        /\b(casino online|scommesse online|sito di incontri|video adulti)\b/i,
+        /\b(sfigato|deficiente|patetico|fai schifo|sei uno schifo|cretin[oa]|dement[oa])\b/i,
+      ],
+      low: [
+        /\b(visita|registrati|iscriviti|scarica|clicca).{0,20}https?:\/\//i,
+      ]
+    },
+
+    en: {
+      critical: [
+        /\b(i(?: will| am going to) (?:kill|murder|hurt|find|destroy) you|i know where you (?:live|are)|i(?: will| am going to) ruin your (?:life|career))\b/i,
+        /\b(hate (?:all )?(?:blacks?|jews?|muslims?|arabs?|gays?)|death to|exterminate|racial inferior)\b/i,
+        /\b(buy (?:cocaine|heroin|meth|crack|fentanyl)|sell (?:drugs?|weapons?|guns?)|bomb.{0,10}(?:make|build|instructions?))\b/i,
+      ],
+      high: [
+        /\b(asshole|piece of shit|dumb(?:ass|fuck)|son of (?:a )?bitch|fucking (?:idiot|moron|loser|retard)|go (?:die|kill yourself))\b/i,
+        /\b(bitch|slut|whore|cunt).{0,15}(?:you (?:are|r)|you'?re)\b/i,
+        /\b(should (?:die|disappear|be (?:killed|eliminated)))\b/i,
+        /\b(scumbag|worthless|trash|garbage|filth|scum|vermin|freak)\b/i,
+      ],
+      medium: [
+        /\b(buy now|limited offer|earn \$\d+|click here|free money|easy (?:cash|money)|get rich (?:fast|quick))\b/i,
+        /\b(crypto (?:pump|dump)|nft (?:free|giveaway)|airdrop (?:free|giveaway)|send (?:money|btc|eth) (?:to receive|for))\b/i,
+        /\b(online casino|sports betting|dating site|adult (?:video|content))\b/i,
+        /\b(moron|loser|jerk|creep|disgusting|pathetic|disgrace|dork)\b/i,
+      ],
+      low: [
+        /\b(visit|sign up|register|download|click here).{0,20}https?:\/\//i,
+      ]
+    },
+
+    fr: {
+      critical: [
+        /\b(je (?:vais|veux) te (?:tuer|retrouver|faire du mal|d[eé]truire)|je sais o[uù] tu (?:habites?|vis)|je vais (?:ruiner|d[eé]truire) ta vie)\b/i,
+        /\b(haine des? (?:noirs?|juifs?|musulmans?|arabes?|gays?)|mort aux?|[eé]liminer les?|inf[eé]rieurs? de race)\b/i,
+        /\b(acheter? (?:coca[iï]ne|h[eé]ro[iï]ne|meth|crack)|vendre? (?:drogue|armes?)|bombe.{0,10}(?:fabriquer|instructions?))\b/i,
+      ],
+      high: [
+        /\b(va te faire (?:foutre|enc[ue]uler)|fils? de (?:pute|salope|chienne)|connard|enfo[iî]r[eé]|abruti|cr[eé]tin|imb[eé]cile|b[aâ]tard)\b/i,
+        /\b(pute|salope|putain|catin).{0,15}(?:tu es|t'es|vous [eê]tes)\b/i,
+        /\b(devraient (?:mourir|dispara[iî]tre|[eê]tre [eé]limin[eé]s?)|allez (?:crever|vous faire))\b/i,
+        /\b(ordure|vermine|parasite|d[eé]chet|salopard|raclure)\b/i,
+      ],
+      medium: [
+        /\b(achetez maintenant|offre limit[eé]e|gagnez \d+[€$]|cliquez ici|argent gratuit|enrichissez-vous vite)\b/i,
+        /\b(crypto (?:pump|dump)|nft gratuit|airdrop gratuit|envoyez (?:argent|btc|eth) pour recevoir)\b/i,
+        /\b(casino en ligne|paris sportifs?|site de rencontre|vid[eé]o adulte)\b/i,
+        /\b(nul|loser|rat[eé]|d[eé]bile|path[eé]tique|d[eé]go[uû]tant|minable)\b/i,
+      ],
+      low: [
+        /\b(visitez|inscrivez-vous|t[eé]l[eé]chargez|cliquez).{0,20}https?:\/\//i,
+      ]
+    },
+
+    de: {
+      critical: [
+        /\b(ich (?:werde|will) dich (?:umbringen|t[oö]ten|finden|verletzen|zerst[oö]ren)|ich wei[sß] wo du (?:wohnst|lebst)|ich (?:werde|will) dein Leben (?:ruinieren|zerst[oö]ren))\b/i,
+        /\b(hass auf (?:Juden|Muslime|Schwarze|Ausl[aä]nder|Schwule)|Tod den?|vernichten|rassistische? Untermenschen)\b/i,
+        /\b((?:Kokain|Hero[iì]n|Meth|Crystal|Crack) (?:kaufen|verkaufen)|Waffen (?:kaufen|verkaufen)|Bombe.{0,10}(?:bauen|Anleitung))\b/i,
+      ],
+      high: [
+        /\b(fick dich|verpiss dich|halt die Fresse|Hurensohn|Arschloch|Wichser|Schei[sß]kerl|dumme?r? (?:Idiot|Vollidiot|Trottel)|Bastard)\b/i,
+        /\b(Schlampe|Hure|Nutte).{0,15}(?:du bist|bist du|Sie sind)\b/i,
+        /\b(sollten (?:sterben|verschwinden|vernichtet werden)|geht (?:sterben|zum Teufel))\b/i,
+        /\b(Abschaum|Parasit|Dreckskerl|Widerling|Dreckst[uü]ck|Mistkerl)\b/i,
+      ],
+      medium: [
+        /\b(jetzt kaufen|begrenztes? Angebot|verdiene \d+[€$]|klick hier|Geld gratis|schnell reich werden)\b/i,
+        /\b(Krypto (?:pump|dump)|NFT gratis|Airdrop gratis|schicke? (?:Geld|BTC|ETH) um zu erhalten)\b/i,
+        /\b(online Casino|Sportwetten|Datingseite|Erwachsenen(?:video|inhalt))\b/i,
+        /\b(Versager|Loser|Depp|ekelhaft|widerlich|j[aä]mmerlich)\b/i,
+      ],
+      low: [
+        /\b(besuche[nt]?|anmelden|registrieren|herunterladen|klicke[nt]?).{0,20}https?:\/\//i,
+      ]
+    },
+
+    es: {
+      critical: [
+        /\b(te (?:voy a|voy a) (?:matar|encontrar|hacer da[nñ]o|destruir)|s[eé] donde (?:vives|habitas)|voy a (?:arruinar|destruir) tu vida)\b/i,
+        /\b(odio a los? (?:negros?|jud[iíì]os?|musulmanes?|arabes?|gays?)|muerte a|eliminar a|inferiores? de raza)\b/i,
+        /\b(comprar? (?:coca[iíì]na|hero[iíì]na|meth|crack)|vender? (?:drogas?|armas?|pistolas?)|bomba.{0,10}(?:fabricar|instrucciones?))\b/i,
+      ],
+      high: [
+        /\b(vete a la mierda|hijo de (?:puta|la chingada)|cabr[oó]n|imb[eé]cil|idiota|gilipollas|pendejo|maric[oó]n|co[nñ]o|puto imb[eé]cil)\b/i,
+        /\b(puta|zorra|perra|prostituta).{0,15}(?:eres|sois|est[aá]s)\b/i,
+        /\b(deber[iíì]an (?:morir|desaparecer|ser eliminados?)|v[aá]yanse a (?:la mierda|morir))\b/i,
+        /\b(escoria|par[aá]sito|basura|in[uú]til|maldito|asqueroso|repugnante)\b/i,
+      ],
+      medium: [
+        /\b(compra ahora|oferta limitada|gana \d+[€$]|haz clic aqu[iíì]|dinero gratis|h[aá]zte rico r[aá]pido)\b/i,
+        /\b(cripto (?:pump|dump)|nft gratis|airdrop gratis|env[iíì]a (?:dinero|btc|eth) para recibir)\b/i,
+        /\b(casino online|apuestas deportivas?|sitio de citas|video adulto)\b/i,
+        /\b(perdedor|in[uú]til|pat[eé]tico|fracasado|asco|das asco|eres un asco)\b/i,
+      ],
+      low: [
+        /\b(visita|registrate|descarga|haz clic).{0,20}https?:\/\//i,
+      ]
+    },
+
+    _semanticByLang: {
+      it: [
+        { re: /\b(ti (pentirai|odio|faccio (vedere|capire))|vedrai cosa ti succede)\b/i,          score: 45, label: 'Minaccia velata IT' },
+        { re: /\b(nessuno ti (vuole|crede)|(sei|siete) (inutili?|incompetenti?))\b/i,              score: 35, label: 'Tossicità IT' },
+      ],
+      en: [
+        { re: /\b(you(?:'ll| will) regret this|i hate you|you'll see what happens|watch your back)\b/i, score: 45, label: 'Veiled threat EN' },
+        { re: /\b(nobody (?:likes|wants|cares about) you|you(?:'re| are) (?:useless|worthless|pathetic))\b/i, score: 35, label: 'Toxicity EN' },
+      ],
+      fr: [
+        { re: /\b(tu (?:le regretteras|vas le regretter)|je te d[eé]teste|fais attention [aà] toi)\b/i, score: 45, label: 'Menace voilée FR' },
+        { re: /\b(personne ne (?:t'aime|te croit)|(?:tu es|vous [eê]tes) (?:inutile|nul|incomp[eé]tent))\b/i, score: 35, label: 'Toxicité FR' },
+      ],
+      de: [
+        { re: /\b(du wirst (?:es bereuen|Konsequenzen sp[uü]ren)|ich hasse dich|pass auf dich auf)\b/i, score: 45, label: 'Versteckte Drohung DE' },
+        { re: /\b(niemand (?:mag|glaubt) dir|(?:du bist|Sie sind) (?:nutzlos|wertlos|inkompetent))\b/i, score: 35, label: 'Toxizität DE' },
+      ],
+      es: [
+        { re: /\b(te vas a arrepentir|te odio|ya ver[aá]s lo que te pasa|cu[iíì]date mucho)\b/i,      score: 45, label: 'Amenaza velada ES' },
+        { re: /\b(nadie te (?:quiere|cree)|(?:eres|sois) (?:in[uú]til|pat[eé]tico|incompetente))\b/i, score: 35, label: 'Toxicidad ES' },
+      ],
+    },
+
+    _fuzzyAll: [
+      { word: 'vaffanculo', t: 0.78 }, { word: 'stronzo',    t: 0.80 },
+      { word: 'coglione',   t: 0.80 }, { word: 'imbecille',  t: 0.78 },
+      { word: 'puttana',    t: 0.82 }, { word: 'idiota',     t: 0.80 },
+      { word: 'asshole',    t: 0.80 }, { word: 'bullshit',   t: 0.78 },
+      { word: 'motherfucker',t:0.75 }, { word: 'bastard',    t: 0.82 },
+      { word: 'dickhead',   t: 0.78 }, { word: 'shithead',   t: 0.78 },
+      { word: 'connard',    t: 0.82 }, { word: 'salope',     t: 0.82 },
+      { word: 'enfoiré',    t: 0.78 }, { word: 'putain',     t: 0.82 },
+      { word: 'arschloch',  t: 0.78 }, { word: 'schlampe',   t: 0.80 },
+      { word: 'wichser',    t: 0.82 }, { word: 'hurensohn',  t: 0.75 },
+      { word: 'cabron',     t: 0.82 }, { word: 'gilipollas', t: 0.75 },
+      { word: 'imbecil',    t: 0.82 }, { word: 'pendejo',    t: 0.82 },
     ],
 
-    // ── C. ANTI-EVASION — fuzzy matching su stringa normalizzata ──
-    _fuzzyBlacklist: [
-      { word: 'vaffanculo', threshold: 0.78 },
-      { word: 'stronzo',    threshold: 0.80 },
-      { word: 'coglione',   threshold: 0.80 },
-      { word: 'imbecille',  threshold: 0.78 },
-      { word: 'puttana',    threshold: 0.82 },
-      { word: 'idiota',     threshold: 0.80 },
-    ],
+    getRulesFor(lang) {
+      const bl   = this[lang] || {};
+      const univ = this.universal;
+      const sem  = this._semanticByLang[lang] || [];
+      return {
+        critical: [...(univ.critical || []), ...(bl.critical || [])],
+        high:     [...(univ.high     || []), ...(bl.high     || [])],
+        medium:   [...(univ.medium   || []), ...(bl.medium   || [])],
+        low:      [...(univ.low      || []), ...(bl.low      || [])],
+        semantic: sem,
+        fuzzy:    this._fuzzyAll
+      };
+    }
+  };
 
-    // Distanza di Levenshtein normalizzata
+  /* ── 4. TEXT ANALYZER ───────────────────────────────────── */
+  const TextAnalyzer = {
     _similarity(a, b) {
       if (!a || !b) return 0;
       const m = a.length, n = b.length;
@@ -143,53 +278,92 @@
     },
 
     analyze(originalText) {
-      const result = { flags: [], maxSeverity: 'none', rawScore: 0 };
+      const result = { flags: [], maxSeverity: 'none', rawScore: 0, detectedLang: 'und' };
       if (!originalText) return result;
 
       const normalized = TextNormalizer.normalize(originalText);
       const stripped   = TextNormalizer.strip(originalText);
+      const lang       = LanguageDetector.detect(originalText);
+      result.detectedLang = lang;
+      const sevScores = { critical: 85, high: 65, medium: 40, low: 20 };
+      const ALL_LANGS = ['it','en','fr','de','es'];
+      const primaryLang = lang === 'und' ? 'it' : lang;
 
-      // A. Blacklist diretta
-      const severityScores = { critical: 85, high: 65, medium: 40, low: 20 };
-      for (const [level, patterns] of Object.entries(this._blacklist)) {
-        for (const re of patterns) {
+      // A. Blacklist — STRATEGIA MULTILINGUA:
+      //   critical + high: scansione di TUTTE le lingue.
+      //   Testi offensivi corti (es. "va te faire foutre") non contengono parole funzionali
+      //   → language detector restituisce 'und' → senza multi-scan le FR/ES/DE verrebbero mancate.
+      //   medium + low: solo lingua rilevata, per evitare falsi positivi su keyword spam.
+      for (const level of ['critical', 'high']) {
+        const seen = new Set();
+        for (const scanLang of ALL_LANGS) {
+          const lr = MultiLangBlacklist.getRulesFor(scanLang);
+          for (const re of (lr[level] || [])) {
+            if (seen.has(re.source)) continue;
+            seen.add(re.source);
+            if (re.test(normalized) || re.test(originalText)) {
+              result.flags.push({ type: 'blacklist', level, lang: scanLang, label: '[' + scanLang.toUpperCase() + '] ' + level });
+              result.rawScore = Math.max(result.rawScore, sevScores[level]);
+              result.maxSeverity = this._maxSev(result.maxSeverity, level);
+            }
+          }
+        }
+      }
+      for (const level of ['medium', 'low']) {
+        const pr = MultiLangBlacklist.getRulesFor(primaryLang);
+        for (const re of (pr[level] || [])) {
           if (re.test(normalized) || re.test(originalText)) {
-            result.flags.push({ type: 'blacklist', level, label: `Pattern ${level}: ${re.source.substring(0,40)}…` });
-            result.rawScore = Math.max(result.rawScore, severityScores[level]);
+            result.flags.push({ type: 'blacklist', level, lang: primaryLang, label: '[' + primaryLang.toUpperCase() + '] ' + level });
+            result.rawScore = Math.max(result.rawScore, sevScores[level]);
             result.maxSeverity = this._maxSev(result.maxSeverity, level);
           }
         }
       }
 
-      // B. Semantici
-      for (const p of this._semanticPatterns) {
-        if (p.re.test(normalized) || p.re.test(originalText)) {
-          result.flags.push({ type: 'semantic', level: 'medium', label: p.label });
-          result.rawScore = Math.max(result.rawScore, p.score);
-          result.maxSeverity = this._maxSev(result.maxSeverity, 'medium');
+      // B. Semantici — scansione tutte le lingue (pattern brevi, rischio cross-lingua basso)
+      for (const scanLang of ALL_LANGS) {
+        const sr = MultiLangBlacklist.getRulesFor(scanLang);
+        for (const p of (sr.semantic || [])) {
+          if (p.re.test(normalized) || p.re.test(originalText)) {
+            result.flags.push({ type: 'semantic', level: 'medium', lang: scanLang, label: p.label });
+            result.rawScore = Math.max(result.rawScore, p.score);
+            result.maxSeverity = this._maxSev(result.maxSeverity, 'medium');
+          }
         }
       }
 
-      // C. Fuzzy anti-evasion — analizza singole parole dello stripped
+      // C. Fuzzy cross-lingua
       const words = stripped.match(/\w{4,}/g) || [];
-      for (const entry of this._fuzzyBlacklist) {
+      for (const entry of MultiLangBlacklist._fuzzyAll) {
         for (const word of words) {
           const sim = this._similarity(word, entry.word);
-          if (sim >= entry.threshold && sim < 1.0) { // < 1 evita le corrispondenze esatte già catturate sopra
-            result.flags.push({ type: 'fuzzy', level: 'high', label: `Fuzzy match "${word}" ~ "${entry.word}" (${(sim*100).toFixed(0)}%)` });
+          if (sim >= entry.t && sim < 1.0) {
+            result.flags.push({ type: 'fuzzy', level: 'high', lang, label: 'Fuzzy "' + word + '"~"' + entry.word + '" (' + (sim*100).toFixed(0) + '%)' });
             result.rawScore = Math.max(result.rawScore, 60);
             result.maxSeverity = this._maxSev(result.maxSeverity, 'high');
           }
         }
       }
 
-      // D. Caps-lock check (solo testi > 10 char)
+      // D. Caps-lock
       if (originalText.length > 10) {
         const upper  = (originalText.match(/[A-ZÀÁÂÄÆÃÅÈÉÊËÌÍÎÏÒÓÔÖÙÚÛÜ]/g) || []).length;
         const letters = (originalText.match(/[a-zA-ZÀ-ÿ]/g) || []).length;
         if (letters > 10 && upper / letters > 0.6) {
-          result.flags.push({ type: 'caps', level: 'low', label: 'Testo in MAIUSCOLO eccessivo' });
+          result.flags.push({ type: 'caps', level: 'low', lang, label: 'CAPSLOCK eccessivo' });
           result.rawScore = Math.max(result.rawScore, 18);
+        }
+      }
+
+      // E. Mix-lingua bypass: controlla se il testo usa parole offensive di una lingua diversa
+      // da quella rilevata (es. "sei un asshole" = IT+EN). Già coperto da step A (scan tutte le lingue),
+      // qui aggiungiamo un bonus score se vengono rilevate flag da più lingue contemporaneamente.
+      if (result.flags.length >= 2) {
+        const flagLangs = new Set(result.flags.filter(f=>f.lang).map(f=>f.lang));
+        if (flagLangs.size >= 2) {
+          result.flags.push({ type: 'cross_lang', level: 'high', lang, label: 'Mix-lingua (' + [...flagLangs].join('+') + ')' });
+          result.rawScore = Math.min(100, result.rawScore + 10);
+          result.maxSeverity = this._maxSev(result.maxSeverity, 'medium');
         }
       }
 
@@ -202,556 +376,320 @@
     }
   };
 
-  /* ─────────────────────────────────────────────────────────
-     3. SPAM DETECTOR — flood, duplicati, link
-  ───────────────────────────────────────────────────────── */
+  /* ── 5. SPAM DETECTOR ───────────────────────────────────── */
   const SpamDetector = {
-    _userMsgHistory: new Map(), // email → [{text, ts}]
-    _WINDOW_MS:       30 * 1000,  // 30 secondi
-    _FLOOD_THRESHOLD: 6,          // messaggi in 30s
-    _DUP_THRESHOLD:   3,          // stesso testo ripetuto
+    _hist: new Map(),
+    _WIN: 30000, _FLOOD: 6, _DUP: 3,
 
-    record(userEmail, text, ts) {
-      const key = (userEmail || 'anon').toLowerCase();
-      if (!this._userMsgHistory.has(key)) this._userMsgHistory.set(key, []);
-      const hist = this._userMsgHistory.get(key);
-      hist.push({ text: (text || '').toLowerCase(), ts: ts || Date.now() });
-      // Pulizia history > 10 min
-      const cutoff = Date.now() - 10 * 60 * 1000;
-      this._userMsgHistory.set(key, hist.filter(m => m.ts > cutoff));
+    record(email, text, ts) {
+      const k = (email||'anon').toLowerCase();
+      if (!this._hist.has(k)) this._hist.set(k, []);
+      const h = this._hist.get(k);
+      h.push({ text: (text||'').toLowerCase(), ts: ts||Date.now() });
+      const cut = Date.now() - 600000;
+      this._hist.set(k, h.filter(m => m.ts > cut));
     },
 
-    analyze(userEmail, text) {
+    analyze(email, text) {
       const result = { flags: [], rawScore: 0 };
-      const key  = (userEmail || 'anon').toLowerCase();
-      const hist = this._userMsgHistory.get(key) || [];
-      const now  = Date.now();
-      const recent = hist.filter(m => now - m.ts < this._WINDOW_MS);
-
-      // Flood check
-      if (recent.length >= this._FLOOD_THRESHOLD) {
-        result.flags.push({ type: 'flood', label: `${recent.length} messaggi in 30s` });
-        result.rawScore = Math.max(result.rawScore, 55 + Math.min(recent.length * 3, 30));
+      const k = (email||'anon').toLowerCase();
+      const h = this._hist.get(k) || [];
+      const now = Date.now();
+      const recent = h.filter(m => now - m.ts < this._WIN);
+      if (recent.length >= this._FLOOD) {
+        result.flags.push({ type: 'flood', label: recent.length + ' msg in 30s' });
+        result.rawScore = Math.max(result.rawScore, Math.min(85, 55 + recent.length * 3));
       }
-
-      // Duplicati
-      const normText = (text || '').toLowerCase().trim();
-      const dups = recent.filter(m => m.text === normText).length;
-      if (dups >= this._DUP_THRESHOLD) {
-        result.flags.push({ type: 'duplicate', label: `Testo ripetuto ${dups} volte` });
+      const norm = (text||'').toLowerCase().trim();
+      const dups = recent.filter(m => m.text === norm).length;
+      if (dups >= this._DUP) {
+        result.flags.push({ type: 'duplicate', label: 'Ripetuto ' + dups + 'x' });
         result.rawScore = Math.max(result.rawScore, 50 + dups * 8);
       }
-
-      // Numero link eccessivo
-      const links = (text || '').match(/https?:\/\/[^\s]+/g) || [];
+      const links = (text||'').match(/https?:\/\/[^\s]+/g) || [];
       if (links.length >= 3) {
-        result.flags.push({ type: 'multi_link', label: `${links.length} URL nel messaggio` });
+        result.flags.push({ type: 'multi_link', label: links.length + ' URL' });
         result.rawScore = Math.max(result.rawScore, 40);
       }
-
       return result;
     }
   };
 
-  /* ─────────────────────────────────────────────────────────
-     4. LINK ANALYZER — domini sospetti
-  ───────────────────────────────────────────────────────── */
+  /* ── 6. LINK ANALYZER ───────────────────────────────────── */
   const LinkAnalyzer = {
-    _shorteners: ['bit.ly','tinyurl.com','t.co','ow.ly','buff.ly','goo.gl','is.gd','v.gd','short.io','rb.gy'],
-    _suspicious: ['onlyfans.com','adult.','xxx.','sex.','pump.fun','rugpull.','telegram.me/','t.me/'],
-    _whitelisted: ['luxhaven360.com','luxhaven360.it','google.com','wikipedia.org','youtube.com'],
+    _short: ['bit.ly','tinyurl.com','t.co','ow.ly','buff.ly','goo.gl','is.gd','short.io','rb.gy'],
+    _susp:  ['onlyfans.com','adult.','xxx.','sex.','pump.fun','t.me/'],
+    _white: ['luxhaven360.com','luxhaven360.it','google.com','wikipedia.org','youtube.com'],
 
     analyze(text) {
       const result = { flags: [], rawScore: 0 };
-      const urls = (text || '').match(/https?:\/\/[^\s]+/g) || [];
+      const urls = (text||'').match(/https?:\/\/[^\s]+/g) || [];
       for (const url of urls) {
         try {
           const host = new URL(url).hostname.toLowerCase();
-          if (this._whitelisted.some(w => host === w || host.endsWith('.' + w))) continue;
-          if (this._shorteners.some(s => host === s || host.endsWith('.' + s))) {
-            result.flags.push({ type: 'short_url', label: `URL abbreviato: ${host}` });
+          if (this._white.some(w => host === w || host.endsWith('.'+w))) continue;
+          if (this._short.some(s => host === s || host.endsWith('.'+s))) {
+            result.flags.push({ type: 'short_url', label: 'URL abbreviato: ' + host });
             result.rawScore = Math.max(result.rawScore, 30);
           }
-          if (this._suspicious.some(s => host.includes(s) || url.includes(s))) {
-            result.flags.push({ type: 'suspicious_url', label: `URL sospetto: ${host}` });
+          if (this._susp.some(s => host.includes(s) || url.includes(s))) {
+            result.flags.push({ type: 'susp_url', label: 'URL sospetto: ' + host });
             result.rawScore = Math.max(result.rawScore, 50);
           }
-        } catch (_) { /* URL malformato */ }
+        } catch(_) {}
       }
       return result;
     }
   };
 
-  /* ─────────────────────────────────────────────────────────
-     5. USER RISK TRACKER — score utente dinamico
-  ───────────────────────────────────────────────────────── */
+  /* ── 7. USER RISK TRACKER ───────────────────────────────── */
   const UserRiskTracker = {
-    _scores: {},   // email → { score, violations, lastUpdate }
-
-    _load() {
-      try {
-        const raw = localStorage.getItem(STORAGE_KEY_RISK);
-        if (raw) this._scores = JSON.parse(raw);
-      } catch (_) {}
-    },
-
-    _save() {
-      try { localStorage.setItem(STORAGE_KEY_RISK, JSON.stringify(this._scores)); } catch (_) {}
-    },
-
-    get(email) {
-      const key = (email || 'anon').toLowerCase();
-      return this._scores[key] || { score: 0, violations: 0, lastUpdate: 0 };
-    },
-
-    record(email, contentScore, sourceType) {
-      const key = (email || 'anon').toLowerCase();
-      const prev = this.get(email);
-      // Incremento ponderato: > 50 → +25, > 30 → +12, > 0 → +5
-      const delta = contentScore > 50 ? 25 : contentScore > 30 ? 12 : contentScore > 0 ? 5 : 0;
-      // Decadimento temporale: -1 ogni 24h di buona condotta
-      const hoursClean = (Date.now() - (prev.lastUpdate || 0)) / 3_600_000;
-      const decay = Math.min(hoursClean * 1, prev.score);
-      const newScore = Math.min(100, Math.max(0, prev.score - decay + delta));
-      this._scores[key] = {
-        score:      newScore,
-        violations: prev.violations + (delta > 0 ? 1 : 0),
-        lastUpdate: Date.now(),
-        lastSource: sourceType
-      };
+    _s: {},
+    _load() { try { const r = localStorage.getItem(STORAGE_KEY_RISK); if (r) this._s = JSON.parse(r); } catch(_){} },
+    _save() { try { localStorage.setItem(STORAGE_KEY_RISK, JSON.stringify(this._s)); } catch(_){} },
+    get(email) { return this._s[(email||'anon').toLowerCase()] || { score: 0, violations: 0, lastUpdate: 0 }; },
+    record(email, score, src) {
+      const k = (email||'anon').toLowerCase();
+      const p = this.get(email);
+      const delta = score > 50 ? 25 : score > 30 ? 12 : score > 0 ? 5 : 0;
+      const decay = Math.min((Date.now() - (p.lastUpdate||0)) / 3600000, p.score);
+      this._s[k] = { score: Math.min(100, Math.max(0, p.score - decay + delta)), violations: p.violations + (delta>0?1:0), lastUpdate: Date.now(), lastSource: src };
       this._save();
-      return this._scores[key];
+      return this._s[k];
     },
-
-    // Riduzione manuale del risk (es. dopo revisione del team)
-    reduce(email, amount) {
-      const key = (email || 'anon').toLowerCase();
-      if (!this._scores[key]) return;
-      this._scores[key].score = Math.max(0, this._scores[key].score - amount);
-      this._save();
+    reduce(email, amt) {
+      const k = (email||'anon').toLowerCase();
+      if (this._s[k]) { this._s[k].score = Math.max(0, this._s[k].score - (amt||20)); this._save(); }
     }
   };
 
-  /* ─────────────────────────────────────────────────────────
-     6. CONTEXT EVALUATOR — ruolo + conversazione
-  ───────────────────────────────────────────────────────── */
+  /* ── 8. CONTEXT EVALUATOR ───────────────────────────────── */
   const ContextEvaluator = {
-    evaluate(authorRole, sourceType, flags) {
-      let multiplier = 1.0;
-      // Team members: contesti meno rischiosi (brand voice, moderatori stessi)
-      if (authorRole === 'team') multiplier *= 0.2;
-      // Founding members: leggero bonus affidabilità
-      else if (authorRole === 'founding') multiplier *= 0.75;
-      // Candidate: nessuna variazione
-      return multiplier;
+    evaluate(role) {
+      if (role === 'team')     return 0.2;
+      if (role === 'founding') return 0.75;
+      return 1.0;
     }
   };
 
-  /* ─────────────────────────────────────────────────────────
-     7. SCORING ENGINE — punteggio finale 0–100
-  ───────────────────────────────────────────────────────── */
+  /* ── 9. SCORING ENGINE ──────────────────────────────────── */
   const ScoringEngine = {
-    /**
-     * @param {object} textResult    — da TextAnalyzer
-     * @param {object} spamResult    — da SpamDetector
-     * @param {object} linkResult    — da LinkAnalyzer
-     * @param {object} userRisk      — da UserRiskTracker
-     * @param {number} ctxMultiplier — da ContextEvaluator
-     * @returns {{ score, level, flags, details }}
-     */
-    compute(textResult, spamResult, linkResult, userRisk, ctxMultiplier) {
-      const allFlags = [
-        ...(textResult.flags || []),
-        ...(spamResult.flags || []),
-        ...(linkResult.flags || [])
-      ];
-
-      // Punteggio base: max dei singoli moduli
-      let base = Math.max(
-        textResult.rawScore  || 0,
-        spamResult.rawScore  || 0,
-        linkResult.rawScore  || 0
-      );
-
-      // Bonus additivo per flag multipli (es. spam + insulto)
-      if (allFlags.length > 2) base = Math.min(100, base + allFlags.length * 3);
-
-      // Risk utente: aggiunge fino a +20 se l'utente ha storico violazioni
-      const userBonus = Math.round((userRisk.score || 0) * 0.2);
-      base = Math.min(100, base + userBonus);
-
-      // Applicazione moltiplicatore contesto (team → abbassa, candidate → neutro)
-      const score = Math.round(Math.min(100, Math.max(0, base * ctxMultiplier)));
-
-      // Classificazione livello
-      const level = score <= 20 ? 'safe'
-                  : score <= 50 ? 'suspect'
-                  : score <= 80 ? 'high'
-                  : 'critical';
-
-      return { score, level, flags: allFlags, details: { base, userBonus, ctxMultiplier } };
+    compute(textR, spamR, linkR, userRisk, ctxMult) {
+      const flags = [...(textR.flags||[]), ...(spamR.flags||[]), ...(linkR.flags||[])];
+      let base = Math.max(textR.rawScore||0, spamR.rawScore||0, linkR.rawScore||0);
+      if (flags.length > 2) base = Math.min(100, base + flags.length * 3);
+      base = Math.min(100, base + Math.round((userRisk.score||0) * 0.2));
+      const score = Math.round(Math.min(100, Math.max(0, base * ctxMult)));
+      const level = score <= 20 ? 'safe' : score <= 50 ? 'suspect' : score <= 80 ? 'high' : 'critical';
+      return { score, level, flags, detectedLang: textR.detectedLang || 'und' };
     }
   };
 
-  /* ─────────────────────────────────────────────────────────
-     8. REVIEW QUEUE — coda revisione manuale + log
-  ───────────────────────────────────────────────────────── */
+  /* ── 10. REVIEW QUEUE ───────────────────────────────────── */
   const ReviewQueue = {
-    _queue:     [],
-    _decisions: [],
-
+    _q: [], _d: [],
     _load() {
       try {
-        const qRaw = localStorage.getItem(STORAGE_KEY_QUEUE);
-        if (qRaw) this._queue = JSON.parse(qRaw);
-        const dRaw = localStorage.getItem(STORAGE_KEY_DECISIONS);
-        if (dRaw) this._decisions = JSON.parse(dRaw);
-      } catch (_) {}
+        const q = localStorage.getItem(STORAGE_KEY_QUEUE); if (q) this._q = JSON.parse(q);
+        const d = localStorage.getItem(STORAGE_KEY_DECISIONS); if (d) this._d = JSON.parse(d);
+      } catch(_){}
     },
-
     _save() {
       try {
-        this._queue     = this._queue.slice(-MAX_QUEUE_SIZE);
-        this._decisions = this._decisions.slice(-MAX_DECISIONS_SIZE);
-        localStorage.setItem(STORAGE_KEY_QUEUE,     JSON.stringify(this._queue));
-        localStorage.setItem(STORAGE_KEY_DECISIONS, JSON.stringify(this._decisions));
-      } catch (_) {}
+        localStorage.setItem(STORAGE_KEY_QUEUE, JSON.stringify(this._q.slice(-MAX_QUEUE_SIZE)));
+        localStorage.setItem(STORAGE_KEY_DECISIONS, JSON.stringify(this._d.slice(-MAX_DECISIONS_SIZE)));
+      } catch(_){}
     },
-
-    enqueue(entry) {
-      this._queue.unshift(entry);
-      this._save();
-      // Aggiorna badge moderazione in community-hub se presente
-      this._refreshBadge();
-    },
-
+    enqueue(e) { this._q.unshift(e); this._save(); this._badge(); },
     decide(id, decision, actor) {
-      const idx = this._queue.findIndex(e => e.id === id);
+      const i = this._q.findIndex(e => e.id === id);
       let entry = null;
-      if (idx !== -1) { entry = this._queue.splice(idx, 1)[0]; }
-      this._decisions.unshift({
-        ...(entry || { id }),
-        decision, actor,
-        decidedAt: Date.now()
-      });
-      this._save();
-      this._refreshBadge();
+      if (i !== -1) entry = this._q.splice(i, 1)[0];
+      this._d.unshift({ ...(entry || {id}), decision, actor, decidedAt: Date.now() });
+      this._save(); this._badge();
       return entry;
     },
-
-    getQueue()     { return this._queue.slice(); },
-    getDecisions() { return this._decisions.slice(); },
-
-    _refreshBadge() {
-      const badge = document.getElementById('modBadge');
-      const total = (this._queue.length);
-      if (!badge) return;
-      if (total > 0) { badge.textContent = total; badge.classList.remove('hidden'); }
-      else            badge.classList.add('hidden');
+    getQueue()     { return this._q.slice(); },
+    getDecisions() { return this._d.slice(); },
+    _badge() {
+      if (typeof document === 'undefined') return;
+      try {
+        const b = document.getElementById('modBadge');
+        if (!b) return;
+        const n = this._q.length;
+        if (n > 0) { b.textContent = n; b.classList.remove('hidden'); } else b.classList.add('hidden');
+      } catch(_) {}
     }
   };
 
-  /* ─────────────────────────────────────────────────────────
-     9. ACTION DISPATCHER — azioni automatiche per livello
-  ───────────────────────────────────────────────────────── */
+  /* ── 11. ACTION DISPATCHER ──────────────────────────────── */
   const ActionDispatcher = {
-    /**
-     * @param {{ score, level, flags }} scoring
-     * @param {object} contentMeta  — { sourceType, sourceId, authorName, authorEmail, text }
-     * @param {object} userRiskData — da UserRiskTracker
-     */
-    dispatch(scoring, contentMeta, userRiskData) {
-      const { score, level, flags } = scoring;
-      const { sourceType, sourceId, authorName, authorEmail, text } = contentMeta;
-      const label = flags.map(f => f.label).join('; ') || 'Nessun dettaglio';
-
-      // 🟢 SAFE (0–20): pubblica normalmente
+    dispatch(scoring, meta, userRisk) {
+      const { score, level, flags, detectedLang } = scoring;
+      const { sourceType, sourceId, authorName, authorEmail, text } = meta;
       if (level === 'safe') return { action: 'allow', score };
 
       const entry = {
-        id:          `mod_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
-        ts:          Date.now(),
-        score,
-        level,
-        flags,
-        sourceType,
-        sourceId:    String(sourceId),
-        authorName,
-        authorEmail: authorEmail || '',
-        contentSnippet: (text || '').substring(0, 150),
-        action:      null,
-        reviewedBy:  null
+        id: 'mod_' + Date.now() + '_' + Math.random().toString(36).slice(2,7),
+        ts: Date.now(), score, level, flags,
+        detectedLang: detectedLang || 'und',
+        sourceType, sourceId: String(sourceId),
+        authorName, authorEmail: authorEmail || '',
+        contentSnippet: (text||'').substring(0, 150),
+        action: null, reviewedBy: null
       };
 
-      // 🟡 SUSPECT (21–50): pubblica ma accoda per revisione
+      const langTag = detectedLang && detectedLang !== 'und' ? ' [' + detectedLang.toUpperCase() + ']' : '';
+
       if (level === 'suspect') {
         entry.action = 'flag';
         ReviewQueue.enqueue(entry);
         LearningAdapter.record(authorEmail, score, 'flag');
         return { action: 'flag', score, entry };
       }
-
-      // 🟠 HIGH (51–80): accoda + warning automatico utente
       if (level === 'high') {
         entry.action = 'warn';
         ReviewQueue.enqueue(entry);
         LearningAdapter.record(authorEmail, score, 'warn');
-        this._warnUser(authorName, sourceType);
-        // Segnala automaticamente alla moderazione di community-hub
-        this._bridgeReport(entry, 'Rilevamento automatico (rischio alto)');
+        this._notify(authorName, sourceType, langTag);
+        this._bridge(entry, 'Auto-mod: rischio alto' + langTag);
         return { action: 'warn', score, entry };
       }
-
-      // 🔴 CRITICAL (81–100): rimuovi immediatamente + segnala
       if (level === 'critical') {
         entry.action = 'remove';
         ReviewQueue.enqueue(entry);
         LearningAdapter.record(authorEmail, score, 'remove');
-        this._warnUser(authorName, sourceType);
-        this._bridgeReport(entry, 'Rimozione automatica (violazione grave)');
-        this._hideContent(sourceType, sourceId);
+        this._notify(authorName, sourceType, langTag);
+        this._bridge(entry, 'Auto-mod: violazione grave' + langTag);
+        this._hide(sourceType, sourceId);
         return { action: 'remove', score, entry };
       }
-
       return { action: 'allow', score };
     },
 
-    _warnUser(authorName, sourceType) {
-      // Se il team è loggato, mostra toast avviso nel pannello moderazione
-      const curRole = (global.currentUser && global.currentUser.role) || '';
-      if (curRole !== 'team') return;
-      if (typeof global.showToast === 'function') {
-        global.showToast('amber', '🤖', `Auto-mod: contenuto di <strong>${authorName}</strong> segnalato (${sourceType})`);
-      }
+    _notify(name, src, tag) {
+      if ((global.currentUser && global.currentUser.role) !== 'team') return;
+      if (typeof global.showToast === 'function')
+        global.showToast('amber', '🤖', 'Auto-mod' + tag + ': <strong>' + name + '</strong> (' + src + ')');
     },
 
-    _hideContent(sourceType, sourceId) {
-      // Aggiunge l'ID a _REMOVED_IDS di community-hub per nascondere il contenuto dal DOM
+    _hide(type, id) {
       if (typeof global._REMOVED_IDS !== 'undefined') {
-        global._REMOVED_IDS.add(`${sourceType}:${sourceId}`);
-        if (typeof global._REMOVED_IDS.add === 'function') {
-          global._REMOVED_IDS.add(`${sourceType}:${Number(sourceId)}`);
-        }
+        global._REMOVED_IDS.add(type + ':' + id);
+        global._REMOVED_IDS.add(type + ':' + Number(id));
       }
     },
 
-    _bridgeReport(entry, label) {
-      // Inietta il report nel sistema REPORTS di community-hub
-      if (typeof global.REPORTS === 'undefined' || !Array.isArray(global.REPORTS)) return;
-      const alreadyIn = global.REPORTS.some(r =>
-        String(r.sourceId) === String(entry.sourceId) && r.sourceType === entry.sourceType
-      );
-      if (alreadyIn) return;
-
+    _bridge(entry, label) {
+      if (!Array.isArray(global.REPORTS)) return;
+      if (global.REPORTS.some(r => String(r.sourceId) === String(entry.sourceId) && r.sourceType === entry.sourceType)) return;
       const report = {
-        id:           entry.id,
-        type:         label,
-        reporter:     '🤖 Auto-mod',
-        reporterEmail:'system',
-        target:       `${entry.sourceType} di ${entry.authorName}`,
-        content:      entry.contentSnippet,
-        time:         'Ora',
-        ts:           entry.ts,
-        sourceType:   entry.sourceType,
-        sourceId:     entry.sourceId,
-        authorName:   entry.authorName,
-        authorEmail:  entry.authorEmail,
-        isAuto:       true,
-        severity:     entry.level === 'critical' ? 'critical' : entry.level === 'high' ? 'high' : 'medium',
-        modFlags:     entry.flags.map(f => f.label)
+        id: entry.id, type: label,
+        reporter: '🤖 Auto-mod', reporterEmail: 'system',
+        target: entry.sourceType + ' di ' + entry.authorName,
+        content: entry.contentSnippet,
+        time: 'Ora', ts: entry.ts,
+        sourceType: entry.sourceType, sourceId: entry.sourceId,
+        authorName: entry.authorName, authorEmail: entry.authorEmail,
+        isAuto: true,
+        severity: entry.level === 'critical' ? 'critical' : entry.level === 'high' ? 'high' : 'medium',
+        detectedLang: entry.detectedLang,
+        modFlags: entry.flags.map(f => f.label)
       };
       global.REPORTS.push(report);
       if (typeof global.saveModData === 'function') global.saveModData();
-      // Notifica Supabase
       if (typeof global._writeReportToSupabase === 'function') global._writeReportToSupabase(report);
     }
   };
 
-  /* ─────────────────────────────────────────────────────────
-     10. LEARNING ADAPTER — sensibilità adattiva
-  ───────────────────────────────────────────────────────── */
+  /* ── 12. LEARNING ADAPTER ───────────────────────────────── */
   const LearningAdapter = {
-    _data: {},  // email → { totalFlags, removes, warns, flags, lastSeen }
-
-    _load() {
-      try {
-        const raw = localStorage.getItem(STORAGE_KEY_LEARNING);
-        if (raw) this._data = JSON.parse(raw);
-      } catch (_) {}
-    },
-
-    _save() {
-      try { localStorage.setItem(STORAGE_KEY_LEARNING, JSON.stringify(this._data)); } catch (_) {}
-    },
-
-    record(email, score, actionTaken) {
-      const key = (email || 'anon').toLowerCase();
-      if (!this._data[key]) this._data[key] = { totalFlags: 0, removes: 0, warns: 0, flags: 0, lastSeen: 0 };
-      const d = this._data[key];
-      d.totalFlags++;
-      if (actionTaken === 'remove') d.removes++;
-      else if (actionTaken === 'warn') d.warns++;
-      else if (actionTaken === 'flag') d.flags++;
-      d.lastSeen = Date.now();
+    _d: {},
+    _load() { try { const r = localStorage.getItem(STORAGE_KEY_LEARNING); if (r) this._d = JSON.parse(r); } catch(_){} },
+    _save() { try { localStorage.setItem(STORAGE_KEY_LEARNING, JSON.stringify(this._d)); } catch(_){} },
+    record(email, score, action) {
+      const k = (email||'anon').toLowerCase();
+      if (!this._d[k]) this._d[k] = { totalFlags: 0, removes: 0, warns: 0, flags: 0, lastSeen: 0 };
+      this._d[k].totalFlags++;
+      this._d[k][action] = (this._d[k][action] || 0) + 1;
+      this._d[k].lastSeen = Date.now();
       this._save();
-      // Aumenta il risk score dell'utente
-      UserRiskTracker.record(email, score, actionTaken);
+      UserRiskTracker.record(email, score, action);
     },
-
-    // Restituisce un moltiplicatore di sensibilità per un autore noto-problematico
     getSensitivityMultiplier(email) {
-      const key = (email || 'anon').toLowerCase();
-      const d = this._data[key];
+      const d = this._d[(email||'anon').toLowerCase()];
       if (!d) return 1.0;
-      // Ogni rimozione +0.15, ogni warn +0.08, ogni flag +0.04
-      return Math.min(2.0, 1.0 + d.removes * 0.15 + d.warns * 0.08 + d.flags * 0.04);
+      return Math.min(2.0, 1.0 + (d.removes||0) * 0.15 + (d.warns||0) * 0.08 + (d.flags||0) * 0.04);
     }
   };
 
-  /* ─────────────────────────────────────────────────────────
-     11. CONTENT LISTENER — hook centralizzato
-  ───────────────────────────────────────────────────────── */
-  const ContentListener = {
-    /**
-     * Intercetta un contenuto in ingresso e lo passa al pipeline.
-     * Deve essere chiamato da community-hub.html in tutti i punti di
-     * creazione contenuto (invio messaggio, commento, post, thread reply).
-     *
-     * @param {string} text
-     * @param {string} sourceType  — 'comment'|'reply'|'dm_message'|'fc_message'|'thread'
-     * @param {string} sourceId
-     * @param {string} authorName
-     * @param {string} authorEmail
-     * @param {string} [authorRole] — 'team'|'founding'|'candidate'
-     * @returns {{ action, score, level, flags }}
-     */
-    process(text, sourceType, sourceId, authorName, authorEmail, authorRole) {
-      if (!text || !text.trim()) return { action: 'allow', score: 0, level: 'safe', flags: [] };
-
-      // Asynch-safe: non blocca l'UI — eseguito in microtask
-      return new Promise(resolve => {
-        setTimeout(() => {
-          try {
-            const result = ModBridge._runPipeline(text, sourceType, sourceId, authorName, authorEmail, authorRole);
-            resolve(result);
-          } catch (err) {
-            console.warn('[LH360Mod] Pipeline error:', err);
-            resolve({ action: 'allow', score: 0, level: 'safe', flags: [] });
-          }
-        }, 0);
-      });
-    },
-
-    // Scan sincrono (per contenuti già renderizzati — scan iniziale)
-    processSync(text, sourceType, sourceId, authorName, authorEmail, authorRole) {
-      try {
-        return ModBridge._runPipeline(text, sourceType, sourceId, authorName, authorEmail, authorRole);
-      } catch (err) {
-        console.warn('[LH360Mod] Sync pipeline error:', err);
-        return { action: 'allow', score: 0, level: 'safe', flags: [] };
-      }
-    }
-  };
-
-  /* ─────────────────────────────────────────────────────────
-     12. MOD BRIDGE — pipeline principale + API pubblica
-  ───────────────────────────────────────────────────────── */
+  /* ── 13. MOD BRIDGE ─────────────────────────────────────── */
   const ModBridge = {
-    _initialized: false,
+    _init: false,
 
     init() {
-      if (this._initialized) return;
+      if (this._init) return;
       UserRiskTracker._load();
       ReviewQueue._load();
       LearningAdapter._load();
-      this._initialized = true;
-      console.info('[LH360Mod] Moderation engine v2.0 initialized');
+      this._init = true;
+      console.info('[LH360Mod] v3.0 multilingual initialized — IT EN FR DE ES');
     },
 
     _runPipeline(text, sourceType, sourceId, authorName, authorEmail, authorRole) {
       const role = authorRole || 'candidate';
-      // Contenuti del team esclusi dalla moderazione automatica (brand voice autorizzato)
-      if (role === 'team') return { action: 'allow', score: 0, level: 'safe', flags: [] };
-      const safeId = String(sourceId || Date.now());
+      if (role === 'team') return { action: 'allow', score: 0, level: 'safe', flags: [], detectedLang: 'und' };
 
-      // 1. Registra il messaggio nello spam detector
+      const safeId = String(sourceId || Date.now());
       SpamDetector.record(authorEmail, text, Date.now());
 
-      // 2. Analisi
-      const textResult  = TextAnalyzer.analyze(text);
-      const spamResult  = SpamDetector.analyze(authorEmail, text);
-      const linkResult  = LinkAnalyzer.analyze(text);
-      const userRisk    = UserRiskTracker.get(authorEmail);
-      const ctxMult     = ContextEvaluator.evaluate(role, sourceType, textResult.flags);
-      const learnMult   = LearningAdapter.getSensitivityMultiplier(authorEmail);
+      const textR  = TextAnalyzer.analyze(text);
+      const spamR  = SpamDetector.analyze(authorEmail, text);
+      const linkR  = LinkAnalyzer.analyze(text);
+      const risk   = UserRiskTracker.get(authorEmail);
+      const ctx    = ContextEvaluator.evaluate(role);
+      const learn  = LearningAdapter.getSensitivityMultiplier(authorEmail);
 
-      // 3. Scoring (applica il learn multiplier sullo score base)
-      const rawScoring  = ScoringEngine.compute(textResult, spamResult, linkResult, userRisk, ctxMult);
-      // Il moltiplicatore learning agisce solo sullo score utente (non sul base text score)
-      const adjustedScore = Math.min(100, Math.round(rawScoring.score * learnMult));
-      const level = adjustedScore <= 20 ? 'safe' : adjustedScore <= 50 ? 'suspect' : adjustedScore <= 80 ? 'high' : 'critical';
-      const finalScoring = { ...rawScoring, score: adjustedScore, level };
+      const raw    = ScoringEngine.compute(textR, spamR, linkR, risk, ctx);
+      const adj    = Math.min(100, Math.round(raw.score * learn));
+      const level  = adj <= 20 ? 'safe' : adj <= 50 ? 'suspect' : adj <= 80 ? 'high' : 'critical';
+      const final  = { ...raw, score: adj, level };
 
-      // 4. Azione
-      const outcome = ActionDispatcher.dispatch(finalScoring, {
+      const out = ActionDispatcher.dispatch(final, {
         sourceType, sourceId: safeId,
         authorName: authorName || 'Utente',
         authorEmail: authorEmail || '',
         text
-      }, userRisk);
+      }, risk);
 
-      return {
-        action: outcome.action,
-        score:  finalScoring.score,
-        level:  finalScoring.level,
-        flags:  finalScoring.flags,
-        entry:  outcome.entry || null
-      };
+      return { action: out.action, score: final.score, level: final.level, flags: final.flags, detectedLang: final.detectedLang, entry: out.entry || null };
     },
 
-    // ── API pubblica ────────────────────────────────────
-    /** Sostituisce la vecchia autoModerateText di community-hub.
-     *  NB: contenuti con authorRole='team' vengono bypassati automaticamente. */
-    moderateText(text, sourceType, sourceId, authorName, authorEmail, authorRole) {
-      return ContentListener.processSync(text, sourceType, sourceId, authorName, authorEmail, authorRole);
+    moderateText(text, type, id, name, email, role) {
+      try { return this._runPipeline(text, type, id, name, email, role); }
+      catch(e) { console.warn('[LH360Mod]', e); return { action: 'allow', score: 0, level: 'safe', flags: [] }; }
     },
 
-    /** Scan su batch di contenuti (es. alla prima apertura del pannello) */
     scanBatch(items) {
-      return items.map(item =>
-        this._runPipeline(item.text, item.sourceType, item.sourceId, item.authorName, item.authorEmail, item.authorRole)
-      );
+      return items.map(i => this._runPipeline(i.text, i.sourceType, i.sourceId, i.authorName, i.authorEmail, i.authorRole));
     },
 
-    /** Restituisce la coda di revisione per il pannello moderazione */
-    getReviewQueue()     { return ReviewQueue.getQueue(); },
-    getDecisionLog()     { return ReviewQueue.getDecisions(); },
-
-    /** Decisione manuale del team su un item in coda */
-    resolveItem(id, decision, actorName) {
-      const entry = ReviewQueue.decide(id, decision, actorName || 'Team');
-      if (entry && decision === 'approve') {
-        // Riduce il risk score dell'utente se il contenuto era falso positivo
-        UserRiskTracker.reduce(entry.authorEmail, 15);
-      }
-      return entry;
+    getReviewQueue()  { return ReviewQueue.getQueue(); },
+    getDecisionLog()  { return ReviewQueue.getDecisions(); },
+    resolveItem(id, decision, actor) {
+      const e = ReviewQueue.decide(id, decision, actor || 'Team');
+      if (e && decision === 'approve') UserRiskTracker.reduce(e.authorEmail, 15);
+      return e;
     },
-
-    /** Ottieni user risk score */
-    getUserRisk(email)   { return UserRiskTracker.get(email); },
-
-    /** Riduzione manuale risk (dopo revisione) */
-    reduceUserRisk(email, amount) { UserRiskTracker.reduce(email, amount || 20); }
+    getUserRisk(email)       { return UserRiskTracker.get(email); },
+    reduceUserRisk(email, n) { UserRiskTracker.reduce(email, n || 20); },
+    detectLang(text)         { return LanguageDetector.detect(text); }
   };
 
-  /* ─────────────────────────────────────────────────────────
-     INIT & EXPORT
-  ───────────────────────────────────────────────────────── */
+  /* ── INIT & EXPORT ──────────────────────────────────────── */
   ModBridge.init();
 
-  // Espone l'API pubblica su window.LH360Mod
   global.LH360Mod = {
-    // Metodo principale — drop-in replacement per autoModerateText
     moderate:       ModBridge.moderateText.bind(ModBridge),
     scanBatch:      ModBridge.scanBatch.bind(ModBridge),
     getReviewQueue: ModBridge.getReviewQueue.bind(ModBridge),
@@ -759,47 +697,25 @@
     resolveItem:    ModBridge.resolveItem.bind(ModBridge),
     getUserRisk:    ModBridge.getUserRisk.bind(ModBridge),
     reduceUserRisk: ModBridge.reduceUserRisk.bind(ModBridge),
-    // Accesso diretto ai moduli per estensioni future
-    _modules: { TextNormalizer, TextAnalyzer, SpamDetector, LinkAnalyzer,
-                UserRiskTracker, ContextEvaluator, ScoringEngine,
-                ActionDispatcher, ReviewQueue, LearningAdapter }
+    detectLang:     ModBridge.detectLang.bind(ModBridge),
+    _modules: { TextNormalizer, LanguageDetector, MultiLangBlacklist, TextAnalyzer,
+                SpamDetector, LinkAnalyzer, UserRiskTracker, ContextEvaluator,
+                ScoringEngine, ActionDispatcher, ReviewQueue, LearningAdapter }
   };
 
-  /* ── Override autoModerateText in community-hub (se presente) ──
-     Mantiene la firma identica per compatibilità con le chiamate esistenti.
-     Il nuovo engine fa tutto quello che il vecchio faceva + molto di più.  */
+  /* Drop-in replacement per autoModerateText — firma identica alla v1 */
   global.autoModerateText = function(text, sourceType, sourceId, authorName, authorEmail) {
-    const authorRole = (global.currentUser && global.currentUser.role) || 'candidate';
-    // Il team NON viene moderato dal bot automatico — è il moderatore stesso.
-    // I contenuti del team sono considerati brand voice autorizzato.
-    if (authorRole === 'team') return;
-    ModBridge.moderateText(text, sourceType, sourceId, authorName, authorEmail, authorRole);
-    // Non restituisce nulla per compatibilità (le chiamate esistenti ignorano il return)
+    const role = (global.currentUser && global.currentUser.role) || 'candidate';
+    if (role === 'team') return; // team non moderato
+    ModBridge.moderateText(text, sourceType, sourceId, authorName, authorEmail, role);
   };
 
 })(window);
 
 /*
- * ═══════════════════════════════════════════════════════════
- *  INTEGRAZIONE — community-hub.html
- *
- *  Aggiungi nel <head> di community-hub.html, PRIMA dello script principale:
- *
- *    <script src="community-moderation.js"></script>
- *
- *  Dopo l'inizializzazione il motore è attivo automaticamente:
- *  - window.autoModerateText viene sovrascritto con la versione avanzata
- *  - window.LH360Mod espone l'API per il pannello Moderazione
- *
- *  Per il pannello Team → Moderazione, usa:
- *    LH360Mod.getReviewQueue()    → lista item da revisionare
- *    LH360Mod.resolveItem(id, 'approve' | 'reject' | 'remove', actorName)
- *    LH360Mod.getUserRisk(email)  → { score, violations }
- *
- *  Per scan dei contenuti già presenti al caricamento pagina:
- *    LH360Mod.scanBatch(FEED_POSTS.map(p => ({
- *      text: p.text, sourceType: 'post', sourceId: p.id,
- *      authorName: p.author, authorEmail: p.email, authorRole: p.role
- *    })));
- * ═══════════════════════════════════════════════════════════
+ * Lingue supportate: IT · EN · FR · DE · ES
+ * Mix-lingua bypass: rilevato e penalizzato automaticamente
+ * Fuzzy matching: ~25 parole chiave cross-lingua (Levenshtein)
+ * LanguageDetector: offline, basato su marker statistici
+ * Team bypass: contenuti del team esclusi dalla moderazione
  */
