@@ -576,16 +576,40 @@
     },
 
     _hide(type, id) {
+      // ── 1. Rimozione locale immediata ────────────────────────────────────
       if (typeof global._REMOVED_IDS !== 'undefined') {
         global._REMOVED_IDS.add(type + ':' + id);
         global._REMOVED_IDS.add(type + ':' + Number(id));
       }
-      // ── Propagazione globale: scrive su Supabase content_removals ──────────
-      // Il listener RT content_removals_rt in tutti i client connessi riceve
-      // immediatamente l'evento INSERT e rimuove il contenuto dal proprio DOM.
-      // Questo è l'unico meccanismo che garantisce rimozione istantanea globale.
-      if (typeof global._writeRemovalToSupabase === 'function') {
-        global._writeRemovalToSupabase(type, String(id));
+
+      const sb = global._sb;
+      const sbReady = global._sbReady;
+
+      // ── 2. Rimozione globale per tipo contenuto ───────────────────────────
+
+      // A. Post / commenti / thread / risposte → content_removals (già gestito)
+      //    Il listener RT content_removals_rt propaga la rimozione a tutti i client.
+      if (type === 'post' || type === 'comment' || type === 'thread' || type === 'reply') {
+        if (typeof global._writeRemovalToSupabase === 'function') {
+          global._writeRemovalToSupabase(type, String(id));
+        }
+        return;
+      }
+
+      // B. Messaggi privati (dm_message): moderazione automatica disabilitata.
+      //    I DM sono conversazioni private — la rimozione avviene solo su segnalazione manuale.
+      if (type === 'dm_message') return;
+
+      // C. Messaggi Founding Members (fc_message) → founding_group_messages DELETE
+      //    Il listener postgres_changes DELETE è già attivo su TUTTI i client founding.
+      //    Un semplice DELETE sulla riga propaga la rimozione a tutti istantaneamente.
+      if (type === 'fc_message' && sbReady && sb) {
+        try {
+          sb.from('founding_group_messages')
+            .delete()
+            .eq('id', String(id))
+            .then(null, function(e) { console.warn('[AutoMod] FC delete error:', e); });
+        } catch(_e) {}
       }
     },
 
