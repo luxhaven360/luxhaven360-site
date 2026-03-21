@@ -60,15 +60,52 @@ function activateVimeoSection(container) {
     });
 }
 
-// ── Pausa video quando la tab va in background, riprendi al ritorno ──────────
-document.addEventListener('visibilitychange', () => {
-    if (document.hidden) {
-        document.querySelectorAll('.section.active video[data-bg-video]')
-            .forEach(v => v.pause());
-        return;
-    }
+// ── Gestione risorse video: pausa quando la tab non è attiva ─────────────────
+//
+// Il problema con più tab aperte:
+//   visibilitychange si attiva solo quando la tab va in background (nascosta).
+//   Se due tab sono ENTRAMBE visibili (es. split screen o alt-tab rapido),
+//   entrambe scaricano e decodificano il video in parallelo → CPU/GPU saturati.
+//
+// Soluzione: ascolta ANCHE window.blur/focus.
+//   • blur  → questa finestra ha perso il focus → pausa il video
+//   • focus → questa finestra ha ripreso il focus → riprendi il video
+//
+// Risultato: una sola tab alla volta riproduce il video,
+//            indipendentemente da quante sono aperte o visibili.
+
+function _pauseActiveVideos() {
+    document.querySelectorAll('video[data-bg-video]').forEach(v => {
+        if (!v.paused) v.pause();
+    });
+}
+
+function _resumeActiveVideos() {
+    // Riprendi solo il video nella sezione visibile, non tutti
     document.querySelectorAll('.section.active video[data-bg-video]')
         .forEach(v => v.play().catch(() => {}));
+}
+
+// Tab nascosta (es. utente passa ad altra tab)
+document.addEventListener('visibilitychange', () => {
+    if (document.hidden) {
+        _pauseActiveVideos();
+    } else if (document.hasFocus()) {
+        // Ritorna visibile ED è anche la finestra in focus → riprendi
+        _resumeActiveVideos();
+    }
+});
+
+// Finestra perde focus (es. altra tab in primo piano, altra app, split screen)
+window.addEventListener('blur', () => {
+    _pauseActiveVideos();
+});
+
+// Finestra riacquista focus → riprendi
+window.addEventListener('focus', () => {
+    if (!document.hidden) {
+        _resumeActiveVideos();
+    }
 });
 
 /**
