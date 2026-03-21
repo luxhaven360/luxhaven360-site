@@ -553,6 +553,7 @@
         LearningAdapter.record(authorEmail, score, 'warn');
         this._notify(authorName, sourceType, langTag);
         this._bridge(entry, 'Auto-mod: rischio alto' + langTag);
+        this._notifyAuthor(authorEmail, 'high', sourceType);
         return { action: 'warn', score, entry };
       }
       if (level === 'critical') {
@@ -562,6 +563,7 @@
         this._notify(authorName, sourceType, langTag);
         this._bridge(entry, 'Auto-mod: violazione grave' + langTag);
         this._hide(sourceType, sourceId);
+        this._notifyAuthor(authorEmail, 'critical', sourceType);
         return { action: 'remove', score, entry };
       }
       return { action: 'allow', score };
@@ -578,6 +580,33 @@
         global._REMOVED_IDS.add(type + ':' + id);
         global._REMOVED_IDS.add(type + ':' + Number(id));
       }
+    },
+
+    // Notifica silenziosa all'autore del contenuto rimosso/segnalato.
+    // Appare nella campanella notifiche dell'utente, non come toast invasivo.
+    _notifyAuthor(authorEmail, level, sourceType) {
+      if (!authorEmail || authorEmail === 'system') return;
+      if (!global._sbReady || !global._sb) return;
+      const typeLabel = sourceType === 'dm_message'  ? 'messaggio privato'
+                      : sourceType === 'fc_message'  ? 'messaggio nel canale Founding'
+                      : sourceType === 'comment'     ? 'commento'
+                      : sourceType === 'reply'       ? 'risposta'
+                      : sourceType === 'thread'      ? 'thread'
+                      : 'contenuto';
+      const text = level === 'critical'
+        ? `Il tuo ${typeLabel} è stato rimosso automaticamente per violazione delle linee guida della community.`
+        : `Il tuo ${typeLabel} è stato segnalato per revisione da parte del team.`;
+      try {
+        global._sb.from('notifications').insert({
+          user_email:   authorEmail.toLowerCase(),
+          author_email: 'system@luxhaven360.com',
+          icon:         level === 'critical' ? 'red' : 'amber',
+          emoji:        level === 'critical' ? '🚫' : '⚠️',
+          text:         text,
+          created_at:   new Date().toISOString(),
+          read:         false
+        }).then(null, () => {});
+      } catch(_e) {}
     },
 
     _bridge(entry, label) {
