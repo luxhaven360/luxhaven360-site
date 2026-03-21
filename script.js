@@ -501,16 +501,41 @@ if (isExperience) {
 
     // image/icon
     const imageContainer = el('div', { class: 'card-image' });
-    
-    if (prod.icon && typeof prod.icon === 'string' && prod.icon.includes('drive.google.com')) {
-        const img = el('img', { 
-            src: prod.icon, 
-            alt: prod.title, 
+
+    // ── Riscrive URL Google Drive → Cloudflare Worker proxy ─────────────────
+    // Invece di: https://drive.google.com/thumbnail?id=FILE_ID&sz=w1000
+    //  usa:      https://cdn.luxhaven360.com/img-proxy/FILE_ID
+    //
+    // Vantaggi:
+    //  • Prima richiesta: ~300ms (Worker recupera da Drive e cacha)
+    //  • Richieste successive: ~10-30ms (Cloudflare edge, Italia)
+    //  • Nessun redirect 302, nessuna saturazione della connessione
+    //  • Qualsiasi numero di utenti simultanei senza degradazione
+    function _toCdnImageUrl(src) {
+        if (!src || typeof src !== 'string') return src;
+        // Estrae FILE_ID da: drive.google.com/thumbnail?id=FILE_ID&...
+        const match = src.match(/[?&]id=([a-zA-Z0-9_-]{10,})/);
+        if (match && match[1]) {
+            return `https://cdn.luxhaven360.com/img-proxy/${match[1]}`;
+        }
+        // Estrae FILE_ID da: drive.google.com/file/d/FILE_ID/...
+        const match2 = src.match(/\/d\/([a-zA-Z0-9_-]{10,})/);
+        if (match2 && match2[1]) {
+            return `https://cdn.luxhaven360.com/img-proxy/${match2[1]}`;
+        }
+        return src; // URL non-Drive: restituisce invariato
+    }
+
+    const iconSrc = _toCdnImageUrl(prod.icon);
+
+    if (iconSrc && typeof iconSrc === 'string' && iconSrc.startsWith('http')) {
+        const img = el('img', {
+            src: iconSrc,
+            alt: prod.title,
             style: 'width:100%; height:100%; object-fit:cover; transition: transform 0.5s ease;',
             loading: 'lazy',
-            referrerpolicy: 'no-referrer'
         });
-        
+
         img.onerror = function() {
             this.style.display = 'none';
             imageContainer.textContent = '📦';
@@ -519,7 +544,7 @@ if (isExperience) {
             imageContainer.style.justifyContent = 'center';
             imageContainer.style.fontSize = '3rem';
         };
-        
+
         imageContainer.appendChild(img);
     } else {
         imageContainer.textContent = prod.icon || '📦';
