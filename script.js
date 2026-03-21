@@ -20,18 +20,14 @@ const VIDEO_URLS = {
 
 /**
  * Genera il tag <video> per background video.
- *
- * Attributi necessari per autoplay mobile:
- *  • autoplay   — richiesto da iOS Safari e Android Chrome per avvio automatico
- *  • muted      — obbligatorio per autoplay senza gesto utente
- *  • playsinline — iOS: evita fullscreen automatico
- *  • loop       — riproduzione continua
- *  • preload="auto" — inizia il download subito (necessario su mobile)
+ * autoplay+muted+playsinline: combinazione obbligatoria per autoplay mobile/desktop.
+ * preload="metadata": scarica solo i metadati inizialmente, non l'intero file.
+ * Il download reale parte quando la sezione diventa attiva.
  */
 function videoHTML(src, title) {
     return `<video
         src="${src}"
-        preload="auto"
+        preload="metadata"
         autoplay
         muted
         loop
@@ -229,11 +225,17 @@ function _showSectionInternal(sectionId) {
             el.classList.add('active');
             el.style.display = 'block';
             el.style.opacity = '1';
-            
+
             playVideosInSection(el);
-            // Attiva immediatamente: se il video è precaricato sta già girando,
-            // basta renderlo visibile. Se non ancora caricato, _vimeoInit lo avvia.
-            activateVimeoSection(el);
+
+            // iOS Safari richiede che il browser abbia processato il layout
+            // (display:block) prima che play() venga accettato.
+            // Il doppio rAF garantisce che il reflow sia completato.
+            requestAnimationFrame(() => {
+                requestAnimationFrame(() => {
+                    activateVimeoSection(el);
+                });
+            });
         }
         
         if (sectionId === 'shop') {
@@ -300,44 +302,18 @@ window.addEventListener('popstate', (event) => {
 });
 
 /**
- * 🎬 Avvia automaticamente tutti i video in una sezione
- * @param {HTMLElement} section - Elemento DOM della sezione
+ * Avvia i video nativi nella sezione (es. video prodotto).
+ * Esclude i video background [data-bg-video] — quelli sono gestiti
+ * da activateVimeoSection() per evitare doppio play/download.
  */
 function playVideosInSection(section) {
     if (!section) return;
-    
-    const videos = section.querySelectorAll('video');
-    
-    videos.forEach(video => {
-        // Reset video
+    // Solo video NON background (es. video nei dettagli prodotto)
+    section.querySelectorAll('video:not([data-bg-video])').forEach(video => {
         video.currentTime = 0;
-        
-        // Imposta attributi per autoplay (sicurezza cross-browser)
         video.muted = true;
         video.playsInline = true;
-        
-        // Prova ad avviare il video
-        const playPromise = video.play();
-        
-        if (playPromise !== undefined) {
-            playPromise
-                .then(() => {
-                    console.log('✅ Video avviato:', video.src);
-                })
-                .catch(error => {
-                    console.warn('⚠️ Autoplay bloccato dal browser:', error);
-                    
-                    // Fallback: Tentativo di play al primo click/touch dell'utente
-                    const playOnInteraction = () => {
-                        video.play().catch(e => console.error('Play fallito:', e));
-                        document.removeEventListener('click', playOnInteraction);
-                        document.removeEventListener('touchstart', playOnInteraction);
-                    };
-                    
-                    document.addEventListener('click', playOnInteraction, { once: true });
-                    document.addEventListener('touchstart', playOnInteraction, { once: true });
-                });
-        }
+        video.play().catch(() => {});
     });
 }
 
