@@ -62,31 +62,23 @@ function activateVimeoSection(container) {
         video.playsInline = true;
         video.autoplay = true;
 
-        const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
-
-        const doPlay = () => {
-            const p = video.play();
-            if (p !== undefined) {
-                p.then(() => {
-                    if (_videoChannel) _videoChannel.postMessage('playing');
-                }).catch(() => {
-                    // Ultimo fallback: al primo touch
-                    document.addEventListener('touchstart', function onTouch() {
-                        video.play().catch(() => {});
-                        document.removeEventListener('touchstart', onTouch);
-                    }, { once: true, passive: true });
-                });
-            }
-        };
-
-        if (isMobile && video.paused) {
-            // Su mobile: dopo una pause(), iOS non accetta play() direttamente.
-            // load() resetta completamente lo stato del player → poi play() funziona.
-            video.load();
-            video.addEventListener('canplay', doPlay, { once: true });
-        } else {
-            doPlay();
-        }
+        // Chiama play() direttamente — siamo nel contesto del click.
+        // Android Chrome e iOS Safari lo accettano se muted=true.
+        // Non usiamo load() o eventi asincroni: perderebbero il contesto del gesto.
+        video.play().then(() => {
+            if (_videoChannel) _videoChannel.postMessage('playing');
+        }).catch(() => {
+            // Se play() fallisce (es. browser con politiche restrittive),
+            // riprova al primo touch dell'utente
+            document.addEventListener('touchstart', function onTouch() {
+                video.play().catch(() => {});
+                document.removeEventListener('touchstart', onTouch);
+            }, { once: true, passive: true });
+            document.addEventListener('click', function onClick() {
+                video.play().catch(() => {});
+                document.removeEventListener('click', onClick);
+            }, { once: true });
+        });
 
         requestAnimationFrame(() => {
             requestAnimationFrame(() => {
@@ -232,15 +224,10 @@ function _showSectionInternal(sectionId) {
             el.style.opacity = '1';
 
             playVideosInSection(el);
-
-            // iOS Safari richiede che il browser abbia processato il layout
-            // (display:block) prima che play() venga accettato.
-            // Il doppio rAF garantisce che il reflow sia completato.
-            requestAnimationFrame(() => {
-                requestAnimationFrame(() => {
-                    activateVimeoSection(el);
-                });
-            });
+            // Chiama play() immediatamente nel contesto del click —
+            // Android Chrome e iOS Safari richiedono che play() sia chiamato
+            // direttamente nel click handler, non in callback asincroni (rAF, timeout).
+            activateVimeoSection(el);
         }
         
         if (sectionId === 'shop') {
