@@ -49,9 +49,13 @@ function vimeoIframeHTML(videoId, title) {
 }
 
 /**
- * Aggiunge la classe vimeo-active e INIZIALIZZA o RIPRENDE il video.
- * Prima visita: sposta data-src → src (avvia lo stream HLS).
- * Visite successive: invia postMessage "play" (nessun reload).
+ * Rende visibile il video Vimeo nella sezione e lo avvia se non ancora caricato.
+ *
+ * Caso A — precaricato (src reale già impostata, video in riproduzione silenziosa):
+ *   → aggiunge solo vimeo-active (fade-in CSS). Nessun postMessage, nessun ritardo.
+ *
+ * Caso B — non ancora caricato (src="about:blank"):
+ *   → imposta il vero src; autoplay=1 nell'URL avvia la riproduzione automaticamente.
  */
 function activateVimeoSection(container) {
     if (!container) return;
@@ -59,6 +63,7 @@ function activateVimeoSection(container) {
         const iframe = slot.querySelector('iframe[data-vimeo-id]');
         if (!iframe) return;
         _vimeoInit(iframe);
+        // Doppio rAF garantisce che display:block sia applicato prima della transition
         requestAnimationFrame(() => {
             requestAnimationFrame(() => {
                 slot.classList.add('vimeo-active');
@@ -68,20 +73,20 @@ function activateVimeoSection(container) {
 }
 
 /**
- * Prima attivazione: imposta il vero src da data-src (avvia HLS).
- * Attivazioni successive: invia solo play via postMessage (nessun reload).
+ * Prima attivazione: imposta src da data-src (avvia stream, autoplay=1 nell'URL).
+ * Già caricato: il video sta girando silenziosamente — non serve postMessage.
  */
 function _vimeoInit(iframe) {
     if (!iframe) return;
     const alreadyLoaded = iframe.src && iframe.src !== 'about:blank' && iframe.src !== '';
-    if (alreadyLoaded) {
-        _vimeoPlay(iframe);
-    } else {
+    if (!alreadyLoaded) {
         const dataSrc = iframe.getAttribute('data-src');
         if (dataSrc) {
-            iframe.src = dataSrc; // avvia stream; autoplay=1 nell'URL parte automaticamente
+            iframe.src = dataSrc; // autoplay=1 nell'URL avvia da solo
         }
     }
+    // Se già caricato: il video sta già girando (preload silenzioso mai interrotto)
+    // → nessuna azione necessaria, vimeo-active lo renderà visibile
 }
 
 /**
@@ -110,16 +115,19 @@ function _vimeoPause(iframe) {
     } catch (e) { /* cross-origin — silenzioso */ }
 }
 
-// ── Ripristina riproduzione Vimeo quando l'utente torna sulla scheda ─────────
+// ── Gestione cambio visibilità tab ───────────────────────────────────────────
 document.addEventListener('visibilitychange', () => {
     if (document.hidden) {
-        // Tab in background: pausa TUTTI i Vimeo per non sprecare banda
-        document.querySelectorAll('iframe[data-vimeo-id]').forEach(iframe => _vimeoPause(iframe));
+        // Tab in background: pausa SOLO l'iframe attivo (quelli precaricati girano già
+        // in background — fermarli richiederebbe un play cross-origin inaffidabile al ritorno)
+        document.querySelectorAll('.section.active, .hero.active').forEach(activeEl => {
+            activeEl.querySelectorAll('iframe[data-vimeo-id]').forEach(iframe => _vimeoPause(iframe));
+        });
         return;
     }
-    // Tab tornata attiva: riprendi SOLO il Vimeo nella sezione attiva
-    document.querySelectorAll('.section.active, .hero.active').forEach(section => {
-        section.querySelectorAll('.empty-hero-video.vimeo-active iframe[data-vimeo-id]')
+    // Tab tornata attiva: riprendi l'iframe della sezione visibile
+    document.querySelectorAll('.section.active, .hero.active').forEach(activeEl => {
+        activeEl.querySelectorAll('.empty-hero-video.vimeo-active iframe[data-vimeo-id]')
             .forEach(iframe => _vimeoPlay(iframe));
     });
     console.log('👁 Tab tornata attiva — ripresa Vimeo sezione attiva');
@@ -180,9 +188,12 @@ function _showSectionInternal(sectionId) {
         video.currentTime = 0;
     });
 
-    // ✅ STEP 1b: PAUSA TUTTI I VIMEO — evita che due stream HLS girino in parallelo
-    // Il play verrà inviato solo all'iframe della sezione che diventa visibile (STEP 3)
-    document.querySelectorAll('iframe[data-vimeo-id]').forEach(iframe => _vimeoPause(iframe));
+    // ✅ STEP 1b: PAUSA SOLO IL VIMEO DELLA SEZIONE ATTIVA (non quelli precaricati)
+    // I precaricati girano silenziosamente in background (muted, nascosti) —
+    // fermarli e riattivarli via postMessage cross-origin introduce il ritardo.
+    document.querySelectorAll('.section.active, .hero.active').forEach(activeEl => {
+        activeEl.querySelectorAll('iframe[data-vimeo-id]').forEach(iframe => _vimeoPause(iframe));
+    });
     
     // ✅ STEP 2: NASCONDI TUTTE LE SEZIONI E HERO
     document.querySelectorAll('.section, .hero').forEach(s => {
@@ -221,11 +232,10 @@ function _showSectionInternal(sectionId) {
             el.style.display = 'block';
             el.style.opacity = '1';
             
-            setTimeout(() => {
-                playVideosInSection(el);
-                // Fade-in video Vimeo + riprendi riproduzione (solo CSS + postMessage, no DOM ops)
-                activateVimeoSection(el);
-            }, 50);
+            playVideosInSection(el);
+            // Attiva immediatamente: se il video è precaricato sta già girando,
+            // basta renderlo visibile. Se non ancora caricato, _vimeoInit lo avvia.
+            activateVimeoSection(el);
         }
         
         if (sectionId === 'shop') {
