@@ -29,13 +29,16 @@ function vimeoBackgroundUrl(videoId) {
 }
 
 /**
- * Genera il tag <iframe> Vimeo completo per l'embedding diretto.
- * L'iframe viene inserito nell'HTML della sezione, non iniettato lazy —
- * così il browser inizia a caricare il video al DOMContentLoaded.
+ * Genera il tag <iframe> Vimeo con LAZY SRC.
+ * Parte con src="about:blank" — nessun stream HLS finché la sezione
+ * non diventa attiva. Il vero URL è in data-src.
+ * _vimeoInit() sposta data-src → src alla prima attivazione.
+ * Vantaggi: 0 stream al caricamento, solo 1 stream alla volta.
  */
 function vimeoIframeHTML(videoId, title) {
     return `<iframe
-        src="${vimeoBackgroundUrl(videoId)}"
+        src="about:blank"
+        data-src="${vimeoBackgroundUrl(videoId)}"
         frameborder="0"
         allow="autoplay; fullscreen; picture-in-picture; clipboard-write; encrypted-media"
         referrerpolicy="strict-origin-when-cross-origin"
@@ -46,26 +49,39 @@ function vimeoIframeHTML(videoId, title) {
 }
 
 /**
- * Aggiunge la classe vimeo-active a tutti gli .empty-hero-video che
- * hanno già il loro iframe caricato (iframe.src impostato).
- * Chiamato quando una sezione diventa visibile — solo fade-in CSS,
- * NESSUNA creazione/spostamento di iframe.
- * @param {HTMLElement} container
+ * Aggiunge la classe vimeo-active e INIZIALIZZA o RIPRENDE il video.
+ * Prima visita: sposta data-src → src (avvia lo stream HLS).
+ * Visite successive: invia postMessage "play" (nessun reload).
  */
 function activateVimeoSection(container) {
     if (!container) return;
     container.querySelectorAll('.empty-hero-video').forEach(slot => {
         const iframe = slot.querySelector('iframe[data-vimeo-id]');
         if (!iframe) return;
-        // Riprendi la riproduzione via postMessage (sicuro: ignora cross-origin errors)
-        _vimeoPlay(iframe);
-        // Fade-in: doppio rAF garantisce reflow tra display:block e transition
+        _vimeoInit(iframe);
         requestAnimationFrame(() => {
             requestAnimationFrame(() => {
                 slot.classList.add('vimeo-active');
             });
         });
     });
+}
+
+/**
+ * Prima attivazione: imposta il vero src da data-src (avvia HLS).
+ * Attivazioni successive: invia solo play via postMessage (nessun reload).
+ */
+function _vimeoInit(iframe) {
+    if (!iframe) return;
+    const alreadyLoaded = iframe.src && iframe.src !== 'about:blank' && iframe.src !== '';
+    if (alreadyLoaded) {
+        _vimeoPlay(iframe);
+    } else {
+        const dataSrc = iframe.getAttribute('data-src');
+        if (dataSrc) {
+            iframe.src = dataSrc; // avvia stream; autoplay=1 nell'URL parte automaticamente
+        }
+    }
 }
 
 /**
@@ -81,13 +97,32 @@ function _vimeoPlay(iframe) {
     } catch (e) { /* cross-origin — silenzioso */ }
 }
 
+/**
+ * Invia il comando "pause" all'iframe Vimeo via postMessage.
+ * Ferma lo streaming HLS degli iframe nelle sezioni nascoste —
+ * evita che due video scarichino contemporaneamente saturando la banda.
+ */
+function _vimeoPause(iframe) {
+    try {
+        if (iframe && iframe.contentWindow) {
+            iframe.contentWindow.postMessage('{"method":"pause"}', 'https://player.vimeo.com');
+        }
+    } catch (e) { /* cross-origin — silenzioso */ }
+}
+
 // ── Ripristina riproduzione Vimeo quando l'utente torna sulla scheda ─────────
 document.addEventListener('visibilitychange', () => {
-    if (document.hidden) return; // tab in background → nessuna azione
-    // Riprendi tutti gli iframe Vimeo attivi (nelle sezioni visibili)
-    document.querySelectorAll('.empty-hero-video.vimeo-active iframe[data-vimeo-id]')
-        .forEach(iframe => _vimeoPlay(iframe));
-    console.log('👁 Tab tornata attiva — ripresa Vimeo');
+    if (document.hidden) {
+        // Tab in background: pausa TUTTI i Vimeo per non sprecare banda
+        document.querySelectorAll('iframe[data-vimeo-id]').forEach(iframe => _vimeoPause(iframe));
+        return;
+    }
+    // Tab tornata attiva: riprendi SOLO il Vimeo nella sezione attiva
+    document.querySelectorAll('.section.active, .hero.active').forEach(section => {
+        section.querySelectorAll('.empty-hero-video.vimeo-active iframe[data-vimeo-id]')
+            .forEach(iframe => _vimeoPlay(iframe));
+    });
+    console.log('👁 Tab tornata attiva — ripresa Vimeo sezione attiva');
 });
 
 // ── Preconnect JS (rinforza i tag <link> già nel <head>) ────────────────────
@@ -107,11 +142,15 @@ document.addEventListener('visibilitychange', () => {
 function _showSectionInternal(sectionId) {
     console.log(`🔀 Cambio sezione: ${sectionId}`);
     
-    // ✅ STEP 1: PAUSA TUTTI I VIDEO NATIVI ATTIVI (cleanup — i Vimeo iframe si gestiscono da soli)
+    // ✅ STEP 1: PAUSA TUTTI I VIDEO NATIVI ATTIVI
     document.querySelectorAll('video').forEach(video => {
         video.pause();
         video.currentTime = 0;
     });
+
+    // ✅ STEP 1b: PAUSA TUTTI I VIMEO — evita che due stream HLS girino in parallelo
+    // Il play verrà inviato solo all'iframe della sezione che diventa visibile (STEP 3)
+    document.querySelectorAll('iframe[data-vimeo-id]').forEach(iframe => _vimeoPause(iframe));
     
     // ✅ STEP 2: NASCONDI TUTTE LE SEZIONI E HERO
     document.querySelectorAll('.section, .hero').forEach(s => {
@@ -1391,16 +1430,32 @@ async function _fetchAndCacheProducts(cacheKey) {
 
 /**
  * ── Helper: Renderizza shopData e bookableData nelle griglie ──
+ *
+ * STRATEGIA VIMEO (detach/re-attach):
+ *  1. Prima di svuotare ogni grid, salva e DETACCA il .premium-empty-state
+ *     (l'iframe rimane vivo in memoria — nessun reload HLS).
+ *  2. Svuota il grid con innerHTML = '' (ora sicuro: empty state è detachato).
+ *  3. Renderizza le card prodotto.
+ *  4. Se la sezione non ha prodotti → re-attacca il saved empty state oppure
+ *     crea uno nuovo se non esisteva ancora.
+ *  5. Se la sezione HA prodotti → scarta il saved empty state (ferma src).
+ *  6. Se la sezione con empty state è già .active → chiama activateVimeoSection.
  */
 function _renderProducts(shopData, bookableData, grids) {
-    // Pulizia griglie — preserva iframe Vimeo già presenti (distruggerli causa reload completo del video)
-    Object.values(grids).forEach(g => {
-        Array.from(g.children).forEach(child => {
-            if (!child.querySelector('iframe[data-vimeo-id]') && !child.classList.contains('premium-empty-state')) {
-                child.remove();
+    // ── STEP A: Salva e detacca gli empty state Vimeo PRIMA di pulire ──────────
+    const savedEmptyStates = {};
+    SECTIONS.forEach(section => {
+        if (grids[section.id]) {
+            const emptyState = grids[section.id].querySelector('.premium-empty-state');
+            if (emptyState) {
+                savedEmptyStates[section.id] = emptyState;
+                emptyState.remove(); // detach: iframe vivo in memoria, non nel DOM
             }
-        });
+        }
     });
+
+    // ── STEP B: Pulizia griglie — ora sicura, nessun iframe nel DOM ────────────
+    Object.values(grids).forEach(g => { g.innerHTML = ''; });
 
     const countBySection = {};
 
@@ -1439,24 +1494,42 @@ function _renderProducts(shopData, bookableData, grids) {
         if (supercarProducts.length > 0) initSupercarFilters(supercarProducts);
     }
 
-    // Gestione sezioni vuote
+    // ── STEP C: Gestione sezioni vuote + re-attach Vimeo ──────────────────────
     SECTIONS.forEach(section => {
-        if (!countBySection[section.id] && grids[section.id]) {
-            if (section.id === 'properties') {
-                // Inietta solo se l'iframe non è già presente — evita reload Vimeo
-                if (!grids[section.id].querySelector('iframe[data-vimeo-id]')) {
-                    grids[section.id].innerHTML = generatePropertiesEmptyState();
+        if (!grids[section.id]) return;
+
+        if (!countBySection[section.id]) {
+            // Sezione vuota: usa empty state salvato (iframe vivo) o creane uno nuovo
+            if (section.id === 'properties' || section.id === 'stays') {
+                if (savedEmptyStates[section.id]) {
+                    // Re-attach: l'iframe non ha mai lasciato la memoria → nessun reload
+                    grids[section.id].appendChild(savedEmptyStates[section.id]);
+                } else {
+                    // Prima volta: crea empty state (iframe parte con src="about:blank")
+                    grids[section.id].innerHTML = section.id === 'properties'
+                        ? generatePropertiesEmptyState()
+                        : generateExperiencesEmptyState();
                 }
-                // iframe già nell'HTML — nessuna ulteriore azione necessaria.
-                // activateVimeoSection() verrà chiamata da _showSectionInternal
-                // quando l'utente aprirà la sezione.
-            } else if (section.id === 'stays') {
-                // Inietta solo se l'iframe non è già presente — evita reload Vimeo
-                if (!grids[section.id].querySelector('iframe[data-vimeo-id]')) {
-                    grids[section.id].innerHTML = generateExperiencesEmptyState();
+                // ── FIX race condition hash ──────────────────────────────────
+                // Se la sezione è già .active (navigazione diretta via URL/#hash),
+                // activateVimeoSection non ha trovato l'iframe prima (non esisteva).
+                // Lo attiviamo adesso che l'iframe è nel DOM.
+                const sectionEl = document.getElementById(section.id);
+                if (sectionEl && sectionEl.classList.contains('active')) {
+                    setTimeout(() => activateVimeoSection(sectionEl), 80);
                 }
             } else {
                 grids[section.id].innerHTML = '<div class="empty" style="grid-column: 1/-1; text-align: center; padding: 3rem; opacity: 0.5;">Nessun prodotto disponibile al momento.</div>';
+            }
+        } else {
+            // Sezione con prodotti: ferma e scarta il video (non serve più)
+            if (savedEmptyStates[section.id]) {
+                const iframe = savedEmptyStates[section.id].querySelector('iframe[data-vimeo-id]');
+                if (iframe) {
+                    _vimeoPause(iframe);
+                    iframe.src = 'about:blank'; // ferma lo stream HLS definitivamente
+                }
+                // L'elemento viene garbage-collected (nessun riferimento rimasto)
             }
         }
     });
