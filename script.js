@@ -47,11 +47,11 @@ function activateVimeoSection(container) {
     container.querySelectorAll('.empty-hero-video').forEach(slot => {
         const video = slot.querySelector('video[data-bg-video]');
         if (!video) return;
-        // Se non ancora caricato, carica e avvia
-        if (video.readyState === 0) {
-            video.load();
-        }
-        video.play().catch(() => {}); // silenzioso se autoplay bloccato
+        if (video.readyState === 0) video.load();
+        video.play().then(() => {
+            // Avvisa tutte le altre tab/finestre di fermarsi
+            if (_videoChannel) _videoChannel.postMessage('playing');
+        }).catch(() => {});
         requestAnimationFrame(() => {
             requestAnimationFrame(() => {
                 slot.classList.add('vimeo-active');
@@ -60,43 +60,63 @@ function activateVimeoSection(container) {
     });
 }
 
-// ── Gestione risorse video: pausa quando la tab non è attiva ─────────────────
+// ── Gestione risorse video: un solo video attivo alla volta ──────────────────
 //
-// Il problema con più tab aperte:
-//   visibilitychange si attiva solo quando la tab va in background (nascosta).
-//   Se due tab sono ENTRAMBE visibili (es. split screen o alt-tab rapido),
-//   entrambe scaricano e decodificano il video in parallelo → CPU/GPU saturati.
+// PROBLEMA FONDAMENTALE:
+//   Due finestre/tab Chrome sullo stesso PC condividono CPU e GPU.
+//   Anche con blur/focus, se entrambe hanno un video attivo il decoder
+//   hardware è condiviso → stuttering.
 //
-// Soluzione: ascolta ANCHE window.blur/focus.
-//   • blur  → questa finestra ha perso il focus → pausa il video
-//   • focus → questa finestra ha ripreso il focus → riprendi il video
-//
-// Risultato: una sola tab alla volta riproduce il video,
-//            indipendentemente da quante sono aperte o visibili.
+// SOLUZIONE — BroadcastChannel:
+//   Quando una tab inizia a riprodurre, invia un messaggio a TUTTE
+//   le altre tab/finestre dello stesso sito. Ogni tab che riceve il
+//   messaggio ferma immediatamente il proprio video.
+//   Risultato garantito: UN SOLO video attivo in tutto il browser,
+//   indipendentemente da quante tab o finestre sono aperte.
+
+const _videoChannel = (() => {
+    try {
+        return new BroadcastChannel('lh360_video');
+    } catch (e) {
+        return null; // Safari < 15.4 non supporta BroadcastChannel
+    }
+})();
+
+// Quando un'altra tab inizia a riprodurre → fermati
+if (_videoChannel) {
+    _videoChannel.onmessage = (e) => {
+        if (e.data === 'playing') {
+            document.querySelectorAll('video[data-bg-video]')
+                .forEach(v => { if (!v.paused) v.pause(); });
+        }
+    };
+}
 
 function _pauseActiveVideos() {
-    document.querySelectorAll('video[data-bg-video]').forEach(v => {
-        if (!v.paused) v.pause();
-    });
+    document.querySelectorAll('video[data-bg-video]')
+        .forEach(v => { if (!v.paused) v.pause(); });
 }
 
 function _resumeActiveVideos() {
-    // Riprendi solo il video nella sezione visibile, non tutti
     document.querySelectorAll('.section.active video[data-bg-video]')
-        .forEach(v => v.play().catch(() => {}));
+        .forEach(v => {
+            v.play().then(() => {
+                // Avvisa tutte le altre tab che stiamo riproducendo
+                if (_videoChannel) _videoChannel.postMessage('playing');
+            }).catch(() => {});
+        });
 }
 
-// Tab nascosta (es. utente passa ad altra tab)
+// Tab nascosta → pausa
 document.addEventListener('visibilitychange', () => {
     if (document.hidden) {
         _pauseActiveVideos();
     } else if (document.hasFocus()) {
-        // Ritorna visibile ED è anche la finestra in focus → riprendi
         _resumeActiveVideos();
     }
 });
 
-// Finestra perde focus (es. altra tab in primo piano, altra app, split screen)
+// Finestra perde focus → pausa immediata
 window.addEventListener('blur', () => {
     _pauseActiveVideos();
 });
@@ -2051,3 +2071,4 @@ function updateAllBriefDescriptionsForLanguage() {
     
     console.log(`✅ ${updatedCount} descrizioni brevi aggiornate`);
 }
+
