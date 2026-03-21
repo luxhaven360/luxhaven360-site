@@ -58,30 +58,34 @@ function activateVimeoSection(container) {
         const video = slot.querySelector('video[data-bg-video]');
         if (!video) return;
 
-        // Attributi obbligatori per mobile — impostati anche via JS
-        // perché alcuni browser ignorano gli attributi HTML su elementi dinamici
         video.muted = true;
         video.playsInline = true;
         video.autoplay = true;
 
-        // Chiama play() immediatamente — siamo dentro il click handler (contesto utente)
-        // Non aspettiamo loadedmetadata: il browser gestisce il buffering internamente
-        const playPromise = video.play();
+        const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
 
-        if (playPromise !== undefined) {
-            playPromise.then(() => {
-                if (_videoChannel) _videoChannel.postMessage('playing');
-            }).catch(() => {
-                // Fallback: alcuni browser bloccano anche con muted+autoplay
-                // Al primo tocco successivo riprova
-                const unlock = () => {
-                    video.play().then(() => {
-                        if (_videoChannel) _videoChannel.postMessage('playing');
-                    }).catch(() => {});
-                };
-                document.addEventListener('touchstart', unlock, { once: true, passive: true });
-                document.addEventListener('click', unlock, { once: true });
-            });
+        const doPlay = () => {
+            const p = video.play();
+            if (p !== undefined) {
+                p.then(() => {
+                    if (_videoChannel) _videoChannel.postMessage('playing');
+                }).catch(() => {
+                    // Ultimo fallback: al primo touch
+                    document.addEventListener('touchstart', function onTouch() {
+                        video.play().catch(() => {});
+                        document.removeEventListener('touchstart', onTouch);
+                    }, { once: true, passive: true });
+                });
+            }
+        };
+
+        if (isMobile && video.paused) {
+            // Su mobile: dopo una pause(), iOS non accetta play() direttamente.
+            // load() resetta completamente lo stato del player → poi play() funziona.
+            video.load();
+            video.addEventListener('canplay', doPlay, { once: true });
+        } else {
+            doPlay();
         }
 
         requestAnimationFrame(() => {
@@ -179,12 +183,13 @@ function _showSectionInternal(sectionId) {
     console.log(`🔀 Cambio sezione: ${sectionId}`);
     
     // ✅ STEP 1: PAUSA TUTTI I VIDEO NATIVI ATTIVI
-    document.querySelectorAll('video').forEach(video => {
+    // Pausa video nativi (non background) — i background si gestiscono da soli
+    document.querySelectorAll('video:not([data-bg-video])').forEach(video => {
         video.pause();
         video.currentTime = 0;
     });
 
-    // ✅ STEP 1b: PAUSA SOLO IL VIDEO DELLA SEZIONE ATTIVA
+    // Pausa il video background SOLO della sezione che sta per essere nascosta
     document.querySelectorAll('.section.active, .hero.active').forEach(activeEl => {
         activeEl.querySelectorAll('video[data-bg-video]').forEach(v => v.pause());
     });
