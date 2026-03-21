@@ -17,15 +17,13 @@ const VIMEO_IDS = {
 };
 
 /**
- * URL embed Vimeo ottimizzato per background video:
- *   background=1 → autoplay, loop, mute, nessuna UI
- *   autopause=0  → non mettere in pausa al cambio tab (gestito da noi)
- *   transparent=0→ sfondo nero anziché trasparente (evita flash bianchi)
- *   dnt=1        → salta tracker Vimeo (~150ms risparmiati all'avvio)
- *   Nessuna quality forzata: HLS adaptive bitrate evita lag su connessioni lente
+ * URL embed Vimeo ottimizzato per background video.
+ * quality=720p: cap a 720p — risoluzione sufficiente per un background fullscreen,
+ * riduce il bitrate del ~40% rispetto a 1080p senza differenza visiva percepibile.
+ * Questo abbassa il consumo di banda per ogni stream attivo.
  */
 function vimeoBackgroundUrl(videoId) {
-    return `https://player.vimeo.com/video/${videoId}?background=1&autoplay=1&loop=1&muted=1&autopause=0&transparent=0&badge=0&dnt=1&app_id=58479`;
+    return `https://player.vimeo.com/video/${videoId}?background=1&autoplay=1&loop=1&muted=1&autopause=0&transparent=0&badge=0&dnt=1&quality=720p&app_id=58479`;
 }
 
 /**
@@ -147,35 +145,35 @@ document.addEventListener('visibilitychange', () => {
 })();
 
 /**
- * ── Preload silenzioso di tutti gli iframe Vimeo in background ──────────────
+ * ── Preload MIRATO: avvia il video di UNA sezione specifica on-hover ─────────
  *
- * Viene chiamato ~3.5 secondi dopo che i prodotti sono stati caricati
- * (l'utente è ancora su Home). Imposta il vero src su tutti gli iframe
- * con src="about:blank" nelle sezioni NON attive, in modo che il player
- * Vimeo carichi e bufferizzi il video silenziosamente.
+ * Viene chiamato solo quando l'utente fa hover sul link IMMOBILI o ESPERIENZE.
+ * Carica solo il video corrispondente alla sezione su cui sta per cliccare,
+ * NON tutti i video in background per tutti gli utenti.
  *
- * Quando l'utente clicca su IMMOBILI o ESPERIENZE, _vimeoInit trova
- * alreadyLoaded=true e manda solo postMessage "play" → avvio istantaneo.
- *
- * Note:
- *  • I video sono in pausa (background=1 + muted=1): nessun audio, nessuna UI.
- *  • Il player HLS di Vimeo bufferizza ~30s di video con bitrate adattivo.
- *  • Il costo banda è minimo rispetto al beneficio UX premium.
- *  • Se la sezione diventa attiva prima del preload, _vimeoInit gestisce tutto.
+ * Questo è radicalmente diverso dal preload automatico rimosso:
+ *  • 1 stream per utente attivo (non 2×N stream per N utenti su Home)
+ *  • Solo quando c'è reale intenzione di navigare
+ *  • 150-400ms di anticipo (hover→click) sono sufficienti per aprire HLS
  */
-function _vimeoPreloadAll() {
-    document.querySelectorAll('iframe[data-vimeo-id]').forEach(iframe => {
-        // Salta iframe già caricati (src reale già impostata)
-        if (iframe.src && iframe.src !== 'about:blank' && iframe.src !== '') return;
-        const dataSrc = iframe.getAttribute('data-src');
-        if (!dataSrc) return;
-        // Salta la sezione già attiva (è già gestita da activateVimeoSection)
-        const section = iframe.closest('.section');
-        if (section && section.classList.contains('active')) return;
-        // Imposta src reale — il player Vimeo carica e bufferizza in background
+function _vimeoPreloadForSection(sectionId) {
+    // Mappa sezione → id Vimeo
+    const sectionToVimeoId = { properties: VIMEO_IDS.immobili, stays: VIMEO_IDS.esperienze };
+    const targetVimeoId = sectionToVimeoId[sectionId];
+    if (!targetVimeoId) return;
+
+    // Trova l'iframe corrispondente (non quello della sezione attiva)
+    const iframe = document.querySelector(
+        `iframe[data-vimeo-id="${targetVimeoId}"]:not(.section.active iframe)`
+    );
+    if (!iframe) return;
+    if (iframe.src && iframe.src !== 'about:blank' && iframe.src !== '') return; // già caricato
+
+    const dataSrc = iframe.getAttribute('data-src');
+    if (dataSrc) {
         iframe.src = dataSrc;
-        console.log(`🎬 Vimeo preload background: ${iframe.getAttribute('data-vimeo-id')}`);
-    });
+        console.log(`🎬 Vimeo preload on-hover: sezione=${sectionId}`);
+    }
 }
 // ═════════════════════════════════════════════════════════════════════════════
 
