@@ -5591,6 +5591,9 @@ let _pollMsgCycle    = 0;         // contatore cicli polling per throttling list
 let _msgCache        = {};        // { partnerEmail: [{...}] } — messaggi già caricati per evitare re-fetch
 let _typingByEmail   = {};        // { partnerEmail: bool } — stato "sta scrivendo" per lista conv
 let _activeListenPartner = null;  // email del partner per cui sbListenMessages è già attivo
+// BUG FIX DM DELETE: traccia messaggi eliminati con temp_ ID prima che INSERT Supabase arrivasse.
+// Chiave: convId. Valore: Set<text> dei messaggi da cancellare quando l'INSERT reale arriva.
+const _dmTempDeletedTexts = new Map();
 
 const NOTIFICATIONS = [];
 // Le notifiche vengono generate da eventi reali
@@ -7814,7 +7817,7 @@ function applyRemoteData(data) {
     // Mappa locale: id → { lastReplyTs, views }
     const localDiscMap = {};
     DISCUSSIONS.forEach(d => {
-      localDiscMap[String(d.id)] = { lastReplyTs: d.lastReplyTs || null, views: d.views || 0 };
+      localDiscMap[String(d.id)] = { lastReplyTs: d.lastReplyTs || null, views: d.views || 0, lastReply: d.lastReply || null };
     });
 
     // FIX views: costruisce anche un mapping "title|author" → views per i thread pending
@@ -7852,7 +7855,11 @@ function applyRemoteData(data) {
         let finalLastReply = d.lastReply || null;
         if (finalLastReplyTs && local.lastReplyTs) {
           // Abbiamo il timestamp da Supabase → ricalcola stringa (sarà sempre aggiornata)
-          const authorPart = (d.lastReply || '').split(' · ')[0] || '';
+          // BUG FIX FLICKER: local.lastReply viene da Supabase (già normalizzato con iniziale cognome),
+          // d.lastReply viene da GAS (può essere privo dell'iniziale). Priorità: locale > GAS.
+          const localAuthor = (local.lastReply || '').split(' · ')[0] || '';
+          const gasAuthor   = (d.lastReply || '').split(' · ')[0] || '';
+          const authorPart  = localAuthor || gasAuthor;
           finalLastReply = authorPart ? authorPart + ' · ' + _notifRelTime(finalLastReplyTs) : null;
         }
 
@@ -11894,6 +11901,33 @@ function sbListenMessages(partnerEmail) {
       if (m.sender_email.toLowerCase() === currentUser.email.toLowerCase()) {
         const cacheKey = partnerEmail.toLowerCase();
         if (_msgCache[cacheKey]) {
+          // BUG FIX DM DELETE (race condition temp_ ID):
+          // Se questo messaggio era stato eliminato mentre aveva ancora id temp_, ora abbiamo
+          // l'ID reale Supabase. Completiamo la cancellazione: DELETE reale + broadcast ai due client.
+          const _tempDelSet = _dmTempDeletedTexts.get(cid);
+          if (_tempDelSet && _tempDelSet.has(m.text || '')) {
+            _tempDelSet.delete(m.text || '');
+            // Promuovi: aggiungi ID reale ai deleted IDs (temp_ era già salvato, ma non basta)
+            _addDmDeletedId(cid, String(m.id));
+            // DELETE reale con ID corretto (stavolta Supabase lo trova)
+            if (_sbReady && _sb) {
+              _sb.from('messages').delete().eq('id', String(m.id)).catch(() => {});
+              // Broadcast dm_delete con ID reale → User B lo riceve e rimuove dalla sua cache
+              const _realDelPayload = { type: 'broadcast', event: 'dm_delete', payload: { msgId: String(m.id) } };
+              const _activeMsgCh = _sbChannels && _sbChannels['messages'];
+              if (_activeMsgCh) _activeMsgCh.send(_realDelPayload).catch(() => {});
+              else _sb.channel('messages_' + cid).send(_realDelPayload).catch(() => {});
+              // Notifica inbox User B (copertura se sbListenMessages non è attivo per lui)
+              const _inboxK2 = 'dm_inbox_' + partnerEmail.toLowerCase().replace(/[^a-z0-9]/g, '_');
+              _sb.channel(_inboxK2).send({
+                type: 'broadcast', event: 'dm_delete_inbox',
+                payload: { msgId: String(m.id), convId: cid,
+                           partnerEmail: currentUser.email.toLowerCase(),
+                           lastText: '', lastTs: null }
+              }).catch(() => {});
+            }
+            return; // Messaggio eliminato — non aggiungerlo alla cache
+          }
           // Sostituisci la voce temp_ con l'id reale Supabase (fix "Messaggio non trovato" al delete)
           const tempIdx = _msgCache[cacheKey].findIndex(x => String(x.id).startsWith('temp_') && x.text === (m.text||'') && x.from === m.sender_email.toLowerCase());
           const realMsg = { id: m.id, from: m.sender_email, fromName: m.sender_name, fromInitial: (m.sender_name||'?')[0].toUpperCase(), text: m.text||'', media_url: m.media_url||null, media_type: m.media_type||null, ts: m.created_at, deletedFor: m.deleted_for||[] };
@@ -15856,6 +15890,15 @@ async function deleteOwnDmMessage(msgId, btnEl) {
 
   // 1. Segna come eliminato nel set persistente (sopravvive a reload e refetch Supabase)
   _addDmDeletedId(_delCid, msgId);
+
+  // BUG FIX DM DELETE: se il msgId è ancora temp_, il DELETE Supabase fallirà perché l'id
+  // non esiste ancora nella tabella messages (GAS non l'ha ancora scritto, o Supabase INSERT
+  // è in volo). Salviamo il testo del messaggio: quando l'INSERT arriverà via postgres_changes,
+  // lo intercetteremo e completeremo la cancellazione con l'ID reale.
+  if (String(msgId).startsWith('temp_') && msg && msg.text) {
+    if (!_dmTempDeletedTexts.has(_delCid)) _dmTempDeletedTexts.set(_delCid, new Set());
+    _dmTempDeletedTexts.get(_delCid).add(msg.text);
+  }
 
   // 2. Propaga all'altro client via Broadcast sul canale della conversazione
   //    Il Broadcast non richiede RLS — notifica istantanea garantita
