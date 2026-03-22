@@ -7685,9 +7685,11 @@ function applyRemoteData(data) {
           liked: finalLiked,
           likes: finalLikes,
           commentsData: (() => {
-            const serverComments = (p.commentsData || []).filter(c => !_REMOVED_IDS.has(`comment:${c.id}`));
+            // Auto-assegna id deterministico ai commenti che ne sono privi (contenuti vecchi)
+            const serverComments = (p.commentsData || [])
+              .map((c, ci) => c.id ? c : { ...c, id: 'c_legacy_' + p.id + '_' + ci + '_' + (c.ts || '').replace(/[^0-9]/g,'').slice(0,10) })
+              .filter(c => !_REMOVED_IDS.has(`comment:${c.id}`));
             const localComments  = localCommentsMap[p.id] || [];
-            // Preserva commenti locali se il server ne ha meno (ottimistic update)
             return localComments.length > serverComments.length ? localComments : serverComments;
           })(),
           comments: Math.max(p.comments || 0, (localCommentsMap[p.id] || []).length),
@@ -7846,7 +7848,10 @@ function applyRemoteData(data) {
   if (data.replies && typeof data.replies === 'object') {
     Object.keys(data.replies).forEach(discId => {
       const id = parseInt(discId, 10) || discId;
-      THREAD_MESSAGES[id] = data.replies[discId];
+      // Auto-assegna id deterministico alle reply prive di id (contenuti vecchi pre-fix)
+      THREAD_MESSAGES[id] = (data.replies[discId] || []).map((r, ri) =>
+        r.id ? r : { ...r, id: 'r_legacy_' + discId + '_' + ri + '_' + (r.ts || '').replace(/[^0-9]/g,'').slice(0,10) }
+      );
     });
   }
 
@@ -9617,7 +9622,7 @@ function renderThreadMessages(id) {
           <span class="thread-msg-role">${msg.role}</span>
           <span class="thread-msg-time">${(() => { const _mts = msg.ts ? new Date(msg.ts).getTime() : 0; return (_mts && isFinite(_mts)) ? `<span data-ts="${_mts}">${_notifRelTime(_mts)}</span>` : `<span ${msg.time && msg.time !== 'Ora' ? `data-ts-guess="${msg.time}"` : ''}>${msg.time || I18n.t('time.now')}</span>`; })()}</span>
           ${_canReport(msg.author, !!msg.isTeam) ? `<button onclick="reportContentById('reply','reply_${idx}')" style="background:none;border:none;color:var(--red);opacity:0.5;cursor:pointer;font-size:0.62rem;margin-left:auto;">🚩 ${I18n.t('feed.report')}</button>` : ''}
-          ${_canDeleteOwn(msg.author, msg.email, msg.ts ? new Date(msg.ts).getTime() : 0) ? _deleteOwnBtn(`deleteOwnReply(${idx},this)`) : ''}
+          ${_canDeleteOwn(msg.author, msg.email, msg.ts ? new Date(msg.ts).getTime() : 0) ? (msg.id ? _deleteOwnBtn(`deleteOwnReply('${msg.id}',this)`) : '') : ''}
         </div>
         <div class="thread-msg-text" data-content-id="thread-msg-${idx}" data-content-lang="${msg.lang || 'it'}">${safeText}</div>
         <div class="thread-msg-reactions">
@@ -15611,34 +15616,64 @@ async function deleteOwnComment(postId, commentId, btnEl) {
   post.commentsData.splice(idx, 1);
   post.comments = Math.max(0, (post.comments || 1) - 1);
   saveCommunityCache();
-  // Aggiorna DOM senza re-render completo
+  // Aggiorna DOM
   const commentsEl = document.getElementById('comments-' + postId);
   if (commentsEl) renderPostComments(post, commentsEl);
   const reactEl = document.getElementById('react-comments-' + postId);
   if (reactEl) reactEl.textContent = '💬 ' + post.comments;
   showToast('green','🗑','Commento eliminato.');
-  // Propaga globalmente via Supabase content_removals
+  // Propaga via content_removals (RT per altri client) + GAS (persistenza server)
   if (typeof _writeRemovalToSupabase === 'function') _writeRemovalToSupabase('comment', String(commentId));
-  if (typeof addModLog === 'function') addModLog('remove', 'Commento proprio', 'Auto-eliminazione da ' + (currentUser && currentUser.name));
-  // GAS fallback
-  if (GAS_URL) fetch(GAS_URL + '?action=delete_comment&commentId=' + encodeURIComponent(commentId) + '&postId=' + encodeURIComponent(postId) + '&email=' + encodeURIComponent(currentUser.email)).catch(()=>{});
+  // GAS: elimina definitivamente dal PropertiesService
+  // Per id legacy (c_legacy_...) GAS non li trova per id → passa anche ts come fallback
+  if (GAS_URL && currentUser) {
+    const _isLegacyId = String(commentId).startsWith('c_legacy_');
+    let gasUrl = GAS_URL + '?action=delete_comment' +
+      '&postId='    + encodeURIComponent(postId) +
+      '&commentId=' + encodeURIComponent(commentId) +
+      '&email='     + encodeURIComponent(currentUser.email);
+    if (_isLegacyId && c.ts) gasUrl += '&ts=' + encodeURIComponent(c.ts) + '&author=' + encodeURIComponent(c.author || '');
+    fetch(gasUrl).catch(() => {});
+  }
 }
 
 /* Elimina risposta propria in un thread */
-async function deleteOwnReply(replyIdx, btnEl) {
+async function deleteOwnReply(replyId, btnEl) {
   if (!currentThreadId || !THREAD_MESSAGES[currentThreadId]) return;
   const msgs = THREAD_MESSAGES[currentThreadId];
-  const msg = msgs[replyIdx];
-  if (!msg) return;
+  // Cerca per id reale (non per indice — fragile dopo riordinamento)
+  const idx = msgs.findIndex(m => String(m.id) === String(replyId));
+  if (idx === -1) { showToast('amber','ℹ','Risposta non trovata.'); return; }
+  const msg = msgs[idx];
+  if (msg.isOp) { showToast('amber','ℹ','Non puoi eliminare il post originale.'); return; }
   const ts = msg.ts ? new Date(msg.ts).getTime() : 0;
   if (!_canDeleteOwn(msg.author, msg.email, ts)) {
     showToast('amber','⏱','Puoi eliminare solo entro 15 minuti dalla pubblicazione.'); return;
   }
-  msgs.splice(replyIdx, 1);
+  msgs.splice(idx, 1);
+  // Aggiorna contatore risposte nella discussione locale
+  const disc = DISCUSSIONS.find(d => String(d.id) === String(currentThreadId));
+  if (disc) {
+    disc.replies = Math.max(0, msgs.length - 1); // -1 per l'OP
+    const lastNonOp = [...msgs].reverse().find(m => !m.isOp);
+    if (lastNonOp) {
+      const lts = lastNonOp.ts ? new Date(lastNonOp.ts).getTime() : 0;
+      disc.lastReplyTs = lts;
+      disc.lastReply = lastNonOp.author + (lts ? ' · ' + _notifRelTime(lts) : '');
+    }
+  }
   renderThreadMessages(currentThreadId);
   showToast('green','🗑','Risposta eliminata.');
-  if (typeof _writeRemovalToSupabase === 'function') _writeRemovalToSupabase('reply', 'reply_' + replyIdx + '_' + currentThreadId);
-  if (GAS_URL) fetch(GAS_URL + '?action=delete_reply&idx=' + replyIdx + '&threadId=' + encodeURIComponent(currentThreadId) + '&email=' + encodeURIComponent(currentUser.email)).catch(()=>{});
+  // GAS: elimina definitivamente dal PropertiesService
+  if (GAS_URL && currentUser) {
+    const _isLegacyReplyId = String(replyId).startsWith('r_legacy_');
+    let gasUrl = GAS_URL + '?action=delete_reply' +
+      '&discId='  + encodeURIComponent(currentThreadId) +
+      '&replyId=' + encodeURIComponent(replyId) +
+      '&email='   + encodeURIComponent(currentUser.email);
+    if (_isLegacyReplyId && msg.ts) gasUrl += '&ts=' + encodeURIComponent(msg.ts) + '&author=' + encodeURIComponent(msg.author || '');
+    fetch(gasUrl).catch(() => {});
+  }
 }
 
 /* Elimina messaggio proprio dal canale Founding Members */
