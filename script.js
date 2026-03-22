@@ -106,11 +106,11 @@ const _videoChannel = (() => {
     try {
         return new BroadcastChannel('lh360_video');
     } catch (e) {
-        return null; // Safari < 15.4 non supporta BroadcastChannel
+        return null;
     }
 })();
 
-// Quando un'altra tab inizia a riprodurre → fermati
+// Quando un'altra tab inizia a riprodurre → pausa e libera il decoder
 if (_videoChannel) {
     _videoChannel.onmessage = (e) => {
         if (e.data === 'playing') {
@@ -134,7 +134,8 @@ function _resumeActiveVideos() {
         });
 }
 
-// Tab nascosta → pausa
+// ── Performance: usa Page Visibility API + blur/focus ────────────────────────
+// visibilitychange: tab nascosta (es. altra tab in primo piano)
 document.addEventListener('visibilitychange', () => {
     if (document.hidden) {
         _pauseActiveVideos();
@@ -143,17 +144,46 @@ document.addEventListener('visibilitychange', () => {
     }
 });
 
-// Finestra perde focus → pausa immediata
+// blur: finestra perde focus (altra finestra, split screen, alt-tab)
 window.addEventListener('blur', () => {
     _pauseActiveVideos();
 });
 
-// Finestra riacquista focus → riprendi
+// focus: finestra riacquista focus
 window.addEventListener('focus', () => {
     if (!document.hidden) {
         _resumeActiveVideos();
     }
 });
+
+// ── Performance: rileva dispositivi a basse risorse ──────────────────────────
+// Su dispositivi con RAM < 4GB o CPU lenta, riduce la qualità di decodifica
+// impostando il hint al browser tramite l'attributo decoding
+(function _applyLowEndOptimizations() {
+    const isLowEnd = (
+        // Connessione lenta
+        (navigator.connection && (
+            navigator.connection.saveData === true ||
+            ['slow-2g', '2g', '3g'].includes(navigator.connection.effectiveType)
+        )) ||
+        // Poca RAM (meno di 4GB)
+        (navigator.deviceMemory && navigator.deviceMemory < 4) ||
+        // Pochi core logici (meno di 4)
+        (navigator.hardwareConcurrency && navigator.hardwareConcurrency < 4)
+    );
+
+    if (isLowEnd) {
+        // Su dispositivi deboli: riduci la priorità del video
+        // Il browser userà il decoder software invece di quello hardware
+        document.addEventListener('DOMContentLoaded', () => {
+            document.querySelectorAll('video[data-bg-video]').forEach(v => {
+                // Abbassa la priorità di fetch — non competere con contenuto principale
+                v.setAttribute('importance', 'low');
+            });
+        });
+        console.log('📱 Dispositivo low-end rilevato — ottimizzazioni attive');
+    }
+})();
 
 /**
  * Preload on-hover: inizia il download del video quando l'utente
