@@ -5923,6 +5923,21 @@ const SESSION_KEY = 'lh360_community_session';
 
 function saveSession(user) {
   try {
+    // ── FIX "Membro dal": preserva la prima data di accesso reale.
+    // joinDate viene restituito da GAS ad ogni login → potrebbe variare.
+    // Salviamo la prima data valida in localStorage e non la sovrascriviamo mai.
+    const _FIRST_JOIN_KEY = 'lh360_first_join_' + (user.email || '').replace(/[^a-z0-9]/gi, '_').toLowerCase();
+    const _storedJoin = localStorage.getItem(_FIRST_JOIN_KEY);
+    if (!_storedJoin && user.joinDate) {
+      // Prima volta che vediamo questa email → salva la data originale
+      localStorage.setItem(_FIRST_JOIN_KEY, String(user.joinDate));
+    } else if (_storedJoin && !user.joinDate) {
+      // GAS non ha restituito joinDate → usa quella salvata
+      user.joinDate = _storedJoin;
+    } else if (_storedJoin) {
+      // Usa sempre la prima data salvata (non quella di GAS che può cambiare)
+      user.joinDate = _storedJoin;
+    }
     localStorage.setItem(SESSION_KEY, JSON.stringify({
       user: user,
       timestamp: Date.now()
@@ -6435,6 +6450,16 @@ function initApp() {
         _saveNotifCache();
         _startNotifTimeTicker();
       }).subscribe();
+    bcastNotifCh.on('error', function() {
+      // Auto-riconnessione se il canale si disconnette
+      setTimeout(function() {
+        if (window._sbReady) {
+          sbOff('broadcast_notif_rt');
+          // Riesegue il setup del listener (la funzione initSupabase() lo ri-crea)
+          if (typeof _initSbListeners === 'function') _initSbListeners();
+        }
+      }, 5000);
+    });
     _sbChannels['broadcast_notif_rt'] = bcastNotifCh;
 
     // ── Canale Broadcast Supabase per sync istantaneo nuovi contenuti ──────
@@ -8411,7 +8436,7 @@ function renderActivityFeed() {
     <div class="activity-item">
       <div class="activity-dot ${a.dot}"></div>
       <div class="activity-text" data-act-idx="${i}" data-orig-html="${a.text.replace(/"/g,'&quot;')}">${a.text}</div>
-      <div class="activity-time">${a.time}</div>
+      <div class="activity-time" ${GLOBAL_ACTIVITIES[i] && GLOBAL_ACTIVITIES[i].ts ? `data-ts="${GLOBAL_ACTIVITIES[i].ts}"` : ''}>${a.time}</div>
     </div>
   `).join('') + (curLang !== 'it' ? `
     <div style="margin-top:0.5rem; text-align:right;">
@@ -8476,7 +8501,7 @@ function renderFeedPreview() {
       </div>
       <div style="min-width:0; flex:1;">
         <div data-fp-id="${p.id}" data-orig-title="${(p.title||'').replace(/"/g,'&quot;')}" style="font-size:0.78rem; color:var(--light); font-weight:500; line-height:1.4; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${p.title}</div>
-        <div style="font-size:0.65rem; color:var(--muted2); margin-top:2px;" ${ts ? `data-ts="${ts}"` : ''}>${timeStr}</div>
+        <div class="fp-time" style="font-size:0.65rem; color:var(--muted2); margin-top:2px;" ${ts ? `data-ts="${ts}"` : ts === 0 && p.time ? `data-ts-guess="${p.time}"` : ''}>${timeStr}</div>
       </div>
     </div>
   `}).join('') + (curLang !== 'it' ? `
@@ -9160,6 +9185,7 @@ function renderFeed() {
                 <div style="display:flex;align-items:center;gap:0.5rem;">
                   ${window.I18n && I18n.getCurrentLanguage() !== (c.lang || 'it') ? `<button class="comment-translate-btn" onclick="event.stopPropagation();_commentTranslate(this,'comment-${c.id||''}','${c.lang||'it'}')" style="background:none;border:none;color:var(--muted2);cursor:pointer;font-size:0.62rem;padding:0;text-decoration:underline;text-underline-offset:2px;white-space:nowrap;">${_commentTranslateBtnLabel('translate')}</button>` : ''}
                   ${_canReport(c.author, !!c.isTeam) ? `<button onclick="reportContentById('comment','${c.id || post.id + '_c_' + Math.random().toString(36).slice(2)}','${post.id}')" style="background:none;border:none;color:var(--red);opacity:0.6;cursor:pointer;font-size:0.62rem;padding:0;">🚩 ${I18n.t('feed.report')}</button>` : ''}
+                  ${!post.isTeam && c.id && _canDeleteOwn(c.author, c.email, c.ts ? new Date(c.ts).getTime() : 0) ? _deleteOwnBtn(`event.stopPropagation();deleteOwnComment('${post.id}','${c.id}',this)`) : ''}
                 </div>
               </div>
             </div>
@@ -9332,6 +9358,7 @@ function renderPostComments(post, container) {
           <div style="display:flex;align-items:center;gap:0.5rem;">
             ${window.I18n && I18n.getCurrentLanguage() !== (c.lang || 'it') ? `<button class="comment-translate-btn" onclick="event.stopPropagation();_commentTranslate(this,'comment-${c.id||''}','${c.lang||'it'}')" style="background:none;border:none;color:var(--muted2);cursor:pointer;font-size:0.62rem;padding:0;text-decoration:underline;text-underline-offset:2px;white-space:nowrap;">${_commentTranslateBtnLabel('translate')}</button>` : ''}
             ${_canReport(c.author, !!c.isTeam) ? `<button onclick="reportContentById('comment','${c.id || post.id + '_c_' + Math.random().toString(36).slice(2)}','${post.id}')" style="background:none;border:none;color:var(--red);opacity:0.6;cursor:pointer;font-size:0.62rem;padding:0;">🚩 ${I18n.t('feed.report')}</button>` : ''}
+            ${!post.isTeam && c.id && _canDeleteOwn(c.author, c.email, c.ts ? new Date(c.ts).getTime() : 0) ? _deleteOwnBtn(`event.stopPropagation();deleteOwnComment('${post.id}','${c.id}',this)`) : ''}
           </div>
         </div>
       </div>
@@ -9590,6 +9617,7 @@ function renderThreadMessages(id) {
           <span class="thread-msg-role">${msg.role}</span>
           <span class="thread-msg-time">${(() => { const ts = msg.ts ? new Date(msg.ts).getTime() : 0; return ts ? `<span data-ts="${ts}">${_notifRelTime(ts)}</span>` : (msg.time || I18n.t('time.now')); })()}</span>
           ${_canReport(msg.author, !!msg.isTeam) ? `<button onclick="reportContentById('reply','reply_${idx}')" style="background:none;border:none;color:var(--red);opacity:0.5;cursor:pointer;font-size:0.62rem;margin-left:auto;">🚩 ${I18n.t('feed.report')}</button>` : ''}
+          ${_canDeleteOwn(msg.author, msg.email, msg.ts ? new Date(msg.ts).getTime() : 0) ? _deleteOwnBtn(`deleteOwnReply(${idx},this)`) : ''}
         </div>
         <div class="thread-msg-text" data-content-id="thread-msg-${idx}" data-content-lang="${msg.lang || 'it'}">${safeText}</div>
         <div class="thread-msg-reactions">
@@ -13176,14 +13204,28 @@ let _notifTimeTicker = null;
 function _startNotifTimeTicker() {
   if (_notifTimeTicker) return; // già avviato
   _notifTimeTicker = setInterval(() => {
-    // Aggiorna direttamente tutti gli elementi [data-ts] nel DOM — nessun re-render costoso
+    // Aggiorna elementi [data-ts] — timestamp preciso
     document.querySelectorAll('[data-ts]').forEach(el => {
       const ts = parseInt(el.dataset.ts, 10);
       if (!ts) return;
       const newText = _notifRelTime(ts);
       if (el.textContent !== newText) el.textContent = newText;
     });
-  }, 1000); // ogni secondo — aggiornamento in tempo reale
+    // Aggiorna elementi [data-ts-guess] — timestamp approssimativo da stringa statica
+    // Converte 'Ieri','Ora',ecc. in timestamp la prima volta, poi aggiorna regolarmente
+    document.querySelectorAll('[data-ts-guess]').forEach(el => {
+      const guess = el.dataset.tsGuess;
+      if (!guess) return;
+      const ts = _guessTimestamp(guess);
+      if (ts) {
+        // Promuovi a data-ts per le prossime iterazioni (evita re-parse costoso)
+        el.dataset.ts = String(ts);
+        delete el.dataset.tsGuess;
+        const newText = _notifRelTime(ts);
+        if (el.textContent !== newText) el.textContent = newText;
+      }
+    });
+  }, 30000); // ogni 30s — sufficiente per testi come "Ieri", "X ore fa", date
 }
 
 /* Cache notifiche su localStorage per persistenza cross-sessione */
@@ -13252,13 +13294,38 @@ function _notifRelTime(ts) {
   const m = Math.floor(diff / 60000);
   const h = Math.floor(diff / 3600000);
   const d = Math.floor(diff / 86400000);
-  if (m < 1)   return I18n.t('time.now');
-  if (m < 60)  return I18n.t('time.min_ago',  { n: m });
-  if (h < 24)  return I18n.t('time.hour_ago', { n: h });
-  if (d === 1) return I18n.t('time.yesterday');
-  if (d < 7)   return I18n.t('time.day_ago',  { n: d });
+  if (m < 1)    return I18n.t('time.now');
+  if (m < 60)   return I18n.t('time.min_ago',  { n: m });
+  if (h < 24)   return I18n.t('time.hour_ago', { n: h });
+  if (d === 1)  return I18n.t('time.yesterday');
+  if (d < 7)    return I18n.t('time.day_ago',  { n: d });
+  // Più di 7 giorni: data completa (es. "18 mar 2026")
   const lang = (window.I18n && I18n.getCurrentLanguage()) || 'it';
-  return new Intl.DateTimeFormat(lang, { day: '2-digit', month: 'short' }).format(new Date(ts));
+  return new Intl.DateTimeFormat(lang, { day: 'numeric', month: 'short', year: 'numeric' }).format(new Date(ts));
+}
+
+/* Converte una stringa tempo statica ('Ieri', 'Ora', '5 min fa') in timestamp approssimativo.
+   Usato per rendere dinamici i contenuti GAS che hanno solo time:string senza ts. */
+function _guessTimestamp(timeStr) {
+  if (!timeStr) return null;
+  const s = String(timeStr).toLowerCase().trim();
+  const now = Date.now();
+  if (s === 'ora' || s === 'now' || s === 'adesso') return now;
+  if (s === 'ieri' || s === 'yesterday' || s === 'hier' || s === 'gestern' || s === 'ayer') {
+    // Ieri alle 12:00 (approssimativo)
+    const d = new Date(); d.setDate(d.getDate() - 1); d.setHours(12, 0, 0, 0);
+    return d.getTime();
+  }
+  // "X min fa" / "X m fa" / "Xm"
+  const minMatch = s.match(/^(\d+)\s*m(?:in)?\s*(?:fa)?$/);
+  if (minMatch) return now - parseInt(minMatch[1], 10) * 60000;
+  // "X ore fa" / "Xh"
+  const hrMatch = s.match(/^(\d+)\s*h(?:r|ore?)?\s*(?:fa)?$/);
+  if (hrMatch) return now - parseInt(hrMatch[1], 10) * 3600000;
+  // "X giorni fa" / "X gg fa" / "Xd"
+  const dayMatch = s.match(/^(\d+)\s*(?:giorni?|gg|days?|d)\s*(?:fa)?$/);
+  if (dayMatch) return now - parseInt(dayMatch[1], 10) * 86400000;
+  return null;
 }
 
 /* ── Statistiche attività utente ── */
@@ -14949,7 +15016,7 @@ async function sbGetOnlineMembers() {
     // Filtra presenze stantie (>90s senza heartbeat — heartbeat ogni 30s)
     const fresh = (data || []).filter(u => {
       if (!u.updated_at) return false;
-      return Date.now() - new Date(u.updated_at).getTime() < 210 * 1000; // 3.5 min — tolerates tab switches
+      return Date.now() - new Date(u.updated_at).getTime() < 75 * 1000;  // 75s = 3× heartbeat (25s) — rimozione rapida al logout
     });
     applyPresenceData(fresh);
   } catch(_e) {}
@@ -15434,6 +15501,98 @@ async function deleteEventAdmin(eventId) {
 function switchModTab(tab) {
   _modTabActive = tab;
   renderModeration();
+}
+
+/* ══════════════════════════════════════════════════════════════
+   ELIMINAZIONE CONTENUTI PROPRI (entro 15 minuti)
+   Chiamata dall'utente: commenti, risposte thread, messaggi founding.
+   NON applicabile ai commenti sui post del team (solo il team può modificarli).
+   Propagazione globale via Supabase content_removals.
+══════════════════════════════════════════════════════════════ */
+const _DELETE_OWN_LIMIT_MS = 15 * 60 * 1000; // 15 minuti
+
+function _canDeleteOwn(authorName, authorEmail, tsMs) {
+  if (!currentUser) return false;
+  // Verifica autore (nome abbreviato O email)
+  const myEmail = currentUser.email.toLowerCase();
+  const myShort = currentUser.name.split(' ')[0] + ' ' + (currentUser.name.split(' ')[1]||'?')[0] + '.';
+  const isMe = (authorEmail && authorEmail.toLowerCase() === myEmail) ||
+               (authorName && (authorName.toLowerCase() === currentUser.name.toLowerCase() ||
+                               authorName.toLowerCase() === myShort.toLowerCase()));
+  if (!isMe) return false;
+  // Verifica finestra temporale (15 min)
+  if (!tsMs) return true; // se non c'è ts, consenti comunque (contenuto appena creato)
+  return (Date.now() - tsMs) < _DELETE_OWN_LIMIT_MS;
+}
+
+/* Bottone elimina inline — stile minimale coerente col design sistema */
+function _deleteOwnBtn(onclick) {
+  return `<button onclick="${onclick}" style="background:none;border:none;color:var(--red);opacity:0.55;cursor:pointer;font-size:0.62rem;padding:0 2px;transition:opacity 0.2s;" onmouseenter="this.style.opacity='0.9'" onmouseleave="this.style.opacity='0.55'" title="Elimina (entro 15 min)">🗑</button>`;
+}
+
+/* Elimina commento proprio da un post */
+async function deleteOwnComment(postId, commentId, btnEl) {
+  const post = FEED_POSTS.find(p => String(p.id) === String(postId));
+  if (!post) return;
+  const idx = post.commentsData ? post.commentsData.findIndex(c => String(c.id) === String(commentId)) : -1;
+  if (idx === -1) { showToast('amber','ℹ','Commento non trovato.'); return; }
+  const c = post.commentsData[idx];
+  const ts = c.ts ? new Date(c.ts).getTime() : 0;
+  if (!_canDeleteOwn(c.author, c.email, ts)) {
+    showToast('amber','⏱','Puoi eliminare solo entro 15 minuti dalla pubblicazione.'); return;
+  }
+  // Rimuovi localmente
+  post.commentsData.splice(idx, 1);
+  post.comments = Math.max(0, (post.comments || 1) - 1);
+  saveCommunityCache();
+  // Aggiorna DOM senza re-render completo
+  const commentsEl = document.getElementById('comments-' + postId);
+  if (commentsEl) renderPostComments(post, commentsEl);
+  const reactEl = document.getElementById('react-comments-' + postId);
+  if (reactEl) reactEl.textContent = '💬 ' + post.comments;
+  showToast('green','🗑','Commento eliminato.');
+  // Propaga globalmente via Supabase content_removals
+  if (typeof _writeRemovalToSupabase === 'function') _writeRemovalToSupabase('comment', String(commentId));
+  if (typeof addModLog === 'function') addModLog('remove', 'Commento proprio', 'Auto-eliminazione da ' + (currentUser && currentUser.name));
+  // GAS fallback
+  if (GAS_URL) fetch(GAS_URL + '?action=delete_comment&commentId=' + encodeURIComponent(commentId) + '&postId=' + encodeURIComponent(postId) + '&email=' + encodeURIComponent(currentUser.email)).catch(()=>{});
+}
+
+/* Elimina risposta propria in un thread */
+async function deleteOwnReply(replyIdx, btnEl) {
+  if (!currentThreadId || !THREAD_MESSAGES[currentThreadId]) return;
+  const msgs = THREAD_MESSAGES[currentThreadId];
+  const msg = msgs[replyIdx];
+  if (!msg) return;
+  const ts = msg.ts ? new Date(msg.ts).getTime() : 0;
+  if (!_canDeleteOwn(msg.author, msg.email, ts)) {
+    showToast('amber','⏱','Puoi eliminare solo entro 15 minuti dalla pubblicazione.'); return;
+  }
+  msgs.splice(replyIdx, 1);
+  renderThreadMessages(currentThreadId);
+  showToast('green','🗑','Risposta eliminata.');
+  if (typeof _writeRemovalToSupabase === 'function') _writeRemovalToSupabase('reply', 'reply_' + replyIdx + '_' + currentThreadId);
+  if (GAS_URL) fetch(GAS_URL + '?action=delete_reply&idx=' + replyIdx + '&threadId=' + encodeURIComponent(currentThreadId) + '&email=' + encodeURIComponent(currentUser.email)).catch(()=>{});
+}
+
+/* Elimina messaggio proprio dal canale Founding Members */
+async function deleteOwnFoundingMsg(msgId, btnEl) {
+  const idx = _foundingMessages.findIndex(function(m) { return String(m.id) === String(msgId); });
+  if (idx === -1) { showToast('amber','ℹ','Messaggio non trovato.'); return; }
+  const msg = _foundingMessages[idx];
+  const ts = msg.ts ? new Date(msg.ts).getTime() : 0;
+  if (!_canDeleteOwn(msg.author, msg.email, ts)) {
+    showToast('amber','⏱','Puoi eliminare solo entro 15 minuti dalla pubblicazione.'); return;
+  }
+  // Rimuovi localmente
+  _foundingMessages.splice(idx, 1);
+  renderFoundingMessages();
+  saveFoundingCache();
+  showToast('green','🗑','Messaggio eliminato.');
+  // Propaga globalmente via Supabase DELETE (lo stesso canale RT lo riceve su tutti i client)
+  if (window._sb && window._sbReady) {
+    window._sb.from('founding_group_messages').delete().eq('id', String(msgId)).then(null, function(){});
+  }
 }
 
 function removeContentFromPlatform(sourceType, sourceId) {
@@ -18432,7 +18591,22 @@ function _startFoundingListener() {
         var msg = _mapFoundingMsg(payload.new);
         // Skip if user has cleared history before this message
         if (_foundingHiddenTs && msg.ts <= _foundingHiddenTs) return;
-        if (!_foundingMessages.some(function(m) { return m.id === msg.id; })) {
+        // Dedup doppio livello: per id (caso normale) E per contenuto+autore+ts (caso ottimistico)
+        var _fcDupById = _foundingMessages.some(function(m) { return m.id === msg.id; });
+        var _fcDupByContent = _foundingMessages.some(function(m) {
+          return m.text === msg.text && m.email === msg.email &&
+                 Math.abs(new Date(m.ts).getTime() - new Date(msg.ts).getTime()) < 5000;
+        });
+        if (!_fcDupById && !_fcDupByContent) {
+          // Se esiste un messaggio ottimistico (tmp_) con stesso testo → aggiorna il suo id e salta push
+          var _fcTmpIdx = _foundingMessages.findIndex(function(m) {
+            return String(m.id).startsWith('tmp_') && m.text === msg.text && m.email === msg.email;
+          });
+          if (_fcTmpIdx !== -1) {
+            _foundingMessages[_fcTmpIdx].id = msg.id; // promuovi id reale
+            saveFoundingCache();
+            // nessun push, nessun re-render (già visibile)
+          } else {
           // ── Moderazione automatica messaggi Founding in arrivo ─────────────
           if (msg.text && !msg.own && typeof window.LH360Mod !== 'undefined') {
             var _fcSenderRole = (typeof getPartnerInfo === 'function')
@@ -18448,22 +18622,21 @@ function _startFoundingListener() {
               return;
             }
           }
-          _foundingMessages.push(msg);
-          saveFoundingCache();  // persist immediately so refresh shows this message
-          renderFoundingMessages();
-          _scrollFoundingToBottom();
-          var panelActive = document.getElementById('panel-founding-chat') &&
-            document.getElementById('panel-founding-chat').classList.contains('active');
-          if (!panelActive && !msg.own) {
-            var badge = document.getElementById('foundingChatBadge');
-            if (badge) {
-              badge.classList.remove('hidden');
-              badge.textContent = (parseInt(badge.textContent || '0') + 1).toString();
+            _foundingMessages.push(msg);
+            saveFoundingCache();
+            renderFoundingMessages();
+            _scrollFoundingToBottom();
+            var panelActive = document.getElementById('panel-founding-chat') &&
+              document.getElementById('panel-founding-chat').classList.contains('active');
+            if (!panelActive && !msg.own) {
+              var badge = document.getElementById('foundingChatBadge');
+              if (badge) {
+                badge.classList.remove('hidden');
+                badge.textContent = (parseInt(badge.textContent || '0') + 1).toString();
+              }
             }
-            // Note: notifications are handled exclusively by _startFoundingGlobalListener
-            // which runs independently of whether this panel is open.
           }
-        }
+        } // end !_fcDupById && !_fcDupByContent
       })
       .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'founding_group_messages' }, function(payload) {
         var deletedId = payload.old && payload.old.id;
@@ -18977,12 +19150,16 @@ function renderFoundingMessages() {
       ? '<button onclick="event.stopPropagation();reportFcMessage(\'' + _escHtmlFC(msg.id || '') + '\',\'' + _escHtmlFC(msg.author || '') + '\')" style="background:none;border:none;color:var(--red);opacity:0;cursor:pointer;font-size:0.6rem;padding:2px 4px;transition:opacity 0.2s;margin-left:auto;" class="fc-report-btn" title="Segnala messaggio">🚩</button>'
       : '';
     html += '<div class="fc-msg' + (msg.own ? ' own' : '') + '"' +
-      (_fcCanReport ? ' onmouseenter="var b=this.querySelector(\'.fc-report-btn\');if(b)b.style.opacity=\'0.6\'" onmouseleave="var b=this.querySelector(\'.fc-report-btn\');if(b)b.style.opacity=\'0\'"' : '') + '>' +
+      (' onmouseenter="[\'.fc-report-btn\',\'.fc-delete-btn\'].forEach(function(s){var b=this.querySelector(s);if(b)b.style.opacity=\'0.6\'}.bind(this))" onmouseleave="[\'.fc-report-btn\',\'.fc-delete-btn\'].forEach(function(s){var b=this.querySelector(s);if(b)b.style.opacity=\'0\'}.bind(this))"') + '>' +
       '<div class="fc-avatar" style="' + avatarStyle + '">' + _escHtmlFC(msg.initial) + '</div>' +
       '<div class="fc-bubble-wrap">' +
         '<div class="fc-sender">' + _escHtmlFC(msg.author) + '</div>' +
         '<div class="fc-bubble" data-fc-msg-id="' + _escHtmlFC(msg.id || '') + '">' + _renderFcMentions(msg.text, msg.id) + '</div>' +
-        '<div class="fc-time" style="display:flex;align-items:center;gap:0.3rem;">' + _fcReportBtn + timeStr + '</div>' +
+        '<div class="fc-time" style="display:flex;align-items:center;gap:0.3rem;">' + _fcReportBtn +
+        (msg.own && msg.id && _canDeleteOwn(msg.author, msg.email, msg.ts ? new Date(msg.ts).getTime() : 0)
+          ? '<button onclick="event.stopPropagation();deleteOwnFoundingMsg(&quot;' + _escHtmlFC(String(msg.id)) + '&quot;,this)" style="background:none;border:none;color:var(--red);opacity:0;cursor:pointer;font-size:0.6rem;padding:2px 4px;transition:opacity 0.2s;" class="fc-delete-btn" title="Elimina messaggio">🗑</button>'
+          : '') +
+        timeStr + '</div>' +
       '</div></div>';
   });
 
