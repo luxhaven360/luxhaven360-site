@@ -6713,9 +6713,10 @@ function initApp() {
         if (!disc) return;
         const ts = r.last_reply_ts ? new Date(r.last_reply_ts).getTime() : null;
         if (!ts) return;
-        // Aggiorna solo se il timestamp RT è più recente del dato locale.
-        // Se locale è più recente (post-eliminazione), il dato RT è stale → ignora.
-        if (ts > (disc.lastReplyTs || 0)) {
+        // Blocca se ts punta a reply appena eliminata
+        if (_isDeletedReplyTs(String(r.thread_id), ts)) return;
+        // Aggiorna solo se ts >= disc.lastReplyTs (più recente o uguale)
+        if (ts >= (disc.lastReplyTs || 0)) {
           disc.lastReplyTs = ts;
           disc.lastReply = (r.last_reply_author || '') + ' · ' + _notifRelTime(ts);
           // Aggiorna il DOM direttamente nella lista Discussioni
@@ -8974,25 +8975,17 @@ async function _loadThreadLastRepliesFromSupabase() {
       if (!disc) return;
       const sbTs = r.last_reply_ts ? new Date(r.last_reply_ts).getTime() : null;
       if (!sbTs) return;
-      // Non sovrascrivere se il dato locale è più recente (es. dopo un'eliminazione locale).
-      // Quando si elimina una reply, disc.lastReplyTs viene impostato al ts della reply
-      // precedente (più vecchio). Supabase ha ancora il ts della reply eliminata (più recente).
-      // Se sovrascrivessimo, mostreremmo di nuovo il dato della reply eliminata.
-      // Soluzione: sovrascriviamo solo se il timestamp Supabase è UGUALE a disc.lastReplyTs
-      // oppure se disc.lastReplyTs non è impostato.
-      if (!disc.lastReplyTs || sbTs === disc.lastReplyTs) {
-        // Stesso valore → aggiorna solo il testo (es. "Ora" → "5 min fa")
+      // Non sovrascrivere se sbTs punta a una reply appena eliminata localmente
+      if (_isDeletedReplyTs(r.thread_id, sbTs)) return;
+      // Non sovrascrivere se il ts locale corrisponde alla reply precedente valida
+      // (che è più vecchia della reply eliminata — ts numerico minore)
+      // Logica: aggiorna solo se sbTs >= disc.lastReplyTs (nuovo o uguale, non stale)
+      if (!disc.lastReplyTs || sbTs >= disc.lastReplyTs) {
         disc.lastReplyTs = sbTs;
         disc.lastReply = `${r.last_reply_author || ''} · ${_notifRelTime(sbTs)}`;
         changed = true;
       }
-      // Se sbTs > disc.lastReplyTs → nuova reply pubblicata → aggiorna
-      else if (sbTs > disc.lastReplyTs) {
-        disc.lastReplyTs = sbTs;
-        disc.lastReply = `${r.last_reply_author || ''} · ${_notifRelTime(sbTs)}`;
-        changed = true;
-      }
-      // Se sbTs < disc.lastReplyTs → locale è più aggiornato (dopo eliminazione) → ignora
+      // sbTs < disc.lastReplyTs → dato Supabase è più vecchio del locale → ignora
     });
     if (changed) renderDiscussions();
   } catch(_e) {}
@@ -10154,7 +10147,8 @@ async function submitThreadReply() {
     const replyTs = Date.now();
     thread.lastReplyTs = replyTs;
     // BUG FIX #5: usa timestamp per calcolare il tempo relativo dinamicamente
-    thread.lastReply = `${currentUser.name.split(' ')[0]} · ${formatTimeAgo(replyTs)}`;
+    const _rShort = currentUser.name.split(' ')[0] + ' ' + ((currentUser.name.split(' ')[1]||'')[0]||'') + (currentUser.name.split(' ')[1] ? '.' : '');
+    thread.lastReply = `${_rShort} · ${formatTimeAgo(replyTs)}`;
 
     // FIX BUG 2: salva lastReplyTs su Supabase per sincronizzare tutti gli utenti
     // Senza questo, gli altri client ricevono via GAS solo la stringa "Ora" congelata
@@ -10162,7 +10156,7 @@ async function submitThreadReply() {
       _sb.from('thread_last_replies').upsert({
         thread_id:      String(currentThreadId),
         last_reply_ts:  new Date(replyTs).toISOString(),
-        last_reply_author: currentUser.name.split(' ')[0]
+        last_reply_author: currentUser.name.split(' ')[0] + ' ' + ((currentUser.name.split(' ')[1]||'')[0]||'') + (currentUser.name.split(' ')[1] ? '.' : '')
       }, { onConflict: 'thread_id' }).then(() => {}).catch(() => {});
     }
     // Aggiorna il contatore risposte nell'header del thread overlay in tempo reale
@@ -11713,9 +11707,21 @@ function sbListenMessages(partnerEmail) {
       // Aggiorna preview
       const _bcastConv = REAL_CONVS.find(c => c.partnerEmail.toLowerCase() === cacheKey);
       if (_bcastConv) {
-        const lastMsg = updatedMsgs[updatedMsgs.length - 1];
-        _bcastConv.lastMessage = lastMsg ? (lastMsg.text || '📎 Media') : '';
-        _bcastConv.lastTs = lastMsg ? lastMsg.ts : _bcastConv.lastTs;
+        if (updatedMsgs.length === 0) {
+          // Tutti i messaggi eliminati lato mittente
+          const _bWithTeam = (_bcastConv.partnerRole || '').toLowerCase().includes('team') ||
+                             (_bcastConv.partnerRole || '').toLowerCase().includes('admin');
+          const _bKeep = currentUser && currentUser.role === 'founding' && _bWithTeam;
+          if (!_bKeep) {
+            REAL_CONVS = REAL_CONVS.filter(c => c.partnerEmail.toLowerCase() !== cacheKey);
+          } else {
+            _bcastConv.lastMessage = '';
+          }
+        } else {
+          const lastMsg = updatedMsgs[updatedMsgs.length - 1];
+          _bcastConv.lastMessage = lastMsg ? (lastMsg.text || '📎 Media') : '';
+          _bcastConv.lastTs = lastMsg ? lastMsg.ts : _bcastConv.lastTs;
+        }
         renderConversations(); saveConvsCache();
       }
       const panelOpen = document.getElementById('panel-messages')?.classList.contains('active');
@@ -11739,9 +11745,16 @@ function sbListenMessages(partnerEmail) {
       // Aggiorna preview conversazione (ultimo messaggio)
       const conv = REAL_CONVS.find(c => c.partnerEmail.toLowerCase() === cacheKey);
       if (conv) {
-        const lastMsg = updatedMsgs[updatedMsgs.length - 1];
-        conv.lastMessage = lastMsg ? (lastMsg.text || '📎 Media') : '';
-        conv.lastTs = lastMsg ? lastMsg.ts : conv.lastTs;
+        if (updatedMsgs.length === 0) {
+          const _pgWithTeam = (conv.partnerRole || '').toLowerCase().includes('team');
+          const _pgKeep = currentUser && currentUser.role === 'founding' && _pgWithTeam;
+          if (!_pgKeep) REAL_CONVS = REAL_CONVS.filter(c => c.partnerEmail.toLowerCase() !== cacheKey);
+          else conv.lastMessage = '';
+        } else {
+          const lastMsg = updatedMsgs[updatedMsgs.length - 1];
+          conv.lastMessage = lastMsg ? (lastMsg.text || '📎 Media') : '';
+          conv.lastTs = lastMsg ? lastMsg.ts : conv.lastTs;
+        }
         renderConversations();
         saveConvsCache();
       }
@@ -11853,10 +11866,8 @@ function sbListenConversations() {
         });
       }
       // ── sbListenConversations: SOLO aggiornamento dati/badge/UI ─────────────
-      // Le notifiche DM sono generate ESCLUSIVAMENTE da sbListenInbox (tabella messages)
-      // e da sbListenMessages (conv attiva). Generarle qui crea notifiche doppie perché
-      // un singolo DM triggera sia INSERT su messages che UPDATE su conversations.
       updateMsgBadge();
+      if (typeof _injectTeamConvsForFounding === 'function') _injectTeamConvsForFounding();
       renderConversations();
       saveConvsCache();
     }).subscribe();
@@ -11935,8 +11946,9 @@ function sbListenInbox() {
       }
       // Aggiorna badge
       const totalUnread = REAL_CONVS.reduce((s, c) => s + (c.unread || 0), 0);
-      unreadMsgs = totalUnread;  // sincronizza la variabile globale
-      updateMsgBadge();           // aggiorna il badge sidebar "Messaggi"
+      unreadMsgs = totalUnread;
+      updateMsgBadge();
+      if (typeof _injectTeamConvsForFounding === 'function') _injectTeamConvsForFounding();
       renderConversations();
       saveConvsCache();
     }).subscribe();
@@ -15686,9 +15698,31 @@ async function deleteOwnDmMessage(msgId, btnEl) {
   // Aggiorna preview conversazione con l'ultimo messaggio rimanente
   const conv = REAL_CONVS.find(c => c.partnerEmail.toLowerCase() === cacheKey);
   if (conv) {
-    const lastMsg = msgs[msgs.length - 1];
-    conv.lastMessage = lastMsg ? (lastMsg.text || '📎 Media') : '';
-    conv.lastTs = lastMsg ? lastMsg.ts : conv.lastTs;
+    if (msgs.length === 0) {
+      // Tutti i messaggi eliminati:
+      // - Team: rimuovi la conversazione dalla lista (tombstone)
+      // - Founding Member con Team: mantieni visibile (permanente)
+      const _isWithTeam = (conv.partnerRole || '').toLowerCase().includes('team') ||
+                          (conv.partnerRole || '').toLowerCase().includes('admin');
+      const _keepForFounding = currentUser && currentUser.role === 'founding' && _isWithTeam;
+      if (!_keepForFounding) {
+        // Tombstone: rimuovi dalla lista
+        REAL_CONVS = REAL_CONVS.filter(c => c.partnerEmail.toLowerCase() !== cacheKey);
+        const _ts = _loadDeletedConvTombstones ? _loadDeletedConvTombstones() : [];
+        if (!_ts.includes(cacheKey)) { _ts.push(cacheKey); try { localStorage.setItem('lh360_deleted_convs', JSON.stringify(_ts)); } catch(_e) {} }
+        renderConversations();
+        saveConvsCache();
+        return; // esce prima del renderChatMessages
+      } else {
+        // Founding+Team: aggiorna lastMessage a vuoto ma mantieni conv
+        conv.lastMessage = '';
+        conv.lastTs = new Date().toISOString();
+      }
+    } else {
+      const lastMsg = msgs[msgs.length - 1];
+      conv.lastMessage = lastMsg ? (lastMsg.text || '📎 Media') : '';
+      conv.lastTs = lastMsg ? lastMsg.ts : conv.lastTs;
+    }
     renderConversations();
     saveConvsCache();
   }
@@ -15829,6 +15863,13 @@ async function deleteOwnReply(replyId, btnEl) {
   renderThreadMessages(currentThreadId);
   _updateThreadDetailHeader(currentThreadId); // aggiorna contatore nell'header
   showToast('green','🗑','Risposta eliminata.');
+  // Segna il ts della reply eliminata come "da bloccare" nel listener Supabase
+  // per evitare che thread_last_replies sovrascriva con dati stale prima che l'upsert completi
+  if (msg.ts) {
+    const _deletedTsMs = typeof msg.ts === 'number' ? msg.ts : new Date(msg.ts).getTime();
+    _markReplyTsDeleted(currentThreadId, _deletedTsMs);
+  }
+
   // Aggiorna thread_last_replies su Supabase con il nuovo ultimo messaggio valido
   // Questo garantisce che polling e RT degli altri client abbiano il dato corretto
   if (_sbReady && _sb && currentThreadId) {
@@ -19299,6 +19340,22 @@ async function sendFoundingMessage() {
 }
 
 // ── Mention state for founding chat ──
+/* Set di timestamp delle reply eliminate di recente (per thread id).
+   Usato per impedire che thread_last_replies Supabase sovrascriva
+   con dati di reply appena eliminate prima che l'upsert sia completato. */
+var _deletedReplyTs = {}; // { threadId: Set<ts_ms> }
+function _markReplyTsDeleted(threadId, tsMs) {
+  if (!_deletedReplyTs[threadId]) _deletedReplyTs[threadId] = new Set();
+  _deletedReplyTs[threadId].add(tsMs);
+  // Rimuovi dopo 30s (l'upsert a Supabase dovrebbe completarsi in quel tempo)
+  setTimeout(function() {
+    if (_deletedReplyTs[threadId]) _deletedReplyTs[threadId].delete(tsMs);
+  }, 30000);
+}
+function _isDeletedReplyTs(threadId, tsMs) {
+  return _deletedReplyTs[threadId] && _deletedReplyTs[threadId].has(tsMs);
+}
+
 var _fcMentionStart  = -1;
 var _fcMentionSelIdx = -1;
 var _fcMentionVisible = false;
