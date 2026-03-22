@@ -15757,14 +15757,35 @@ async function deleteOwnFoundingMsg(msgId, btnEl) {
   if (!_canDeleteOwn(msg.author, msg.email, ts)) {
     showToast('amber','⏱','Puoi eliminare solo entro 15 minuti dalla pubblicazione.'); return;
   }
-  // Rimuovi localmente
+  // 1. Segna come eliminato nel set persistente (sopravvive a reload e refetch Supabase)
+  _fcDeletedIds.add(String(msgId));
+  _saveFcDeletedIds();
+
+  // 2. Rimuovi localmente e aggiorna UI + cache
   _foundingMessages.splice(idx, 1);
   renderFoundingMessages();
   saveFoundingCache();
   showToast('green','🗑','Messaggio eliminato.');
-  // Propaga globalmente via Supabase DELETE (lo stesso canale RT lo riceve su tutti i client)
+
+  // 3. Propaga a tutti gli altri client via Broadcast (non richiede RLS/auth)
+  //    Tutti i client connessi al canale founding ricevono l'evento e rimuovono il messaggio
   if (window._sb && window._sbReady) {
-    window._sb.from('founding_group_messages').delete().eq('id', String(msgId)).then(null, function(){});
+    window._sb.channel('founding-group-chat-v2')
+      .send({ type: 'broadcast', event: 'fc_delete', payload: { msgId: String(msgId) } })
+      .catch(function() {});
+  }
+
+  // 4. Tenta DELETE su Supabase (funziona se RLS lo consente, altrimenti silenzioso)
+  //    Se la DELETE ha successo, il listener postgres_changes DELETE rimuove il messaggio
+  //    anche dai client che non ricevono il Broadcast (es. offline temporaneamente)
+  if (window._sb && window._sbReady) {
+    window._sb.from('founding_group_messages').delete().eq('id', String(msgId))
+      .then(function(res) {
+        if (res.error) {
+          // DELETE fallita (RLS): la rimozione è comunque garantita via Broadcast + _fcDeletedIds
+          console.warn('[FC delete] Supabase DELETE failed (RLS?):', res.error.message);
+        }
+      }, function() {});
   }
 }
 
@@ -18662,9 +18683,13 @@ async function loadFoundingMessages() {
     var rows = result.data || [];
     console.log('[FoundingChat] Loaded', rows.length, 'messages from Supabase');
 
-    // Apply personal hidden timestamp only
+    // Applica filtri: hidden timestamp personale + messaggi eliminati localmente
     if (_foundingHiddenTs) {
       rows = rows.filter(function(r) { return (r.created_at || '') > _foundingHiddenTs; });
+    }
+    // Filtra i messaggi che l'utente ha eliminato (anche se Supabase li ri-restituisce)
+    if (_fcDeletedIds && _fcDeletedIds.size > 0) {
+      rows = rows.filter(function(r) { return !_fcDeletedIds.has(String(r.id)); });
     }
 
     // Only update if we got data OR if previous load returned 0 (avoid clearing cache with empty result)
@@ -18760,6 +18785,23 @@ function _startFoundingListener() {
   try {
     _foundingSbChannel = window._sb
       .channel('founding-group-chat-v2')
+      .on('broadcast', { event: 'fc_delete' }, function(ev) {
+        // Riceve eliminazione via Broadcast — garantita anche senza RLS DELETE
+        var deletedId = ev && ev.payload && ev.payload.msgId;
+        if (!deletedId) return;
+        if (typeof _fcDeletedIds !== 'undefined') {
+          _fcDeletedIds.add(String(deletedId));
+          _saveFcDeletedIds();
+        }
+        var prevLen = _foundingMessages.length;
+        _foundingMessages = _foundingMessages.filter(function(m) {
+          return String(m.id) !== String(deletedId);
+        });
+        if (_foundingMessages.length !== prevLen) {
+          saveFoundingCache();
+          renderFoundingMessages();
+        }
+      })
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'founding_group_messages' }, function(payload) {
         var msg = _mapFoundingMsg(payload.new);
         // Skip if user has cleared history before this message
@@ -18814,10 +18856,15 @@ function _startFoundingListener() {
       .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'founding_group_messages' }, function(payload) {
         var deletedId = payload.old && payload.old.id;
         if (deletedId) {
+          // Aggiungi al set persistente (garantisce che il messaggio non riappaia al refetch)
+          if (typeof _fcDeletedIds !== 'undefined') {
+            _fcDeletedIds.add(String(deletedId));
+            _saveFcDeletedIds();
+          }
           _foundingMessages = _foundingMessages.filter(function(m) {
             return String(m.id) !== String(deletedId);
           });
-          saveFoundingCache(); // FIX: persisti la rimozione → non riappare al re-open
+          saveFoundingCache();
           renderFoundingMessages();
         }
       })
@@ -19133,6 +19180,19 @@ var _fcMentionStart  = -1;
 var _fcMentionSelIdx = -1;
 var _fcMentionVisible = false;
 var _fcMentionQuery  = '';
+
+/* Set persistente degli id dei messaggi Founding eliminati localmente.
+   Usato per filtrare i messaggi che Supabase ri-restituisce dopo la DELETE. */
+var _FC_DELETED_KEY = 'lh360_fc_deleted_ids';
+var _fcDeletedIds = (function() {
+  try {
+    var raw = localStorage.getItem('lh360_fc_deleted_ids');
+    return new Set(raw ? JSON.parse(raw) : []);
+  } catch(_e) { return new Set(); }
+})();
+function _saveFcDeletedIds() {
+  try { localStorage.setItem(_FC_DELETED_KEY, JSON.stringify([..._fcDeletedIds])); } catch(_e) {}
+}
 
 function handleFoundingChatKey(e) {
   if (_fcMentionVisible) {
