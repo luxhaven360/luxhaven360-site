@@ -9800,6 +9800,17 @@ function _startThreadRepliesListener(threadId) {
   if (!_sbReady || !threadId) return;
 
   const ch = _sb.channel('thread_replies_' + threadId)
+    .on('broadcast', { event: 'update_reply_id' }, ({ payload }) => {
+      // Aggiorna l'id di un reply nel THREAD_MESSAGES locale (temp_ → stabile)
+      if (!payload || !payload.tempId || !payload.stableId) return;
+      const _arr = THREAD_MESSAGES[currentThreadId];
+      if (!_arr) return;
+      const _ti = _arr.findIndex(m => String(m.id) === String(payload.tempId));
+      if (_ti !== -1) {
+        _arr[_ti].id = payload.stableId;
+        renderThreadMessages(currentThreadId); // aggiorna il bottone 🗑 anche sugli altri client
+      }
+    })
     .on('broadcast', { event: 'new_reply' }, ({ payload }) => {
       if (!payload || !payload.reply || payload.threadId !== currentThreadId) return;
       // Ignora risposte inviate da questo utente stesso (già presenti via ottimistic update)
@@ -10259,8 +10270,15 @@ async function submitThreadReply() {
           : -1;
         if (_rIdx !== -1) {
           THREAD_MESSAGES[currentThreadId][_rIdx].id = _replyData.reply.id;
-          // Re-render: aggiorna il bottone 🗑 con l'id stabile (prima usava _replyTempId)
+          // Re-render: il bottone 🗑 ora ha l'id stabile nell'onclick
           renderThreadMessages(currentThreadId);
+          // Re-broadcast con id stabile → altri client aggiornano il loro THREAD_MESSAGES
+          if (_sbReady) {
+            _sb.channel('thread_replies_' + currentThreadId)
+              .send({ type: 'broadcast', event: 'update_reply_id',
+                payload: { threadId: currentThreadId, tempId: _replyTempId, stableId: _replyData.reply.id } })
+              .catch(() => {});
+          }
         }
       }
       saveCommunityCache();
@@ -11709,6 +11727,14 @@ function sbListenMessages(partnerEmail) {
           const realMsg = { id: m.id, from: m.sender_email, fromName: m.sender_name, fromInitial: (m.sender_name||'?')[0].toUpperCase(), text: m.text||'', media_url: m.media_url||null, media_type: m.media_type||null, ts: m.created_at, deletedFor: m.deleted_for||[] };
           if (tempIdx !== -1) {
             _msgCache[cacheKey][tempIdx] = realMsg; // promuovi: temp_ → id reale
+            // FIX: re-render la chat per aggiornare il bottone 🗑 con l'id reale
+            // Senza questo, il DOM ha ancora il vecchio id temp_ nell'onclick del bottone
+            const _panelOpen = document.getElementById('panel-messages')?.classList.contains('active');
+            const _isThisConv = _panelOpen && currentConvPartnerEmail &&
+              currentConvPartnerEmail.toLowerCase() === partnerEmail.toLowerCase();
+            if (_isThisConv) {
+              renderChatMessages(_msgCache[cacheKey], partnerEmail);
+            }
           } else {
             const alreadyCached = _msgCache[cacheKey].some(x => x.id === m.id);
             if (!alreadyCached) _msgCache[cacheKey].push(realMsg);
@@ -15589,7 +15615,18 @@ async function deleteOwnDmMessage(msgId, btnEl) {
   if (!msgId || !currentConvPartnerEmail) return;
   const cacheKey = currentConvPartnerEmail.toLowerCase();
   const msgs = (_msgCache && _msgCache[cacheKey]) ? _msgCache[cacheKey] : [];
-  const idx = msgs.findIndex(m => String(m.id) === String(msgId));
+  let idx = msgs.findIndex(m => String(m.id) === String(msgId));
+
+  // Fallback: cerca anche per id reale se il btnEl contiene il temp_ ma la cache è già aggiornata
+  // (succede se l'utente clicca delete dopo che il cache è stato aggiornato ma prima del re-render)
+  if (idx === -1 && btnEl) {
+    // Prova a trovare il messaggio cercando il bubble nel DOM
+    const _bubble = btnEl.closest('.msg-bubble-wrap');
+    const _bubbleText = _bubble ? (_bubble.querySelector('.msg-bubble') || {}).textContent : null;
+    if (_bubbleText) {
+      idx = msgs.findIndex(m => m.text === _bubbleText.trim() && m.from === currentUser.email.toLowerCase());
+    }
+  }
 
   if (idx === -1) { showToast('amber', 'ℹ', 'Messaggio non trovato.'); return; }
   const msg = msgs[idx];
@@ -15700,8 +15737,21 @@ async function deleteOwnComment(postId, commentId, btnEl) {
 async function deleteOwnReply(replyId, btnEl) {
   if (!currentThreadId || !THREAD_MESSAGES[currentThreadId]) return;
   const msgs = THREAD_MESSAGES[currentThreadId];
-  // Cerca per id reale (non per indice — fragile dopo riordinamento)
-  const idx = msgs.findIndex(m => String(m.id) === String(replyId));
+  // Cerca per id (temp o stabile)
+  let idx = msgs.findIndex(m => String(m.id) === String(replyId));
+
+  // Fallback: il DOM potrebbe avere un id stale (legacy o temp già aggiornato in cache)
+  // Cerca per testo del messaggio nel DOM come ultimo tentativo
+  if (idx === -1 && btnEl) {
+    const _msgBody = btnEl.closest('.thread-message');
+    const _msgText = _msgBody ? (_msgBody.querySelector('.thread-msg-text') || {}).textContent : null;
+    if (_msgText) {
+      const myShort = currentUser ? (currentUser.name.split(' ')[0] + ' ' + (currentUser.name.split(' ')[1]||'?')[0] + '.') : '';
+      idx = msgs.findIndex(m => !m.isOp && m.text === _msgText.trim() &&
+        (m.email === (currentUser && currentUser.email) || m.author === myShort));
+    }
+  }
+
   if (idx === -1) { showToast('amber','ℹ','Risposta non trovata.'); return; }
   const msg = msgs[idx];
   if (msg.isOp) { showToast('amber','ℹ','Non puoi eliminare il post originale.'); return; }
