@@ -6660,6 +6660,7 @@ function initApp() {
               // Aggiorna UI: thread list + thread aperto (se è lo stesso)
               if (currentThreadId && String(currentThreadId) === String(tid)) {
                 renderThreadMessages(currentThreadId);
+                _updateThreadDetailHeader(currentThreadId); // aggiorna header per tutti i client
               }
               const discPanel = document.getElementById('panel-discussions');
               if (discPanel && discPanel.classList.contains('active')) renderDiscussions();
@@ -9616,6 +9617,21 @@ async function _lxAutoTranslateThreadMessages(container) {
   }
 }
 
+/* Aggiorna il contatore risposte nell'header del thread in tempo reale.
+   Chiamato dopo ogni aggiunta o rimozione di reply. */
+function _updateThreadDetailHeader(threadId) {
+  const disc = DISCUSSIONS.find(d => String(d.id) === String(threadId));
+  if (!disc) return;
+  const detailInfo = document.getElementById('threadDetailInfo');
+  if (!detailInfo) return;
+  // Aggiorna solo lo span del contatore, non l'intera riga (preserva views e autore)
+  const firstSpan = detailInfo.querySelector('span:first-child');
+  if (firstSpan) {
+    const n = disc.replies || 0;
+    firstSpan.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg> ${n === 1 ? I18n.t('disc.replies_one',{n}) : I18n.t('disc.replies',{n})}`;
+  }
+}
+
 function renderThreadMessages(id) {
   const messages = THREAD_MESSAGES[id] || [];
   const container = document.getElementById('threadDetailMessages');
@@ -9805,25 +9821,8 @@ function _startThreadRepliesListener(threadId) {
       // Re-renderizza i messaggi e la lista discussioni in tempo reale
       renderThreadMessages(currentThreadId);
       renderDiscussions();
-
-      // Aggiorna il contatore nell'header del thread overlay
-      if (thread) {
-        const detailInfo = document.getElementById('threadDetailInfo');
-        if (detailInfo) {
-          const ts = thread.ts ? new Date(thread.ts).getTime() : 0;
-          detailInfo.innerHTML = `
-            <span>
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
-              ${(thread.replies||0) === 1 ? I18n.t('disc.replies_one',{n:thread.replies||0}) : I18n.t('disc.replies',{n:thread.replies||0})}
-            </span>
-            <span>
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
-              ${(thread.views||0) === 1 ? I18n.t('disc.views_one',{n:thread.views||0}) : I18n.t('disc.views',{n:thread.views||0})}
-            </span>
-            <span>✍️ ${thread.author} · ${ts ? `<span data-ts="${ts}">${_notifRelTime(ts)}</span>` : (thread.time || I18n.t('time.now'))}</span>
-          `;
-        }
-      }
+      // Aggiorna il contatore risposte nell'header del thread overlay
+      _updateThreadDetailHeader(currentThreadId);
     })
     .subscribe();
 
@@ -10128,10 +10127,13 @@ async function submitThreadReply() {
   const _mentions = _extractMentions(text);
 
   const shortName = currentUser.name.split(' ')[0] + ' ' + (currentUser.name.split(' ')[1]||'?')[0] + '.';
+  const _replyTempId = 'r_' + Date.now() + '_' + Math.random().toString(36).slice(2,5);
   const newReply  = {
+    id:     _replyTempId,  // id temporaneo → sostituito con quello GAS al confirm
     author: shortName, initial: currentUser.initial,
     role: currentUser.title, isTeam: currentUser.role === 'team',
-    time: 'Ora', ts: new Date().toISOString(), text, isOp: false, reactions: []
+    email:  currentUser.email,
+    ts: new Date().toISOString(), text, isOp: false, reactions: []
   };
 
   // Ottimistic update
@@ -10240,7 +10242,7 @@ async function submitThreadReply() {
     }
   }
 
-  // Persisti su GAS
+  // Persisti su GAS — legge l'id stabile assegnato dal server
   if (GAS_URL && currentUser) {
     try {
       const url = `${GAS_URL}?action=add_reply` +
@@ -10248,7 +10250,19 @@ async function submitThreadReply() {
         `&initial=${encodeURIComponent(currentUser.initial)}&role=${encodeURIComponent(currentUser.title)}` +
         `&text=${encodeURIComponent(text)}&isTeam=${currentUser.role === 'team'}` +
         `&email=${encodeURIComponent(currentUser.email)}`;
-      await fetch(url);
+      const _replyResp = await fetch(url);
+      const _replyData = await _replyResp.json().catch(() => null);
+      // Aggiorna l'id del reply nell'array locale con quello stabile del server
+      if (_replyData && _replyData.success && _replyData.reply && _replyData.reply.id) {
+        const _rIdx = THREAD_MESSAGES[currentThreadId]
+          ? THREAD_MESSAGES[currentThreadId].findIndex(m => m.id === _replyTempId)
+          : -1;
+        if (_rIdx !== -1) {
+          THREAD_MESSAGES[currentThreadId][_rIdx].id = _replyData.reply.id;
+          // Re-render: aggiorna il bottone 🗑 con l'id stabile (prima usava _replyTempId)
+          renderThreadMessages(currentThreadId);
+        }
+      }
       saveCommunityCache();
     } catch(e) { console.warn('[Reply] GAS error:', e.message); }
   }
@@ -15708,6 +15722,7 @@ async function deleteOwnReply(replyId, btnEl) {
     }
   }
   renderThreadMessages(currentThreadId);
+  _updateThreadDetailHeader(currentThreadId); // aggiorna contatore nell'header
   showToast('green','🗑','Risposta eliminata.');
   // Propaga a tutti i client via Supabase content_removals RT
   // Il listener content_removals_rt rimuove la reply dal THREAD_MESSAGES di ogni client
