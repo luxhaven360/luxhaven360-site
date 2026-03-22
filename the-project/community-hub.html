@@ -13289,19 +13289,29 @@ function _loadNotifCache() {
 }
 function _notifRelTime(ts) {
   if (!ts) return I18n.t('time.now');
-  const diff = Date.now() - ts;
+  const now  = Date.now();
+  const diff = now - ts;
   if (diff < 0) return I18n.t('time.now');
   const m = Math.floor(diff / 60000);
   const h = Math.floor(diff / 3600000);
-  const d = Math.floor(diff / 86400000);
-  if (m < 1)    return I18n.t('time.now');
-  if (m < 60)   return I18n.t('time.min_ago',  { n: m });
-  if (h < 24)   return I18n.t('time.hour_ago', { n: h });
-  if (d === 1)  return I18n.t('time.yesterday');
-  if (d < 7)    return I18n.t('time.day_ago',  { n: d });
-  // Più di 7 giorni: data completa (es. "18 mar 2026")
+
+  // Giorni di CALENDARIO — non ore assolute.
+  // Math.floor(diff/86400ms) sbaglia: 39h → 1 → "Ieri" anche per contenuti di 2 gg fa.
+  // Confrontiamo invece mezzanotte-locale di oggi con mezzanotte-locale della data.
+  const _d  = new Date(ts);
+  const _n  = new Date(now);
+  const todayMidnight = new Date(_n.getFullYear(), _n.getMonth(), _n.getDate()).getTime();
+  const dateMidnight  = new Date(_d.getFullYear(), _d.getMonth(), _d.getDate()).getTime();
+  const calDays = Math.round((todayMidnight - dateMidnight) / 86400000);
+
+  if (m < 1)        return I18n.t('time.now');
+  if (m < 60)       return I18n.t('time.min_ago',  { n: m });
+  if (calDays === 0) return I18n.t('time.hour_ago', { n: h });
+  if (calDays === 1) return I18n.t('time.yesterday');
+  if (calDays < 7)   return I18n.t('time.day_ago',  { n: calDays });
+  // Più di 7 giorni: data completa (es. "20 mar 2026")
   const lang = (window.I18n && I18n.getCurrentLanguage()) || 'it';
-  return new Intl.DateTimeFormat(lang, { day: 'numeric', month: 'short', year: 'numeric' }).format(new Date(ts));
+  return new Intl.DateTimeFormat(lang, { day: 'numeric', month: 'short', year: 'numeric' }).format(_d);
 }
 
 /* Converte una stringa tempo statica ('Ieri', 'Ora', '5 min fa') in timestamp approssimativo.
