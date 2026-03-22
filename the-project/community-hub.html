@@ -12649,13 +12649,15 @@ async function _executeDeletion() {
   REAL_CONVS = REAL_CONVS.filter(c => c.partnerEmail.toLowerCase() !== partnerEmail.toLowerCase());
   // 3. svuota cache messaggi di questa conv
   delete _msgCache[partnerEmail.toLowerCase()];
-  // 4. salva stato aggiornato (anche se REAL_CONVS ora è vuoto)
-  saveConvsCache();
-  // 5. Se Founding Member ha eliminato la conv col Team: re-inject immediatamente
-  //    così il Team riappare in lista con cronologia vuota ma conversazione visibile
+  // 4. FIX FLICKER: se Founding Member elimina conv Team, re-inject PRIMA di saveConvsCache.
+  //    Così la cache viene salvata GIÀ con la conv Team inclusa (lastMessage vuoto).
+  //    Al rientro nel pannello Messaggi, loadConvsCache() restituisce la lista completa
+  //    e la conv Team non sparisce mai — anche nel breve intervallo prima del fetch GAS.
   if (_isFoundingDeletingTeam && typeof _injectTeamConvsForFounding === 'function') {
     _injectTeamConvsForFounding();
   }
+  // 5. salva stato aggiornato (con conv Team già inclusa per i Founding Member)
+  saveConvsCache();
 
   _dhoSetStep('dhoStep4', 'done');
   _dhoSetProgress(100);
@@ -16018,7 +16020,7 @@ async function deleteOwnReply(replyId, btnEl) {
       _sb.from('thread_last_replies').upsert({
         thread_id:          String(currentThreadId),
         last_reply_ts:      new Date(_newLastNonOp.ts).toISOString(),
-        last_reply_author:  (_newLastNonOp.author || '').split(' ')[0]
+        last_reply_author:  _newLastNonOp.author || ''  // FIX FLICKER: salva nome abbreviato completo (es. 'Mattia R.') non solo il primo nome
       }, { onConflict: 'thread_id' }).then(() => {}).catch(() => {});
     } else {
       // Nessuna reply rimasta (solo OP) → svuota la riga Supabase
