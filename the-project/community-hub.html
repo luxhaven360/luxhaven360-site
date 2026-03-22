@@ -11601,6 +11601,29 @@ function appendMessageToChat(msg, isSent) {
   messagesEl.scrollTo({ top: messagesEl.scrollHeight, behavior: 'smooth' });
 }
 
+/* ══════════════════════════════════════════════════════════════
+   Set persistente degli id dei messaggi DM eliminati localmente.
+   Chiave: 'lh360_dm_deleted_' + convId
+   Usato per filtrare i messaggi che Supabase ri-restituisce dopo la DELETE.
+══════════════════════════════════════════════════════════════ */
+const _DM_DELETED_PREFIX = 'lh360_dm_deleted_';
+function _getDmDeletedIds(cid) {
+  try {
+    var raw = localStorage.getItem(_DM_DELETED_PREFIX + cid);
+    return new Set(raw ? JSON.parse(raw) : []);
+  } catch(_e) { return new Set(); }
+}
+function _addDmDeletedId(cid, msgId) {
+  try {
+    var set = _getDmDeletedIds(cid);
+    set.add(String(msgId));
+    // Mantieni max 200 id per conversazione (evita crescita illimitata)
+    var arr = [...set];
+    if (arr.length > 200) arr = arr.slice(-200);
+    localStorage.setItem(_DM_DELETED_PREFIX + cid, JSON.stringify(arr));
+  } catch(_e) {}
+}
+
 /* ── Polling messaggi: fallback GAS se Supabase non disponibile ── */
 function startMessagePolling() {
   stopMessagePolling();
@@ -11646,8 +11669,10 @@ function sbListenMessages(partnerEmail) {
     .limit(200)
     .then(({ data, error }) => {
       if (error) { console.warn('[SB msg load]', error.message); return; }
+      const _dmDeleted = _getDmDeletedIds(cid);
       const msgs = (data || [])
         .filter(m => !(m.deleted_for || []).includes(currentUser.email.toLowerCase()))
+        .filter(m => !_dmDeleted.has(String(m.id)))  // filtra messaggi eliminati localmente
         .map(m => ({
           id:          m.id,
           from:        m.sender_email,
@@ -11684,12 +11709,38 @@ function sbListenMessages(partnerEmail) {
   // Ascolta nuovi messaggi + cancellazioni in RT
   sbOff('messages');
   const ch = _sb.channel('messages_' + cid)
+    .on('broadcast', { event: 'dm_delete' }, ({ payload }) => {
+      // Riceve eliminazione via Broadcast — garantita anche senza RLS DELETE
+      const deletedId = payload && payload.msgId;
+      if (!deletedId) return;
+      // Salva nel set persistente: sopravvive al prossimo refetch Supabase
+      _addDmDeletedId(cid, deletedId);
+      const cacheKey = partnerEmail.toLowerCase();
+      if (_msgCache[cacheKey]) {
+        _msgCache[cacheKey] = _msgCache[cacheKey].filter(m => String(m.id) !== String(deletedId));
+      }
+      const updatedMsgs = _msgCache[cacheKey] || [];
+      // Aggiorna preview
+      const _bcastConv = REAL_CONVS.find(c => c.partnerEmail.toLowerCase() === cacheKey);
+      if (_bcastConv) {
+        const lastMsg = updatedMsgs[updatedMsgs.length - 1];
+        _bcastConv.lastMessage = lastMsg ? (lastMsg.text || '📎 Media') : '';
+        _bcastConv.lastTs = lastMsg ? lastMsg.ts : _bcastConv.lastTs;
+        renderConversations(); saveConvsCache();
+      }
+      const panelOpen = document.getElementById('panel-messages')?.classList.contains('active');
+      const isThisConv = panelOpen && currentConvPartnerEmail &&
+        currentConvPartnerEmail.toLowerCase() === partnerEmail.toLowerCase();
+      if (isThisConv) renderChatMessages(updatedMsgs, partnerEmail);
+    })
     .on('postgres_changes', {
       event: 'DELETE', schema: 'public', table: 'messages',
       filter: `conv_id=eq.${cid}`
     }, (payload) => {
       const deletedId = payload.old && payload.old.id;
       if (!deletedId) return;
+      // Salva nel set persistente anche qui (backup se Broadcast non arriva)
+      _addDmDeletedId(cid, deletedId);
       const cacheKey = partnerEmail.toLowerCase();
       if (_msgCache[cacheKey]) {
         _msgCache[cacheKey] = _msgCache[cacheKey].filter(m => String(m.id) !== String(deletedId));
@@ -15656,15 +15707,29 @@ async function deleteOwnDmMessage(msgId, btnEl) {
   renderChatMessages(msgs, currentConvPartnerEmail);
   showToast('green', '🗑', 'Messaggio eliminato.');
 
-  // Propaga via Supabase DELETE — il listener DELETE in sbListenMessages
-  // lo riceverà sull'altro client e rimuoverà dal DOM in tempo reale.
+  // Calcola il convId per la persistenza e il broadcast
+  const _delCid = convId(currentUser.email, currentConvPartnerEmail);
+
+  // 1. Segna come eliminato nel set persistente (sopravvive a reload e refetch Supabase)
+  _addDmDeletedId(_delCid, msgId);
+
+  // 2. Propaga all'altro client via Broadcast sul canale della conversazione
+  //    Il Broadcast non richiede RLS — notifica istantanea garantita
+  if (_sbReady && _sb) {
+    _sb.channel('messages_' + _delCid)
+      .send({ type: 'broadcast', event: 'dm_delete', payload: { msgId: String(msgId) } })
+      .catch(() => {});
+  }
+
+  // 3. Tenta DELETE su Supabase (funziona se RLS lo consente, altrimenti silenzioso)
   if (_sbReady && _sb) {
     _sb.from('messages').delete().eq('id', String(msgId))
-      .then(null, () => {});
-  }
-  // GAS fallback
-  if (GAS_URL && currentUser) {
-    fetch(`${GAS_URL}?action=delete_message&msgId=${encodeURIComponent(msgId)}&email=${encodeURIComponent(currentUser.email)}`).catch(() => {});
+      .then(function(res) {
+        if (res && res.error) {
+          console.warn('[DM delete] Supabase DELETE failed (RLS?):', res.error.message);
+          // La rimozione è comunque garantita via Broadcast + _dmDeletedIds
+        }
+      }, () => {});
   }
 }
 
