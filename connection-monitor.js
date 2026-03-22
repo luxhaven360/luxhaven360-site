@@ -1,61 +1,34 @@
 /**
- * ╔══════════════════════════════════════════════════════════════════════╗
- * ║  connection-monitor.js  —  LuxHaven360                               ║
- * ║  v5.0 — Sistema multilivello: 5 stati, rilevamento istantaneo       ║
- * ╠══════════════════════════════════════════════════════════════════════╣
- * ║                                                                      ║
- * ║  ARCHITETTURA:                                                       ║
- * ║   · Prober      — multi-endpoint ping con timeout preciso           ║
- * ║   · Analyzer    — scoring latenza, jitter, fail-rate                ║
- * ║   · StateManager— debounce, smoothing, storico 8 probe             ║
- * ║   · UI          — pill persistente + banner + overlay offline       ║
- * ║                                                                      ║
- * ║  5 LIVELLI: excellent · good · unstable · poor · offline            ║
- * ║  LINGUE:    it · en · fr · de · es                                  ║
- * ║                                                                      ║
- * ║  ORDINE CARICAMENTO: DOPO siteguard-client.js                       ║
- * ║  CSS: connection-monitor.css (unica fonte, NO inline injection)     ║
- * ║                                                                      ║
- * ║  DEBUG: window.CM.debug() — simula offline: window.CM.sim('offline')║
- * ╚══════════════════════════════════════════════════════════════════════╝
+ * connection-monitor.js — LuxHaven360 v6.0
+ * Fix: scoring pesato (latenza recente domina), UI solo quando necessario
  */
 (function () {
   'use strict';
 
-  /* ══════════════════════════════════════════════════════
-     CONFIGURAZIONE
-  ══════════════════════════════════════════════════════ */
+  /* ── Configurazione ─────────────────────────────────────────────── */
   var CFG = {
-    /* Intervalli polling (ms) */
-    INTERVAL_NORMAL:   20000,  // 20s — connessione buona
-    INTERVAL_DEGRADED:  5000,  // 5s  — connessione degradata
-    INTERVAL_OFFLINE:   3000,  // 3s  — offline (retry rapido)
+    INTERVAL_NORMAL:   25000,   // 25s — connessione buona
+    INTERVAL_DEGRADED:  6000,   //  6s — connessione degradata
+    INTERVAL_OFFLINE:   3500,   //  3.5s — offline (retry rapido)
+    PROBE_TIMEOUT:      5000,   // timeout singolo probe
+    HISTORY_SIZE:          6,   // campioni conservati
+    MIN_PROBES_TO_ACT:     2,   // probe minimi prima di agire
 
-    /* Probe */
-    PROBE_TIMEOUT:  4000,   // timeout singolo probe
-    HISTORY_SIZE:      8,   // quante misurazioni conservare
-    MIN_PROBES_TO_ACT: 2,   // probe minimi prima di mostrare UI
+    /* Soglie latenza (ms) — solo per probe riusciti */
+    THR_EXCELLENT:  300,   // < 300ms  → ottima
+    THR_GOOD:       900,   // < 900ms  → buona
+    THR_UNSTABLE:  2500,   // < 2500ms → instabile
+    /* ≥ 2500ms o timeout → scarsa */
 
-    /* Soglie latenza (ms) */
-    THR_EXCELLENT:  200,   // < 200ms  → ottima
-    THR_GOOD:       600,   // < 600ms  → buona
-    THR_UNSTABLE:  1500,   // < 1500ms → instabile
-    // ≥ 1500ms → scarsa
+    /* Peso del probe più recente (0–1): 0.6 = 60% del punteggio */
+    RECENT_WEIGHT: 0.60,
 
-    /* Soglie jitter (ms) */
-    JITTER_UNSTABLE: 150,  // varianza > 150ms → instabile
-    JITTER_POOR:     400,  // varianza > 400ms → scarsa
+    /* Fail-rate: solo segnale secondario — non può da solo dichiarare 'poor' */
+    FAIL_DEGRADED:  0.50,   // ≥ 50% fallimenti → instabile (max)
+    /* Se l'ultimo probe è riuscito con latenza buona, fail-rate viene ignorato */
 
-    /* Soglie fail-rate */
-    FAIL_UNSTABLE:  0.25,  // 25% fallimenti → instabile
-    FAIL_POOR:      0.60,  // 60% fallimenti → scarsa
+    RESTORED_SHOW_MS:  5000,   // ms per banner "ripristinata"
 
-    /* UI */
-    BANNER_AUTO_HIDE:   8000,  // ms prima di nascondere banner ripristino
-    DEBOUNCE_UI:         800,  // ms prima di aggiornare UI dopo cambio stato
-    RESTORED_SHOW_MS:   5000,  // quanto mostrare il banner "ripristinata"
-
-    /* Endpoint probe (usati in rotazione) */
     PROBES: [
       'https://www.google.com/favicon.ico',
       'https://www.cloudflare.com/favicon.ico',
@@ -63,13 +36,9 @@
     ]
   };
 
-  /* ══════════════════════════════════════════════════════
-     TRADUZIONI — 5 lingue
-  ══════════════════════════════════════════════════════ */
+  /* ── Traduzioni ─────────────────────────────────────────────────── */
   var TRANS = {
     it: {
-      excellent:     'Connessione Ottima',
-      good:          'Connessione Buona',
       unstable:      'Connessione Instabile',
       poor:          'Connessione Scarsa',
       offline:       'Nessuna Connessione',
@@ -77,13 +46,10 @@
       sub_poor:      'Latenza elevata — la navigazione potrebbe essere lenta',
       sub_offline:   'Impossibile raggiungere Internet. Controlla la tua rete.',
       restored:      'Connessione Ripristinata',
-      sub_restored:  'La connessione è tornata stabile',
-      retry:         'Ricarica Pagina',
-      dismiss:       'Chiudi'
+      sub_restored:  'La connessione è tornata normale',
+      retry:         'Ricarica Pagina', dismiss: 'Chiudi'
     },
     en: {
-      excellent:     'Excellent Connection',
-      good:          'Good Connection',
       unstable:      'Unstable Connection',
       poor:          'Poor Connection',
       offline:       'No Connection',
@@ -92,26 +58,20 @@
       sub_offline:   'Unable to reach the Internet. Check your network.',
       restored:      'Connection Restored',
       sub_restored:  'Your connection is back to normal',
-      retry:         'Reload Page',
-      dismiss:       'Dismiss'
+      retry:         'Reload Page', dismiss: 'Dismiss'
     },
     fr: {
-      excellent:     'Connexion Excellente',
-      good:          'Bonne Connexion',
       unstable:      'Connexion Instable',
       poor:          'Connexion Médiocre',
       offline:       'Aucune Connexion',
       sub_unstable:  'De légers ralentissements peuvent se produire',
       sub_poor:      'Latence élevée — la navigation peut être lente',
-      sub_offline:   'Impossible d\'accéder à Internet. Vérifiez votre réseau.',
+      sub_offline:   "Impossible d'accéder à Internet. Vérifiez votre réseau.",
       restored:      'Connexion Rétablie',
       sub_restored:  'Votre connexion est revenue à la normale',
-      retry:         'Recharger la Page',
-      dismiss:       'Fermer'
+      retry:         'Recharger', dismiss: 'Fermer'
     },
     de: {
-      excellent:     'Ausgezeichnete Verbindung',
-      good:          'Gute Verbindung',
       unstable:      'Instabile Verbindung',
       poor:          'Schlechte Verbindung',
       offline:       'Keine Verbindung',
@@ -120,12 +80,9 @@
       sub_offline:   'Kein Internetzugang. Überprüfen Sie Ihr Netzwerk.',
       restored:      'Verbindung Wiederhergestellt',
       sub_restored:  'Ihre Verbindung ist wieder normal',
-      retry:         'Seite Neu Laden',
-      dismiss:       'Schließen'
+      retry:         'Neu Laden', dismiss: 'Schließen'
     },
     es: {
-      excellent:     'Conexión Excelente',
-      good:          'Buena Conexión',
       unstable:      'Conexión Inestable',
       poor:          'Conexión Deficiente',
       offline:       'Sin Conexión',
@@ -134,203 +91,155 @@
       sub_offline:   'No se puede acceder a Internet. Comprueba tu red.',
       restored:      'Conexión Restablecida',
       sub_restored:  'Tu conexión ha vuelto a la normalidad',
-      retry:         'Recargar Página',
-      dismiss:       'Cerrar'
+      retry:         'Recargar', dismiss: 'Cerrar'
     }
   };
 
-  function t() {
+  function tr() {
     var lang = 'it';
     try { lang = localStorage.getItem('lh360_lang') || 'it'; } catch (_) {}
     return TRANS[lang] || TRANS.it;
   }
 
-  /* ══════════════════════════════════════════════════════
-     1. PROBER — ping multi-endpoint con timeout preciso
-  ══════════════════════════════════════════════════════ */
-  var Prober = (function () {
-    var _probeIdx = 0;
-    var _fetchFn  = null;
+  /* ── SVG Icons ──────────────────────────────────────────────────── */
+  var ICONS = {
+    unstable: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>',
+    poor:     '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#f97316" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 6l7.5 7.5L12 10l3.5 3.5L23 6"/><path d="M1 18l7.5-7.5L12 14l3.5-3.5L23 18" opacity="0.3"/></svg>',
+    offline:  '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="1" y1="1" x2="23" y2="23"/><path d="M16.72 11.06A10.94 10.94 0 0 1 19 12.55"/><path d="M5 12.55a10.94 10.94 0 0 1 5.17-2.39"/><path d="M10.71 5.05A16 16 0 0 1 22.56 9"/><path d="M1.42 9a15.91 15.91 0 0 1 4.7-2.88"/><path d="M8.53 16.11a6 6 0 0 1 6.95 0"/><line x1="12" y1="20" x2="12.01" y2="20"/></svg>',
+    restored: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#22c55e" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>',
+    offline_lg: '<svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><line x1="1" y1="1" x2="23" y2="23"/><path d="M16.72 11.06A10.94 10.94 0 0 1 19 12.55"/><path d="M5 12.55a10.94 10.94 0 0 1 5.17-2.39"/><path d="M10.71 5.05A16 16 0 0 1 22.56 9"/><path d="M1.42 9a15.91 15.91 0 0 1 4.7-2.88"/><path d="M8.53 16.11a6 6 0 0 1 6.95 0"/><line x1="12" y1="20" x2="12.01" y2="20"/></svg>'
+  };
 
-    function _getFetch() {
-      if (!_fetchFn) _fetchFn = window._originalFetch || window.fetch;
-      return _fetchFn;
-    }
+  /* ── Prober ─────────────────────────────────────────────────────── */
+  var _probeIdx = 0;
+  var _fetchFn  = null;
 
-    /**
-     * Esegue un probe e restituisce { latency, success } via callback.
-     * latency = -1 se fallito/timeout.
-     */
-    function probe(cb) {
-      if (!navigator.onLine) { cb({ latency: -1, success: false, reason: 'offline_api' }); return; }
+  function _probe(cb) {
+    if (!navigator.onLine) { cb({ latency: -1, success: false, reason: 'api_offline' }); return; }
+    if (!_fetchFn) _fetchFn = window._originalFetch || window.fetch;
 
-      var endpoint = CFG.PROBES[_probeIdx % CFG.PROBES.length];
-      _probeIdx++;
+    var endpoint = CFG.PROBES[_probeIdx % CFG.PROBES.length];
+    _probeIdx++;
 
-      var ac    = new AbortController();
-      var timer = setTimeout(function () { try { ac.abort(); } catch (_) {} }, CFG.PROBE_TIMEOUT);
-      var start = Date.now();
+    var ac = new AbortController();
+    var timer = setTimeout(function () { try { ac.abort(); } catch (_) {} }, CFG.PROBE_TIMEOUT);
+    var t0 = Date.now();
 
-      _getFetch()(endpoint, {
-        method: 'HEAD',
-        mode:   'no-cors',
-        cache:  'no-store',
-        signal: ac.signal
-      })
+    _fetchFn(endpoint, { method: 'HEAD', mode: 'no-cors', cache: 'no-store', signal: ac.signal })
       .then(function () {
         clearTimeout(timer);
-        cb({ latency: Date.now() - start, success: true });
+        cb({ latency: Date.now() - t0, success: true });
       })
       .catch(function (err) {
         clearTimeout(timer);
-        var reason = err.name === 'AbortError' ? 'timeout' : 'fetch_error';
-        if (reason === 'timeout') {
-          cb({ latency: CFG.PROBE_TIMEOUT, success: false, reason: reason });
+        if (err.name === 'AbortError') {
+          cb({ latency: CFG.PROBE_TIMEOUT, success: false, reason: 'timeout' });
         } else {
-          cb({ latency: -1, success: false, reason: reason });
+          cb({ latency: -1, success: false, reason: 'error' });
         }
       });
-    }
-
-    return { probe: probe };
-  })();
-
-  /* ══════════════════════════════════════════════════════
-     2. ANALYZER — calcola qualità da storico probe
-  ══════════════════════════════════════════════════════ */
-  var Analyzer = (function () {
-
-    /**
-     * history: Array di { latency, success }
-     * Ritorna: 'excellent' | 'good' | 'unstable' | 'poor' | 'offline'
-     */
-    function analyze(history) {
-      if (!history || history.length === 0) return 'unknown';
-
-      var total   = history.length;
-      var failed  = history.filter(function (h) { return !h.success; }).length;
-      var failRate = failed / total;
-
-      /* Tutti falliti → offline o poor */
-      if (failRate === 1) {
-        return !navigator.onLine ? 'offline' : 'poor';
-      }
-
-      /* Successi: calcola latenza media e jitter */
-      var successes = history.filter(function (h) { return h.success && h.latency > 0; });
-      if (successes.length === 0) return 'poor';
-
-      var latencies = successes.map(function (h) { return h.latency; });
-      var avgLat    = latencies.reduce(function (a, b) { return a + b; }, 0) / latencies.length;
-      var minLat    = Math.min.apply(null, latencies);
-      var maxLat    = Math.max.apply(null, latencies);
-      var jitter    = maxLat - minLat;
-
-      /* Criteri qualità */
-      var qualByLatency = avgLat < CFG.THR_EXCELLENT ? 'excellent'
-                        : avgLat < CFG.THR_GOOD      ? 'good'
-                        : avgLat < CFG.THR_UNSTABLE  ? 'unstable'
-                        : 'poor';
-
-      var qualByJitter = jitter < CFG.JITTER_UNSTABLE ? null
-                       : jitter < CFG.JITTER_POOR     ? 'unstable'
-                       : 'poor';
-
-      var qualByFail = failRate < CFG.FAIL_UNSTABLE ? null
-                     : failRate < CFG.FAIL_POOR     ? 'unstable'
-                     : 'poor';
-
-      /* Prende il peggiore tra latenza, jitter e fail-rate */
-      var ORDER = ['excellent', 'good', 'unstable', 'poor', 'offline'];
-      function worst(a, b) {
-        if (!b) return a;
-        return ORDER.indexOf(a) >= ORDER.indexOf(b) ? a : b;
-      }
-
-      var quality = worst(qualByLatency, qualByJitter);
-      quality = worst(quality, qualByFail);
-
-      return quality;
-    }
-
-    return { analyze: analyze };
-  })();
-
-  /* ══════════════════════════════════════════════════════
-     3. STATE MANAGER — debounce + smoothing + intervallo adattivo
-  ══════════════════════════════════════════════════════ */
-  function StateManager(onQualityChange) {
-    this._history      = [];          // ultimi N probe
-    this._state        = 'unknown';   // stato corrente
-    this._pendingState = null;        // stato in attesa di conferma
-    this._pendingCount = 0;           // quante volte confermato
-    this._interval     = null;
-    this._uiTimer      = null;
-    this._probeCount   = 0;
-    this._onChange     = onQualityChange;
-    this._sim          = null;        // simulazione debug
   }
 
-  StateManager.prototype._addProbe = function (result) {
-    this._history.push(result);
-    if (this._history.length > CFG.HISTORY_SIZE) {
-      this._history = this._history.slice(-CFG.HISTORY_SIZE);
+  /* ── Analyzer — scoring pesato (latenza recente domina) ─────────── */
+  function _analyze(history) {
+    if (!history || history.length === 0) return 'unknown';
+
+    var total  = history.length;
+    var failed = history.filter(function (h) { return !h.success; }).length;
+
+    /* Tutti falliti */
+    if (failed === total) return navigator.onLine ? 'poor' : 'offline';
+
+    var successes = history.filter(function (h) { return h.success && h.latency > 0; });
+    if (successes.length === 0) return 'poor';
+
+    /* ── ULTIMO probe riuscito: se recente e buono, dà il beneficio del dubbio ── */
+    var lastSuccess = successes[successes.length - 1];
+    var lastLat     = lastSuccess.latency;
+
+    /* Se l'ultimo probe è eccellente, ignora lo storico di fallimenti */
+    if (lastLat < CFG.THR_EXCELLENT) {
+      /* Verifica solo che NON siano tutti gli altri falliti (≥ 80%) */
+      var failRate = failed / total;
+      if (failRate < 0.80) return 'excellent';
     }
+
+    /* ── Scoring pesato: 60% ultimo probe, 40% media storica ── */
+    var lats    = successes.map(function (h) { return h.latency; });
+    var avgHist = lats.reduce(function (a, b) { return a + b; }, 0) / lats.length;
+    var weighted = lastLat * CFG.RECENT_WEIGHT + avgHist * (1 - CFG.RECENT_WEIGHT);
+
+    /* Qualità dalla latenza pesata */
+    var qualLat = weighted < CFG.THR_EXCELLENT ? 'excellent'
+                : weighted < CFG.THR_GOOD      ? 'good'
+                : weighted < CFG.THR_UNSTABLE  ? 'unstable'
+                : 'poor';
+
+    /* Fail-rate: segnale secondario — può solo peggiorare di un livello */
+    var failRate = failed / total;
+    var ORDER    = ['excellent', 'good', 'unstable', 'poor', 'offline'];
+    if (failRate >= CFG.FAIL_DEGRADED && qualLat !== 'poor') {
+      var idx = ORDER.indexOf(qualLat);
+      qualLat = ORDER[Math.min(idx + 1, 3)]; // max 'poor'
+    }
+
+    return qualLat;
+  }
+
+  /* ── State Manager ──────────────────────────────────────────────── */
+  function StateManager(onChange) {
+    this._history      = [];
+    this._state        = 'unknown';
+    this._pendingState = null;
+    this._pendingCount = 0;
+    this._interval     = null;
+    this._probeCount   = 0;
+    this._onChange     = onChange;
+    this._sim          = null;
+  }
+
+  StateManager.prototype._addProbe = function (r) {
+    this._history.push(r);
+    if (this._history.length > CFG.HISTORY_SIZE)
+      this._history = this._history.slice(-CFG.HISTORY_SIZE);
   };
 
-  StateManager.prototype._scheduleNext = function (quality) {
-    var self = this;
-    var delay = quality === 'excellent' || quality === 'good'
-              ? CFG.INTERVAL_NORMAL
-              : quality === 'offline'
-              ? CFG.INTERVAL_OFFLINE
-              : CFG.INTERVAL_DEGRADED;
-
+  StateManager.prototype._scheduleNext = function (q) {
     clearInterval(this._interval);
+    var self  = this;
+    var delay = (q === 'excellent' || q === 'good') ? CFG.INTERVAL_NORMAL
+              : q === 'offline' ? CFG.INTERVAL_OFFLINE
+              : CFG.INTERVAL_DEGRADED;
     this._interval = setInterval(function () { self._doProbe(); }, delay);
   };
 
   StateManager.prototype._doProbe = function () {
-    if (this._sim) {
-      this._onResult({ latency: -1, success: false, reason: 'simulated' }, true);
-      return;
-    }
     var self = this;
-    Prober.probe(function (result) { self._onResult(result, false); });
+    if (this._sim) { this._onResult({ latency: -1, success: false }, true); return; }
+    _probe(function (r) { self._onResult(r, false); });
   };
 
-  StateManager.prototype._onResult = function (result, isSim) {
+  StateManager.prototype._onResult = function (r, isSim) {
     this._probeCount++;
-    if (!isSim) this._addProbe(result);
-
-    /* Non agisce finché non ha abbastanza campioni */
+    if (!isSim) this._addProbe(r);
     if (this._history.length < CFG.MIN_PROBES_TO_ACT && !isSim) return;
 
-    var quality = isSim
-      ? (this._sim || 'offline')
-      : Analyzer.analyze(this._history);
+    var q = isSim ? (this._sim || 'offline') : _analyze(this._history);
 
-    /* Offline immediato: nessun debounce */
-    if (quality === 'offline' || !navigator.onLine) {
-      this._commitState('offline');
-      return;
-    }
+    /* Offline: azione immediata */
+    if (q === 'offline' || !navigator.onLine) { this._commit('offline'); return; }
 
-    /* Debounce: richiede 2 probe consecutivi con lo stesso stato degradato */
-    if (quality !== this._state) {
-      if (quality === this._pendingState) {
+    /* Debounce: degradamenti richiedono 2 conferme consecutive */
+    if (q !== this._state) {
+      if (q === this._pendingState) {
         this._pendingCount++;
       } else {
-        this._pendingState = quality;
+        this._pendingState = q;
         this._pendingCount = 1;
       }
-      /* Eccellente/buona: accetta subito. Degradata: richiede conferma */
-      var threshold = (quality === 'excellent' || quality === 'good') ? 1 : 2;
-      if (this._pendingCount >= threshold) {
-        this._commitState(quality);
-      }
+      var need = (q === 'excellent' || q === 'good') ? 1 : 2;
+      if (this._pendingCount >= need) this._commit(q);
     } else {
-      /* Stesso stato → reset pending */
       this._pendingState = null;
       this._pendingCount = 0;
     }
@@ -338,36 +247,29 @@
     this._scheduleNext(this._state);
   };
 
-  StateManager.prototype._commitState = function (quality) {
+  StateManager.prototype._commit = function (q) {
     var prev = this._state;
-    this._state        = quality;
+    this._state        = q;
     this._pendingState = null;
     this._pendingCount = 0;
-
-    if (quality !== prev) {
-      this._onChange(quality, prev, this._getLastLatency());
+    if (q !== prev) {
+      var lat = null;
+      var s = this._history.filter(function (h) { return h.success; });
+      if (s.length) lat = s[s.length - 1].latency;
+      this._onChange(q, prev, lat);
     }
-    this._scheduleNext(quality);
-  };
-
-  StateManager.prototype._getLastLatency = function () {
-    var succ = this._history.filter(function (h) { return h.success; });
-    if (succ.length === 0) return null;
-    return succ[succ.length - 1].latency;
+    this._scheduleNext(q);
   };
 
   StateManager.prototype.start = function () {
     var self = this;
-    /* Probe iniziale immediato */
-    Prober.probe(function (r) { self._onResult(r, false); });
-    /* Secondo probe dopo 2s per avere subito 2 campioni */
+    _probe(function (r) { self._onResult(r, false); });
+    /* Secondo probe dopo 2s per raggiungere MIN_PROBES_TO_ACT rapidamente */
     setTimeout(function () {
-      if (self._history.length < 2) {
-        Prober.probe(function (r) { self._onResult(r, false); });
-      }
+      if (self._history.length < 2) _probe(function (r) { self._onResult(r, false); });
     }, 2000);
-    /* Intervallo base */
-    this._interval = setInterval(function () { self._doProbe(); }, CFG.INTERVAL_NORMAL);
+    var self2 = this;
+    this._interval = setInterval(function () { self2._doProbe(); }, CFG.INTERVAL_NORMAL);
   };
 
   StateManager.prototype.stop = function () {
@@ -375,256 +277,184 @@
     this._interval = null;
   };
 
-  StateManager.prototype.simulate = function (state) {
-    this._sim = state || null;
-    if (state) this._onResult({ latency: -1, success: false, reason: 'simulated' }, true);
-    else       { this._history = []; this._doProbe(); }
+  StateManager.prototype.simulate = function (s) {
+    this._sim = s || null;
+    if (s) this._onResult({ latency: -1, success: false }, true);
+    else   { this._history = []; this._doProbe(); }
   };
 
-  /* ══════════════════════════════════════════════════════
-     4. UI CONTROLLER — pill + banner + overlay
-  ══════════════════════════════════════════════════════ */
+  /* ── UI ─────────────────────────────────────────────────────────── */
   function UI() {
-    this._pill    = null;
-    this._banner  = null;
-    this._overlay = null;
+    this._banner       = null;
+    this._overlay      = null;
     this._bannerTimer  = null;
-    this._dismissedFor = null;  // stato per cui l'utente ha chiuso il banner
-    this._currentState = null;
+    this._retryTimer   = null;
+    this._dismissed    = null;  // stato per cui l'utente ha chiuso
+    this._cur          = null;
     this._build();
   }
 
   UI.prototype._build = function () {
-    /* ── Pill ── */
-    var pill = document.createElement('div');
-    pill.id  = 'cm-pill';
-    pill.className = 'cm-pill';
-    pill.innerHTML =
-      '<span class="cm-pill-dot"></span>' +
-      '<span class="cm-pill-label"></span>' +
-      '<span class="cm-pill-ms"></span>';
-    document.body.appendChild(pill);
-    this._pill = pill;
-
-    /* ── Banner ── */
-    var banner = document.createElement('div');
-    banner.id  = 'cm-banner';
-    banner.className = 'cm-banner';
-    banner.innerHTML =
+    /* Banner */
+    var b = document.createElement('div');
+    b.id = 'cm-banner';
+    b.className = 'cm-banner';
+    b.innerHTML =
       '<div class="cm-banner-inner">' +
-        '<span class="cm-banner-icon"></span>' +
+        '<div class="cm-banner-icon" id="cm-b-icon"></div>' +
         '<div class="cm-banner-body">' +
-          '<div class="cm-banner-title"></div>' +
-          '<div class="cm-banner-sub"></div>' +
+          '<div class="cm-banner-title" id="cm-b-title"></div>' +
+          '<div class="cm-banner-sub" id="cm-b-sub"></div>' +
         '</div>' +
-        '<button class="cm-banner-close" aria-label="Chiudi">' +
-          '<svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">' +
-            '<line x1="1" y1="1" x2="13" y2="13"/><line x1="13" y1="1" x2="1" y2="13"/>' +
+        '<button class="cm-banner-close" id="cm-b-close" aria-label="Chiudi">' +
+          '<svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">' +
+            '<line x1="1" y1="1" x2="11" y2="11"/><line x1="11" y1="1" x2="1" y2="11"/>' +
           '</svg>' +
         '</button>' +
       '</div>';
     var self = this;
-    banner.querySelector('.cm-banner-close').addEventListener('click', function () {
-      self._dismissedFor = self._currentState;
+    b.querySelector('#cm-b-close').addEventListener('click', function () {
+      self._dismissed = self._cur;
       self._hideBanner();
     });
-    document.body.appendChild(banner);
-    this._banner = banner;
+    document.body.appendChild(b);
+    this._banner = b;
 
-    /* ── Overlay offline ── */
-    var overlay = document.createElement('div');
-    overlay.id  = 'cm-overlay';
-    overlay.className = 'cm-overlay';
-    overlay.innerHTML =
+    /* Overlay offline */
+    var ov = document.createElement('div');
+    ov.id = 'cm-overlay';
+    ov.className = 'cm-overlay';
+    ov.innerHTML =
       '<div class="cm-offline-card">' +
-        '<div class="cm-offline-icon">📡</div>' +
+        '<div class="cm-offline-icon" id="cm-ov-icon">' + ICONS.offline_lg + '</div>' +
         '<div class="cm-offline-title" id="cm-ov-title"></div>' +
         '<p class="cm-offline-text" id="cm-ov-text"></p>' +
         '<div class="cm-retry-bar"><div class="cm-retry-fill" id="cm-retry-fill"></div></div>' +
         '<button class="cm-offline-btn" id="cm-ov-btn"></button>' +
       '</div>';
-    overlay.querySelector('.cm-offline-btn').addEventListener('click', function () {
-      window.location.reload();
-    });
-    document.body.appendChild(overlay);
-    this._overlay = overlay;
+    ov.querySelector('#cm-ov-btn').addEventListener('click', function () { window.location.reload(); });
+    document.body.appendChild(ov);
+    this._overlay = ov;
   };
 
-  /* Aggiorna l'intera UI in base al nuovo stato */
-  UI.prototype.update = function (quality, prevQuality, latencyMs) {
-    var self = this;
-    this._currentState = quality;
-    var tr = t();
+  UI.prototype.update = function (q, prev, latMs) {
+    this._cur = q;
+    var t = tr();
 
-    /* Mappa qualità → etichette e icone */
-    var INFO = {
-      excellent: { icon: '●',  label: tr.excellent,  sub: null,           pill: false },
-      good:      { icon: '●',  label: tr.good,        sub: null,           pill: true  },
-      unstable:  { icon: '▲',  label: tr.unstable,    sub: tr.sub_unstable, pill: true  },
-      poor:      { icon: '■',  label: tr.poor,        sub: tr.sub_poor,    pill: true  },
-      offline:   { icon: '✕',  label: tr.offline,     sub: tr.sub_offline, pill: true  }
-    };
-    var info = INFO[quality] || INFO.unstable;
-
-    /* ── Pill ── */
-    this._pill.className = 'cm-pill cm-' + quality;
-    if (info.pill) {
-      this._pill.querySelector('.cm-pill-label').textContent = info.label;
-      this._pill.querySelector('.cm-pill-ms').textContent =
-        (latencyMs && latencyMs > 0) ? latencyMs + 'ms' : '';
-      /* Piccolo delay per animazione */
-      setTimeout(function () { self._pill.classList.add('cm-visible'); }, 50);
-    } else {
-      this._pill.classList.remove('cm-visible');
-    }
-
-    /* ── Overlay offline ── */
-    if (quality === 'offline') {
+    if (q === 'offline') {
       this._hideBanner();
-      this._showOverlay(tr);
-    } else {
-      this._hideOverlay();
+      this._showOverlay(t);
+      return;
+    }
 
-      /* ── Banner ── */
-      if (quality === 'unstable' || quality === 'poor') {
-        /* Non riaprire se l'utente ha chiuso questo stesso stato */
-        if (this._dismissedFor !== quality) {
-          this._showBanner(quality, info, tr, latencyMs);
-        }
-      } else if (quality === 'excellent' || quality === 'good') {
-        this._hideBanner();
-        /* Banner ripristino solo se si torna da offline/poor */
-        if (prevQuality === 'offline' || prevQuality === 'poor') {
-          this._showRestoredBanner(tr);
-        }
-        this._dismissedFor = null;
+    this._hideOverlay();
+
+    if (q === 'unstable' || q === 'poor') {
+      /* Non riaprire se l'utente ha già chiuso questo stesso stato */
+      if (this._dismissed !== q) this._showBanner(q, latMs, t);
+    } else {
+      /* excellent o good */
+      this._hideBanner();
+      if (prev === 'offline' || prev === 'poor' || prev === 'unstable') {
+        this._showRestored(t);
       }
+      this._dismissed = null;
     }
   };
 
-  UI.prototype._showBanner = function (quality, info, tr, latencyMs) {
+  UI.prototype._showBanner = function (q, latMs, t) {
     clearTimeout(this._bannerTimer);
     var b = this._banner;
-    b.className = 'cm-banner cm-' + quality;
-    b.querySelector('.cm-banner-icon').textContent = info.icon;
-    b.querySelector('.cm-banner-title').textContent = info.label;
-    var subText = info.sub || '';
-    if (latencyMs && latencyMs > 0) subText += (subText ? ' · ' : '') + latencyMs + ' ms';
-    b.querySelector('.cm-banner-sub').textContent = subText;
-    /* reset visibilità */
+    b.className = 'cm-banner cm-' + q;
+
+    b.querySelector('#cm-b-icon').innerHTML = ICONS[q] || '';
+    b.querySelector('#cm-b-title').textContent = t[q] || q;
+
+    var sub = t['sub_' + q] || '';
+    if (latMs && latMs > 0) sub += (sub ? ' · ' : '') + latMs + ' ms';
+    b.querySelector('#cm-b-sub').textContent = sub;
+
     b.classList.remove('cm-visible');
-    var self = this;
-    setTimeout(function () { b.classList.add('cm-visible'); }, 30);
+    setTimeout(function () { b.classList.add('cm-visible'); }, 20);
   };
 
-  UI.prototype._showRestoredBanner = function (tr) {
+  UI.prototype._showRestored = function (t) {
     var b = this._banner;
     b.className = 'cm-banner cm-restored';
-    b.querySelector('.cm-banner-icon').textContent = '✓';
-    b.querySelector('.cm-banner-title').textContent = tr.restored;
-    b.querySelector('.cm-banner-sub').textContent   = tr.sub_restored;
+    b.querySelector('#cm-b-icon').innerHTML = ICONS.restored;
+    b.querySelector('#cm-b-title').textContent = t.restored || 'Connessione Ripristinata';
+    b.querySelector('#cm-b-sub').textContent   = t.sub_restored || '';
     b.classList.remove('cm-visible');
+    setTimeout(function () { b.classList.add('cm-visible'); }, 20);
     var self = this;
-    setTimeout(function () { b.classList.add('cm-visible'); }, 30);
     clearTimeout(this._bannerTimer);
     this._bannerTimer = setTimeout(function () { self._hideBanner(); }, CFG.RESTORED_SHOW_MS);
   };
 
   UI.prototype._hideBanner = function () {
     this._banner.classList.remove('cm-visible');
+    clearTimeout(this._bannerTimer);
   };
 
-  UI.prototype._showOverlay = function (tr) {
-    var ov = this._overlay;
-    document.getElementById('cm-ov-title').textContent = tr.offline;
-    document.getElementById('cm-ov-text').textContent  = tr.sub_offline;
-    document.getElementById('cm-ov-btn').textContent   = '↻ ' + tr.retry;
-    ov.classList.add('cm-visible');
-    this._startRetryBar();
+  UI.prototype._showOverlay = function (t) {
+    document.getElementById('cm-ov-title').textContent = t.offline || 'Nessuna Connessione';
+    document.getElementById('cm-ov-text').textContent  = t.sub_offline || '';
+    document.getElementById('cm-ov-btn').textContent   = '↻  ' + (t.retry || 'Ricarica');
+    this._overlay.classList.add('cm-visible');
+    this._startRetry();
   };
 
   UI.prototype._hideOverlay = function () {
     this._overlay.classList.remove('cm-visible');
-    this._stopRetryBar();
+    this._stopRetry();
   };
 
-  /* Barra di progresso retry — visual feedback del prossimo tentativo */
-  UI.prototype._startRetryBar = function () {
-    var fill = document.getElementById('cm-retry-fill');
+  UI.prototype._startRetry = function () {
+    var fill  = document.getElementById('cm-retry-fill');
     if (!fill) return;
-    var self = this;
-    var start = Date.now();
+    var t0    = Date.now();
     var total = CFG.INTERVAL_OFFLINE;
-    clearInterval(this._retryBarTimer);
-    fill.style.width = '0%';
-    this._retryBarTimer = setInterval(function () {
-      var pct = Math.min(100, ((Date.now() - start) / total) * 100);
+    this._stopRetry();
+    this._retryTimer = setInterval(function () {
+      var pct = Math.min(100, ((Date.now() - t0) / total) * 100);
       fill.style.width = pct + '%';
-      if (pct >= 100) {
-        start = Date.now();
-        fill.style.transition = 'none';
-        fill.style.width = '0%';
-        /* micro-reflow per ripristinare transition */
-        void fill.offsetHeight;
-        fill.style.transition = 'width 0.1s linear';
-      }
+      if (pct >= 100) { t0 = Date.now(); fill.style.transition = 'none'; fill.style.width = '0%'; void fill.offsetHeight; fill.style.transition = 'width 0.1s linear'; }
     }, 80);
   };
 
-  UI.prototype._stopRetryBar = function () {
-    clearInterval(this._retryBarTimer);
+  UI.prototype._stopRetry = function () {
+    clearInterval(this._retryTimer);
     var fill = document.getElementById('cm-retry-fill');
     if (fill) fill.style.width = '0%';
   };
 
   UI.prototype.updateTexts = function () {
-    if (this._currentState) this.update(this._currentState, null, null);
+    if (this._cur) this.update(this._cur, null, null);
   };
 
-  UI.prototype.destroy = function () {
-    clearTimeout(this._bannerTimer);
-    clearInterval(this._retryBarTimer);
-    ['cm-pill','cm-banner','cm-overlay'].forEach(function (id) {
-      var el = document.getElementById(id);
-      if (el && el.parentNode) el.parentNode.removeChild(el);
-    });
-  };
-
-  /* ══════════════════════════════════════════════════════
-     5. CONNECTION MONITOR — orchestratore principale
-  ══════════════════════════════════════════════════════ */
+  /* ── Connection Monitor — orchestratore ─────────────────────────── */
   function ConnectionMonitor() {
     var self = this;
     this._ui = new UI();
+    this._sm = new StateManager(function (q, prev, lat) { self._ui.update(q, prev, lat); });
 
-    this._sm = new StateManager(function (quality, prev, latency) {
-      self._ui.update(quality, prev, latency);
-    });
-
-    /* Browser events — reazione immediata */
     window.addEventListener('offline', function () {
-      self._sm._onResult({ latency: -1, success: false, reason: 'browser_event' }, false);
+      self._sm._onResult({ latency: -1, success: false, reason: 'browser' }, false);
     });
 
     window.addEventListener('online', function () {
-      /* Probe subito dopo il segnale online */
       setTimeout(function () {
         self._sm._history = [];
         self._sm._doProbe();
       }, 300);
     });
 
-    /* Ritorno in foreground */
     document.addEventListener('visibilitychange', function () {
       if (!document.hidden) self._sm._doProbe();
     });
 
-    /* Cambio lingua */
-    document.addEventListener('languageChanged', function () {
-      self._ui.updateTexts();
-    });
+    document.addEventListener('languageChanged', function () { self._ui.updateTexts(); });
 
-    /* BFCache */
     window.addEventListener('pagehide', function () { self._sm.stop(); }, { capture: true });
     window.addEventListener('pageshow', function (e) {
       if (!e.persisted) return;
@@ -635,36 +465,19 @@
     this._sm.start();
   }
 
-  /* API debug pubblica */
-  ConnectionMonitor.prototype.debug = function () {
-    console.table(this._sm._history);
-    console.log('State:', this._sm._state, '| Probes:', this._sm._probeCount);
-  };
+  /* API pubblica */
+  ConnectionMonitor.prototype.debug    = function () { console.table(this._sm._history); console.log('State:', this._sm._state); };
+  ConnectionMonitor.prototype.simulate = function (s) { this._sm.simulate(s); };
+  ConnectionMonitor.prototype.dismiss  = function () { this._ui._dismissed = this._ui._cur; this._ui._hideBanner(); };
 
-  ConnectionMonitor.prototype.simulate = function (state) {
-    this._sm.simulate(state);
-  };
-
-  ConnectionMonitor.prototype.dismiss = function () {
-    this._ui._dismissedFor = this._ui._currentState;
-    this._ui._hideBanner();
-  };
-
-  /* ══════════════════════════════════════════════════════
-     INIZIALIZZAZIONE
-  ══════════════════════════════════════════════════════ */
-  var CM;
-
+  /* ── Init ───────────────────────────────────────────────────────── */
   function _init() {
-    CM = new ConnectionMonitor();
-    window.CM                    = CM;
-    window.luxConnectionMonitor  = CM;  // compat. con versioni precedenti
+    var cm = new ConnectionMonitor();
+    window.CM = cm;
+    window.luxConnectionMonitor = cm;
   }
 
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', _init);
-  } else {
-    _init();
-  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', _init);
+  else _init();
 
 })();
