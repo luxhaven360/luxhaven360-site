@@ -6713,15 +6713,16 @@ function initApp() {
         if (!disc) return;
         const ts = r.last_reply_ts ? new Date(r.last_reply_ts).getTime() : null;
         if (!ts) return;
-        // Aggiorna lastReplyTs su tutti i client — calcolo relativo dinamico garantito
-        disc.lastReplyTs = ts;
-        disc.lastReply = (r.last_reply_author || '') + ' · ' + _notifRelTime(ts);
-        // Aggiorna il DOM direttamente nella lista Discussioni
-        const el = document.querySelector(`.discussion-thread[onclick="openThread(${disc.id})"]`);
-        if (el) {
-          const lastReplySpan = el.querySelector('.thread-last-reply span');
-          if (lastReplySpan) {
-            lastReplySpan.innerHTML = disc.lastReply;
+        // Aggiorna solo se il timestamp RT è più recente del dato locale.
+        // Se locale è più recente (post-eliminazione), il dato RT è stale → ignora.
+        if (ts > (disc.lastReplyTs || 0)) {
+          disc.lastReplyTs = ts;
+          disc.lastReply = (r.last_reply_author || '') + ' · ' + _notifRelTime(ts);
+          // Aggiorna il DOM direttamente nella lista Discussioni
+          const el = document.querySelector(`.discussion-thread[onclick="openThread(${disc.id})"]`);
+          if (el) {
+            const lastReplySpan = el.querySelector('.thread-last-reply span');
+            if (lastReplySpan) lastReplySpan.innerHTML = disc.lastReply;
           }
         }
       }).subscribe();
@@ -8971,38 +8972,27 @@ async function _loadThreadLastRepliesFromSupabase() {
     data.forEach(r => {
       const disc = DISCUSSIONS.find(d => String(d.id) === String(r.thread_id));
       if (!disc) return;
-      const ts = r.last_reply_ts ? new Date(r.last_reply_ts).getTime() : null;
-      if (ts && ts !== disc.lastReplyTs) {
-        disc.lastReplyTs = ts;
-        disc.lastReply = `${r.last_reply_author || ''} · ${_notifRelTime(ts)}`;
+      const sbTs = r.last_reply_ts ? new Date(r.last_reply_ts).getTime() : null;
+      if (!sbTs) return;
+      // Non sovrascrivere se il dato locale è più recente (es. dopo un'eliminazione locale).
+      // Quando si elimina una reply, disc.lastReplyTs viene impostato al ts della reply
+      // precedente (più vecchio). Supabase ha ancora il ts della reply eliminata (più recente).
+      // Se sovrascrivessimo, mostreremmo di nuovo il dato della reply eliminata.
+      // Soluzione: sovrascriviamo solo se il timestamp Supabase è UGUALE a disc.lastReplyTs
+      // oppure se disc.lastReplyTs non è impostato.
+      if (!disc.lastReplyTs || sbTs === disc.lastReplyTs) {
+        // Stesso valore → aggiorna solo il testo (es. "Ora" → "5 min fa")
+        disc.lastReplyTs = sbTs;
+        disc.lastReply = `${r.last_reply_author || ''} · ${_notifRelTime(sbTs)}`;
         changed = true;
       }
-    });
-    if (changed) renderDiscussions();
-  } catch(_e) {}
-}
-
-/* ══════════════════════════════════════════════
-   THREAD LAST REPLIES — timestamp condiviso via Supabase
-   Risolve: "Ora" congelato per l'autore del thread
-═══════════════════════════════════════════════ */
-async function _loadThreadLastRepliesFromSupabase() {
-  if (!_sbReady) return;
-  try {
-    const { data, error } = await _sb
-      .from('thread_last_replies')
-      .select('thread_id, last_reply_ts, last_reply_author');
-    if (error || !Array.isArray(data)) return;
-    let changed = false;
-    data.forEach(r => {
-      const disc = DISCUSSIONS.find(d => String(d.id) === String(r.thread_id));
-      if (!disc) return;
-      const ts = r.last_reply_ts ? new Date(r.last_reply_ts).getTime() : null;
-      if (ts && ts !== disc.lastReplyTs) {
-        disc.lastReplyTs = ts;
-        disc.lastReply = r.last_reply_author + ' · ' + _notifRelTime(ts);
+      // Se sbTs > disc.lastReplyTs → nuova reply pubblicata → aggiorna
+      else if (sbTs > disc.lastReplyTs) {
+        disc.lastReplyTs = sbTs;
+        disc.lastReply = `${r.last_reply_author || ''} · ${_notifRelTime(sbTs)}`;
         changed = true;
       }
+      // Se sbTs < disc.lastReplyTs → locale è più aggiornato (dopo eliminazione) → ignora
     });
     if (changed) renderDiscussions();
   } catch(_e) {}
@@ -15839,6 +15829,24 @@ async function deleteOwnReply(replyId, btnEl) {
   renderThreadMessages(currentThreadId);
   _updateThreadDetailHeader(currentThreadId); // aggiorna contatore nell'header
   showToast('green','🗑','Risposta eliminata.');
+  // Aggiorna thread_last_replies su Supabase con il nuovo ultimo messaggio valido
+  // Questo garantisce che polling e RT degli altri client abbiano il dato corretto
+  if (_sbReady && _sb && currentThreadId) {
+    const _newLastNonOp = [...msgs].reverse().find(m => !m.isOp);
+    if (_newLastNonOp && _newLastNonOp.ts) {
+      _sb.from('thread_last_replies').upsert({
+        thread_id:          String(currentThreadId),
+        last_reply_ts:      new Date(_newLastNonOp.ts).toISOString(),
+        last_reply_author:  (_newLastNonOp.author || '').split(' ')[0]
+      }, { onConflict: 'thread_id' }).then(() => {}).catch(() => {});
+    } else {
+      // Nessuna reply rimasta (solo OP) → svuota la riga Supabase
+      _sb.from('thread_last_replies')
+        .delete().eq('thread_id', String(currentThreadId))
+        .then(() => {}).catch(() => {});
+    }
+  }
+
   // Propaga a tutti i client via Supabase content_removals RT
   // Il listener content_removals_rt rimuove la reply dal THREAD_MESSAGES di ogni client
   if (typeof _writeRemovalToSupabase === 'function') {
