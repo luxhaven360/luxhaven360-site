@@ -11003,14 +11003,21 @@ function renderChatMessages(messages, partnerEmail) {
     const _msgReportBtn = _canReportMsg
       ? `<button onclick="event.stopPropagation();reportDmMessage('${msg.id||''}','${msg.from||''}',this)" style="background:none;border:none;color:var(--red);opacity:0;cursor:pointer;font-size:0.6rem;padding:2px 4px;transition:opacity 0.2s;" class="dm-report-btn" title="Segnala messaggio">🚩</button>`
       : '';
+    // Pulsante elimina: solo per messaggi inviati, entro 15 minuti
+    const _msgTs = msg.ts ? new Date(msg.ts).getTime() : 0;
+    const _canDeleteMsg = isSent && msg.id && (!_msgTs || (Date.now() - _msgTs) < _DELETE_OWN_LIMIT_MS);
+    const _msgDeleteBtn = _canDeleteMsg
+      ? `<button onclick="event.stopPropagation();deleteOwnDmMessage('${msg.id}',this)" style="background:none;border:none;color:var(--red);opacity:0;cursor:pointer;font-size:0.6rem;padding:2px 4px;transition:opacity 0.2s;" class="dm-delete-btn" title="Elimina messaggio">🗑</button>`
+      : '';
+    const _hasHoverBtn = _canReportMsg || _canDeleteMsg;
 
     html += `
-      <div class="msg ${isSent ? 'sent' : 'received'}" ${_canReportMsg ? 'onmouseenter="this.querySelector(\'.dm-report-btn\')&&(this.querySelector(\'.dm-report-btn\').style.opacity=\'0.6\')" onmouseleave="this.querySelector(\'.dm-report-btn\')&&(this.querySelector(\'.dm-report-btn\').style.opacity=\'0\')"' : ''}>
+      <div class="msg ${isSent ? 'sent' : 'received'}" ${_hasHoverBtn ? `onmouseenter="this.querySelectorAll('.dm-report-btn,.dm-delete-btn').forEach(function(b){b.style.opacity='0.6'})" onmouseleave="this.querySelectorAll('.dm-report-btn,.dm-delete-btn').forEach(function(b){b.style.opacity='0'})"` : ''}>
         ${!isSent ? `<div class="msg-avatar" style="${avatarStyle}${avatarVisible}">${avatarInitial}</div>` : ''}
         <div class="msg-bubble-wrap">
           ${mediaHtml}
           ${msg.text ? `<div class="msg-bubble" data-translatable="true" data-content-lang="${msg.lang || 'it'}" data-content-id="msg-${msg.id||''}">${escapeHtml(msg.text)}</div>` : ''}
-          <div class="msg-time" style="display:flex;align-items:center;gap:0.4rem;">${_msgReportBtn}${timeLabel}</div>
+          <div class="msg-time" style="display:flex;align-items:center;gap:0.4rem;">${_msgDeleteBtn}${_msgReportBtn}${timeLabel}</div>
         </div>
         ${isSent ? `<div class="msg-avatar" style="${avatarStyle}${avatarVisible}">${avatarInitial}</div>` : ''}
       </div>`;
@@ -11502,10 +11509,12 @@ function appendMessageToChat(msg, isSent) {
   const partnerRole = partnerInfo.role === 'team';
   const el = document.createElement('div');
   const _appendCanReport = !isSent && !partnerRole && _canReport(partnerInfo.name || '', false);
+  const _appendMsgTs = msg.ts ? new Date(msg.ts).getTime() : 0;
+  const _appendCanDelete = isSent && msg.id && (!_appendMsgTs || (Date.now() - _appendMsgTs) < _DELETE_OWN_LIMIT_MS);
   el.className = `msg ${isSent ? 'sent' : 'received'}`;
-  if (_appendCanReport) {
-    el.onmouseenter = function() { const b = this.querySelector('.dm-report-btn'); if (b) b.style.opacity = '0.6'; };
-    el.onmouseleave = function() { const b = this.querySelector('.dm-report-btn'); if (b) b.style.opacity = '0'; };
+  if (_appendCanReport || _appendCanDelete) {
+    el.onmouseenter = function() { this.querySelectorAll('.dm-report-btn,.dm-delete-btn').forEach(function(b){b.style.opacity='0.6';}); };
+    el.onmouseleave = function() { this.querySelectorAll('.dm-report-btn,.dm-delete-btn').forEach(function(b){b.style.opacity='0';}); };
   }
   const avStyle = isSent
     ? 'color:var(--gold);border-color:var(--gold-dim);'
@@ -11515,12 +11524,15 @@ function appendMessageToChat(msg, isSent) {
   const _appendReportBtn = _appendCanReport
     ? `<button onclick="event.stopPropagation();reportDmMessage('${msg.id||''}','${msg.from||''}',this)" style="background:none;border:none;color:var(--red);opacity:0;cursor:pointer;font-size:0.6rem;padding:2px 4px;transition:opacity 0.2s;" class="dm-report-btn" title="Segnala messaggio">🚩</button>`
     : '';
+  const _appendDeleteBtn = _appendCanDelete
+    ? `<button onclick="event.stopPropagation();deleteOwnDmMessage('${msg.id}',this)" style="background:none;border:none;color:var(--red);opacity:0;cursor:pointer;font-size:0.6rem;padding:2px 4px;transition:opacity 0.2s;" class="dm-delete-btn" title="Elimina messaggio">🗑</button>`
+    : '';
   el.innerHTML = `
     ${!isSent ? `<div class="msg-avatar" style="${avStyle}">${avInitial}</div>` : ''}
     <div class="msg-bubble-wrap">
       ${mediaHtml}
       ${msg.text ? `<div class="msg-bubble" data-translatable="true" data-content-lang="${msg.lang || 'it'}" data-content-id="msg-${msg.id||Date.now()}">${escapeHtml(msg.text)}</div>` : ''}
-      <div class="msg-time" style="display:flex;align-items:center;gap:0.4rem;">${_appendReportBtn}${timeLabel}</div>
+      <div class="msg-time" style="display:flex;align-items:center;gap:0.4rem;">${_appendDeleteBtn}${_appendReportBtn}${timeLabel}</div>
     </div>
     ${isSent ? `<div class="msg-avatar" style="${avStyle}">${avInitial}</div>` : ''}`;
   messagesEl.appendChild(el);
@@ -15512,6 +15524,47 @@ async function deleteEventAdmin(eventId) {
 function switchModTab(tab) {
   _modTabActive = tab;
   renderModeration();
+}
+
+/* ══════════════════════════════════════════════════════════════
+   ELIMINAZIONE MESSAGGIO PRIVATO (entro 15 minuti)
+   Rimuove il messaggio dalla cache locale, dal DOM e da Supabase.
+   La DELETE su Supabase propaga la rimozione all'altro client via RT.
+══════════════════════════════════════════════════════════════ */
+async function deleteOwnDmMessage(msgId, btnEl) {
+  if (!msgId || !currentConvPartnerEmail) return;
+  const cacheKey = currentConvPartnerEmail.toLowerCase();
+  const msgs = (_msgCache && _msgCache[cacheKey]) ? _msgCache[cacheKey] : [];
+  const idx = msgs.findIndex(m => String(m.id) === String(msgId));
+
+  if (idx === -1) { showToast('amber', 'ℹ', 'Messaggio non trovato.'); return; }
+  const msg = msgs[idx];
+
+  // Verifica finestra 15 minuti
+  const ts = msg.ts ? new Date(msg.ts).getTime() : 0;
+  if (ts && (Date.now() - ts) > _DELETE_OWN_LIMIT_MS) {
+    showToast('amber', '⏱', 'Puoi eliminare solo entro 15 minuti dalla pubblicazione.');
+    return;
+  }
+
+  // Rimuovi dalla cache in-memory
+  msgs.splice(idx, 1);
+  if (_msgCache) _msgCache[cacheKey] = msgs;
+
+  // Aggiorna DOM: ri-renderizza la chat
+  renderChatMessages(msgs, currentConvPartnerEmail);
+  showToast('green', '🗑', 'Messaggio eliminato.');
+
+  // Propaga via Supabase DELETE — il listener DELETE in sbListenMessages
+  // lo riceverà sull'altro client e rimuoverà dal DOM in tempo reale.
+  if (_sbReady && _sb) {
+    _sb.from('messages').delete().eq('id', String(msgId))
+      .then(null, () => {});
+  }
+  // GAS fallback
+  if (GAS_URL && currentUser) {
+    fetch(`${GAS_URL}?action=delete_message&msgId=${encodeURIComponent(msgId)}&email=${encodeURIComponent(currentUser.email)}`).catch(() => {});
+  }
 }
 
 /* ══════════════════════════════════════════════════════════════
