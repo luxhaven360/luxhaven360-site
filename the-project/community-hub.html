@@ -6671,6 +6671,80 @@ function initApp() {
       }).subscribe();
     _sbChannels['content_removals'] = removalsCh;
 
+    // ── FIX RT GLOBALE: canale disc-updates ──────────────────────────────────
+    // Riceve eliminazioni di reply per aggiornare contatore e preview dei thread
+    // anche per i client che non hanno mai aperto quel thread (THREAD_MESSAGES vuoto).
+    // Complementare a content_removals_rt (che richiede THREAD_MESSAGES popolato).
+    sbOff('disc_updates_rt');
+    const discUpdatesCh = _sb.channel('disc-updates-v1')
+      .on('broadcast', { event: 'reply_delete_disc' }, ({ payload }) => {
+        if (!payload || !payload.threadId) return;
+        // Ignora se siamo il mittente (già aggiornato localmente)
+        if (payload.senderEmail && currentUser && payload.senderEmail === currentUser.email.toLowerCase()) return;
+        const _duDisc = DISCUSSIONS.find(d => String(d.id) === String(payload.threadId));
+        if (!_duDisc) return;
+        // Aggiorna contatore e preview
+        if (typeof payload.newReplies === 'number') _duDisc.replies = payload.newReplies;
+        if (payload.newLastAuthor !== undefined) {
+          _duDisc.lastReply   = payload.newLastAuthor ? payload.newLastAuthor + (payload.newLastTs ? ' · ' + _notifRelTime(payload.newLastTs) : '') : '';
+          _duDisc.lastReplyTs = payload.newLastTs || 0;
+        }
+        // Rimuovi dal THREAD_MESSAGES se presente (sincronia extra per chi ha aperto il thread)
+        if (payload.replyId && THREAD_MESSAGES[payload.threadId]) {
+          const _duArr = THREAD_MESSAGES[payload.threadId];
+          const _duIdx = _duArr.findIndex(m => String(m.id) === String(payload.replyId));
+          if (_duIdx !== -1) _duArr.splice(_duIdx, 1);
+        }
+        const _duDiscPanel = document.getElementById('panel-discussions');
+        if (_duDiscPanel && _duDiscPanel.classList.contains('active')) renderDiscussions();
+      })
+      .subscribe();
+    _sbChannels['disc_updates_rt'] = discUpdatesCh;
+
+    // ── FIX RT GLOBALE: canale dm-inbox personale ────────────────────────────
+    // Ogni utente ascolta il proprio canale personale per ricevere eliminazioni DM
+    // anche quando la conversazione non è aperta (sbListenMessages non è attivo).
+    // Quando A elimina un messaggio con B, A broadcast su dm-inbox di B.
+    if (currentUser && currentUser.email) {
+      const _dmInboxKey = 'dm_inbox_' + currentUser.email.toLowerCase().replace(/[^a-z0-9]/g, '_');
+      sbOff('dm_inbox_rt');
+      const dmInboxCh = _sb.channel(_dmInboxKey)
+        .on('broadcast', { event: 'dm_delete_inbox' }, ({ payload }) => {
+          if (!payload || !payload.msgId || !payload.convId) return;
+          const _diPartnerEmail = payload.partnerEmail ? payload.partnerEmail.toLowerCase() : null;
+          if (!_diPartnerEmail) return;
+          // Aggiorna cache messaggi
+          const _diCacheKey = _diPartnerEmail;
+          _addDmDeletedId(payload.convId, payload.msgId);
+          if (_msgCache && _msgCache[_diCacheKey]) {
+            _msgCache[_diCacheKey] = _msgCache[_diCacheKey].filter(m => String(m.id) !== String(payload.msgId));
+          }
+          const _diMsgs = (_msgCache && _msgCache[_diCacheKey]) ? _msgCache[_diCacheKey] : [];
+          // Aggiorna preview conversazione
+          const _diConv = REAL_CONVS.find(c => c.partnerEmail.toLowerCase() === _diCacheKey);
+          if (_diConv) {
+            if (_diMsgs.length === 0) {
+              _diConv.lastMessage = '';
+              _diConv.lastTs      = new Date().toISOString();
+            } else {
+              const _diLast = _diMsgs[_diMsgs.length - 1];
+              _diConv.lastMessage = _diLast ? (_diLast.text || '📎 Media') : '';
+              _diConv.lastTs      = _diLast ? _diLast.ts : _diConv.lastTs;
+            }
+            renderConversations();
+            saveConvsCache();
+          }
+          // Se la conversazione con quel partner è aperta, aggiorna il DOM
+          const _diPanelOpen = document.getElementById('panel-messages') &&
+            document.getElementById('panel-messages').classList.contains('active');
+          const _diIsOpen = _diPanelOpen && currentConvPartnerEmail &&
+            currentConvPartnerEmail.toLowerCase() === _diCacheKey;
+          if (_diIsOpen) renderChatMessages(_diMsgs, _diPartnerEmail);
+        })
+        .subscribe();
+      _sbChannels['dm_inbox_rt'] = dmInboxCh;
+    }
+
     // VIEWS: Ascolta nuove views dei thread in tempo reale (aggiorna contatore per tutti)
     sbOff('thread_views');
     const viewsCh = _sb.channel('thread_views_rt')
@@ -9793,6 +9867,38 @@ function _startThreadRepliesListener(threadId) {
         _arr[_ti].id = payload.stableId;
         renderThreadMessages(currentThreadId); // aggiorna il bottone 🗑 anche sugli altri client
       }
+    })
+    .on('broadcast', { event: 'reply_delete' }, ({ payload }) => {
+      // ── FIX RT: riceve eliminazione reply via Broadcast (thread aperto) ──
+      // Garantisce rimozione istantanea per tutti gli utenti con il thread aperto.
+      // Complementare a content_removals_rt (che gestisce i client senza il thread aperto).
+      if (!payload || !payload.replyId || !payload.threadId) return;
+      if (String(payload.threadId) !== String(currentThreadId)) return;
+      // Ignora se siamo noi stessi (già rimosso ottimisticamente)
+      if (payload.senderEmail && currentUser && payload.senderEmail === currentUser.email.toLowerCase()) return;
+      const _rdArr = THREAD_MESSAGES[currentThreadId];
+      if (!_rdArr) return;
+      const _rdIdx = _rdArr.findIndex(m => String(m.id) === String(payload.replyId));
+      if (_rdIdx === -1) return;
+      _rdArr.splice(_rdIdx, 1);
+      // Aggiorna disc.replies e lastReply localmente
+      const _rdDisc = DISCUSSIONS.find(d => String(d.id) === String(currentThreadId));
+      if (_rdDisc) {
+        _rdDisc.replies = Math.max(0, _rdArr.length - 1);
+        const _rdLast = [..._rdArr].reverse().find(m => !m.isOp);
+        if (_rdLast) {
+          const _rdTs = _rdLast.ts ? (typeof _rdLast.ts === 'number' ? _rdLast.ts : new Date(_rdLast.ts).getTime()) : 0;
+          _rdDisc.lastReplyTs = _rdTs;
+          _rdDisc.lastReply   = _rdLast.author + (_rdTs ? ' · ' + _notifRelTime(_rdTs) : '');
+        } else {
+          _rdDisc.lastReply   = '';
+          _rdDisc.lastReplyTs = 0;
+        }
+      }
+      renderThreadMessages(currentThreadId);
+      _updateThreadDetailHeader(currentThreadId);
+      const _rdDiscPanel = document.getElementById('panel-discussions');
+      if (_rdDiscPanel && _rdDiscPanel.classList.contains('active')) renderDiscussions();
     })
     .on('broadcast', { event: 'new_reply' }, ({ payload }) => {
       if (!payload || !payload.reply || payload.threadId !== currentThreadId) return;
@@ -15745,6 +15851,28 @@ async function deleteOwnDmMessage(msgId, btnEl) {
       .catch(() => {});
   }
 
+  // ── FIX RT: Broadcast sul canale dm-inbox personale del partner ─────────────
+  // Garantisce la rimozione anche se il partner non ha la conversazione aperta
+  // (sbListenMessages non è attivo → il broadcast su 'messages_' + cid non arriva).
+  // Pattern identico al canale Founding Members: canale globale per utente.
+  if (_sbReady && _sb && currentConvPartnerEmail) {
+    const _partnerInboxKey = 'dm_inbox_' + currentConvPartnerEmail.toLowerCase().replace(/[^a-z0-9]/g, '_');
+    const _partnerMsgsAfter = msgs; // array già aggiornato (msg rimosso sopra)
+    const _partnerLast = _partnerMsgsAfter.length > 0 ? _partnerMsgsAfter[_partnerMsgsAfter.length - 1] : null;
+    _sb.channel(_partnerInboxKey)
+      .send({
+        type:    'broadcast',
+        event:   'dm_delete_inbox',
+        payload: {
+          msgId:        String(msgId),
+          convId:       _delCid,
+          partnerEmail: currentUser.email.toLowerCase(), // il mittente dell'eliminazione = partner del destinatario
+          lastText:     _partnerLast ? (_partnerLast.text || '📎 Media') : '',
+          lastTs:       _partnerLast ? _partnerLast.ts : null
+        }
+      }).catch(() => {});
+  }
+
   // 3. Tenta DELETE su Supabase (funziona se RLS lo consente, altrimenti silenzioso)
   if (_sbReady && _sb) {
     _sb.from('messages').delete().eq('id', String(msgId))
@@ -15892,6 +16020,28 @@ async function deleteOwnReply(replyId, btnEl) {
   // Il listener content_removals_rt rimuove la reply dal THREAD_MESSAGES di ogni client
   if (typeof _writeRemovalToSupabase === 'function') {
     _writeRemovalToSupabase('reply', String(replyId));
+  }
+
+  // ── FIX RT: Broadcast istantaneo a chi ha il thread aperto ──────────────────
+  // Canale 1: thread_replies_${threadId} → utenti con il thread aperto (rimozione immediata dal DOM)
+  // Canale 2: disc-updates-v1 → TUTTI gli utenti (aggiornamento contatore e preview lista thread)
+  if (_sbReady && _sb && currentThreadId) {
+    const _drPayload = {
+      replyId:       String(replyId),
+      threadId:      String(currentThreadId),
+      senderEmail:   currentUser ? currentUser.email.toLowerCase() : '',
+      newReplies:    disc ? disc.replies : 0,
+      newLastAuthor: disc ? (disc.lastReply ? disc.lastReply.split(' · ')[0] : '') : '',
+      newLastTs:     disc ? (disc.lastReplyTs || 0) : 0
+    };
+    // Canale thread (utenti con il thread aperto)
+    _sb.channel('thread_replies_' + currentThreadId)
+      .send({ type: 'broadcast', event: 'reply_delete', payload: _drPayload })
+      .catch(() => {});
+    // Canale globale (tutti gli utenti — aggiorna contatore/preview anche senza aprire il thread)
+    _sb.channel('disc-updates-v1')
+      .send({ type: 'broadcast', event: 'reply_delete_disc', payload: _drPayload })
+      .catch(() => {});
   }
   // GAS: elimina definitivamente dal PropertiesService
   if (GAS_URL && currentUser) {
