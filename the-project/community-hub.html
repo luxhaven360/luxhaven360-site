@@ -5574,6 +5574,9 @@ let FEED_POSTS = [];
 // I post vengono caricati esclusivamente da GAS
 let DISCUSSIONS = [];
 // Le discussioni vengono caricate esclusivamente da GAS
+// _rtLastReplyMap: mappa persistente threadId -> { author, ts } aggiornata SOLO da Supabase RT.
+// Immune alle sovrascritture GAS. Fonte di verita' per il nome autore ultima risposta.
+let _rtLastReplyMap = {};
 let LISTINGS = [];
 // Le listing vengono caricate esclusivamente da GAS
 /* Messaggistica reale — popolata da GAS */
@@ -5608,6 +5611,13 @@ let _localVotes            = new Map(); // { surveyId → { optionIndex, votes[]
 const _sessionVotedSurveys = new Map(); // surveyId → { optionIndex, options:number[], total:number }
 let _lastKnownDiscIds       = new Set(); // IDs discussioni note  → rileva nuovi thread
 let _lastKnownThreadReplies = {};        // { discId: replyCount } → rileva nuove risposte
+// BUG FIX AUTHOR FLICKER: mappa permanente threadId → shortName autore ultima reply,
+// popolata SOLO da Supabase (mai da GAS). Prende priorita' assoluta nel rebuild GAS.
+// Non dipende dalla boot cache → risolve il flicker "Mattia" → "Mattia R." definitivamente.
+const _sbDiscAuthors = {}; // { "threadId": "Mattia R." }
+// BUG FIX DM TEMP DELETE: traccia messaggi eliminati con id temp_ prima di INSERT confirm
+// key: convId, value: [{ text, sentTs }]
+const _dmPendingDeletes = {};
 let _communityDataReady     = false;     // flag: primo caricamento completato
 let SURVEYS = [];
 // I sondaggi vengono caricati esclusivamente da GAS (get_community_data → surveys)
@@ -6799,6 +6809,8 @@ function initApp() {
         if (_isDeletedReplyTs(String(r.thread_id), ts)) return;
         // Aggiorna solo se ts >= disc.lastReplyTs (più recente o uguale)
         if (ts >= (disc.lastReplyTs || 0)) {
+          // FIX FLICKER: salva in _rtLastReplyMap (fonte di verita' Supabase, immune a GAS)
+          _rtLastReplyMap[String(disc.id)] = { author: r.last_reply_author || '', ts: ts };
           disc.lastReplyTs = ts;
           disc.lastReply = (r.last_reply_author || '') + ' · ' + _notifRelTime(ts);
           // Aggiorna il DOM direttamente nella lista Discussioni
@@ -7850,11 +7862,14 @@ function applyRemoteData(data) {
         // Ricalcola lastReply come stringa dinamica se abbiamo un timestamp affidabile
         // Questo impedisce che la stringa "Ora" da GAS si congeli per l'autore del thread
         let finalLastReply = d.lastReply || null;
-        if (finalLastReplyTs && local.lastReplyTs) {
-          // BUG FIX FLICKER: usa l'author gia' normalizzato da Supabase RT come fonte prioritaria.
-          // Impedisce il flicker "Mattia" -> "Mattia R." alla normalizzazione tardiva GAS.
+        if (finalLastReplyTs) {
+          // BUG FIX FLICKER v2: _rtLastReplyMap e' la fonte ASSOLUTA di verita' per l'autore.
+          // Aggiornato SOLO da Supabase RT/sync e invii locali, mai da GAS.
+          // GAS restituisce "Mattia", Supabase ha "Mattia R." => ignoriamo GAS per autore.
+          const _rtEntry    = _rtLastReplyMap[String(d.id)];
+          const _rtAuthor   = _rtEntry ? _rtEntry.author : '';
           const _localAuthor = local.lastReply ? local.lastReply.split(' · ')[0] : '';
-          const authorPart   = _localAuthor || (d.lastReply || '').split(' · ')[0] || '';
+          const authorPart  = _rtAuthor || _localAuthor || (d.lastReply || '').split(' · ')[0] || '';
           finalLastReply = authorPart ? authorPart + ' · ' + _notifRelTime(finalLastReplyTs) : null;
         }
 
@@ -9065,8 +9080,11 @@ async function _loadThreadLastRepliesFromSupabase() {
       // (che è più vecchia della reply eliminata — ts numerico minore)
       // Logica: aggiorna solo se sbTs >= disc.lastReplyTs (nuovo o uguale, non stale)
       if (!disc.lastReplyTs || sbTs >= disc.lastReplyTs) {
+        // FIX FLICKER: aggiorna _rtLastReplyMap con dati Supabase
+        _rtLastReplyMap[String(disc.id)] = { author: r.last_reply_author || '', ts: sbTs };
         disc.lastReplyTs = sbTs;
         disc.lastReply = `${r.last_reply_author || ''} · ${_notifRelTime(sbTs)}`;
+        if (r.last_reply_author) _sbDiscAuthors[String(r.thread_id)] = r.last_reply_author; // FIX AUTHOR
         changed = true;
       }
       // sbTs < disc.lastReplyTs → dato Supabase è più vecchio del locale → ignora
@@ -10265,6 +10283,8 @@ async function submitThreadReply() {
     // BUG FIX #5: usa timestamp per calcolare il tempo relativo dinamicamente
     const _rShort = currentUser.name.split(' ')[0] + ' ' + ((currentUser.name.split(' ')[1]||'')[0]||'') + (currentUser.name.split(' ')[1] ? '.' : '');
     thread.lastReply = `${_rShort} · ${formatTimeAgo(replyTs)}`;
+    // FIX FLICKER: salva subito in _rtLastReplyMap (usato dal GAS rebuild per l'author corretto)
+    _rtLastReplyMap[String(currentThreadId)] = { author: _rShort, ts: replyTs };
 
     // FIX BUG 2: salva lastReplyTs su Supabase per sincronizzare tutti gli utenti
     // Senza questo, gli altri client ricevono via GAS solo la stringa "Ora" congelata
@@ -11895,6 +11915,27 @@ function sbListenMessages(partnerEmail) {
       // Non duplicare messaggi già inviati da noi (già mostrati ottimisticamente)
       if (m.sender_email.toLowerCase() === currentUser.email.toLowerCase()) {
         const cacheKey = partnerEmail.toLowerCase();
+        // BUG FIX TEMP DELETE RACE: se il messaggio era eliminato con id temp_
+        // (delete prima della conferma INSERT Supabase), non reinserirlo.
+        // temp_ ID = 'temp_' + Date.now() -> match per prossimita' temporale (+/-10s).
+        const _realTs2 = new Date(m.created_at).getTime();
+        const _dmDelSet2 = _getDmDeletedIds(cid);
+        const _matchingTemp = [..._dmDelSet2].find(did => {
+          if (!String(did).startsWith('temp_')) return false;
+          const _tTs = parseInt(String(did).replace('temp_', ''), 10);
+          return !isNaN(_tTs) && Math.abs(_tTs - _realTs2) < 10000;
+        });
+        if (_matchingTemp) {
+          _addDmDeletedId(cid, String(m.id)); // promuovi temp_ -> real nei deleted ids
+          const _remMsgs2 = (_msgCache[cacheKey] || []);
+          const _lastM2   = _remMsgs2.length > 0 ? _remMsgs2[_remMsgs2.length - 1] : null;
+          const _convD2   = REAL_CONVS.find(c => c.partnerEmail.toLowerCase() === cacheKey);
+          if (_convD2) {
+            _convD2.lastMessage = _lastM2 ? (_lastM2.text || '📎 Media') : '';
+            renderConversations(); saveConvsCache();
+          }
+          return; // non reinserire: il messaggio era stato cancellato
+        }
         if (_msgCache[cacheKey]) {
           // Sostituisci la voce temp_ con l'id reale Supabase (fix "Messaggio non trovato" al delete)
           const tempIdx = _msgCache[cacheKey].findIndex(x => String(x.id).startsWith('temp_') && x.text === (m.text||'') && x.from === m.sender_email.toLowerCase());
