@@ -6713,6 +6713,11 @@ function initApp() {
           if (!payload || !payload.msgId || !payload.convId) return;
           const _diPartnerEmail = payload.partnerEmail ? payload.partnerEmail.toLowerCase() : null;
           if (!_diPartnerEmail) return;
+          // ── FIX DOPPIO RENDER: dedup con dm_delete.
+          // Se dm_delete (canale messages_${cid}) ha già processato questo id,
+          // saltare il render — il messaggio è già sparito dalla cache e dall'UI.
+          // Usare _getDmDeletedIds per verificare (dm_delete chiama _addDmDeletedId prima di renderChatMessages).
+          const _diAlreadyDone = _getDmDeletedIds(payload.convId).has(String(payload.msgId));
           // Aggiorna cache messaggi
           const _diCacheKey = _diPartnerEmail;
           _addDmDeletedId(payload.convId, payload.msgId);
@@ -6734,12 +6739,15 @@ function initApp() {
             renderConversations();
             saveConvsCache();
           }
-          // Se la conversazione con quel partner è aperta, aggiorna il DOM
+          // Se la conversazione con quel partner è aperta, aggiorna il DOM.
+          // ── FIX: salta il render se dm_delete ha già aggiornato l'UI
+          //    (_diAlreadyDone = true → il canale messages_${cid} era attivo e ha già renderizzato).
+          //    In questo caso aggiorniamo solo la preview (già fatto sopra), non ri-renderizziamo la chat.
           const _diPanelOpen = document.getElementById('panel-messages') &&
             document.getElementById('panel-messages').classList.contains('active');
           const _diIsOpen = _diPanelOpen && currentConvPartnerEmail &&
             currentConvPartnerEmail.toLowerCase() === _diCacheKey;
-          if (_diIsOpen) renderChatMessages(_diMsgs, _diPartnerEmail);
+          if (_diIsOpen && !_diAlreadyDone) renderChatMessages(_diMsgs, _diPartnerEmail);
         })
         .subscribe();
       _sbChannels['dm_inbox_rt'] = dmInboxCh;
@@ -11878,6 +11886,10 @@ function sbListenMessages(partnerEmail) {
       const m = payload.new;
       if (!m || (!m.text && !m.media_url)) return;
       if ((m.deleted_for || []).includes(currentUser.email.toLowerCase())) return;
+      // ── FIX RACE CONDITION: il broadcast dm_delete può arrivare PRIMA del postgres INSERT.
+      // Se l'id del messaggio è già nel set dei cancellati (segnato dal broadcast delete),
+      // ignorare questo INSERT — il messaggio non deve mai (ri)apparire in UI.
+      if (_getDmDeletedIds(cid).has(String(m.id))) return;
       // Non duplicare messaggi già inviati da noi (già mostrati ottimisticamente)
       if (m.sender_email.toLowerCase() === currentUser.email.toLowerCase()) {
         const cacheKey = partnerEmail.toLowerCase();
