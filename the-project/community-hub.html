@@ -6641,8 +6641,29 @@ function initApp() {
         } else if (r.source_type === 'reply') {
           Object.keys(THREAD_MESSAGES).forEach(tid => {
             const arr = THREAD_MESSAGES[tid];
-            const ri = arr.findIndex(m => m.id === r.source_id || m.id === n);
-            if (ri > -1) { arr.splice(ri, 1); if (currentThreadId) renderThreadMessages(currentThreadId); }
+            const ri = arr.findIndex(m => String(m.id) === String(r.source_id) || m.id === n);
+            if (ri > -1) {
+              arr.splice(ri, 1);
+              // Aggiorna disc.replies counter in real-time per tutti i client
+              const disc = DISCUSSIONS.find(d => String(d.id) === String(tid));
+              if (disc) {
+                disc.replies = Math.max(0, arr.length - 1); // -1 per l'OP
+                const lastNonOp = [...arr].reverse().find(m => !m.isOp);
+                if (lastNonOp) {
+                  const lts = lastNonOp.ts ? (typeof lastNonOp.ts === 'number' ? lastNonOp.ts : new Date(lastNonOp.ts).getTime()) : 0;
+                  disc.lastReplyTs = lts;
+                  disc.lastReply = lastNonOp.author + (lts ? ' · ' + _notifRelTime(lts) : '');
+                } else {
+                  disc.lastReply = '';
+                }
+              }
+              // Aggiorna UI: thread list + thread aperto (se è lo stesso)
+              if (currentThreadId && String(currentThreadId) === String(tid)) {
+                renderThreadMessages(currentThreadId);
+              }
+              const discPanel = document.getElementById('panel-discussions');
+              if (discPanel && discPanel.classList.contains('active')) renderDiscussions();
+            }
           });
         }
         saveCommunityCache();
@@ -11635,19 +11656,27 @@ function sbListenMessages(partnerEmail) {
       event: 'DELETE', schema: 'public', table: 'messages',
       filter: `conv_id=eq.${cid}`
     }, (payload) => {
-      // Un messaggio è stato eliminato (es. da auto-mod) → rimuovilo dal DOM e dalla cache
       const deletedId = payload.old && payload.old.id;
       if (!deletedId) return;
       const cacheKey = partnerEmail.toLowerCase();
       if (_msgCache[cacheKey]) {
         _msgCache[cacheKey] = _msgCache[cacheKey].filter(m => String(m.id) !== String(deletedId));
       }
+      const updatedMsgs = _msgCache[cacheKey] || [];
+      // Aggiorna preview conversazione (ultimo messaggio)
+      const conv = REAL_CONVS.find(c => c.partnerEmail.toLowerCase() === cacheKey);
+      if (conv) {
+        const lastMsg = updatedMsgs[updatedMsgs.length - 1];
+        conv.lastMessage = lastMsg ? (lastMsg.text || '📎 Media') : '';
+        conv.lastTs = lastMsg ? lastMsg.ts : conv.lastTs;
+        renderConversations();
+        saveConvsCache();
+      }
       const panelOpen = document.getElementById('panel-messages')?.classList.contains('active');
       const isThisConv = panelOpen && currentConvPartnerEmail &&
         currentConvPartnerEmail.toLowerCase() === partnerEmail.toLowerCase();
       if (isThisConv) {
-        // Re-render dalla cache aggiornata (rimuove il messaggio dalla UI)
-        renderChatMessages(_msgCache[cacheKey] || [], partnerEmail);
+        renderChatMessages(updatedMsgs, partnerEmail);
       }
     })
     .on('postgres_changes', {
@@ -11659,11 +11688,17 @@ function sbListenMessages(partnerEmail) {
       if ((m.deleted_for || []).includes(currentUser.email.toLowerCase())) return;
       // Non duplicare messaggi già inviati da noi (già mostrati ottimisticamente)
       if (m.sender_email.toLowerCase() === currentUser.email.toLowerCase()) {
-        // Aggiorna cache e preview lista conv
         const cacheKey = partnerEmail.toLowerCase();
         if (_msgCache[cacheKey]) {
-          const alreadyCached = _msgCache[cacheKey].some(x => x.id === m.id);
-          if (!alreadyCached) _msgCache[cacheKey].push({ id: m.id, from: m.sender_email, fromName: m.sender_name, fromInitial: (m.sender_name||'?')[0].toUpperCase(), text: m.text||'', media_url: m.media_url||null, media_type: m.media_type||null, ts: m.created_at, deletedFor: m.deleted_for||[] });
+          // Sostituisci la voce temp_ con l'id reale Supabase (fix "Messaggio non trovato" al delete)
+          const tempIdx = _msgCache[cacheKey].findIndex(x => String(x.id).startsWith('temp_') && x.text === (m.text||'') && x.from === m.sender_email.toLowerCase());
+          const realMsg = { id: m.id, from: m.sender_email, fromName: m.sender_name, fromInitial: (m.sender_name||'?')[0].toUpperCase(), text: m.text||'', media_url: m.media_url||null, media_type: m.media_type||null, ts: m.created_at, deletedFor: m.deleted_for||[] };
+          if (tempIdx !== -1) {
+            _msgCache[cacheKey][tempIdx] = realMsg; // promuovi: temp_ → id reale
+          } else {
+            const alreadyCached = _msgCache[cacheKey].some(x => x.id === m.id);
+            if (!alreadyCached) _msgCache[cacheKey].push(realMsg);
+          }
         }
         const conv = REAL_CONVS.find(c => c.partnerEmail.toLowerCase() === partnerEmail.toLowerCase());
         if (conv) { conv.lastMessage = m.text || '📎 Media'; conv.lastTs = m.created_at; renderConversations(); saveConvsCache(); }
@@ -15556,6 +15591,16 @@ async function deleteOwnDmMessage(msgId, btnEl) {
   msgs.splice(idx, 1);
   if (_msgCache) _msgCache[cacheKey] = msgs;
 
+  // Aggiorna preview conversazione con l'ultimo messaggio rimanente
+  const conv = REAL_CONVS.find(c => c.partnerEmail.toLowerCase() === cacheKey);
+  if (conv) {
+    const lastMsg = msgs[msgs.length - 1];
+    conv.lastMessage = lastMsg ? (lastMsg.text || '📎 Media') : '';
+    conv.lastTs = lastMsg ? lastMsg.ts : conv.lastTs;
+    renderConversations();
+    saveConvsCache();
+  }
+
   // Aggiorna DOM: ri-renderizza la chat
   renderChatMessages(msgs, currentConvPartnerEmail);
   showToast('green', '🗑', 'Messaggio eliminato.');
@@ -15664,6 +15709,11 @@ async function deleteOwnReply(replyId, btnEl) {
   }
   renderThreadMessages(currentThreadId);
   showToast('green','🗑','Risposta eliminata.');
+  // Propaga a tutti i client via Supabase content_removals RT
+  // Il listener content_removals_rt rimuove la reply dal THREAD_MESSAGES di ogni client
+  if (typeof _writeRemovalToSupabase === 'function') {
+    _writeRemovalToSupabase('reply', String(replyId));
+  }
   // GAS: elimina definitivamente dal PropertiesService
   if (GAS_URL && currentUser) {
     const _isLegacyReplyId = String(replyId).startsWith('r_legacy_');
@@ -18749,7 +18799,10 @@ function _startFoundingListener() {
       .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'founding_group_messages' }, function(payload) {
         var deletedId = payload.old && payload.old.id;
         if (deletedId) {
-          _foundingMessages = _foundingMessages.filter(function(m) { return m.id !== deletedId; });
+          _foundingMessages = _foundingMessages.filter(function(m) {
+            return String(m.id) !== String(deletedId);
+          });
+          saveFoundingCache(); // FIX: persisti la rimozione → non riappare al re-open
           renderFoundingMessages();
         }
       })
