@@ -12,7 +12,7 @@
     INTERVAL_OFFLINE:   3500,   //  3.5s — offline (retry rapido)
     PROBE_TIMEOUT:      5000,   // timeout singolo probe
     HISTORY_SIZE:          6,   // campioni conservati
-    MIN_PROBES_TO_ACT:     2,   // probe minimi prima di agire
+    MIN_PROBES_TO_ACT:     1,   // 1 probe è sufficiente per agire subito al boot
 
     /* Soglie latenza (ms) — solo per probe riusciti */
     THR_EXCELLENT:  300,   // < 300ms  → ottima
@@ -229,15 +229,22 @@
     /* Offline: azione immediata */
     if (q === 'offline' || !navigator.onLine) { this._commit('offline'); return; }
 
-    /* Debounce: degradamenti richiedono 2 conferme consecutive */
+    /* Debounce adattivo:
+       - Primo avvio (state=unknown): agisce subito senza conferma
+       - Miglioramento (→ excellent/good): accetta al primo probe
+       - Peggioramento dopo stato noto: richiede 2 conferme consecutive (evita falsi positivi)
+    */
     if (q !== this._state) {
+      var isFirstBoot  = (this._state === 'unknown');
+      var isImproving  = (q === 'excellent' || q === 'good');
+      var need = (isFirstBoot || isImproving) ? 1 : 2;
+
       if (q === this._pendingState) {
         this._pendingCount++;
       } else {
         this._pendingState = q;
         this._pendingCount = 1;
       }
-      var need = (q === 'excellent' || q === 'good') ? 1 : 2;
       if (this._pendingCount >= need) this._commit(q);
     } else {
       this._pendingState = null;
@@ -263,11 +270,37 @@
 
   StateManager.prototype.start = function () {
     var self = this;
+
+    /* ── Rilevamento immediato via Network Information API (Chrome/Edge) ──
+       navigator.connection.effectiveType restituisce '4g'|'3g'|'2g'|'slow-2g'
+       prima ancora che il primo probe completi. Mostra avviso istantaneo
+       al reload su reti lente, senza attendere il round-trip del probe. */
+    if (navigator.connection && navigator.connection.effectiveType) {
+      var etype = navigator.connection.effectiveType;
+      var immediateQ = (etype === 'slow-2g' || etype === '2g') ? 'poor'
+                     : etype === '3g' ? 'unstable'
+                     : null;
+      if (immediateQ) {
+        /* Stato iniziale immediato — verrà aggiornato/confermato dal primo probe */
+        this._state = 'unknown'; // mantieni unknown così il probe può sovrascrivere
+        this._onChange(immediateQ, 'unknown', null);
+      }
+      /* Ascolta cambi di tipo rete in RT */
+      navigator.connection.addEventListener('change', function () {
+        self._history = [];
+        self._doProbe();
+      });
+    }
+
+    /* Primo probe subito */
     _probe(function (r) { self._onResult(r, false); });
-    /* Secondo probe dopo 2s per raggiungere MIN_PROBES_TO_ACT rapidamente */
+
+    /* Secondo probe a 800ms: con MIN_PROBES_TO_ACT=1 il primo agisce già,
+       il secondo migliora la precisione dell'analisi rapidamente */
     setTimeout(function () {
-      if (self._history.length < 2) _probe(function (r) { self._onResult(r, false); });
-    }, 2000);
+      _probe(function (r) { self._onResult(r, false); });
+    }, 800);
+
     var self2 = this;
     this._interval = setInterval(function () { self2._doProbe(); }, CFG.INTERVAL_NORMAL);
   };
