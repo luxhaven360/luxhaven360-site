@@ -5591,9 +5591,6 @@ let _pollMsgCycle    = 0;         // contatore cicli polling per throttling list
 let _msgCache        = {};        // { partnerEmail: [{...}] } — messaggi già caricati per evitare re-fetch
 let _typingByEmail   = {};        // { partnerEmail: bool } — stato "sta scrivendo" per lista conv
 let _activeListenPartner = null;  // email del partner per cui sbListenMessages è già attivo
-// BUG FIX DM DELETE: traccia messaggi eliminati con temp_ ID prima che INSERT Supabase arrivasse.
-// Chiave: convId. Valore: Set<text> dei messaggi da cancellare quando l'INSERT reale arriva.
-const _dmTempDeletedTexts = new Map();
 
 const NOTIFICATIONS = [];
 // Le notifiche vengono generate da eventi reali
@@ -7854,12 +7851,10 @@ function applyRemoteData(data) {
         // Questo impedisce che la stringa "Ora" da GAS si congeli per l'autore del thread
         let finalLastReply = d.lastReply || null;
         if (finalLastReplyTs && local.lastReplyTs) {
-          // Abbiamo il timestamp da Supabase → ricalcola stringa (sarà sempre aggiornata)
-          // BUG FIX FLICKER: local.lastReply viene da Supabase (già normalizzato con iniziale cognome),
-          // d.lastReply viene da GAS (può essere privo dell'iniziale). Priorità: locale > GAS.
-          const localAuthor = (local.lastReply || '').split(' · ')[0] || '';
-          const gasAuthor   = (d.lastReply || '').split(' · ')[0] || '';
-          const authorPart  = localAuthor || gasAuthor;
+          // BUG FIX FLICKER: usa l'author gia' normalizzato da Supabase RT come fonte prioritaria.
+          // Impedisce il flicker "Mattia" -> "Mattia R." alla normalizzazione tardiva GAS.
+          const _localAuthor = local.lastReply ? local.lastReply.split(' · ')[0] : '';
+          const authorPart   = _localAuthor || (d.lastReply || '').split(' · ')[0] || '';
           finalLastReply = authorPart ? authorPart + ' · ' + _notifRelTime(finalLastReplyTs) : null;
         }
 
@@ -11901,33 +11896,6 @@ function sbListenMessages(partnerEmail) {
       if (m.sender_email.toLowerCase() === currentUser.email.toLowerCase()) {
         const cacheKey = partnerEmail.toLowerCase();
         if (_msgCache[cacheKey]) {
-          // BUG FIX DM DELETE (race condition temp_ ID):
-          // Se questo messaggio era stato eliminato mentre aveva ancora id temp_, ora abbiamo
-          // l'ID reale Supabase. Completiamo la cancellazione: DELETE reale + broadcast ai due client.
-          const _tempDelSet = _dmTempDeletedTexts.get(cid);
-          if (_tempDelSet && _tempDelSet.has(m.text || '')) {
-            _tempDelSet.delete(m.text || '');
-            // Promuovi: aggiungi ID reale ai deleted IDs (temp_ era già salvato, ma non basta)
-            _addDmDeletedId(cid, String(m.id));
-            // DELETE reale con ID corretto (stavolta Supabase lo trova)
-            if (_sbReady && _sb) {
-              _sb.from('messages').delete().eq('id', String(m.id)).catch(() => {});
-              // Broadcast dm_delete con ID reale → User B lo riceve e rimuove dalla sua cache
-              const _realDelPayload = { type: 'broadcast', event: 'dm_delete', payload: { msgId: String(m.id) } };
-              const _activeMsgCh = _sbChannels && _sbChannels['messages'];
-              if (_activeMsgCh) _activeMsgCh.send(_realDelPayload).catch(() => {});
-              else _sb.channel('messages_' + cid).send(_realDelPayload).catch(() => {});
-              // Notifica inbox User B (copertura se sbListenMessages non è attivo per lui)
-              const _inboxK2 = 'dm_inbox_' + partnerEmail.toLowerCase().replace(/[^a-z0-9]/g, '_');
-              _sb.channel(_inboxK2).send({
-                type: 'broadcast', event: 'dm_delete_inbox',
-                payload: { msgId: String(m.id), convId: cid,
-                           partnerEmail: currentUser.email.toLowerCase(),
-                           lastText: '', lastTs: null }
-              }).catch(() => {});
-            }
-            return; // Messaggio eliminato — non aggiungerlo alla cache
-          }
           // Sostituisci la voce temp_ con l'id reale Supabase (fix "Messaggio non trovato" al delete)
           const tempIdx = _msgCache[cacheKey].findIndex(x => String(x.id).startsWith('temp_') && x.text === (m.text||'') && x.from === m.sender_email.toLowerCase());
           const realMsg = { id: m.id, from: m.sender_email, fromName: m.sender_name, fromInitial: (m.sender_name||'?')[0].toUpperCase(), text: m.text||'', media_url: m.media_url||null, media_type: m.media_type||null, ts: m.created_at, deletedFor: m.deleted_for||[] };
@@ -15845,6 +15813,13 @@ async function deleteOwnDmMessage(msgId, btnEl) {
     return;
   }
 
+  // BUG FIX DM DELETE: persisti _addDmDeletedId IMMEDIATAMENTE dopo lo splice,
+  // PRIMA di qualsiasi render o toast. Questo garantisce che il filter nel
+  // postgres_changes INSERT listener sia gia' attivo prima che Supabase
+  // confermi l'INSERT originale, impedendo la ri-comparsa del messaggio.
+  const _delCid = convId(currentUser.email, currentConvPartnerEmail);
+  _addDmDeletedId(_delCid, msgId); // <- spostato qui: 1a operazione post-splice
+
   // Rimuovi dalla cache in-memory
   msgs.splice(idx, 1);
   if (_msgCache) _msgCache[cacheKey] = msgs;
@@ -15885,20 +15860,8 @@ async function deleteOwnDmMessage(msgId, btnEl) {
   renderChatMessages(msgs, currentConvPartnerEmail);
   showToast('green', '🗑', 'Messaggio eliminato.');
 
-  // Calcola il convId per la persistenza e il broadcast
-  const _delCid = convId(currentUser.email, currentConvPartnerEmail);
-
-  // 1. Segna come eliminato nel set persistente (sopravvive a reload e refetch Supabase)
-  _addDmDeletedId(_delCid, msgId);
-
-  // BUG FIX DM DELETE: se il msgId è ancora temp_, il DELETE Supabase fallirà perché l'id
-  // non esiste ancora nella tabella messages (GAS non l'ha ancora scritto, o Supabase INSERT
-  // è in volo). Salviamo il testo del messaggio: quando l'INSERT arriverà via postgres_changes,
-  // lo intercetteremo e completeremo la cancellazione con l'ID reale.
-  if (String(msgId).startsWith('temp_') && msg && msg.text) {
-    if (!_dmTempDeletedTexts.has(_delCid)) _dmTempDeletedTexts.set(_delCid, new Set());
-    _dmTempDeletedTexts.get(_delCid).add(msg.text);
-  }
+  // _delCid gia' calcolato sopra (spostato per fix race condition)
+  // 1. _addDmDeletedId gia' chiamato sopra (spostato per fix race condition)
 
   // 2. Propaga all'altro client via Broadcast sul canale della conversazione
   //    Il Broadcast non richiede RLS — notifica istantanea garantita
