@@ -6863,7 +6863,7 @@ function initApp() {
           const _tySender = payload.senderEmail.toLowerCase();
           if (_tySender === currentUser.email.toLowerCase()) return;
           _setTypingState(_tySender, !!payload.is_typing);
-          // Auto-reset dopo 5s se non arrivano aggiornamenti
+          // Auto-reset dopo 5.5s se il mittente smette di inviare aggiornamenti
           const _tyKey = 'ptyTimeout_' + _tySender.replace(/[^a-z0-9]/g, '_');
           if (payload.is_typing) {
             if (window[_tyKey]) clearTimeout(window[_tyKey]);
@@ -6871,7 +6871,38 @@ function initApp() {
           } else {
             if (window[_tyKey]) clearTimeout(window[_tyKey]);
           }
-        }).subscribe();
+        })
+        .subscribe(function(status) {
+          if (status === 'SUBSCRIBED') {
+            console.log('[Typing] ✅ dm_typing_inbox_rt subscribed:', _tyInboxKey);
+          } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+            console.warn('[Typing] ⚠️ dm_typing_inbox_rt fallita (' + status + ') — retry in 3s');
+            // Retry automatico: ricrea la subscription dopo 3 secondi
+            setTimeout(function() {
+              if (!currentUser) return;
+              sbOff('dm_typing_inbox_rt');
+              const _retryKey = 'dm_typing_inbox_' + currentUser.email.toLowerCase().replace(/[^a-z0-9]/g, '_');
+              const retryCh = _sb.channel(_retryKey)
+                .on('broadcast', { event: 'dm_typing' }, ({ payload }) => {
+                  if (!payload || !payload.senderEmail) return;
+                  const _s = payload.senderEmail.toLowerCase();
+                  if (_s === currentUser.email.toLowerCase()) return;
+                  _setTypingState(_s, !!payload.is_typing);
+                  const _k = 'ptyTimeout_' + _s.replace(/[^a-z0-9]/g, '_');
+                  if (payload.is_typing) {
+                    if (window[_k]) clearTimeout(window[_k]);
+                    window[_k] = setTimeout(() => _setTypingState(_s, false), 5500);
+                  } else {
+                    if (window[_k]) clearTimeout(window[_k]);
+                  }
+                })
+                .subscribe(function(s2) {
+                  console.log('[Typing] retry dm_typing_inbox_rt:', s2);
+                });
+              _sbChannels['dm_typing_inbox_rt'] = retryCh;
+            }, 3000);
+          }
+        });
       _sbChannels['dm_typing_inbox_rt'] = tyInboxCh;
     }
 
@@ -12381,14 +12412,7 @@ function sbListenTyping(partnerEmail) {
   if (!_sbReady || !currentUser || !partnerEmail) return;
   const cid = convId(currentUser.email, partnerEmail);
 
-  // FIX CRITICO #1 (Typing indicator): usare il callback di subscribe() per impostare
-  // _sbChannels['typing'] SOLO quando il canale è nello stato SUBSCRIBED.
-  // PROBLEMA PRECEDENTE: _sbChannels['typing'] = ch veniva assegnato immediatamente
-  // dopo .subscribe() (asincrono). Se sendTypingStatus() veniva chiamato mentre il
-  // canale era ancora in stato SUBSCRIBING, channel.send() falliva silenziosamente.
-  // SOLUZIONE: il ref viene impostato nel callback di subscribe. Nel frattempo,
-  // sendTypingStatus usa il nome canale ('typing_bc_'+cid) che _sbBroadcast gestisce
-  // via httpSend (Case 3) — affidabile anche senza subscription attiva.
+  // Canale conv: ascolta typing del partner quando la chat è aperta.
   sbOff('typing');
   const _typingCid = cid;
   const ch = _sb.channel('typing_bc_' + _typingCid)
@@ -12396,7 +12420,6 @@ function sbListenTyping(partnerEmail) {
       if (!payload) return;
       if ((payload.email || '').toLowerCase() === currentUser.email.toLowerCase()) return;
       _setTypingState(partnerEmail, !!payload.is_typing);
-      // Auto-reset se il partner smette di inviare aggiornamenti (5s timeout)
       if (payload.is_typing) {
         if (window._partnerTypingTimeout) clearTimeout(window._partnerTypingTimeout);
         window._partnerTypingTimeout = setTimeout(function() {
@@ -12408,17 +12431,35 @@ function sbListenTyping(partnerEmail) {
     })
     .subscribe(function(status) {
       if (status === 'SUBSCRIBED') {
-        // Solo ora il canale è pronto per send() via WebSocket
         _sbChannels['typing'] = ch;
       } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
-        // Canale non disponibile: mantieni ref per sbOff cleanup ma log l'errore
         console.warn('[Typing] Subscription fallita (' + status + ') su typing_bc_' + _typingCid);
         _sbChannels['typing'] = ch;
       }
     });
-  // Ref immediato SOLO per sbOff (cleanup). sendTypingStatus usa httpSend
-  // finché la subscription non è confermata (status !== 'SUBSCRIBED').
   _sbChannels['typing'] = ch;
+
+  // FIX CRITICO #3: canale outbound SUBSCRIBED per inbox del partner.
+  // PROBLEMA: sendTypingStatus usava _sbBroadcast con nome canale stringa (Case 3)
+  // → _sb.channel(name).httpSend(). Questo crea un canale NON-subscribed ogni 800ms.
+  // httpSend potrebbe non essere disponibile o fallire silenziosamente → il partner
+  // che NON ha la chat aperta NON riceve MAI l'evento dm_typing.
+  // SOLUZIONE: iscriversi al canale inbox del partner ('dm_typing_inbox_{partner_key}')
+  // come canale outbound. È lo stesso canale su cui il partner ascolta via
+  // dm_typing_inbox_rt. Essendo subscribed da entrambi i lati, channel.send() via
+  // WebSocket è garantito (Case 2 in _sbBroadcast — non usa più httpSend).
+  sbOff('typing_inbox_out');
+  const _pInboxOutKey = 'dm_typing_inbox_' + partnerEmail.toLowerCase().replace(/[^a-z0-9]/g, '_');
+  const pInboxOutCh = _sb.channel(_pInboxOutKey)
+    .subscribe(function(status) {
+      if (status === 'SUBSCRIBED') {
+        _sbChannels['typing_inbox_out'] = pInboxOutCh;
+        console.log('[Typing] ✅ canale inbox outbound subscribed:', _pInboxOutKey);
+      } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+        console.warn('[Typing] ⚠️ inbox outbound fallita (' + status + '):', _pInboxOutKey);
+      }
+    });
+  _sbChannels['typing_inbox_out'] = pInboxOutCh;
 }
 
 /* Aggiorna stato typing per email e aggiorna UI lista + chat */
@@ -12579,16 +12620,20 @@ function sendTypingStatus(isTyping) {
     const _typingTarget = _typingChSubscribed ? _typingCh : ('typing_bc_' + cid);
 
     const _broadcast = function(v) {
-      // Canale conv: partner con chat aperta.
-      // WebSocket se SUBSCRIBED, httpSend se ancora in SUBSCRIBING/non pronto.
+      // Canale conv: partner con chat aperta (WebSocket se subscribed, httpSend se no).
       _sbBroadcast(_typingTarget, {
         type: 'broadcast', event: 'typing',
         payload: { email: email, is_typing: v }
       });
-      // Canale inbox del partner: visibile anche senza chat aperta.
-      // Sempre monodirezionale → sempre httpSend tramite nome stringa.
-      const _pTypingKey = 'dm_typing_inbox_' + currentConvPartnerEmail.toLowerCase().replace(/[^a-z0-9]/g, '_');
-      _sbBroadcast(_pTypingKey, {
+      // FIX #3: canale inbox del partner — usa il canale SUBSCRIBED (typing_inbox_out)
+      // se disponibile (WebSocket garantito), altrimenti fallback a httpSend.
+      // typing_inbox_out è subscribed in sbListenTyping() quando si apre la conv.
+      const _inboxOutCh = _sbChannels['typing_inbox_out'];
+      const _inboxOutSubscribed = _inboxOutCh && _inboxOutCh.state === 'joined';
+      const _pTypingTarget = _inboxOutSubscribed
+        ? _inboxOutCh
+        : ('dm_typing_inbox_' + currentConvPartnerEmail.toLowerCase().replace(/[^a-z0-9]/g, '_'));
+      _sbBroadcast(_pTypingTarget, {
         type: 'broadcast', event: 'dm_typing',
         payload: { senderEmail: email, is_typing: v }
       });
@@ -12625,9 +12670,12 @@ function clearTypingStatus() {
       type: 'broadcast', event: 'typing',
       payload: { email: email, is_typing: false }
     });
-    // Canale inbox del partner — sempre monodirezionale → sempre httpSend.
+    // FIX #3: stessa logica di sendTypingStatus — usa canale subscribed se disponibile.
+    const _clrInboxCh = _sbChannels['typing_inbox_out'];
+    const _clrInboxSubscribed = _clrInboxCh && _clrInboxCh.state === 'joined';
     const _pKey = currentConvPartnerEmail.toLowerCase().replace(/[^a-z0-9]/g, '_');
-    _sbBroadcast('dm_typing_inbox_' + _pKey, {
+    const _clrInboxTarget = _clrInboxSubscribed ? _clrInboxCh : ('dm_typing_inbox_' + _pKey);
+    _sbBroadcast(_clrInboxTarget, {
       type: 'broadcast', event: 'dm_typing',
       payload: { senderEmail: email, is_typing: false }
     });
