@@ -9574,8 +9574,14 @@ function renderDiscussions(filter) {
           if (!d.lastReplyTs && d.lastReply === 'Nessuna risposta ancora') return window.I18n ? I18n.t('disc.no_replies') : d.lastReply;
           // BUG FIX #5: usa lastReplyTs per calcolare tempo relativo dinamicamente
           if (d.lastReplyTs) {
-            const authorPart = d.lastReply ? d.lastReply.split(' · ')[0] : '';
+            const _rawPart = d.lastReply ? d.lastReply.split(' · ')[0] : '';
+            const authorPart = _normalizeAuthorShort(_rawPart);
             return `${authorPart} · <span data-ts="${d.lastReplyTs}">${formatTimeAgo(d.lastReplyTs)}</span>`;
+          }
+          // Anche senza ts, normalizza il nome
+          if (d.lastReply && d.lastReply !== 'Nessuna risposta ancora') {
+            const _p = d.lastReply.split(' · ');
+            return _normalizeAuthorShort(_p[0]) + (_p[1] ? ' · ' + _p[1] : '');
           }
           return d.lastReply;
         })()}</span></div>
@@ -11872,10 +11878,10 @@ function sbListenMessages(partnerEmail) {
               return (m.from||'').toLowerCase()+'|'+(m.text||'').substring(0,200);
             })
           );
-          const _cutoff = Date.now() - 16 * 60 * 1000; // finestra 16 min
+          // Nessuna finestra temporale: controlla TUTTI i messaggi.
+          // Messaggi vecchi eliminati devono sparire anche se inviati giorni fa.
           const _byGas = (_msgCache[_cacheKey]||[]).filter(function(m){
-            if (!m.from || !m.ts) return false;
-            if (new Date(m.ts).getTime() < _cutoff) return false;
+            if (!m.from || !m.text) return false;
             return !_gk.has(m.from.toLowerCase()+'|'+(m.text||'').substring(0,200));
           });
           if (_byGas.length === 0) return;
