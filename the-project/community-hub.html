@@ -5577,6 +5577,30 @@ let DISCUSSIONS = [];
 // _rtLastReplyMap: mappa persistente threadId -> { author, ts } aggiornata SOLO da Supabase RT.
 // Immune alle sovrascritture GAS. Fonte di verita' per il nome autore ultima risposta.
 let _rtLastReplyMap = {};
+
+// Espande un nome corto monoparte (es. "Mattia") nel formato "Mattia R."
+// usato dal frontend. Cerca in REAL_MEMBERS per email o primo nome.
+// Se non trovato, restituisce il nome invariato.
+function _normalizeAuthorShort(name) {
+  if (!name) return name;
+  var trimmed = name.trim();
+  // Gia' in formato corto "Mario R." o nome completo con spazio
+  if (trimmed.indexOf(' ') > -1) return trimmed;
+  // Solo primo nome: cerca in REAL_MEMBERS
+  var pool = (typeof REAL_MEMBERS !== 'undefined' && REAL_MEMBERS.length > 0)
+    ? REAL_MEMBERS
+    : (typeof MEMBERS_DATA !== 'undefined' ? MEMBERS_DATA : []);
+  var found = pool.find(function(m) {
+    if (!m || !m.name) return false;
+    return m.name.split(' ')[0].toLowerCase() === trimmed.toLowerCase();
+  });
+  if (found && found.name) {
+    var parts = found.name.split(' ');
+    return parts[0] + (parts[1] ? ' ' + parts[1][0] + '.' : '');
+  }
+  return trimmed;
+}
+
 let LISTINGS = [];
 // Le listing vengono caricate esclusivamente da GAS
 /* Messaggistica reale — popolata da GAS */
@@ -7874,9 +7898,10 @@ function applyRemoteData(data) {
             ? (data.replies[d.id] || data.replies[String(d.id)] || [])
             : [];
           const _gasLast  = [..._gasReplies].reverse().find(function(r){ return !r.isOp; });
-          const _gasAuthor = _gasLast ? (_gasLast.author || '') : '';
-          const _localAuthor = local.lastReply ? local.lastReply.split(' · ')[0] : '';
-          const authorPart  = _rtAuthor || _gasAuthor || _localAuthor || (d.lastReply || '').split(' · ')[0] || '';
+          const _gasAuthor = _gasLast ? _normalizeAuthorShort(_gasLast.author || '') : '';
+          const _localAuthor = local.lastReply ? _normalizeAuthorShort(local.lastReply.split(' · ')[0]) : '';
+          const _rawFallback = _normalizeAuthorShort((d.lastReply || '').split(' · ')[0] || '');
+          const authorPart  = _normalizeAuthorShort(_rtAuthor) || _gasAuthor || _localAuthor || _rawFallback;
           finalLastReply = authorPart ? authorPart + ' · ' + _notifRelTime(finalLastReplyTs) : null;
         }
 
@@ -15986,13 +16011,18 @@ async function deleteOwnDmMessage(msgId, btnEl) {
   // STEP 1 - GAS backend: persisti deleted_for per entrambi gli utenti.
   // delete_dm_message in GAS marca il messaggio come eliminato per entrambi;
   // questo impedisce che ricompaia su getMessagesGAS (fallback polling).
-  if (typeof GAS_URL !== 'undefined' && GAS_URL && currentConvPartnerEmail
-      && !String(msgId).startsWith('temp_')) {
+  // GAS usa ID numerici, non UUID Supabase.
+  // Passiamo anche text+ts cosi' GAS puo' fare il match per contenuto.
+  if (typeof GAS_URL !== 'undefined' && GAS_URL && currentConvPartnerEmail) {
+    const _gasDelText = msg ? (msg.text || '') : '';
+    const _gasDelTs   = msg ? (msg.ts   || '') : '';
     fetch(GAS_URL
       + '?action=delete_dm_message'
       + '&email='      + encodeURIComponent(currentUser.email.toLowerCase())
       + '&otherEmail=' + encodeURIComponent(currentConvPartnerEmail.toLowerCase())
       + '&msgId='      + encodeURIComponent(String(msgId))
+      + '&text='       + encodeURIComponent(_gasDelText)
+      + '&ts='         + encodeURIComponent(_gasDelTs)
     ).catch(() => {});
   }
 
