@@ -11371,36 +11371,6 @@ function renderChatMessages(messages, partnerEmail) {
     }
   }
   messagesEl.scrollTop = messagesEl.scrollHeight;
-
-  // Schedula un re-render se ci sono messaggi inviati ancora dentro la finestra dei 15s.
-  // Caso: l'utente cambia conv e torna prima dei 15s, oppure ricarica la pagina poco dopo l'invio.
-  // In questi casi appendMessageToChat non ha un timer attivo per questa conversazione,
-  // quindi renderChatMessages deve farselo da sola.
-  if (currentConvPartnerEmail && messages.length > 0) {
-    const _renderPartner = partnerEmail;
-    const _now = Date.now();
-    // Trova il messaggio inviato con il timestamp più recente ancora dentro la finestra
-    let _earliestRemaining = Infinity;
-    messages.forEach(function(m) {
-      if (!m.from || !currentUser) return;
-      const _isSent = m.from.toLowerCase() === currentUser.email.toLowerCase();
-      if (!_isSent || !m.id) return;
-      const _mTs = m.ts ? new Date(m.ts).getTime() : 0;
-      const _mElapsed = _mTs > 0 ? _now - _mTs : Infinity;
-      if (_mElapsed < _DELETE_SHOW_DELAY_MS) {
-        const _remaining = _DELETE_SHOW_DELAY_MS - _mElapsed;
-        if (_remaining < _earliestRemaining) _earliestRemaining = _remaining;
-      }
-    });
-    if (_earliestRemaining < Infinity) {
-      setTimeout(function() {
-        if (!currentConvPartnerEmail || currentConvPartnerEmail.toLowerCase() !== _renderPartner.toLowerCase()) return;
-        const _ck = _renderPartner.toLowerCase();
-        const _msgs = (_msgCache && _msgCache[_ck]) ? _msgCache[_ck] : null;
-        if (_msgs) renderChatMessages(_msgs, _renderPartner);
-      }, _earliestRemaining + 100);
-    }
-  }
 }
 
 function escapeHtml(str) {
@@ -11909,8 +11879,8 @@ function appendMessageToChat(msg, isSent) {
     const _delayPartner = currentConvPartnerEmail;
     setTimeout(function() {
       if (!_delayPartner || !currentUser) return;
-      const _cacheKey = _delayPartner.toLowerCase();
-      const _cached = (_msgCache && _msgCache[_cacheKey]) ? _msgCache[_cacheKey] : null;
+      const _cid = convId(currentUser.email, _delayPartner);
+      const _cached = (_msgCache && _msgCache[_cid]) ? _msgCache[_cid] : null;
       if (_cached && currentConvPartnerEmail && currentConvPartnerEmail === _delayPartner) {
         renderChatMessages(_cached, _delayPartner);
       }
