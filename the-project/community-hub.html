@@ -5544,6 +5544,41 @@ function convId(emailA, emailB) {
   return a < b ? `${a}__${b}` : `${b}__${a}`;
 }
 
+/**
+ * _sbBroadcast(target, payload)
+ * Invia un broadcast Supabase senza causare il warning
+ * "Realtime send() is automatically falling back to REST API".
+ *
+ * Regola:
+ *  - Se `target` è una chiave di _sbChannels → usa il canale già sottoscritto (WebSocket aperto).
+ *  - Se `target` è il nome di un canale "monodirezionale" (inbox/typing del partner,
+ *    canale a cui siamo NOI a inviare ma non ascoltiamo) → usa httpSend esplicito,
+ *    che è la modalità REST intenzionale consigliata da Supabase.
+ *  - Oppure passa direttamente un'istanza RealtimeChannel come primo argomento.
+ *
+ * @param {string|RealtimeChannel} target  - chiave _sbChannels, nome canale, o istanza canale
+ * @param {object}                 payload - { type: 'broadcast', event: '...', payload: {...} }
+ */
+function _sbBroadcast(target, payload) {
+  if (!_sbReady || !_sb) return;
+  try {
+    // Caso 1: istanza canale passata direttamente
+    if (target && typeof target === 'object' && typeof target.send === 'function') {
+      target.send(payload).catch(() => {});
+      return;
+    }
+    // Caso 2: chiave in _sbChannels → canale già subscribed, WebSocket attivo
+    const subscribed = _sbChannels[target];
+    if (subscribed) {
+      subscribed.send(payload).catch(() => {});
+      return;
+    }
+    // Caso 3: nome canale non subscribed (es. inbox/typing del partner) →
+    // httpSend esplicito: REST intenzionale, zero warning, zero WebSocket overhead.
+    _sb.channel(target).send(payload, { method: 'httpSend' }).catch(() => {});
+  } catch (_e) {}
+}
+
 /* Email → chiave sicura */
 function emailKey(email) {
   return (email || '').toLowerCase().replace(/[.#$\[\]@]/g, '_');
@@ -12407,16 +12442,18 @@ function sendTypingStatus(isTyping) {
     const email = currentUser.email.toLowerCase();
     const _broadcast = (v) => {
       // Broadcast sul canale conv (partner con chat aperta)
-      _sb.channel('typing_bc_' + cid).send({
+      // Usa _sbChannels['typing'] che è già subscribed da sbListenTyping() → nessun REST fallback.
+      _sbBroadcast('typing', {
         type: 'broadcast', event: 'typing',
         payload: { email: email, is_typing: v }
-      }).catch(() => {});
-      // Broadcast sul canale inbox personale del partner (lista conv, chat non aperta)
+      });
+      // Broadcast sul canale inbox personale del partner (lista conv, chat non aperta).
+      // Canale monodirezionale (noi inviamo, il partner ascolta): httpSend esplicito.
       const _pTypingKey = 'dm_typing_inbox_' + currentConvPartnerEmail.toLowerCase().replace(/[^a-z0-9]/g, '_');
-      _sb.channel(_pTypingKey).send({
+      _sbBroadcast(_pTypingKey, {
         type: 'broadcast', event: 'dm_typing',
         payload: { senderEmail: email, is_typing: v }
-      }).catch(() => {});
+      });
     };
     if (isTyping) {
       _broadcast(true);
@@ -12443,16 +12480,18 @@ function clearTypingStatus() {
     const cid = convId(currentUser.email, currentConvPartnerEmail);
     const email = currentUser.email.toLowerCase();
     // Broadcast sul canale conv (partner con chat aperta)
-    _sb.channel('typing_bc_' + cid).send({
+    // Usa _sbChannels['typing'] già subscribed → nessun REST fallback.
+    _sbBroadcast('typing', {
       type: 'broadcast', event: 'typing',
       payload: { email: email, is_typing: false }
-    }).catch(() => {});
-    // Broadcast sul canale inbox globale del partner (lista conv, chat non aperta)
+    });
+    // Broadcast sul canale inbox globale del partner (lista conv, chat non aperta).
+    // Canale monodirezionale: httpSend esplicito.
     const _pKey = currentConvPartnerEmail.toLowerCase().replace(/[^a-z0-9]/g, '_');
-    _sb.channel('dm_typing_inbox_' + _pKey).send({
+    _sbBroadcast('dm_typing_inbox_' + _pKey, {
       type: 'broadcast', event: 'dm_typing',
       payload: { senderEmail: email, is_typing: false }
-    }).catch(() => {});
+    });
   }
 }
 
@@ -13289,13 +13328,13 @@ async function voteSurvey(surveyId, optionIndex) {
   // ── Broadcast RT: aggiorna immediatamente tutti gli altri utenti presenti ──
   if (_sbReady) {
     try {
-      _sb.channel('community_content_broadcast').send({
+      _sbBroadcast('community_content_rt', {
         type: 'broadcast', event: 'vote_update', payload: {
           surveyId: surveyId,
           options:  s.options.map(o => ({ text: o.text, votes: o.votes })),
           total:    s.total
         }
-      }).catch(() => {});
+      });
     } catch(_e) {}
   }
 
@@ -14417,7 +14456,7 @@ async function promoteMember(emailEnc, nameEnc, btnEl) {
       // L'utente promosso riceve questo evento in tempo reale e aggiorna la UI
       // senza dover fare refresh, logout o nuovo login.
       try {
-        await _sb.channel('lh360_role_updates').send({
+        await _sbBroadcast('role_update_rt', {
           type:    'broadcast',
           event:   'role_change',
           payload: {
@@ -14426,7 +14465,7 @@ async function promoteMember(emailEnc, nameEnc, btnEl) {
             promoterName: currentUser?.name || 'Team'
           }
         });
-      } catch(_bcastErr) { /* silenzioso — la notifica Supabase funge da fallback */ }
+      } catch(_bcastErr) { /* silenzioso */ }
     }
   } catch(e) {
     console.warn('[promoteMember]', e.message);
@@ -14462,7 +14501,7 @@ async function demoteMember(emailEnc, nameEnc, btnEl) {
 
       // ── Broadcast immediato del cambio ruolo ──
       try {
-        await _sb.channel('lh360_role_updates').send({
+        await _sbBroadcast('role_update_rt', {
           type:    'broadcast',
           event:   'role_change',
           payload: {
@@ -14955,9 +14994,9 @@ async function publishSurvey() {
   // ── Broadcast istantaneo: gli altri utenti ricevono il sondaggio senza attendere il polling ──
   if (_sbReady) {
     try {
-      _sb.channel('community_content_broadcast').send({
+      _sbBroadcast('community_content_rt', {
         type: 'broadcast', event: 'new_survey', payload: surveyObj
-      }).catch(() => {});
+      });
     } catch(_e) {}
   }
   showPanel("surveys", document.querySelector('.nav-item[onclick*="surveys"]'));
@@ -14992,9 +15031,9 @@ async function publishSurvey() {
         // GAS ha confermato: notifica agli altri client del cambio ID per evitare duplicati
         if (_sbReady) {
           try {
-            _sb.channel('community_content_broadcast').send({
+            _sbBroadcast('community_content_rt', {
               type: 'broadcast', event: 'update_survey_id', payload: { tempId, realId }
-            }).catch(() => {});
+            });
           } catch(_e2) {}
         }
         setTimeout(() => _pendingSurveyIds.delete(realId), 60000);
@@ -15056,9 +15095,9 @@ async function publishListing() {
   // ── Broadcast istantaneo: gli altri utenti ricevono il listing senza attendere il polling ──
   if (_sbReady) {
     try {
-      _sb.channel('community_content_broadcast').send({
+      _sbBroadcast('community_content_rt', {
         type: 'broadcast', event: 'new_listing', payload: listingObj
-      }).catch(() => {});
+      });
     } catch(_e) {}
   }
   showPanel("listings", document.querySelector('.nav-item[onclick*="listings"]'));
@@ -15103,9 +15142,9 @@ async function publishListing() {
         // Notifica agli altri client del cambio ID (tempId → realId) per evitare sparizione al polling
         if (_sbReady) {
           try {
-            _sb.channel('community_content_broadcast').send({
+            _sbBroadcast('community_content_rt', {
               type: 'broadcast', event: 'update_listing_id', payload: { tempId, realId }
-            }).catch(() => {});
+            });
           } catch(_e2) {}
         }
       } else {
@@ -16125,16 +16164,16 @@ async function deleteOwnDmMessage(msgId, btnEl) {
   // STEP 3 - Broadcast istantaneo canale conversazione (partner con conv aperta)
   // Usa _realMsgId (UUID) cosi' la cache del partner (che ha UUID) puo' matchare.
   if (_sbReady && _sb) {
-    _sb.channel('messages_' + _delCid)
-      .send({ type: 'broadcast', event: 'dm_delete', payload: { msgId: _realMsgId } })
-      .catch(() => {});
+    // Usa _sbChannels['messages'] già subscribed → nessun REST fallback.
+    _sbBroadcast('messages', { type: 'broadcast', event: 'dm_delete', payload: { msgId: _realMsgId } });
   }
 
   // STEP 4 - Broadcast dm-inbox (partner con conv NON aperta)
   if (_sbReady && _sb && currentConvPartnerEmail) {
     const _pInboxKey = 'dm_inbox_' + currentConvPartnerEmail.toLowerCase().replace(/[^a-z0-9]/g, '_');
     const _pLast = msgs.length > 0 ? msgs[msgs.length - 1] : null;
-    _sb.channel(_pInboxKey).send({
+    // Canale inbox del partner: monodirezionale → httpSend esplicito.
+    _sbBroadcast(_pInboxKey, {
       type: 'broadcast', event: 'dm_delete_inbox',
       payload: {
         msgId:        _realMsgId,
@@ -16143,7 +16182,7 @@ async function deleteOwnDmMessage(msgId, btnEl) {
         lastText:     _pLast ? (_pLast.text || '📎 Media') : '',
         lastTs:       _pLast ? _pLast.ts : null
       }
-    }).catch(() => {});
+    });
   }
 }
 
@@ -16360,9 +16399,9 @@ async function deleteOwnFoundingMsg(msgId, btnEl) {
   // 3. Propaga a tutti gli altri client via Broadcast (non richiede RLS/auth)
   //    Tutti i client connessi al canale founding ricevono l'evento e rimuovono il messaggio
   if (window._sb && window._sbReady) {
-    window._sb.channel('founding-group-chat-v2')
-      .send({ type: 'broadcast', event: 'fc_delete', payload: { msgId: String(msgId) } })
-      .catch(function() {});
+    // _foundingSbChannel è già subscribed → nessun REST fallback.
+    _sbBroadcast(_foundingSbChannel,
+      { type: 'broadcast', event: 'fc_delete', payload: { msgId: String(msgId) } });
   }
 
   // 4. Tenta DELETE su Supabase (funziona se RLS lo consente, altrimenti silenzioso)
