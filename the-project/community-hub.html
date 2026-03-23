@@ -8964,14 +8964,15 @@ async function _writeReportToSupabase(report) {
 /* ── BUG FIX #1/#2: Scrivi rimozione su Supabase (sincronizzazione globale) ── */
 async function _writeRemovalToSupabase(sourceType, sourceId) {
   if (!_sbReady || !currentUser) return;
-  try {
-    await _sb.from('content_removals').insert({
-      source_type:  sourceType,
-      source_id:    String(sourceId),
-      removed_by:   currentUser.email.toLowerCase(),
-      created_at:   new Date().toISOString()
-    });
-  } catch(_e) { /* silenzioso — tabella potrebbe non esistere */ }
+  // FIX: usare .then()/.catch() invece di await (funzione non-async).
+  // await in una funzione non-async viene trattato come identificatore,
+  // lancia 'await is not a function', catturato dal try/catch -> INSERT mai eseguito.
+  _sb.from('content_removals').insert({
+    source_type:  sourceType,
+    source_id:    String(sourceId),
+    removed_by:   currentUser.email.toLowerCase(),
+    created_at:   new Date().toISOString()
+  }).then(null, function() { /* silenzioso */ });
 }
 
 /* ── BUG FIX #2: Carica rimozioni persistenti da Supabase all'avvio ── */
@@ -10344,9 +10345,12 @@ async function submitThreadReply() {
 
   // FIX: trasmetti la nuova risposta in tempo reale a tutti gli utenti che hanno il thread aperto
   if (_sbReady) {
-    _sb.channel('thread_replies_' + currentThreadId)
-      .send({ type: 'broadcast', event: 'new_reply', payload: { threadId: currentThreadId, reply: newReply } })
-      .catch(() => {});
+    // FIX: usa canale subscribed
+    const _trChNew = _sbChannels['thread_replies_rt'];
+    if (_trChNew) {
+      _trChNew.send({ type: 'broadcast', event: 'new_reply', payload: { threadId: currentThreadId, reply: newReply } })
+        .catch(() => {});
+    }
   }
 
   const thread = DISCUSSIONS.find(d => d.id === currentThreadId);
@@ -16247,14 +16251,21 @@ async function deleteOwnReply(replyId, btnEl) {
       newLastAuthor: disc ? (disc.lastReply ? disc.lastReply.split(' · ')[0] : '') : '',
       newLastTs:     disc ? (disc.lastReplyTs || 0) : 0
     };
+    // FIX: usa i canali GIA' sottoscritti (_sbChannels) invece di _sb.channel().
+    // _sb.channel('nome').send() su un canale non subscribed cade in REST fallback
+    // e non consegna il broadcast in RT agli altri client.
     // Canale thread (utenti con il thread aperto)
-    _sb.channel('thread_replies_' + currentThreadId)
-      .send({ type: 'broadcast', event: 'reply_delete', payload: _drPayload })
-      .catch(() => {});
-    // Canale globale (tutti gli utenti — aggiorna contatore/preview anche senza aprire il thread)
-    _sb.channel('disc-updates-v1')
-      .send({ type: 'broadcast', event: 'reply_delete_disc', payload: _drPayload })
-      .catch(() => {});
+    const _trCh = _sbChannels['thread_replies_rt'];
+    if (_trCh) {
+      _trCh.send({ type: 'broadcast', event: 'reply_delete', payload: _drPayload })
+        .catch(() => {});
+    }
+    // Canale globale (tutti gli utenti - aggiorna contatore/preview)
+    const _duCh = _sbChannels['disc_updates_rt'];
+    if (_duCh) {
+      _duCh.send({ type: 'broadcast', event: 'reply_delete_disc', payload: _drPayload })
+        .catch(() => {});
+    }
   }
   // GAS: elimina definitivamente dal PropertiesService
   if (GAS_URL && currentUser) {
