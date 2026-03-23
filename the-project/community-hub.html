@@ -12428,15 +12428,21 @@ function clearTypingStatus() {
   if (_typingTimer) { clearTimeout(_typingTimer); _typingTimer = null; }
   if (!currentConvPartnerEmail || !currentUser) return;
 
+  // FIX: usa Broadcast (stesso sistema di sendTypingStatus) invece di upsert RLS.
   if (_sbReady) {
     const cid = convId(currentUser.email, currentConvPartnerEmail);
     const email = currentUser.email.toLowerCase();
-    _sb.from('typing').upsert(
-      { conv_id: cid, user_email: email, is_typing: false, updated_at: new Date().toISOString() },
-      { onConflict: 'conv_id,user_email' }
-    ).then(null, () => {});
-  } else {
-    fetch(`${GAS_URL}?action=set_typing&email=${encodeURIComponent(currentUser.email)}&otherEmail=${encodeURIComponent(currentConvPartnerEmail)}&isTyping=false`).catch(() => {});
+    // Broadcast sul canale conv (partner con chat aperta)
+    _sb.channel('typing_bc_' + cid).send({
+      type: 'broadcast', event: 'typing',
+      payload: { email: email, is_typing: false }
+    }).catch(() => {});
+    // Broadcast sul canale inbox globale del partner (lista conv, chat non aperta)
+    const _pKey = currentConvPartnerEmail.toLowerCase().replace(/[^a-z0-9]/g, '_');
+    _sb.channel('dm_typing_inbox_' + _pKey).send({
+      type: 'broadcast', event: 'dm_typing',
+      payload: { senderEmail: email, is_typing: false }
+    }).catch(() => {});
   }
 }
 
@@ -14024,6 +14030,13 @@ async function loadRealMembers() {
   }
   if (badge) badge.style.display = 'none';
   renderMembersTable();
+  // FIX: ri-renderizza Discussioni ora che REAL_MEMBERS e' popolato.
+  // Al boot renderDiscussions() gira con REAL_MEMBERS=[] (caricamento async);
+  // qui i membri sono appena arrivati -> ri-renderizza per normalizzare i nomi.
+  // Controlla che il pannello discussioni esista (potrebbe non essere attivo).
+  if (typeof renderDiscussions === 'function') {
+    renderDiscussions();
+  }
 }
 
 /* Imposta filtro attivo e ri-renderizza */
