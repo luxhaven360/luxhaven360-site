@@ -524,6 +524,7 @@ window.I18N_TRANSLATIONS['fr'] = {
   // ─── TABLEAU DE BORD ───────────────────────────────────
   'dash.members_up':                 '+{n} cette semaine',
   'dash.members_down':               '-{lost} partis, +{new} nouveaux cette semaine',
+  'dash.members_down_net':           '-{n} cette semaine',
   'dash.members_nochange':           'Aucune variation cette semaine',
   'dash.of_n_spots':                 'sur {n} places au total',
   'dash.slot_one':                   'Place disponible',
