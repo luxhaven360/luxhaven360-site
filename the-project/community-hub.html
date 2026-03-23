@@ -10124,8 +10124,21 @@ function _startThreadRepliesListener(threadId) {
       // Aggiorna il contatore risposte nell'header del thread overlay
       _updateThreadDetailHeader(currentThreadId);
     })
-    .subscribe();
+    .subscribe(function(status) {
+      if (status === 'SUBSCRIBED') {
+        // Solo ora il canale è effettivamente pronto per send() via WebSocket.
+        // FIX: assegnare qui (e non prima) evita che deleteOwnReply chiami
+        // .send() su un canale ancora in SUBSCRIBING → fallisce silenziosamente.
+        _sbChannels['thread_replies_rt'] = ch;
+        console.log('[Thread RT] ✅ thread_replies_rt subscribed per thread', threadId);
+      } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+        console.warn('[Thread RT] ⚠️ thread_replies_rt fallita (' + status + ')');
+        _sbChannels['thread_replies_rt'] = ch; // mantieni ref per sbOff cleanup
+      }
+    });
 
+  // Ref immediato per sbOff (cleanup). deleteOwnReply usa httpSend via _sbBroadcast
+  // finché la subscription non è confermata (status !== 'SUBSCRIBED').
   _sbChannels['thread_replies_rt'] = ch;
 }
 
@@ -12245,14 +12258,32 @@ function sbListenMessages(partnerEmail) {
           const tempIdx = _msgCache[cacheKey].findIndex(x => String(x.id).startsWith('temp_') && x.text === (m.text||'') && x.from === m.sender_email.toLowerCase());
           const realMsg = { id: m.id, from: m.sender_email, fromName: m.sender_name, fromInitial: (m.sender_name||'?')[0].toUpperCase(), text: m.text||'', media_url: m.media_url||null, media_type: m.media_type||null, ts: m.created_at, deletedFor: m.deleted_for||[] };
           if (tempIdx !== -1) {
+            const _oldTempId = _msgCache[cacheKey][tempIdx].id;
             _msgCache[cacheKey][tempIdx] = realMsg; // promuovi: temp_ → id reale
-            // FIX: re-render la chat per aggiornare il bottone 🗑 con l'id reale
-            // Senza questo, il DOM ha ancora il vecchio id temp_ nell'onclick del bottone
+            // FIX NO-FLASH: aggiorna chirurgicamente il DOM invece di renderChatMessages().
+            // renderChatMessages() ricostruisce l'intero innerHTML → flash visivo.
+            // Qui aggiorniamo solo: data-content-id del bubble + onclick del delete btn.
             const _panelOpen = document.getElementById('panel-messages')?.classList.contains('active');
             const _isThisConv = _panelOpen && currentConvPartnerEmail &&
               currentConvPartnerEmail.toLowerCase() === partnerEmail.toLowerCase();
             if (_isThisConv) {
-              renderChatMessages(_msgCache[cacheKey], partnerEmail);
+              // Aggiorna data-content-id del bubble (temp_ → id reale)
+              const _oldBubble = document.querySelector('.msg-bubble[data-content-id="msg-' + _oldTempId + '"]');
+              if (_oldBubble) {
+                _oldBubble.dataset.contentId = 'msg-' + m.id;
+              }
+              // Aggiorna onclick del delete button se già presente nel DOM
+              // (il pulsante 🗑 potrebbe non esserci ancora — apparirà a 15s via _injectDeleteBtn)
+              const _msgEl = _oldBubble ? _oldBubble.closest('.msg') : null;
+              if (_msgEl) {
+                const _delBtn = _msgEl.querySelector('.dm-delete-btn');
+                if (_delBtn) {
+                  _delBtn.onclick = function(e) {
+                    e.stopPropagation();
+                    deleteOwnDmMessage(String(m.id), this);
+                  };
+                }
+              }
             }
           } else {
             // temp_ non trovato (già promosso o non presente): inserisci l'id reale.
@@ -12266,12 +12297,8 @@ function sbListenMessages(partnerEmail) {
             const alreadyCached = _msgCache[cacheKey].some(function(x) { return x.id === m.id; });
             if (!alreadyCached) {
               _msgCache[cacheKey].push(realMsg);
-              // FIX: re-render anche in questo branch per aggiornare gli id nei delete btn
-              const _p2 = document.getElementById('panel-messages');
-              const _panelOpen2 = _p2 && _p2.classList.contains('active');
-              const _isThisConv2 = _panelOpen2 && currentConvPartnerEmail &&
-                currentConvPartnerEmail.toLowerCase() === partnerEmail.toLowerCase();
-              if (_isThisConv2) renderChatMessages(_msgCache[cacheKey], partnerEmail);
+              // Nessun re-render: il messaggio non era in DOM (caso raro), verrà
+              // mostrato al prossimo renderChatMessages naturale (apertura conv, ecc.)
             }
           }
         }
@@ -16588,21 +16615,22 @@ async function deleteOwnReply(replyId, btnEl) {
       newLastAuthor: disc ? (disc.lastReply ? disc.lastReply.split(' · ')[0] : '') : '',
       newLastTs:     disc ? (disc.lastReplyTs || 0) : 0
     };
-    // FIX: usa i canali GIA' sottoscritti (_sbChannels) invece di _sb.channel().
-    // _sb.channel('nome').send() su un canale non subscribed cade in REST fallback
-    // e non consegna il broadcast in RT agli altri client.
+    // FIX RT: controlla stato del canale prima di usare .send() (WebSocket).
+    // Se il canale non è ancora SUBSCRIBED ('joined'), _sbBroadcast usa httpSend
+    // (Case 3) — garantito anche durante la fase di SUBSCRIBING iniziale.
+    // Questo risolve il bug "prima eliminazione non propagata": openThread chiama
+    // _startThreadRepliesListener che è asincrono; se si elimina subito dopo
+    // l'apertura, il canale potrebbe essere ancora in SUBSCRIBING → .send() fallisce.
     // Canale thread (utenti con il thread aperto)
     const _trCh = _sbChannels['thread_replies_rt'];
-    if (_trCh) {
-      _trCh.send({ type: 'broadcast', event: 'reply_delete', payload: _drPayload })
-        .catch(() => {});
-    }
+    const _trChReady = _trCh && _trCh.state === 'joined';
+    const _trTarget = _trChReady ? _trCh : ('thread_replies_' + currentThreadId);
+    _sbBroadcast(_trTarget, { type: 'broadcast', event: 'reply_delete', payload: _drPayload });
     // Canale globale (tutti gli utenti - aggiorna contatore/preview)
     const _duCh = _sbChannels['disc_updates_rt'];
-    if (_duCh) {
-      _duCh.send({ type: 'broadcast', event: 'reply_delete_disc', payload: _drPayload })
-        .catch(() => {});
-    }
+    const _duChReady = _duCh && _duCh.state === 'joined';
+    const _duTarget = _duChReady ? _duCh : 'disc-updates-v1';
+    _sbBroadcast(_duTarget, { type: 'broadcast', event: 'reply_delete_disc', payload: _drPayload });
   }
   // GAS: elimina definitivamente dal PropertiesService
   if (GAS_URL && currentUser) {
