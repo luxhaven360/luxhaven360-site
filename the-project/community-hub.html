@@ -11908,9 +11908,13 @@ function appendMessageToChat(msg, isSent) {
   }
 
   // Dopo 15s: re-render la chat DM per far comparire il 🗑 con ID reale garantito.
-  // Grazie al fix sopra, _msgCache ha sempre il messaggio. Quando arriva l'INSERT
-  // Supabase, il temp_ viene promosso in cache; il timer trova l'id reale e il
-  // re-render mostra il bottone cestino senza alcuna interazione utente.
+  // FIX v2: rimosso il `return` dopo _stillTemp che bloccava il re-render immediato.
+  // PROBLEMA PRECEDENTE: se al momento del timer il messaggio era ancora temp_,
+  // il codice NON eseguiva il re-render e schedulava un solo retry a +2s.
+  // Se l'INSERT Supabase arrivava dopo quei 2s (network lag), il cestino non appariva mai.
+  // SOLUZIONE: re-render SEMPRE a 15s (il messaggio resta visibile, cestino assente
+  // se ancora temp_ — comportamento corretto), poi secondo re-render SEMPRE a +2s
+  // per catturare l'ID reale non appena arriva da Supabase, senza interazione utente.
   if (isSent && _appendMsgTs > 0 && _appendElapsed < _DELETE_SHOW_DELAY_MS) {
     const _delayPartner = currentConvPartnerEmail;
     const _delayMs = _DELETE_SHOW_DELAY_MS - _appendElapsed + 200;
@@ -11921,20 +11925,18 @@ function appendMessageToChat(msg, isSent) {
       const _cacheKey = _delayPartner.toLowerCase();
       const _cached = (_msgCache && _msgCache[_cacheKey]) ? _msgCache[_cacheKey] : null;
       if (!_cached || _cached.length === 0) return;
-      // Se il messaggio è ancora temp_ (INSERT Supabase non ancora arrivato),
-      // attendi altri 2s e riprova — garantisce che il delete btn abbia l'id reale.
-      const _stillTemp = _cached.some(function(m) { return String(m.id).startsWith('temp_'); });
-      if (_stillTemp) {
-        setTimeout(function() {
-          const _c2 = (_msgCache && _msgCache[_cacheKey]) ? _msgCache[_cacheKey] : null;
-          if (_c2 && currentConvPartnerEmail &&
-              currentConvPartnerEmail.toLowerCase() === _delayPartner.toLowerCase()) {
-            renderChatMessages(_c2, _delayPartner);
-          }
-        }, 2000);
-        return;
-      }
+      // Re-render immediato a 15s — mostra il cestino se l'ID è già reale,
+      // oppure mostra il messaggio senza cestino se ancora temp_ (nessun salto).
       renderChatMessages(_cached, _delayPartner);
+      // Secondo re-render a +2s SEMPRE: garantisce che il cestino appaia
+      // anche se l'INSERT Supabase arriva con ritardo, senza interazione utente.
+      setTimeout(function() {
+        const _c2 = (_msgCache && _msgCache[_cacheKey]) ? _msgCache[_cacheKey] : null;
+        if (_c2 && currentConvPartnerEmail &&
+            currentConvPartnerEmail.toLowerCase() === _delayPartner.toLowerCase()) {
+          renderChatMessages(_c2, _delayPartner);
+        }
+      }, 2000);
     }, _delayMs);
   }
 }
@@ -12428,35 +12430,37 @@ function _setTypingState(partnerEmail, isTyping) {
   if (currentConvPartnerEmail && currentConvPartnerEmail.toLowerCase() === key) {
     if (isTyping) showTypingIndicator(); else removeTypingIndicator();
   }
-  // FIX: aggiorna DIRETTAMENTE il conv-item nel DOM per risposta istantanea,
-  // senza dover aspettare il ciclo di renderConversations() (~1.8s).
-  // renderConversations() viene comunque chiamato dopo per sincronizzare
-  // tutto il resto (ordine, badge, tempo), ma il testo "sta scrivendo…"
-  // appare nell'istante stesso in cui arriva l'evento Supabase.
-  if (changed) {
-    const _convItem = document.querySelector(`.conv-item[data-email="${key}"]`);
-    if (_convItem) {
-      const _previewEl = _convItem.querySelector('.conv-preview');
-      if (_previewEl) {
-        if (isTyping) {
-          // Mostra "sta scrivendo…" con i pallini animati solo se non già mostrato
-          if (!_previewEl.querySelector('.conv-typing-dots')) {
-            _previewEl.style.color = 'var(--gold)';
-            _previewEl.style.fontStyle = 'italic';
-            _previewEl.innerHTML = (window.I18n ? I18n.t('msg.typing') : 'sta scrivendo') +
-              '<span class="conv-typing-dots"><span>.</span><span>.</span><span>.</span></span>';
-          }
-        } else {
-          // Ripristina l'anteprima dell'ultimo messaggio
-          const _conv = REAL_CONVS.find(c => c.partnerEmail.toLowerCase() === key);
-          const _lastMsg = _conv ? (_conv.lastMessage || '—') : '—';
-          _previewEl.style.color = '';
-          _previewEl.style.fontStyle = '';
-          _previewEl.textContent = _lastMsg;
+  // FIX v2: aggiorna SEMPRE il conv-item nel DOM, indipendentemente da `changed`.
+  // PROBLEMA PRECEDENTE: se l'evento Supabase arrivava mentre renderConversations()
+  // stava ancora montando i .conv-item, querySelector() restituiva null e l'update
+  // veniva perso. `changed` rimaneva però true, quindi l'evento SUCCESSIVO (con il
+  // DOM già pronto) veniva saltato perché _typingByEmail[key] era già impostato.
+  // SOLUZIONE: aggiornare il DOM SEMPRE. La guard .conv-typing-dots evita flickering.
+  // `changed` viene usato solo per decidere se chiamare renderConversations().
+  const _convItem = document.querySelector(`.conv-item[data-email="${key}"]`);
+  if (_convItem) {
+    const _previewEl = _convItem.querySelector('.conv-preview');
+    if (_previewEl) {
+      if (isTyping) {
+        // Mostra "sta scrivendo…" con i pallini animati (aggiorna anche se già mostrato)
+        _previewEl.style.color = 'var(--gold)';
+        _previewEl.style.fontStyle = 'italic';
+        if (!_previewEl.querySelector('.conv-typing-dots')) {
+          _previewEl.innerHTML = (window.I18n ? I18n.t('msg.typing') : 'sta scrivendo') +
+            '<span class="conv-typing-dots"><span>.</span><span>.</span><span>.</span></span>';
         }
+      } else {
+        // Ripristina l'anteprima dell'ultimo messaggio
+        const _conv = REAL_CONVS.find(c => c.partnerEmail.toLowerCase() === key);
+        const _lastMsg = _conv ? (_conv.lastMessage || '—') : '—';
+        _previewEl.style.color = '';
+        _previewEl.style.fontStyle = '';
+        _previewEl.textContent = _lastMsg;
       }
     }
-    // Chiamata a renderConversations per sincronizzare ordine, badge e orario
+  }
+  // Chiamata a renderConversations solo se lo stato è cambiato (evita render inutili)
+  if (changed) {
     renderConversations();
   }
 }
