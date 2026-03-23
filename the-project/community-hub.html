@@ -2991,6 +2991,7 @@ Object.assign(window.I18N_TRANSLATIONS['it'] || (window.I18N_TRANSLATIONS['it']=
   'listings.early_access':      'Accesso anticipato esclusivo — Le proprietà saranno pubblicate non appena disponibili.',
   // ─── MESSAGES ─────────────────────────────────────────────────
   'messages.no_conversations':  'Non ci sono conversazioni recenti.',
+  'msg.typing':                 'sta scrivendo',
   // ─── FOUNDING MEMBERS CHAT ──────────────────────────────────────────────────
   'nav.founding_chat': 'Founding Members',
   'founding.channel_status': 'Canale esclusivo',
@@ -3309,6 +3310,7 @@ Object.assign(window.I18N_TRANSLATIONS['en'] || (window.I18N_TRANSLATIONS['en']=
   'listings.early_access':      'Exclusive early access — Properties will be published as soon as available.',
   // ─── MESSAGES ─────────────────────────────────────────────────
   'messages.no_conversations':  'No recent conversations.',
+  'msg.typing':                 'typing',
   // ─── FOUNDING MEMBERS CHAT ──────────────────────────────────────────────────
   'nav.founding_chat': 'Founding Members',
   'founding.channel_status': 'Exclusive channel',
@@ -3565,6 +3567,7 @@ Object.assign(window.I18N_TRANSLATIONS['fr'] || (window.I18N_TRANSLATIONS['fr']=
   'listings.early_access':      'Accès anticipé exclusif — Les propriétés seront publiées dès qu\'elles seront disponibles.',
   // ─── MESSAGES ─────────────────────────────────────────────────
   'messages.no_conversations':  'Aucune conversation récente.',
+  'msg.typing':                 'est en train d\'écrire',
   // ─── FOUNDING MEMBERS CHAT ──────────────────────────────────────────────────
   'nav.founding_chat': 'Founding Members',
   'founding.channel_status': 'Canal exclusif',
@@ -3808,6 +3811,7 @@ Object.assign(window.I18N_TRANSLATIONS['de'] || (window.I18N_TRANSLATIONS['de']=
   'listings.early_access':      'Exklusiver Frühzugang — Immobilien werden veröffentlicht, sobald sie verfügbar sind.',
   // ─── MESSAGES ─────────────────────────────────────────────────
   'messages.no_conversations':  'Keine aktuellen Gespräche.',
+  'msg.typing':                 'schreibt',
   // ─── FOUNDING MEMBERS CHAT ──────────────────────────────────────────────────
   'nav.founding_chat': 'Founding Members',
   'founding.channel_status': 'Exklusiver Kanal',
@@ -4049,6 +4053,7 @@ Object.assign(window.I18N_TRANSLATIONS['es'] || (window.I18N_TRANSLATIONS['es']=
   'listings.early_access':      'Acceso anticipado exclusivo — Las propiedades se publicarán en cuanto estén disponibles.',
   // ─── MESSAGES ─────────────────────────────────────────────────
   'messages.no_conversations':  'No hay conversaciones recientes.',
+  'msg.typing':                 'está escribiendo',
   // ─── FOUNDING MEMBERS CHAT ──────────────────────────────────────────────────
   'nav.founding_chat': 'Founding Members',
   'founding.channel_status': 'Canal exclusivo',
@@ -11875,16 +11880,22 @@ function appendMessageToChat(msg, isSent) {
   messagesEl.scrollTo({ top: messagesEl.scrollHeight, behavior: 'smooth' });
 
   // Dopo 15s: re-render la chat DM per far comparire il 🗑 con ID reale già disponibile
+  // FIX: _msgCache usa partnerEmail.toLowerCase() come chiave, NON convId().
   if (isSent && _appendMsgTs > 0 && _appendElapsed < _DELETE_SHOW_DELAY_MS) {
     const _delayPartner = currentConvPartnerEmail;
+    const _delayMs = _DELETE_SHOW_DELAY_MS - _appendElapsed + 100;
     setTimeout(function() {
       if (!_delayPartner || !currentUser) return;
-      const _cid = convId(currentUser.email, _delayPartner);
-      const _cached = (_msgCache && _msgCache[_cid]) ? _msgCache[_cid] : null;
-      if (_cached && currentConvPartnerEmail && currentConvPartnerEmail === _delayPartner) {
+      // Chiave corretta: partnerEmail.toLowerCase() (identica a quella usata da
+      // renderChatMessages, loadChatMessages, sbListenMessages, ecc.)
+      const _cacheKey = _delayPartner.toLowerCase();
+      const _cached = (_msgCache && _msgCache[_cacheKey]) ? _msgCache[_cacheKey] : null;
+      // Aggiorna solo se la stessa conversazione è ancora aperta
+      if (_cached && currentConvPartnerEmail &&
+          currentConvPartnerEmail.toLowerCase() === _delayPartner.toLowerCase()) {
         renderChatMessages(_cached, _delayPartner);
       }
-    }, _DELETE_SHOW_DELAY_MS - _appendElapsed + 100);
+    }, _delayMs);
   }
 }
 
@@ -12343,8 +12354,37 @@ function _setTypingState(partnerEmail, isTyping) {
   if (currentConvPartnerEmail && currentConvPartnerEmail.toLowerCase() === key) {
     if (isTyping) showTypingIndicator(); else removeTypingIndicator();
   }
-  // Aggiorna lista conversazioni solo se lo stato è cambiato
-  if (changed) renderConversations();
+  // FIX: aggiorna DIRETTAMENTE il conv-item nel DOM per risposta istantanea,
+  // senza dover aspettare il ciclo di renderConversations() (~1.8s).
+  // renderConversations() viene comunque chiamato dopo per sincronizzare
+  // tutto il resto (ordine, badge, tempo), ma il testo "sta scrivendo…"
+  // appare nell'istante stesso in cui arriva l'evento Supabase.
+  if (changed) {
+    const _convItem = document.querySelector(`.conv-item[data-email="${key}"]`);
+    if (_convItem) {
+      const _previewEl = _convItem.querySelector('.conv-preview');
+      if (_previewEl) {
+        if (isTyping) {
+          // Mostra "sta scrivendo…" con i pallini animati solo se non già mostrato
+          if (!_previewEl.querySelector('.conv-typing-dots')) {
+            _previewEl.style.color = 'var(--gold)';
+            _previewEl.style.fontStyle = 'italic';
+            _previewEl.innerHTML = (window.I18n ? I18n.t('msg.typing') : 'sta scrivendo') +
+              '<span class="conv-typing-dots"><span>.</span><span>.</span><span>.</span></span>';
+          }
+        } else {
+          // Ripristina l'anteprima dell'ultimo messaggio
+          const _conv = REAL_CONVS.find(c => c.partnerEmail.toLowerCase() === key);
+          const _lastMsg = _conv ? (_conv.lastMessage || '—') : '—';
+          _previewEl.style.color = '';
+          _previewEl.style.fontStyle = '';
+          _previewEl.textContent = _lastMsg;
+        }
+      }
+    }
+    // Chiamata a renderConversations per sincronizzare ordine, badge e orario
+    renderConversations();
+  }
 }
 
 async function pollMessages() {
