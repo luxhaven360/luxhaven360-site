@@ -5562,20 +5562,29 @@ function convId(emailA, emailB) {
 function _sbBroadcast(target, payload) {
   if (!_sbReady || !_sb) return;
   try {
-    // Caso 1: istanza canale passata direttamente
+    // Caso 1: istanza canale passata direttamente (es. _foundingSbChannel)
+    // send() su canale gia' subscribed, WebSocket attivo, zero warning.
     if (target && typeof target === 'object' && typeof target.send === 'function') {
       target.send(payload).catch(() => {});
       return;
     }
-    // Caso 2: chiave in _sbChannels → canale già subscribed, WebSocket attivo
+    // Caso 2: chiave in _sbChannels -> canale gia' subscribed, WebSocket attivo.
     const subscribed = _sbChannels[target];
     if (subscribed) {
       subscribed.send(payload).catch(() => {});
       return;
     }
-    // Caso 3: nome canale non subscribed (es. inbox/typing del partner) →
-    // httpSend esplicito: REST intenzionale, zero warning, zero WebSocket overhead.
-    _sb.channel(target).send(payload, { method: 'httpSend' }).catch(() => {});
+    // Caso 3: nome canale non subscribed (es. inbox/typing del partner).
+    // Usa httpSend() -- metodo REST intenzionale di Supabase, zero warning.
+    // NOTA: { method: 'httpSend' } come secondo arg di send() NON e' l'API corretta;
+    // il metodo separato httpSend() e' quello ufficiale indicato nel warning stesso.
+    const ch = _sb.channel(target);
+    if (typeof ch.httpSend === 'function') {
+      ch.httpSend(payload).catch(() => {});
+    } else {
+      // Fallback per versioni di supabase-js che non espongono ancora httpSend().
+      ch.send(payload).catch(() => {});
+    }
   } catch (_e) {}
 }
 
@@ -12441,14 +12450,16 @@ function sendTypingStatus(isTyping) {
     const cid = convId(currentUser.email, currentConvPartnerEmail);
     const email = currentUser.email.toLowerCase();
     const _broadcast = (v) => {
-      // Broadcast sul canale conv (partner con chat aperta)
-      // Usa _sbChannels['typing'] che è già subscribed da sbListenTyping() → nessun REST fallback.
-      _sbBroadcast('typing', {
+      // Broadcast sul canale conv (partner con chat aperta).
+      // Se il canale e' gia' subscribed (caso normale) passa l'istanza diretta -> WebSocket.
+      // Se non e' ancora pronto (es. cambio conv in corso) passa il nome reale del canale
+      // -> _sbBroadcast lo usa come httpSend (REST intenzionale, zero warning).
+      _sbBroadcast(_sbChannels['typing'] || ('typing_bc_' + cid), {
         type: 'broadcast', event: 'typing',
         payload: { email: email, is_typing: v }
       });
       // Broadcast sul canale inbox personale del partner (lista conv, chat non aperta).
-      // Canale monodirezionale (noi inviamo, il partner ascolta): httpSend esplicito.
+      // Canale monodirezionale (noi inviamo, il partner ascolta): sempre httpSend.
       const _pTypingKey = 'dm_typing_inbox_' + currentConvPartnerEmail.toLowerCase().replace(/[^a-z0-9]/g, '_');
       _sbBroadcast(_pTypingKey, {
         type: 'broadcast', event: 'dm_typing',
@@ -12479,9 +12490,10 @@ function clearTypingStatus() {
   if (_sbReady) {
     const cid = convId(currentUser.email, currentConvPartnerEmail);
     const email = currentUser.email.toLowerCase();
-    // Broadcast sul canale conv (partner con chat aperta)
-    // Usa _sbChannels['typing'] già subscribed → nessun REST fallback.
-    _sbBroadcast('typing', {
+    // Broadcast sul canale conv (partner con chat aperta).
+    // Stessa logica di sendTypingStatus: usa l'istanza subscribed se disponibile,
+    // altrimenti il nome reale del canale per httpSend.
+    _sbBroadcast(_sbChannels['typing'] || ('typing_bc_' + cid), {
       type: 'broadcast', event: 'typing',
       payload: { email: email, is_typing: false }
     });
