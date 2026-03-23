@@ -7864,12 +7864,19 @@ function applyRemoteData(data) {
         let finalLastReply = d.lastReply || null;
         if (finalLastReplyTs) {
           // BUG FIX FLICKER v2: _rtLastReplyMap e' la fonte ASSOLUTA di verita' per l'autore.
-          // Aggiornato SOLO da Supabase RT/sync e invii locali, mai da GAS.
-          // GAS restituisce "Mattia", Supabase ha "Mattia R." => ignoriamo GAS per autore.
+          // FIX DEFINITIVO autore: legge da data.replies (oggetti GAS) mai da disc.lastReply.
+          // disc.lastReply puo' contenere 'Mattia' (vecchio formato); i reply objects
+          // hanno sempre author='Mattia R.' perche' il frontend invia shortName.
+          // Priorita': Supabase RT > GAS replies > local cache > lastReply grezzo.
           const _rtEntry    = _rtLastReplyMap[String(d.id)];
           const _rtAuthor   = _rtEntry ? _rtEntry.author : '';
+          const _gasReplies = data.replies
+            ? (data.replies[d.id] || data.replies[String(d.id)] || [])
+            : [];
+          const _gasLast  = [..._gasReplies].reverse().find(function(r){ return !r.isOp; });
+          const _gasAuthor = _gasLast ? (_gasLast.author || '') : '';
           const _localAuthor = local.lastReply ? local.lastReply.split(' · ')[0] : '';
-          const authorPart  = _rtAuthor || _localAuthor || (d.lastReply || '').split(' · ')[0] || '';
+          const authorPart  = _rtAuthor || _gasAuthor || _localAuthor || (d.lastReply || '').split(' · ')[0] || '';
           finalLastReply = authorPart ? authorPart + ' · ' + _notifRelTime(finalLastReplyTs) : null;
         }
 
@@ -11790,9 +11797,10 @@ function sbListenMessages(partnerEmail) {
     .then(({ data, error }) => {
       if (error) { console.warn('[SB msg load]', error.message); return; }
       const _dmDeleted = _getDmDeletedIds(cid);
-      const msgs = (data || [])
-        .filter(m => !(m.deleted_for || []).includes(currentUser.email.toLowerCase()))
-        .filter(m => !_dmDeleted.has(String(m.id)))  // filtra messaggi eliminati localmente
+      const _myEmailSb = currentUser.email.toLowerCase();
+      let msgs = (data || [])
+        .filter(m => !(m.deleted_for || []).includes(_myEmailSb))
+        .filter(m => !_dmDeleted.has(String(m.id)))
         .map(m => ({
           id:          m.id,
           from:        m.sender_email,
@@ -11805,27 +11813,69 @@ function sbListenMessages(partnerEmail) {
           deletedFor:  m.deleted_for || []
         }));
       if (msgs.length > 0) _msgLastSeen[partnerEmail] = msgs[msgs.length - 1].id;
-      // Confronta con la cache per evitare un doppio render a vuoto al rientro nel pannello:
-      // ri-renderizza solo se ci sono messaggi effettivamente nuovi rispetto a quanto già mostrato.
       const _cacheKey = partnerEmail.toLowerCase();
       const _prevCache = _msgCache[_cacheKey];
       const _hasNewData = !_prevCache ||
         msgs.length !== _prevCache.length ||
         (msgs.length > 0 && _prevCache.length > 0 &&
           msgs[msgs.length - 1].id !== _prevCache[_prevCache.length - 1].id);
-      // Aggiorna cache in memoria
       _msgCache[_cacheKey] = msgs;
       if (currentConvPartnerEmail &&
           currentConvPartnerEmail.toLowerCase() === partnerEmail.toLowerCase()) {
         removeTypingIndicator();
-        if (_hasNewData) {
-          // Nuovi messaggi rispetto alla cache già mostrata → ri-renderizza
-          renderChatMessages(msgs, partnerEmail);
-        }
-        // Se i dati sono identici alla cache già mostrata, nessun re-render → nessun flicker
+        if (_hasNewData) renderChatMessages(msgs, partnerEmail);
+      }
+
+      // FIX DEFINITIVO eliminazione DM: cross-check GAS.
+      // Supabase UPDATE/DELETE falliscono senza JWT (auth custom).
+      // GAS e' la fonte di verita': filtra deleted_for per entrambi gli utenti.
+      // Messaggi in Supabase ma assenti in GAS = eliminati = da nascondere.
+      // Match: senderEmail|testo (ID GAS numerico != UUID Supabase).
+      if (typeof GAS_URL !== 'undefined' && GAS_URL && msgs.length > 0) {
+        const _gcEmail1 = currentUser.email.toLowerCase();
+        const _gcEmail2 = partnerEmail.toLowerCase();
+        fetch(GAS_URL
+          + '?action=get_messages'
+          + '&email1='         + encodeURIComponent(_gcEmail1)
+          + '&email2='         + encodeURIComponent(_gcEmail2)
+          + '&requesterEmail=' + encodeURIComponent(_gcEmail1)
+        ).then(function(r){ return r.json(); })
+        .then(function(gd) {
+          if (!gd || !gd.success || !Array.isArray(gd.messages)) return;
+          const _gk = new Set(
+            gd.messages.map(function(m){
+              return (m.from||'').toLowerCase()+'|'+(m.text||'').substring(0,200);
+            })
+          );
+          const _cutoff = Date.now() - 16 * 60 * 1000; // finestra 16 min
+          const _byGas = (_msgCache[_cacheKey]||[]).filter(function(m){
+            if (!m.from || !m.ts) return false;
+            if (new Date(m.ts).getTime() < _cutoff) return false;
+            return !_gk.has(m.from.toLowerCase()+'|'+(m.text||'').substring(0,200));
+          });
+          if (_byGas.length === 0) return;
+          _byGas.forEach(function(m){ _addDmDeletedId(cid, String(m.id)); });
+          const _dIds = new Set(_byGas.map(function(m){ return String(m.id); }));
+          _msgCache[_cacheKey] = (_msgCache[_cacheKey]||[]).filter(
+            function(m){ return !_dIds.has(String(m.id)); }
+          );
+          const _gcC = REAL_CONVS.find(function(c){
+            return c.partnerEmail.toLowerCase() === _cacheKey;
+          });
+          if (_gcC) {
+            const _gcL = (_msgCache[_cacheKey]||[]);
+            const _gcM = _gcL.length > 0 ? _gcL[_gcL.length-1] : null;
+            _gcC.lastMessage = _gcM ? (_gcM.text || '📎 Media') : '';
+            _gcC.lastTs = _gcM ? _gcM.ts : _gcC.lastTs;
+            renderConversations(); saveConvsCache();
+          }
+          const _gcP = document.getElementById('panel-messages')?.classList.contains('active');
+          const _gcI = _gcP && currentConvPartnerEmail &&
+            currentConvPartnerEmail.toLowerCase() === _cacheKey;
+          if (_gcI) renderChatMessages(_msgCache[_cacheKey]||[], partnerEmail);
+        }).catch(function(){});
       }
     });
-
   // Ascolta nuovi messaggi + cancellazioni in RT
   sbOff('messages');
   const ch = _sb.channel('messages_' + cid)
