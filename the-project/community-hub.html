@@ -6787,6 +6787,30 @@ function initApp() {
       _sbChannels['dm_inbox_rt'] = dmInboxCh;
     }
 
+    // TYPING GLOBALE: ascolta eventi typing anche quando la chat non e' aperta.
+    // Quando A scrive a B, A invia su 'dm_typing_inbox_{B_key}' oltre che sul canale conv.
+    // Cosi' B vede 'sta scrivendo...' nella lista conv anche senza la chat aperta.
+    if (currentUser && currentUser.email) {
+      const _tyInboxKey = 'dm_typing_inbox_' + currentUser.email.toLowerCase().replace(/[^a-z0-9]/g, '_');
+      sbOff('dm_typing_inbox_rt');
+      const tyInboxCh = _sb.channel(_tyInboxKey)
+        .on('broadcast', { event: 'dm_typing' }, ({ payload }) => {
+          if (!payload || !payload.senderEmail) return;
+          const _tySender = payload.senderEmail.toLowerCase();
+          if (_tySender === currentUser.email.toLowerCase()) return;
+          _setTypingState(_tySender, !!payload.is_typing);
+          // Auto-reset dopo 5s se non arrivano aggiornamenti
+          const _tyKey = 'ptyTimeout_' + _tySender.replace(/[^a-z0-9]/g, '_');
+          if (payload.is_typing) {
+            if (window[_tyKey]) clearTimeout(window[_tyKey]);
+            window[_tyKey] = setTimeout(() => _setTypingState(_tySender, false), 5500);
+          } else {
+            if (window[_tyKey]) clearTimeout(window[_tyKey]);
+          }
+        }).subscribe();
+      _sbChannels['dm_typing_inbox_rt'] = tyInboxCh;
+    }
+
     // VIEWS: Ascolta nuove views dei thread in tempo reale (aggiorna contatore per tutti)
     sbOff('thread_views');
     const viewsCh = _sb.channel('thread_views_rt')
@@ -6916,8 +6940,10 @@ function initApp() {
   // Carica dati community (post, discussioni, sondaggi, presenza, eventi) da GAS
   initCommunityData();
 
-  // Pre-carica i membri subito se l'utente è team (zero latenza all'apertura del pannello)
-  if (role === 'team' && GAS_URL) {
+  // FIX: carica REAL_MEMBERS per TUTTI gli utenti all'avvio (non solo team).
+  // I non-team avevano REAL_MEMBERS=[] -> _normalizeAuthorShort restituiva 'Mattia'
+  // invece di 'Mattia R.' perche' non trovava il membro nell'array vuoto.
+  if (GAS_URL) {
     loadRealMembers();
   }
 
@@ -12232,20 +12258,23 @@ function sbListenTyping(partnerEmail) {
   if (!_sbReady || !currentUser || !partnerEmail) return;
   const cid = convId(currentUser.email, partnerEmail);
 
+  // FIX: usa Broadcast invece di postgres_changes.
+  // postgres_changes richiede RLS + JWT Supabase (non disponibile con auth custom).
+  // Broadcast non richiede RLS ed e' istantaneo.
   sbOff('typing');
-  const ch = _sb.channel('typing_' + cid)
-    .on('postgres_changes', {
-      event: '*', schema: 'public', table: 'typing',
-      filter: `conv_id=eq.${cid}`
-    }, (payload) => {
-      const d = payload.new;
-      if (!d) { _setTypingState(partnerEmail, false); return; }
-      if (d.user_email.toLowerCase() === currentUser.email.toLowerCase()) return;
-      if (d.is_typing) {
-        const age = Date.now() - new Date(d.updated_at).getTime();
-        _setTypingState(partnerEmail, age < 6000);
+  const ch = _sb.channel('typing_bc_' + cid)
+    .on('broadcast', { event: 'typing' }, ({ payload }) => {
+      if (!payload) return;
+      if ((payload.email || '').toLowerCase() === currentUser.email.toLowerCase()) return;
+      _setTypingState(partnerEmail, !!payload.is_typing);
+      // Auto-reset se il partner smette di inviare aggiornamenti (5s timeout)
+      if (payload.is_typing) {
+        if (window._partnerTypingTimeout) clearTimeout(window._partnerTypingTimeout);
+        window._partnerTypingTimeout = setTimeout(() => {
+          _setTypingState(partnerEmail, false);
+        }, 5000);
       } else {
-        _setTypingState(partnerEmail, false);
+        if (window._partnerTypingTimeout) clearTimeout(window._partnerTypingTimeout);
       }
     }).subscribe();
   _sbChannels['typing'] = ch;
@@ -12363,18 +12392,28 @@ function sendTypingStatus(isTyping) {
   _typingSentAt = now;
 
   if (_sbReady) {
+    // FIX: usa Broadcast (no RLS, no JWT) invece di upsert sulla tabella typing.
     const cid = convId(currentUser.email, currentConvPartnerEmail);
     const email = currentUser.email.toLowerCase();
-    const _write = (v) => {
-      const row = { conv_id: cid, user_email: email, is_typing: v, updated_at: new Date().toISOString() };
-      _sb.from('typing').upsert(row, { onConflict: 'conv_id,user_email' }).then(null, () => {});
+    const _broadcast = (v) => {
+      // Broadcast sul canale conv (partner con chat aperta)
+      _sb.channel('typing_bc_' + cid).send({
+        type: 'broadcast', event: 'typing',
+        payload: { email: email, is_typing: v }
+      }).catch(() => {});
+      // Broadcast sul canale inbox personale del partner (lista conv, chat non aperta)
+      const _pTypingKey = 'dm_typing_inbox_' + currentConvPartnerEmail.toLowerCase().replace(/[^a-z0-9]/g, '_');
+      _sb.channel(_pTypingKey).send({
+        type: 'broadcast', event: 'dm_typing',
+        payload: { senderEmail: email, is_typing: v }
+      }).catch(() => {});
     };
     if (isTyping) {
-      _write(true);
+      _broadcast(true);
       if (_typingTimer) clearTimeout(_typingTimer);
-      _typingTimer = setTimeout(() => _write(false), 5000);
+      _typingTimer = setTimeout(() => _broadcast(false), 5000);
     } else {
-      _write(false);
+      _broadcast(false);
     }
   } else {
     fetch(`${GAS_URL}?action=set_typing&email=${encodeURIComponent(currentUser.email)}&otherEmail=${encodeURIComponent(currentConvPartnerEmail)}&isTyping=${isTyping}`).catch(() => {});
