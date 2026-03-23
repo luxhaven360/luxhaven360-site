@@ -11893,55 +11893,6 @@ function sbListenMessages(partnerEmail) {
         if (_hasNewData) renderChatMessages(msgs, partnerEmail);
       }
 
-      // FIX DEFINITIVO eliminazione DM: cross-check GAS.
-      // Supabase UPDATE/DELETE falliscono senza JWT (auth custom).
-      // GAS e' la fonte di verita': filtra deleted_for per entrambi gli utenti.
-      // Messaggi in Supabase ma assenti in GAS = eliminati = da nascondere.
-      // Match: senderEmail|testo (ID GAS numerico != UUID Supabase).
-      if (typeof GAS_URL !== 'undefined' && GAS_URL && msgs.length > 0) {
-        const _gcEmail1 = currentUser.email.toLowerCase();
-        const _gcEmail2 = partnerEmail.toLowerCase();
-        fetch(GAS_URL
-          + '?action=get_messages'
-          + '&email1='         + encodeURIComponent(_gcEmail1)
-          + '&email2='         + encodeURIComponent(_gcEmail2)
-          + '&requesterEmail=' + encodeURIComponent(_gcEmail1)
-        ).then(function(r){ return r.json(); })
-        .then(function(gd) {
-          if (!gd || !gd.success || !Array.isArray(gd.messages)) return;
-          const _gk = new Set(
-            gd.messages.map(function(m){
-              return (m.from||'').toLowerCase()+'|'+(m.text||'').substring(0,200);
-            })
-          );
-          // Nessuna finestra temporale: controlla TUTTI i messaggi.
-          // Messaggi vecchi eliminati devono sparire anche se inviati giorni fa.
-          const _byGas = (_msgCache[_cacheKey]||[]).filter(function(m){
-            if (!m.from || !m.text) return false;
-            return !_gk.has(m.from.toLowerCase()+'|'+(m.text||'').substring(0,200));
-          });
-          if (_byGas.length === 0) return;
-          _byGas.forEach(function(m){ _addDmDeletedId(cid, String(m.id)); });
-          const _dIds = new Set(_byGas.map(function(m){ return String(m.id); }));
-          _msgCache[_cacheKey] = (_msgCache[_cacheKey]||[]).filter(
-            function(m){ return !_dIds.has(String(m.id)); }
-          );
-          const _gcC = REAL_CONVS.find(function(c){
-            return c.partnerEmail.toLowerCase() === _cacheKey;
-          });
-          if (_gcC) {
-            const _gcL = (_msgCache[_cacheKey]||[]);
-            const _gcM = _gcL.length > 0 ? _gcL[_gcL.length-1] : null;
-            _gcC.lastMessage = _gcM ? (_gcM.text || '📎 Media') : '';
-            _gcC.lastTs = _gcM ? _gcM.ts : _gcC.lastTs;
-            renderConversations(); saveConvsCache();
-          }
-          const _gcP = document.getElementById('panel-messages')?.classList.contains('active');
-          const _gcI = _gcP && currentConvPartnerEmail &&
-            currentConvPartnerEmail.toLowerCase() === _cacheKey;
-          if (_gcI) renderChatMessages(_msgCache[_cacheKey]||[], partnerEmail);
-        }).catch(function(){});
-      }
     });
   // Ascolta nuovi messaggi + cancellazioni in RT
   sbOff('messages');
