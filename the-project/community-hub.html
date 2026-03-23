@@ -6266,6 +6266,16 @@ function initApp() {
       FEED_POSTS.forEach(p => { if (p.isTeam && p.author) _TEAM_AUTHORS.add(p.author.toLowerCase()); });
     }
     if (Array.isArray(_bootCache.discussions)) DISCUSSIONS   = _bootCache.discussions;
+    // FIX DEFINITIVO: ripristina REAL_MEMBERS dalla cache localStorage.
+    // Garantisce che _normalizeAuthorShort abbia i dati al primo render,
+    // prima che loadRealMembers() (async) completi il fetch da GAS.
+    try {
+      const _mc = localStorage.getItem('lh360_members_cache');
+      if (_mc) {
+        const _mp = JSON.parse(_mc);
+        if (Array.isArray(_mp) && _mp.length > 0) REAL_MEMBERS = _mp;
+      }
+    } catch(_e) {}
     if (Array.isArray(_bootCache.surveys))     SURVEYS       = _bootCache.surveys.map(s => ({
       ...s,
       total: s.total ?? (s.options ? s.options.reduce((sum, o) => sum + (o.votes || 0), 0) : 0),
@@ -14030,13 +14040,16 @@ async function loadRealMembers() {
   }
   if (badge) badge.style.display = 'none';
   renderMembersTable();
-  // FIX: ri-renderizza Discussioni ora che REAL_MEMBERS e' popolato.
-  // Al boot renderDiscussions() gira con REAL_MEMBERS=[] (caricamento async);
-  // qui i membri sono appena arrivati -> ri-renderizza per normalizzare i nomi.
-  // Controlla che il pannello discussioni esista (potrebbe non essere attivo).
-  if (typeof renderDiscussions === 'function') {
-    renderDiscussions();
-  }
+  // FIX DEFINITIVO: salva REAL_MEMBERS in localStorage subito dopo il caricamento.
+  // Al prossimo boot (o cambio canale) i membri sono disponibili PRIMA del primo
+  // renderDiscussions() -> nessun flicker, nessun aggiornamento tardivo.
+  try {
+    if (REAL_MEMBERS.length > 0) {
+      localStorage.setItem('lh360_members_cache', JSON.stringify(REAL_MEMBERS));
+    }
+  } catch(_e) {}
+  // Ri-renderizza Discussioni ora che i membri sono disponibili.
+  if (typeof renderDiscussions === 'function') renderDiscussions();
 }
 
 /* Imposta filtro attivo e ri-renderizza */
