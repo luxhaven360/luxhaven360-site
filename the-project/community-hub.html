@@ -3081,6 +3081,7 @@ Object.assign(window.I18N_TRANSLATIONS['it'] || (window.I18N_TRANSLATIONS['it']=
   // ── Dashboard stats ─────────────────────────────────────────────────
   'dash.members_up':        '+{n} questa settimana',
   'dash.members_down':      '-{lost} usciti, +{new} nuovi questa settimana',
+  'dash.members_down_net':  '-{n} questa settimana',
   'dash.members_nochange':  'Nessuna variazione questa settimana',
   'dash.of_n_spots':        'su {n} posti totali',
   'dash.slot_one':          'Slot disponibile',
@@ -3398,6 +3399,7 @@ Object.assign(window.I18N_TRANSLATIONS['en'] || (window.I18N_TRANSLATIONS['en']=
   // ── Dashboard stats ─────────────────────────────────────────────────
   'dash.members_up':        '+{n} this week',
   'dash.members_down':      '-{lost} left, +{new} new this week',
+  'dash.members_down_net':  '-{n} this week',
   'dash.members_nochange':  'No change this week',
   'dash.of_n_spots':        'of {n} total spots',
   'dash.slot_one':          'Slot available',
@@ -3651,6 +3653,7 @@ Object.assign(window.I18N_TRANSLATIONS['fr'] || (window.I18N_TRANSLATIONS['fr']=
   'survey.total':           '{n} votes totaux',
   'dash.members_up':        '+{n} cette semaine',
   'dash.members_down':      '-{lost} partis, +{new} nouveaux cette semaine',
+  'dash.members_down_net':  '-{n} cette semaine',
   'dash.members_nochange':  'Aucune variation cette semaine',
   'dash.of_n_spots':        'sur {n} places au total',
   'dash.slot_one':          'Place disponible',
@@ -3891,6 +3894,7 @@ Object.assign(window.I18N_TRANSLATIONS['de'] || (window.I18N_TRANSLATIONS['de']=
   'survey.total':           '{n} Stimmen gesamt',
   'dash.members_up':        '+{n} diese Woche',
   'dash.members_down':      '-{lost} ausgetreten, +{new} neu diese Woche',
+  'dash.members_down_net':  '-{n} diese Woche',
   'dash.members_nochange':  'Keine Änderung diese Woche',
   'dash.of_n_spots':        'von {n} Plätzen gesamt',
   'dash.slot_one':          'Platz verfügbar',
@@ -4129,6 +4133,7 @@ Object.assign(window.I18N_TRANSLATIONS['es'] || (window.I18N_TRANSLATIONS['es']=
   'survey.total':           '{n} votos totales',
   'dash.members_up':        '+{n} esta semana',
   'dash.members_down':      '-{lost} salieron, +{new} nuevos esta semana',
+  'dash.members_down_net':  '-{n} esta semana',
   'dash.members_nochange':  'Sin variación esta semana',
   'dash.of_n_spots':        'de {n} plazas en total',
   'dash.slot_one':          'Plaza disponible',
@@ -8471,16 +8476,18 @@ function applyDashboardStats(data) {
 
   const changeEl = document.getElementById('dashStatMembersChange');
   if (changeEl) {
-    const newW  = data.weekly_new  ?? 0;
-    const lostW = data.weekly_lost ?? 0;
-    if (newW > 0 || lostW > 0) {
-      const sign = newW >= lostW ? '+' : '-';
-      const diff = Math.abs(newW - lostW);
-      const cls  = newW >= lostW ? 'up' : 'neutral';
-      changeEl.className = `stat-change ${cls}`;
-      changeEl.innerHTML = newW >= lostW
-        ? `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23,6 13.5,15.5 8.5,10.5 1,18"/><polyline points="17,6 23,6 23,12"/></svg> ${I18n.t('dash.members_up', { n: newW })}`
-        : `<span>${I18n.t('dash.members_down', { lost: lostW, new: newW })}</span>`;
+    // Delta netto: utenti attivi settimana corrente vs settimana precedente
+    // Usa weekly_diff se disponibile (GAS aggiornato), altrimenti calcolo retrocompatibile
+    const weeklyDiff = (data.weekly_diff !== undefined && data.weekly_diff !== null)
+      ? data.weekly_diff
+      : ((data.weekly_new ?? 0) - (data.weekly_lost ?? 0));
+
+    if (weeklyDiff > 0) {
+      changeEl.className = 'stat-change up';
+      changeEl.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23,6 13.5,15.5 8.5,10.5 1,18"/><polyline points="17,6 23,6 23,12"/></svg> ${I18n.t('dash.members_up', { n: weeklyDiff })}`;
+    } else if (weeklyDiff < 0) {
+      changeEl.className = 'stat-change down';
+      changeEl.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23,18 13.5,8.5 8.5,13.5 1,6"/><polyline points="17,18 23,18 23,12"/></svg> ${I18n.t('dash.members_down_net', { n: Math.abs(weeklyDiff) })}`;
     } else {
       changeEl.className = 'stat-change neutral';
       changeEl.textContent = I18n.t('dash.members_nochange');
