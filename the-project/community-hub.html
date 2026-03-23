@@ -15965,12 +15965,17 @@ async function deleteOwnDmMessage(msgId, btnEl) {
     return;
   }
 
-  // BUG FIX DM DELETE: persisti _addDmDeletedId IMMEDIATAMENTE dopo lo splice,
-  // PRIMA di qualsiasi render o toast. Questo garantisce che il filter nel
-  // postgres_changes INSERT listener sia gia' attivo prima che Supabase
-  // confermi l'INSERT originale, impedendo la ri-comparsa del messaggio.
-  const _delCid = convId(currentUser.email, currentConvPartnerEmail);
-  _addDmDeletedId(_delCid, msgId); // <- spostato qui: 1a operazione post-splice
+  // FIX DEFINITIVO: usa msg.id (UUID reale dalla cache) per _addDmDeletedId,
+  // NON msgId che arriva dal DOM e puo' ancora essere 'temp_123'.
+  // Se il bottone non e' ancora stato re-renderizzato dopo la promozione
+  // temp_->UUID, msgId = 'temp_123' ma msg.id = UUID reale.
+  // Salvare 'temp_123' in dmDeletedIds non blocca il refetch Supabase
+  // (che usa UUID), quindi il messaggio riappariva al cambio canale.
+  const _delCid  = convId(currentUser.email, currentConvPartnerEmail);
+  const _realMsgId = String(msg.id); // UUID reale, mai temp_
+  _addDmDeletedId(_delCid, _realMsgId);
+  // Salva anche msgId originale nel caso fosse diverso (es. temp_)
+  if (String(msgId) !== _realMsgId) _addDmDeletedId(_delCid, String(msgId));
 
   // Rimuovi dalla cache in-memory
   msgs.splice(idx, 1);
@@ -16047,15 +16052,16 @@ async function deleteOwnDmMessage(msgId, btnEl) {
         const _df = (_dm && Array.isArray(_dm.deleted_for)) ? [..._dm.deleted_for] : [];
         if (!_df.includes(_myEm)) _df.push(_myEm);
         if (!_df.includes(_pEm))  _df.push(_pEm);
-        _sb.from('messages').update({ deleted_for: _df }).eq('id', String(msgId)).catch(() => {});
+        _sb.from('messages').update({ deleted_for: _df }).eq('id', _realMsgId).catch(() => {});
       })
       .catch(() => {});
   }
 
   // STEP 3 - Broadcast istantaneo canale conversazione (partner con conv aperta)
+  // Usa _realMsgId (UUID) cosi' la cache del partner (che ha UUID) puo' matchare.
   if (_sbReady && _sb) {
     _sb.channel('messages_' + _delCid)
-      .send({ type: 'broadcast', event: 'dm_delete', payload: { msgId: String(msgId) } })
+      .send({ type: 'broadcast', event: 'dm_delete', payload: { msgId: _realMsgId } })
       .catch(() => {});
   }
 
@@ -16066,7 +16072,7 @@ async function deleteOwnDmMessage(msgId, btnEl) {
     _sb.channel(_pInboxKey).send({
       type: 'broadcast', event: 'dm_delete_inbox',
       payload: {
-        msgId:        String(msgId),
+        msgId:        _realMsgId,
         convId:       _delCid,
         partnerEmail: currentUser.email.toLowerCase(),
         lastText:     _pLast ? (_pLast.text || '📎 Media') : '',
