@@ -10,6 +10,16 @@ class I18nPDP {
     
     // ✅ NUOVO: Tassi di cambio dinamici
     this.exchangeRates = { 'EUR': 1, 'USD': 1.17, 'GBP': 0.87 }; // Fallback iniziale
+
+    // ✅ FIX FLICKER: sovrascrive subito il fallback con l'ultimo tasso noto
+    // Così il primo render usa già il tasso reale invece di 1.17
+    try {
+      const cachedRates = localStorage.getItem('lh360_exchange_rates');
+      if (cachedRates) {
+        const parsed = JSON.parse(cachedRates);
+        if (parsed && parsed.USD) this.exchangeRates = parsed;
+      }
+    } catch(e) {}
     
     this.init();
   }
@@ -112,6 +122,9 @@ class I18nPDP {
       if (data.success && data.rates) {
         this.exchangeRates = data.rates;
         console.log('✅ [i18n-pdp] Tassi aggiornati:', this.exchangeRates);
+        
+        // ✅ FIX FLICKER: persiste il tasso live per il prossimo page load
+        try { localStorage.setItem('lh360_exchange_rates', JSON.stringify(data.rates)); } catch(e) {}
         
         // ✅ Aggiorna tutti i prezzi visibili dopo il caricamento
         if (typeof updateAllPricesForLanguage === 'function') {
