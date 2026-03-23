@@ -11948,26 +11948,85 @@ function appendMessageToChat(msg, isSent) {
   // per catturare l'ID reale non appena arriva da Supabase, senza interazione utente.
   if (isSent && _appendMsgTs > 0 && _appendElapsed < _DELETE_SHOW_DELAY_MS) {
     const _delayPartner = currentConvPartnerEmail;
+    const _delayMsgId   = msg.id;   // può essere temp_ — verrà aggiornato da Supabase INSERT
     const _delayMs = _DELETE_SHOW_DELAY_MS - _appendElapsed + 200;
+
+    // FIX NO-FLASH: invece di renderChatMessages() (full innerHTML → flash visivo),
+    // inietta chirurgicamente solo il pulsante 🗑 nel msg-time del messaggio specifico.
+    // Funzione riutilizzata sia al timer dei 15s che al retry a +2s.
+    function _injectDeleteBtn(msgId) {
+      if (!currentConvPartnerEmail ||
+          currentConvPartnerEmail.toLowerCase() !== _delayPartner.toLowerCase()) return false;
+      if (!msgId || String(msgId).startsWith('temp_')) return false;
+      // Trova il msg-bubble con data-content-id="msg-{id}" → risale al .msg parent
+      const _bubble = document.querySelector('.msg-bubble[data-content-id="msg-' + msgId + '"]');
+      if (!_bubble) return false;
+      const _msgEl = _bubble.closest('.msg');
+      if (!_msgEl) return false;
+      const _timeEl = _msgEl.querySelector('.msg-time');
+      if (!_timeEl) return false;
+      // Non duplicare se già presente
+      if (_timeEl.querySelector('.dm-delete-btn')) return true;
+      // Verifica finestra temporale (15s – 15min)
+      const _nowMs = Date.now();
+      const _elapsed = _nowMs - _appendMsgTs;
+      if (_elapsed < _DELETE_SHOW_DELAY_MS || _elapsed >= _DELETE_OWN_LIMIT_MS) return false;
+      // Crea il pulsante e iniettalo PRIMA del timeLabel (primo elemento del msg-time)
+      const _btn = document.createElement('button');
+      _btn.className = 'dm-delete-btn';
+      _btn.title = 'Elimina messaggio';
+      _btn.textContent = '🗑';
+      _btn.style.cssText = 'background:none;border:none;color:var(--red);opacity:0;cursor:pointer;font-size:0.6rem;padding:2px 4px;transition:opacity 0.2s;';
+      _btn.onclick = function(e) {
+        e.stopPropagation();
+        deleteOwnDmMessage(String(msgId), this);
+      };
+      _timeEl.insertBefore(_btn, _timeEl.firstChild);
+      // Attiva hover sul parent .msg
+      if (!_msgEl.onmouseenter) {
+        _msgEl.onmouseenter = function() {
+          this.querySelectorAll('.dm-report-btn,.dm-delete-btn').forEach(function(b){ b.style.opacity='0.6'; });
+        };
+        _msgEl.onmouseleave = function() {
+          this.querySelectorAll('.dm-report-btn,.dm-delete-btn').forEach(function(b){ b.style.opacity='0'; });
+        };
+      }
+      return true;
+    }
+
     setTimeout(function() {
       if (!_delayPartner || !currentUser) return;
-      if (!currentConvPartnerEmail ||
-          currentConvPartnerEmail.toLowerCase() !== _delayPartner.toLowerCase()) return;
+      // Recupera l'ID reale dalla cache (Supabase INSERT potrebbe aver promosso il temp_)
       const _cacheKey = _delayPartner.toLowerCase();
       const _cached = (_msgCache && _msgCache[_cacheKey]) ? _msgCache[_cacheKey] : null;
-      if (!_cached || _cached.length === 0) return;
-      // Re-render immediato a 15s — mostra il cestino se l'ID è già reale,
-      // oppure mostra il messaggio senza cestino se ancora temp_ (nessun salto).
-      renderChatMessages(_cached, _delayPartner);
-      // Secondo re-render a +2s SEMPRE: garantisce che il cestino appaia
-      // anche se l'INSERT Supabase arriva con ritardo, senza interazione utente.
-      setTimeout(function() {
-        const _c2 = (_msgCache && _msgCache[_cacheKey]) ? _msgCache[_cacheKey] : null;
-        if (_c2 && currentConvPartnerEmail &&
-            currentConvPartnerEmail.toLowerCase() === _delayPartner.toLowerCase()) {
-          renderChatMessages(_c2, _delayPartner);
-        }
-      }, 2000);
+      // Trova l'ID reale: prima in cache (INSERT già arrivato), poi usa quello corrente
+      let _realId = _delayMsgId;
+      if (_cached) {
+        // Se il messaggio temp_ è stato promosso, cerca l'ID reale per timestamp
+        const _byTs = _cached.find(function(m) {
+          return !String(m.id).startsWith('temp_') &&
+                 m.ts && Math.abs(new Date(m.ts).getTime() - _appendMsgTs) < 3000;
+        });
+        if (_byTs) _realId = _byTs.id;
+      }
+      const _injected = _injectDeleteBtn(_realId);
+      if (!_injected) {
+        // Retry a +2s: l'INSERT Supabase potrebbe non essere ancora arrivato
+        setTimeout(function() {
+          if (!currentConvPartnerEmail ||
+              currentConvPartnerEmail.toLowerCase() !== _delayPartner.toLowerCase()) return;
+          const _c2 = (_msgCache && _msgCache[_cacheKey]) ? _msgCache[_cacheKey] : null;
+          let _realId2 = _delayMsgId;
+          if (_c2) {
+            const _byTs2 = _c2.find(function(m) {
+              return !String(m.id).startsWith('temp_') &&
+                     m.ts && Math.abs(new Date(m.ts).getTime() - _appendMsgTs) < 3000;
+            });
+            if (_byTs2) _realId2 = _byTs2.id;
+          }
+          _injectDeleteBtn(_realId2);
+        }, 2000);
+      }
     }, _delayMs);
   }
 }
