@@ -524,6 +524,7 @@ window.I18N_TRANSLATIONS['de'] = {
   // ─── DASHBOARD ─────────────────────────────────────────
   'dash.members_up':                 '+{n} diese Woche',
   'dash.members_down':               '-{lost} ausgetreten, +{new} neu diese Woche',
+  'dash.members_down_net':           '-{n} diese Woche',
   'dash.members_nochange':           'Keine Änderung diese Woche',
   'dash.of_n_spots':                 'von {n} Plätzen gesamt',
   'dash.slot_one':                   'Platz verfügbar',
