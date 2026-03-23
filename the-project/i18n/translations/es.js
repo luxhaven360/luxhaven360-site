@@ -524,6 +524,7 @@ window.I18N_TRANSLATIONS['es'] = {
   // ─── PANEL ─────────────────────────────────────────────
   'dash.members_up':                 '+{n} esta semana',
   'dash.members_down':               '-{lost} salieron, +{new} nuevos esta semana',
+  'dash.members_down_net':           '-{n} esta semana',
   'dash.members_nochange':           'Sin variación esta semana',
   'dash.of_n_spots':                 'de {n} plazas en total',
   'dash.slot_one':                   'Plaza disponible',
