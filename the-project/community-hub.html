@@ -11988,7 +11988,37 @@ function sbListenMessages(partnerEmail) {
       // Aggiorna preview lista conv
       const conv = REAL_CONVS.find(c => c.partnerEmail.toLowerCase() === partnerEmail.toLowerCase());
       if (conv) { conv.lastMessage = m.text || '📎 Media'; conv.lastTs = m.created_at; renderConversations(); saveConvsCache(); }
-    }).subscribe();
+    })
+    // LISTENER UPDATE deleted_for: intercetta l'UPDATE su deleted_for scritto
+    // da deleteOwnDmMessage (STEP 2). Permette al partner di vedere la rimozione
+    // in RT tramite Supabase, senza richiedere la policy DELETE (custom-auth).
+    .on('postgres_changes', {
+      event: 'UPDATE', schema: 'public', table: 'messages',
+      filter: `conv_id=eq.${cid}`
+    }, (payload) => {
+      const _um = payload.new;
+      if (!_um || !currentUser) return;
+      const _myEmail = currentUser.email.toLowerCase();
+      if (!((_um.deleted_for || []).includes(_myEmail))) return;
+      _addDmDeletedId(cid, String(_um.id));
+      const _ck = partnerEmail.toLowerCase();
+      if (_msgCache[_ck]) {
+        _msgCache[_ck] = _msgCache[_ck].filter(x => String(x.id) !== String(_um.id));
+      }
+      const _upd = _msgCache[_ck] || [];
+      const _uc = REAL_CONVS.find(c => c.partnerEmail.toLowerCase() === _ck);
+      if (_uc) {
+        const _ul = _upd.length > 0 ? _upd[_upd.length - 1] : null;
+        _uc.lastMessage = _ul ? (_ul.text || '📎 Media') : '';
+        _uc.lastTs = _ul ? _ul.ts : _uc.lastTs;
+        renderConversations(); saveConvsCache();
+      }
+      const _pp = document.getElementById('panel-messages')?.classList.contains('active');
+      const _pi = _pp && currentConvPartnerEmail &&
+        currentConvPartnerEmail.toLowerCase() === _ck;
+      if (_pi) renderChatMessages(_upd, partnerEmail);
+    })
+    .subscribe();
   _sbChannels['messages'] = ch;
 }
 
@@ -15901,48 +15931,62 @@ async function deleteOwnDmMessage(msgId, btnEl) {
   renderChatMessages(msgs, currentConvPartnerEmail);
   showToast('green', '🗑', 'Messaggio eliminato.');
 
-  // _delCid gia' calcolato sopra (spostato per fix race condition)
-  // 1. _addDmDeletedId gia' chiamato sopra (spostato per fix race condition)
+  // _delCid e _addDmDeletedId gia' eseguiti sopra (1a operazione post-splice)
 
-  // 2. Propaga all'altro client via Broadcast sul canale della conversazione
-  //    Il Broadcast non richiede RLS — notifica istantanea garantita
+  // STEP 1 - GAS backend: persisti deleted_for per entrambi gli utenti.
+  // delete_dm_message in GAS marca il messaggio come eliminato per entrambi;
+  // questo impedisce che ricompaia su getMessagesGAS (fallback polling).
+  if (typeof GAS_URL !== 'undefined' && GAS_URL && currentConvPartnerEmail
+      && !String(msgId).startsWith('temp_')) {
+    fetch(GAS_URL
+      + '?action=delete_dm_message'
+      + '&email='      + encodeURIComponent(currentUser.email.toLowerCase())
+      + '&otherEmail=' + encodeURIComponent(currentConvPartnerEmail.toLowerCase())
+      + '&msgId='      + encodeURIComponent(String(msgId))
+    ).catch(() => {});
+  }
+
+  // STEP 2 - Supabase UPDATE deleted_for: aggiorna il record nel DB.
+  // UPDATE funziona con la policy messages_update_own (nessun JWT Supabase richiesto).
+  // Il postgres_changes UPDATE listener lato partner vedra' deleted_for aggiornato
+  // e rimuovera' il messaggio dalla propria UI in tempo reale.
+  if (_sbReady && _sb && !String(msgId).startsWith('temp_')) {
+    const _myEm = currentUser.email.toLowerCase();
+    const _pEm  = currentConvPartnerEmail.toLowerCase();
+    _sb.from('messages')
+      .select('deleted_for')
+      .eq('id', String(msgId))
+      .single()
+      .then(({ data: _dm }) => {
+        const _df = (_dm && Array.isArray(_dm.deleted_for)) ? [..._dm.deleted_for] : [];
+        if (!_df.includes(_myEm)) _df.push(_myEm);
+        if (!_df.includes(_pEm))  _df.push(_pEm);
+        _sb.from('messages').update({ deleted_for: _df }).eq('id', String(msgId)).catch(() => {});
+      })
+      .catch(() => {});
+  }
+
+  // STEP 3 - Broadcast istantaneo canale conversazione (partner con conv aperta)
   if (_sbReady && _sb) {
     _sb.channel('messages_' + _delCid)
       .send({ type: 'broadcast', event: 'dm_delete', payload: { msgId: String(msgId) } })
       .catch(() => {});
   }
 
-  // ── FIX RT: Broadcast sul canale dm-inbox personale del partner ─────────────
-  // Garantisce la rimozione anche se il partner non ha la conversazione aperta
-  // (sbListenMessages non è attivo → il broadcast su 'messages_' + cid non arriva).
-  // Pattern identico al canale Founding Members: canale globale per utente.
+  // STEP 4 - Broadcast dm-inbox (partner con conv NON aperta)
   if (_sbReady && _sb && currentConvPartnerEmail) {
-    const _partnerInboxKey = 'dm_inbox_' + currentConvPartnerEmail.toLowerCase().replace(/[^a-z0-9]/g, '_');
-    const _partnerMsgsAfter = msgs; // array già aggiornato (msg rimosso sopra)
-    const _partnerLast = _partnerMsgsAfter.length > 0 ? _partnerMsgsAfter[_partnerMsgsAfter.length - 1] : null;
-    _sb.channel(_partnerInboxKey)
-      .send({
-        type:    'broadcast',
-        event:   'dm_delete_inbox',
-        payload: {
-          msgId:        String(msgId),
-          convId:       _delCid,
-          partnerEmail: currentUser.email.toLowerCase(), // il mittente dell'eliminazione = partner del destinatario
-          lastText:     _partnerLast ? (_partnerLast.text || '📎 Media') : '',
-          lastTs:       _partnerLast ? _partnerLast.ts : null
-        }
-      }).catch(() => {});
-  }
-
-  // 3. Tenta DELETE su Supabase (funziona se RLS lo consente, altrimenti silenzioso)
-  if (_sbReady && _sb) {
-    _sb.from('messages').delete().eq('id', String(msgId))
-      .then(function(res) {
-        if (res && res.error) {
-          console.warn('[DM delete] Supabase DELETE failed (RLS?):', res.error.message);
-          // La rimozione è comunque garantita via Broadcast + _dmDeletedIds
-        }
-      }, () => {});
+    const _pInboxKey = 'dm_inbox_' + currentConvPartnerEmail.toLowerCase().replace(/[^a-z0-9]/g, '_');
+    const _pLast = msgs.length > 0 ? msgs[msgs.length - 1] : null;
+    _sb.channel(_pInboxKey).send({
+      type: 'broadcast', event: 'dm_delete_inbox',
+      payload: {
+        msgId:        String(msgId),
+        convId:       _delCid,
+        partnerEmail: currentUser.email.toLowerCase(),
+        lastText:     _pLast ? (_pLast.text || '📎 Media') : '',
+        lastTs:       _pLast ? _pLast.ts : null
+      }
+    }).catch(() => {});
   }
 }
 
