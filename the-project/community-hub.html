@@ -11879,22 +11879,62 @@ function appendMessageToChat(msg, isSent) {
   }
   messagesEl.scrollTo({ top: messagesEl.scrollHeight, behavior: 'smooth' });
 
-  // Dopo 15s: re-render la chat DM per far comparire il 🗑 con ID reale già disponibile
-  // FIX: _msgCache usa partnerEmail.toLowerCase() come chiave, NON convId().
+  // ── FIX CRITICO #2 (Cestino 🗑): aggiungi il messaggio a _msgCache immediatamente.
+  // PROBLEMA PRECEDENTE: il temp message veniva appendato al DOM ma NON a _msgCache.
+  // Il timer dei 15s leggeva _msgCache vuota/stale → renderChatMessages() ricostruiva
+  // il DOM senza il nuovo messaggio → messaggio spariva, cestino non appariva mai.
+  // SOLUZIONE: il temp viene inserito subito in cache. Quando arriva l'INSERT Supabase,
+  // l'handler postgres_changes trova il temp_ e lo promuove all'id reale in cache.
+  // Il timer dei 15s trova quindi l'id reale e renderChatMessages() mostra il cestino.
+  if (isSent && currentConvPartnerEmail) {
+    const _appendCacheKey = currentConvPartnerEmail.toLowerCase();
+    if (!_msgCache[_appendCacheKey]) _msgCache[_appendCacheKey] = [];
+    const _alreadyInCache = _msgCache[_appendCacheKey].some(
+      function(m) { return String(m.id) === String(msg.id); }
+    );
+    if (!_alreadyInCache) {
+      _msgCache[_appendCacheKey].push({
+        id:          msg.id,
+        from:        msg.from,
+        fromName:    msg.fromName,
+        fromInitial: msg.fromInitial || (msg.fromName || '?')[0].toUpperCase(),
+        text:        msg.text || '',
+        media_url:   msg.media_url || null,
+        media_type:  msg.media_type || null,
+        ts:          msg.ts,
+        deletedFor:  msg.deletedFor || []
+      });
+    }
+  }
+
+  // Dopo 15s: re-render la chat DM per far comparire il 🗑 con ID reale garantito.
+  // Grazie al fix sopra, _msgCache ha sempre il messaggio. Quando arriva l'INSERT
+  // Supabase, il temp_ viene promosso in cache; il timer trova l'id reale e il
+  // re-render mostra il bottone cestino senza alcuna interazione utente.
   if (isSent && _appendMsgTs > 0 && _appendElapsed < _DELETE_SHOW_DELAY_MS) {
     const _delayPartner = currentConvPartnerEmail;
-    const _delayMs = _DELETE_SHOW_DELAY_MS - _appendElapsed + 100;
+    const _delayMs = _DELETE_SHOW_DELAY_MS - _appendElapsed + 200;
     setTimeout(function() {
       if (!_delayPartner || !currentUser) return;
-      // Chiave corretta: partnerEmail.toLowerCase() (identica a quella usata da
-      // renderChatMessages, loadChatMessages, sbListenMessages, ecc.)
+      if (!currentConvPartnerEmail ||
+          currentConvPartnerEmail.toLowerCase() !== _delayPartner.toLowerCase()) return;
       const _cacheKey = _delayPartner.toLowerCase();
       const _cached = (_msgCache && _msgCache[_cacheKey]) ? _msgCache[_cacheKey] : null;
-      // Aggiorna solo se la stessa conversazione è ancora aperta
-      if (_cached && currentConvPartnerEmail &&
-          currentConvPartnerEmail.toLowerCase() === _delayPartner.toLowerCase()) {
-        renderChatMessages(_cached, _delayPartner);
+      if (!_cached || _cached.length === 0) return;
+      // Se il messaggio è ancora temp_ (INSERT Supabase non ancora arrivato),
+      // attendi altri 2s e riprova — garantisce che il delete btn abbia l'id reale.
+      const _stillTemp = _cached.some(function(m) { return String(m.id).startsWith('temp_'); });
+      if (_stillTemp) {
+        setTimeout(function() {
+          const _c2 = (_msgCache && _msgCache[_cacheKey]) ? _msgCache[_cacheKey] : null;
+          if (_c2 && currentConvPartnerEmail &&
+              currentConvPartnerEmail.toLowerCase() === _delayPartner.toLowerCase()) {
+            renderChatMessages(_c2, _delayPartner);
+          }
+        }, 2000);
+        return;
       }
+      renderChatMessages(_cached, _delayPartner);
     }, _delayMs);
   }
 }
@@ -12123,8 +12163,24 @@ function sbListenMessages(partnerEmail) {
               renderChatMessages(_msgCache[cacheKey], partnerEmail);
             }
           } else {
-            const alreadyCached = _msgCache[cacheKey].some(x => x.id === m.id);
-            if (!alreadyCached) _msgCache[cacheKey].push(realMsg);
+            // temp_ non trovato (già promosso o non presente): inserisci l'id reale.
+            // Rimuovi eventuali temp_ orfani con timestamp simile (race condition cleanup).
+            const _realTsMs = new Date(m.created_at).getTime();
+            _msgCache[cacheKey] = _msgCache[cacheKey].filter(function(x) {
+              if (!String(x.id).startsWith('temp_')) return true;
+              const _tMs = parseInt(String(x.id).replace('temp_', ''), 10);
+              return isNaN(_tMs) || Math.abs(_tMs - _realTsMs) >= 10000;
+            });
+            const alreadyCached = _msgCache[cacheKey].some(function(x) { return x.id === m.id; });
+            if (!alreadyCached) {
+              _msgCache[cacheKey].push(realMsg);
+              // FIX: re-render anche in questo branch per aggiornare gli id nei delete btn
+              const _p2 = document.getElementById('panel-messages');
+              const _panelOpen2 = _p2 && _p2.classList.contains('active');
+              const _isThisConv2 = _panelOpen2 && currentConvPartnerEmail &&
+                currentConvPartnerEmail.toLowerCase() === partnerEmail.toLowerCase();
+              if (_isThisConv2) renderChatMessages(_msgCache[cacheKey], partnerEmail);
+            }
           }
         }
         const conv = REAL_CONVS.find(c => c.partnerEmail.toLowerCase() === partnerEmail.toLowerCase());
@@ -12323,11 +12379,17 @@ function sbListenTyping(partnerEmail) {
   if (!_sbReady || !currentUser || !partnerEmail) return;
   const cid = convId(currentUser.email, partnerEmail);
 
-  // FIX: usa Broadcast invece di postgres_changes.
-  // postgres_changes richiede RLS + JWT Supabase (non disponibile con auth custom).
-  // Broadcast non richiede RLS ed e' istantaneo.
+  // FIX CRITICO #1 (Typing indicator): usare il callback di subscribe() per impostare
+  // _sbChannels['typing'] SOLO quando il canale è nello stato SUBSCRIBED.
+  // PROBLEMA PRECEDENTE: _sbChannels['typing'] = ch veniva assegnato immediatamente
+  // dopo .subscribe() (asincrono). Se sendTypingStatus() veniva chiamato mentre il
+  // canale era ancora in stato SUBSCRIBING, channel.send() falliva silenziosamente.
+  // SOLUZIONE: il ref viene impostato nel callback di subscribe. Nel frattempo,
+  // sendTypingStatus usa il nome canale ('typing_bc_'+cid) che _sbBroadcast gestisce
+  // via httpSend (Case 3) — affidabile anche senza subscription attiva.
   sbOff('typing');
-  const ch = _sb.channel('typing_bc_' + cid)
+  const _typingCid = cid;
+  const ch = _sb.channel('typing_bc_' + _typingCid)
     .on('broadcast', { event: 'typing' }, ({ payload }) => {
       if (!payload) return;
       if ((payload.email || '').toLowerCase() === currentUser.email.toLowerCase()) return;
@@ -12335,13 +12397,25 @@ function sbListenTyping(partnerEmail) {
       // Auto-reset se il partner smette di inviare aggiornamenti (5s timeout)
       if (payload.is_typing) {
         if (window._partnerTypingTimeout) clearTimeout(window._partnerTypingTimeout);
-        window._partnerTypingTimeout = setTimeout(() => {
+        window._partnerTypingTimeout = setTimeout(function() {
           _setTypingState(partnerEmail, false);
         }, 5000);
       } else {
         if (window._partnerTypingTimeout) clearTimeout(window._partnerTypingTimeout);
       }
-    }).subscribe();
+    })
+    .subscribe(function(status) {
+      if (status === 'SUBSCRIBED') {
+        // Solo ora il canale è pronto per send() via WebSocket
+        _sbChannels['typing'] = ch;
+      } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+        // Canale non disponibile: mantieni ref per sbOff cleanup ma log l'errore
+        console.warn('[Typing] Subscription fallita (' + status + ') su typing_bc_' + _typingCid);
+        _sbChannels['typing'] = ch;
+      }
+    });
+  // Ref immediato SOLO per sbOff (cleanup). sendTypingStatus usa httpSend
+  // finché la subscription non è confermata (status !== 'SUBSCRIBED').
   _sbChannels['typing'] = ch;
 }
 
@@ -12486,20 +12560,29 @@ function sendTypingStatus(isTyping) {
   _typingSentAt = now;
 
   if (_sbReady) {
-    // FIX: usa Broadcast (no RLS, no JWT) invece di upsert sulla tabella typing.
     const cid = convId(currentUser.email, currentConvPartnerEmail);
     const email = currentUser.email.toLowerCase();
-    const _broadcast = (v) => {
-      // Broadcast sul canale conv (partner con chat aperta).
-      // Se il canale e' gia' subscribed (caso normale) passa l'istanza diretta -> WebSocket.
-      // Se non e' ancora pronto (es. cambio conv in corso) passa il nome reale del canale
-      // -> _sbBroadcast lo usa come httpSend (REST intenzionale, zero warning).
-      _sbBroadcast(_sbChannels['typing'] || ('typing_bc_' + cid), {
+
+    // FIX CRITICO #1 (Typing): determina il target corretto per il broadcast conv.
+    // PROBLEMA PRECEDENTE: _sbChannels['typing'] poteva essere un canale in stato
+    // SUBSCRIBING (non ancora WebSocket-ready). channel.send() su canale non SUBSCRIBED
+    // fallisce silenziosamente — il partner non riceveva mai l'evento typing.
+    // SOLUZIONE: controlliamo lo stato del canale. Se non è SUBSCRIBED, usiamo il
+    // nome del canale come stringa → _sbBroadcast lo gestisce via httpSend (Case 3),
+    // che è la modalità REST garantita da Supabase anche senza WebSocket attivo.
+    const _typingCh = _sbChannels['typing'];
+    const _typingChSubscribed = _typingCh && _typingCh.state === 'joined';
+    const _typingTarget = _typingChSubscribed ? _typingCh : ('typing_bc_' + cid);
+
+    const _broadcast = function(v) {
+      // Canale conv: partner con chat aperta.
+      // WebSocket se SUBSCRIBED, httpSend se ancora in SUBSCRIBING/non pronto.
+      _sbBroadcast(_typingTarget, {
         type: 'broadcast', event: 'typing',
         payload: { email: email, is_typing: v }
       });
-      // Broadcast sul canale inbox personale del partner (lista conv, chat non aperta).
-      // Canale monodirezionale (noi inviamo, il partner ascolta): sempre httpSend.
+      // Canale inbox del partner: visibile anche senza chat aperta.
+      // Sempre monodirezionale → sempre httpSend tramite nome stringa.
       const _pTypingKey = 'dm_typing_inbox_' + currentConvPartnerEmail.toLowerCase().replace(/[^a-z0-9]/g, '_');
       _sbBroadcast(_pTypingKey, {
         type: 'broadcast', event: 'dm_typing',
@@ -12509,15 +12592,15 @@ function sendTypingStatus(isTyping) {
     if (isTyping) {
       _broadcast(true);
       if (_typingTimer) clearTimeout(_typingTimer);
-      _typingTimer = setTimeout(() => _broadcast(false), 5000);
+      _typingTimer = setTimeout(function() { _broadcast(false); }, 5000);
     } else {
       _broadcast(false);
     }
   } else {
-    fetch(`${GAS_URL}?action=set_typing&email=${encodeURIComponent(currentUser.email)}&otherEmail=${encodeURIComponent(currentConvPartnerEmail)}&isTyping=${isTyping}`).catch(() => {});
+    fetch(GAS_URL + '?action=set_typing&email=' + encodeURIComponent(currentUser.email) + '&otherEmail=' + encodeURIComponent(currentConvPartnerEmail) + '&isTyping=' + isTyping).catch(function() {});
     if (_typingTimer) clearTimeout(_typingTimer);
     if (isTyping) {
-      _typingTimer = setTimeout(() => clearTypingStatus(), 4000);
+      _typingTimer = setTimeout(function() { clearTypingStatus(); }, 4000);
     }
   }
 }
@@ -12526,19 +12609,19 @@ function clearTypingStatus() {
   if (_typingTimer) { clearTimeout(_typingTimer); _typingTimer = null; }
   if (!currentConvPartnerEmail || !currentUser) return;
 
-  // FIX: usa Broadcast (stesso sistema di sendTypingStatus) invece di upsert RLS.
+  // FIX CRITICO #1 (Typing): stessa logica di sendTypingStatus — controlla stato canale.
   if (_sbReady) {
     const cid = convId(currentUser.email, currentConvPartnerEmail);
     const email = currentUser.email.toLowerCase();
-    // Broadcast sul canale conv (partner con chat aperta).
-    // Stessa logica di sendTypingStatus: usa l'istanza subscribed se disponibile,
-    // altrimenti il nome reale del canale per httpSend.
-    _sbBroadcast(_sbChannels['typing'] || ('typing_bc_' + cid), {
+    // Usa WebSocket solo se il canale è effettivamente SUBSCRIBED (stato 'joined').
+    // Altrimenti usa il nome canale → _sbBroadcast gestisce via httpSend.
+    const _clrCh = _sbChannels['typing'];
+    const _clrTarget = (_clrCh && _clrCh.state === 'joined') ? _clrCh : ('typing_bc_' + cid);
+    _sbBroadcast(_clrTarget, {
       type: 'broadcast', event: 'typing',
       payload: { email: email, is_typing: false }
     });
-    // Broadcast sul canale inbox globale del partner (lista conv, chat non aperta).
-    // Canale monodirezionale: httpSend esplicito.
+    // Canale inbox del partner — sempre monodirezionale → sempre httpSend.
     const _pKey = currentConvPartnerEmail.toLowerCase().replace(/[^a-z0-9]/g, '_');
     _sbBroadcast('dm_typing_inbox_' + _pKey, {
       type: 'broadcast', event: 'dm_typing',
