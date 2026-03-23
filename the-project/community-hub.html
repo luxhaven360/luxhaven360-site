@@ -9529,6 +9529,16 @@ function submitCommentBtn(postId, inputEl) {
   trackMessageSent();
   // Aggiorna analytics in tempo reale se il pannello è visibile
   if (document.getElementById('panel-analytics')?.classList.contains('active')) renderAnalytics();
+
+  // Dopo 15s: re-render i commenti per far comparire il 🗑 (ID GAS già disponibile)
+  const _cmtPostRef = post;
+  const _cmtPostId  = postId;
+  setTimeout(function() {
+    const _cmtContainer = document.getElementById('comments-' + _cmtPostId);
+    if (_cmtContainer && _cmtPostRef) {
+      renderPostComments(_cmtPostRef, _cmtContainer);
+    }
+  }, _DELETE_SHOW_DELAY_MS);
 }
 
 function renderPostComments(post, container) {
@@ -10526,6 +10536,14 @@ async function submitThreadReply() {
   // Auto-moderazione risposta thread
   autoModerateText(text, 'reply', `reply_${currentThreadId}_${Date.now()}`, shortName, currentUser.email);
   trackMessageSent();
+
+  // Dopo 15s: re-render il thread per far comparire il 🗑 (ID GAS/Supabase già disponibile)
+  const _replyTidRef = currentThreadId;
+  setTimeout(function() {
+    if (_replyTidRef && currentThreadId === _replyTidRef) {
+      renderThreadMessages(_replyTidRef);
+    }
+  }, _DELETE_SHOW_DELAY_MS);
 }
 
 /* New Thread Modal */
@@ -11266,9 +11284,12 @@ function renderChatMessages(messages, partnerEmail) {
     const _msgReportBtn = _canReportMsg
       ? `<button onclick="event.stopPropagation();reportDmMessage('${msg.id||''}','${msg.from||''}',this)" style="background:none;border:none;color:var(--red);opacity:0;cursor:pointer;font-size:0.6rem;padding:2px 4px;transition:opacity 0.2s;" class="dm-report-btn" title="Segnala messaggio">🚩</button>`
       : '';
-    // Pulsante elimina: solo per messaggi inviati, entro 15 minuti
+    // Pulsante elimina: solo per messaggi inviati, dopo 15s (ID reale garantito) e entro 15 minuti
     const _msgTs = msg.ts ? new Date(msg.ts).getTime() : 0;
-    const _canDeleteMsg = isSent && msg.id && (!_msgTs || (Date.now() - _msgTs) < _DELETE_OWN_LIMIT_MS);
+    const _msgElapsed = _msgTs > 0 ? Date.now() - _msgTs : Infinity;
+    const _canDeleteMsg = isSent && msg.id && _msgTs > 0
+      && _msgElapsed >= _DELETE_SHOW_DELAY_MS
+      && _msgElapsed < _DELETE_OWN_LIMIT_MS;
     const _msgDeleteBtn = _canDeleteMsg
       ? `<button onclick="event.stopPropagation();deleteOwnDmMessage('${msg.id}',this)" style="background:none;border:none;color:var(--red);opacity:0;cursor:pointer;font-size:0.6rem;padding:2px 4px;transition:opacity 0.2s;" class="dm-delete-btn" title="Elimina messaggio">🗑</button>`
       : '';
@@ -11773,7 +11794,11 @@ function appendMessageToChat(msg, isSent) {
   const el = document.createElement('div');
   const _appendCanReport = !isSent && !partnerRole && _canReport(partnerInfo.name || '', false);
   const _appendMsgTs = msg.ts ? new Date(msg.ts).getTime() : 0;
-  const _appendCanDelete = isSent && msg.id && (!_appendMsgTs || (Date.now() - _appendMsgTs) < _DELETE_OWN_LIMIT_MS);
+  const _appendElapsed = _appendMsgTs > 0 ? Date.now() - _appendMsgTs : 0;
+  // Il 🗑 non compare subito: aspetta 15s così l'ID reale è sempre disponibile all'eliminazione
+  const _appendCanDelete = isSent && msg.id && _appendMsgTs > 0
+    && _appendElapsed >= _DELETE_SHOW_DELAY_MS
+    && _appendElapsed < _DELETE_OWN_LIMIT_MS;
   el.className = `msg ${isSent ? 'sent' : 'received'}`;
   if (_appendCanReport || _appendCanDelete) {
     el.onmouseenter = function() { this.querySelectorAll('.dm-report-btn,.dm-delete-btn').forEach(function(b){b.style.opacity='0.6';}); };
@@ -11804,6 +11829,19 @@ function appendMessageToChat(msg, isSent) {
     ContentTranslator.processNewContent(el);
   }
   messagesEl.scrollTo({ top: messagesEl.scrollHeight, behavior: 'smooth' });
+
+  // Dopo 15s: re-render la chat DM per far comparire il 🗑 con ID reale già disponibile
+  if (isSent && _appendMsgTs > 0 && _appendElapsed < _DELETE_SHOW_DELAY_MS) {
+    const _delayPartner = currentConvPartnerEmail;
+    setTimeout(function() {
+      if (!_delayPartner || !currentUser) return;
+      const _cid = convId(currentUser.email, _delayPartner);
+      const _cached = (_msgCache && _msgCache[_cid]) ? _msgCache[_cid] : null;
+      if (_cached && currentConvPartnerEmail && currentConvPartnerEmail === _delayPartner) {
+        renderChatMessages(_cached, _delayPartner);
+      }
+    }, _DELETE_SHOW_DELAY_MS - _appendElapsed + 100);
+  }
 }
 
 /* ══════════════════════════════════════════════════════════════
@@ -16115,7 +16153,11 @@ async function deleteOwnDmMessage(msgId, btnEl) {
    NON applicabile ai commenti sui post del team (solo il team può modificarli).
    Propagazione globale via Supabase content_removals.
 ══════════════════════════════════════════════════════════════ */
-const _DELETE_OWN_LIMIT_MS = 15 * 60 * 1000; // 15 minuti
+const _DELETE_OWN_LIMIT_MS  = 15 * 60 * 1000; // 15 minuti — finestra massima di eliminazione
+const _DELETE_SHOW_DELAY_MS =      15 * 1000;  // 15 secondi — delay minimo prima di mostrare 🗑
+                                               // Garantisce che l'ID reale (Supabase/GAS) sia
+                                               // sempre disponibile prima che l'utente possa eliminare,
+                                               // evitando il bug "Messaggio non trovato" su invii rapidi.
 
 function _canDeleteOwn(authorName, authorEmail, tsMs) {
   if (!currentUser) return false;
@@ -16126,11 +16168,14 @@ function _canDeleteOwn(authorName, authorEmail, tsMs) {
                (authorName && (authorName.toLowerCase() === currentUser.name.toLowerCase() ||
                                authorName.toLowerCase() === myShort.toLowerCase()));
   if (!isMe) return false;
-  // Verifica finestra temporale (15 min).
+  // Verifica finestra temporale.
   // Se tsMs è 0 o assente (contenuto GAS senza campo ts) → BLOCCA: assumiamo sia vecchio.
   // Solo i contenuti creati in questa sessione con ts preciso possono essere eliminati.
   if (!tsMs || tsMs <= 0) return false;
-  return (Date.now() - tsMs) < _DELETE_OWN_LIMIT_MS;
+  const elapsed = Date.now() - tsMs;
+  // Blocca se non sono ancora passati 15 secondi (ID temporaneo potrebbe essere ancora attivo)
+  if (elapsed < _DELETE_SHOW_DELAY_MS) return false;
+  return elapsed < _DELETE_OWN_LIMIT_MS;
 }
 
 /* Bottone elimina inline — stile minimale coerente col design sistema */
@@ -19698,6 +19743,8 @@ async function sendFoundingMessage() {
   };
   _foundingMessages.push(optimistic);
   renderFoundingMessages();
+  // Dopo 15s: re-render per far comparire il 🗑 (ID reale Supabase già disponibile)
+  setTimeout(function() { renderFoundingMessages(); }, _DELETE_SHOW_DELAY_MS);
   _scrollFoundingToBottom();
 
   if (window._sb) {
