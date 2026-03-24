@@ -6783,7 +6783,22 @@ function initApp() {
         if (!_duDisc) return;
         // Aggiorna contatore e preview
         if (typeof payload.newReplies === 'number') _duDisc.replies = payload.newReplies;
-        if (payload.newLastAuthor !== undefined) {
+        if (payload.noRepliesLeft) {
+          // ── Nessuna risposta rimasta: mostra placeholder in lista e in dettaglio ──
+          _duDisc.lastReply   = 'Nessuna risposta ancora';
+          _duDisc.lastReplyTs = null;
+          // Aggiorna DOM lista thread
+          const _duEl = document.querySelector(`.discussion-thread[onclick="openThread(${_duDisc.id})"]`);
+          if (_duEl) {
+            const _duLrs = _duEl.querySelector('.thread-last-reply span');
+            if (_duLrs) _duLrs.innerHTML = window.I18n ? I18n.t('disc.no_replies') : 'Nessuna risposta ancora';
+          }
+          // Aggiorna thread aperto in overlay (se è lo stesso)
+          if (currentThreadId && String(currentThreadId) === String(payload.threadId)) {
+            renderThreadMessages(currentThreadId);
+            _updateThreadDetailHeader(currentThreadId);
+          }
+        } else if (payload.newLastAuthor !== undefined) {
           _duDisc.lastReply   = payload.newLastAuthor ? payload.newLastAuthor + (payload.newLastTs ? ' · ' + _notifRelTime(payload.newLastTs) : '') : '';
           _duDisc.lastReplyTs = payload.newLastTs || 0;
         }
@@ -6796,6 +6811,26 @@ function initApp() {
         const _duDiscPanel = document.getElementById('panel-discussions');
         if (_duDiscPanel && _duDiscPanel.classList.contains('active')) renderDiscussions();
       })
+      // ══ RT: eliminazione thread completo (OP eliminato dall'autore) ═══════
+      .on('broadcast', { event: 'thread_deleted' }, ({ payload }) => {
+        if (!payload || !payload.threadId) return;
+        // Ignora il mittente (già aggiornato localmente prima del broadcast)
+        if (payload.senderEmail && currentUser && payload.senderEmail === currentUser.email.toLowerCase()) return;
+        const _tdId = payload.threadId;
+        // Se il thread eliminato è aperto in overlay → chiudilo immediatamente
+        if (currentThreadId && String(currentThreadId) === String(_tdId)) {
+          closeThread();
+          showToast('amber','🗑','Il thread è stato eliminato dall\'autore.');
+        }
+        // Rimuovi da DISCUSSIONS e THREAD_MESSAGES per tutti i client
+        const _tdIdx = DISCUSSIONS.findIndex(d => String(d.id) === String(_tdId));
+        if (_tdIdx > -1) DISCUSSIONS.splice(_tdIdx, 1);
+        delete THREAD_MESSAGES[_tdId];
+        saveCommunityCache();
+        const _tdPanel = document.getElementById('panel-discussions');
+        if (_tdPanel && _tdPanel.classList.contains('active')) renderDiscussions();
+      })
+      // ════════════════════════════════════════════════════════════════════════
       .subscribe();
     _sbChannels['disc_updates_rt'] = discUpdatesCh;
 
@@ -6918,18 +6953,36 @@ function initApp() {
         const disc = DISCUSSIONS.find(d => String(d.id) === String(r.thread_id));
         if (disc) {
           disc.views = (disc.views || 0) + 1;
-          // Aggiorna il DOM direttamente senza re-render completo
+          const vn = disc.views || 0;
+          const vLabel = vn === 1 ? I18n.t('disc.views_one',{n:vn}) : I18n.t('disc.views',{n:vn});
+          // ── Aggiorna nella lista Discussioni senza re-render completo ───────
           const el = document.querySelector(`.discussion-thread[onclick="openThread(${disc.id})"]`);
           if (el) {
             const stats = el.querySelectorAll('.thread-stat');
-            if (stats[1]) stats[1].lastChild.textContent = ' ' + disc.views;
+            // thread-stat[1] = views (thread-stat[0] = replies)
+            if (stats[1]) {
+              // Sovrascriviamo l'intero innerHTML per sicurezza (evita textContent stale)
+              const svgViews = stats[1].querySelector('svg');
+              stats[1].innerHTML = '';
+              if (svgViews) stats[1].appendChild(svgViews);
+              stats[1].insertAdjacentText('beforeend', ' ' + vn);
+            }
           }
-          // Aggiorna anche il pannello dettaglio thread se aperto.
-          // FIX: il selettore corretto è '#threadDetailInfo span:nth-child(2)',
-          // non '#threadDetailStats .thread-stat:nth-child(2)' (ID inesistente).
+          // ── Aggiorna il pannello dettaglio thread se aperto ─────────────────
+          // Il selettore punta al secondo <span> di #threadDetailInfo
+          // (span[0]=replies, span[1]=views, span[2]=autore)
           if (currentThreadId && String(currentThreadId) === String(r.thread_id)) {
-            const viewsEl = document.querySelector('#threadDetailInfo span:nth-child(2)');
-            if (viewsEl) viewsEl.childNodes[viewsEl.childNodes.length - 1].textContent = ' ' + (disc.views||0) === 1 ? I18n.t('disc.views_one',{n:disc.views||0}) : I18n.t('disc.views',{n:disc.views||0});
+            const infoEl = document.getElementById('threadDetailInfo');
+            if (infoEl) {
+              const viewsSpan = infoEl.querySelectorAll('span')[1];
+              if (viewsSpan) {
+                // Mantiene l'SVG interno, aggiorna solo il testo
+                const svgEl = viewsSpan.querySelector('svg');
+                viewsSpan.innerHTML = '';
+                if (svgEl) viewsSpan.appendChild(svgEl);
+                viewsSpan.insertAdjacentText('beforeend', ' ' + vLabel);
+              }
+            }
           }
         }
       }).subscribe();
@@ -8757,13 +8810,24 @@ function renderFeedPreview() {
   if (!feedList) return;
 
   // Solo post del Team/Admin/Community Manager, max 4, ordinati per timestamp decrescente
+  // ── Riutilizza la stessa logica di visibilità di renderFeed ──────────────
+  function _postVisibleForUserPreview(post) {
+    if (!post.isTeam) return true;
+    const role = currentUser ? currentUser.role : '';
+    const rec  = post.recipient || 'all';
+    const type = post.type      || '';
+    if (type === 'exclusive') return role === 'founding' || role === 'team';
+    if (rec === 'founding')   return role === 'founding'  || role === 'team';
+    if (rec === 'candidate')  return role === 'candidate' || role === 'team';
+    return true;
+  }
   const teamPosts = FEED_POSTS
-    .filter(p => p.isTeam || (p.role && (
+    .filter(p => (p.isTeam || (p.role && (
       p.role.toLowerCase().includes('team') ||
       p.role.toLowerCase().includes('admin') ||
       p.role.toLowerCase().includes('community') ||
       p.role.toLowerCase().includes('founder')
-    )))
+    ))) && _postVisibleForUserPreview(p))
     .sort((a, b) => (b.ts || 0) - (a.ts || 0))
     .slice(0, 4);
 
@@ -9381,8 +9445,31 @@ function renderFeed() {
     container.innerHTML = `<div style="text-align:center;padding:3rem 1rem;color:var(--muted2);font-size:0.82rem;">${I18n.t('feed.empty')}<br>${I18n.t('feed.empty_sub')}</div>`;
     return;
   }
+  // ══ FILTRO DESTINATARI ══════════════════════════════════════════════════════
+  // Regola visibilità post del Team in base a recipient e tipo comunicazione.
+  // "Contenuto Esclusivo" override qualsiasi recipient → solo founding + team.
+  // Regola A: recipient=all     → tutti i ruoli
+  // Regola B: recipient=founding → founding + team
+  // Regola C: recipient=candidate → candidate + team
+  // Regola D: type=exclusive (SEMPRE) → solo founding + team
+  function _postVisibleForUser(post) {
+    if (!post.isTeam) return true; // Post utente → sempre visibile
+    const role = currentUser.role;
+    const rec  = post.recipient || 'all';
+    const type = post.type      || '';
+    // Regola D — override assoluto per Contenuto Esclusivo
+    if (type === 'exclusive') {
+      return role === 'founding' || role === 'team';
+    }
+    // Regole A / B / C
+    if (rec === 'founding')  return role === 'founding'  || role === 'team';
+    if (rec === 'candidate') return role === 'candidate' || role === 'team';
+    return true; // rec === 'all'
+  }
   // Ordina per timestamp decrescente (più recente prima)
-  const sortedPosts = [...FEED_POSTS].sort((a, b) => (b.ts || 0) - (a.ts || 0));
+  const sortedPosts = [...FEED_POSTS]
+    .filter(_postVisibleForUser)
+    .sort((a, b) => (b.ts || 0) - (a.ts || 0));
   container.innerHTML = sortedPosts.map(post => {
     const isLocked = post.locked === 'candidate' && currentUser.role === 'candidate';
     return `
@@ -9899,6 +9986,11 @@ function renderThreadMessages(id) {
     return;
   }
 
+  // ── Solo OP presente (nessuna risposta ancora) ─────────────────────────
+  // Mostriamo l'OP normalmente, poi il placeholder "Nessuna risposta ancora"
+  const nonOpMessages = messages.filter(m => !m.isOp);
+  const hasReplies    = nonOpMessages.length > 0;
+
   messages.forEach((msg, idx) => {
     const div = document.createElement('div');
     div.className = `thread-message${msg.isOp ? ' op' : ''}`;
@@ -9916,7 +10008,12 @@ function renderThreadMessages(id) {
           <span class="thread-msg-role">${msg.role}</span>
           <span class="thread-msg-time">${(() => { const _mts = msg.ts ? new Date(msg.ts).getTime() : 0; return (_mts && isFinite(_mts)) ? `<span data-ts="${_mts}">${_notifRelTime(_mts)}</span>` : `<span ${msg.time && msg.time !== 'Ora' ? `data-ts-guess="${msg.time}"` : ''}>${msg.time || I18n.t('time.now')}</span>`; })()}</span>
           ${_canReport(msg.author, !!msg.isTeam) ? `<button onclick="reportContentById('reply','reply_${idx}')" style="background:none;border:none;color:var(--red);opacity:0.5;cursor:pointer;font-size:0.62rem;margin-left:auto;">🚩 ${I18n.t('feed.report')}</button>` : ''}
-          ${_canDeleteOwn(msg.author, msg.email, msg.ts ? new Date(msg.ts).getTime() : 0) ? (msg.id ? _deleteOwnBtn(`deleteOwnReply('${msg.id}',this)`) : '') : ''}
+          ${msg.isOp
+            ? (_canDeleteOwn(msg.author, msg.email, msg.ts ? new Date(msg.ts).getTime() : 0) && msg.id
+                ? `<button onclick="deleteOwnReply('${msg.id}',this)" style="background:none;border:none;color:var(--red);opacity:0.55;cursor:pointer;font-size:0.62rem;padding:0 2px;transition:opacity 0.2s;" onmouseenter="this.style.opacity='0.9'" onmouseleave="this.style.opacity='0.55'" title="Elimina thread (entro 15 min)">🗑</button>`
+                : '')
+            : (_canDeleteOwn(msg.author, msg.email, msg.ts ? new Date(msg.ts).getTime() : 0) ? (msg.id ? _deleteOwnBtn(`deleteOwnReply('${msg.id}',this)`) : '') : '')
+          }
         </div>
         <div class="thread-msg-text" data-content-id="thread-msg-${idx}" data-content-lang="${msg.lang || 'it'}">${safeText}</div>
         <div class="thread-msg-reactions">
@@ -9933,6 +10030,18 @@ function renderThreadMessages(id) {
       container.appendChild(div2);
     }
   });
+
+  // ── "Nessuna risposta ancora" in RT ─────────────────────────────────────
+  // Mostrato quando l'unica risposta viene eliminata (solo OP rimasta).
+  // Iniettato dopo il loop, senza refresh, senza cambio canale.
+  if (!hasReplies) {
+    const noReplyDiv = document.createElement('div');
+    noReplyDiv.id = 'thread-no-replies-placeholder';
+    noReplyDiv.style.cssText = 'text-align:center;padding:1.5rem 1rem;color:var(--muted);font-size:0.8rem;';
+    noReplyDiv.textContent = window.I18n ? I18n.t('disc.no_replies') : 'Nessuna risposta ancora';
+    container.appendChild(noReplyDiv);
+  }
+  // ────────────────────────────────────────────────────────────────────────
 
   container.scrollTop = container.scrollHeight;
   // Aggiorna visibilità pulsante globale thread translate
@@ -16552,7 +16661,54 @@ async function deleteOwnReply(replyId, btnEl) {
 
   if (idx === -1) { showToast('amber','ℹ','Risposta non trovata.'); return; }
   const msg = msgs[idx];
-  if (msg.isOp) { showToast('amber','ℹ','Non puoi eliminare il post originale.'); return; }
+
+  // ══ ELIMINAZIONE THREAD COMPLETO se l'autore elimina l'OP entro 15 min ════
+  if (msg.isOp) {
+    const opTs = msg.ts ? new Date(msg.ts).getTime() : 0;
+    if (!_canDeleteOwn(msg.author, msg.email, opTs)) {
+      showToast('amber','⏱','Puoi eliminare solo entro 15 minuti dalla pubblicazione.'); return;
+    }
+    const threadId = currentThreadId;
+    const disc = DISCUSSIONS.find(d => String(d.id) === String(threadId));
+
+    // 1. Chiudi overlay thread immediatamente
+    closeThread();
+
+    // 2. Rimuovi localmente da DISCUSSIONS e THREAD_MESSAGES
+    const discIdx = DISCUSSIONS.findIndex(d => String(d.id) === String(threadId));
+    if (discIdx > -1) DISCUSSIONS.splice(discIdx, 1);
+    delete THREAD_MESSAGES[threadId];
+    saveCommunityCache();
+    renderDiscussions();
+    showToast('green','🗑','Thread eliminato definitivamente.');
+
+    // 3. Propaga a tutti i client via content_removals RT (elimina da lista discussioni)
+    if (typeof _writeRemovalToSupabase === 'function') {
+      _writeRemovalToSupabase('thread', String(threadId));
+    }
+
+    // 4. Broadcast istantaneo canale disc-updates → chiude overlay per chi ha il thread aperto
+    if (_sbReady && _sb) {
+      const _duChT = _sbChannels['disc_updates_rt'];
+      const _duChReadyT = _duChT && _duChT.state === 'joined';
+      const _duTargetT = _duChReadyT ? _duChT : 'disc-updates-v1';
+      _sbBroadcast(_duTargetT, {
+        type: 'broadcast', event: 'thread_deleted',
+        payload: { threadId: String(threadId), senderEmail: currentUser ? currentUser.email.toLowerCase() : '' }
+      });
+    }
+
+    // 5. GAS: elimina thread e tutte le risposte dal PropertiesService
+    if (GAS_URL && currentUser) {
+      fetch(GAS_URL + '?action=delete_thread' +
+        '&discId=' + encodeURIComponent(threadId) +
+        '&email='  + encodeURIComponent(currentUser.email)
+      ).catch(() => {});
+    }
+    return;
+  }
+  // ════════════════════════════════════════════════════════════════════════════
+
   const ts = msg.ts ? new Date(msg.ts).getTime() : 0;
   if (!_canDeleteOwn(msg.author, msg.email, ts)) {
     showToast('amber','⏱','Puoi eliminare solo entro 15 minuti dalla pubblicazione.'); return;
@@ -16567,6 +16723,16 @@ async function deleteOwnReply(replyId, btnEl) {
       const lts = lastNonOp.ts ? new Date(lastNonOp.ts).getTime() : 0;
       disc.lastReplyTs = lts;
       disc.lastReply = lastNonOp.author + (lts ? ' · ' + _notifRelTime(lts) : '');
+    } else {
+      // ── Nessuna risposta rimasta: reset a placeholder ─────────────────
+      disc.lastReplyTs = null;
+      disc.lastReply   = 'Nessuna risposta ancora';
+      // Aggiorna DOM nella lista thread in tempo reale (senza re-render completo)
+      const _listEl = document.querySelector(`.discussion-thread[onclick="openThread(${disc.id})"]`);
+      if (_listEl) {
+        const _lrs = _listEl.querySelector('.thread-last-reply span');
+        if (_lrs) _lrs.innerHTML = window.I18n ? I18n.t('disc.no_replies') : 'Nessuna risposta ancora';
+      }
     }
   }
   renderThreadMessages(currentThreadId);
@@ -16607,13 +16773,16 @@ async function deleteOwnReply(replyId, btnEl) {
   // Canale 1: thread_replies_${threadId} → utenti con il thread aperto (rimozione immediata dal DOM)
   // Canale 2: disc-updates-v1 → TUTTI gli utenti (aggiornamento contatore e preview lista thread)
   if (_sbReady && _sb && currentThreadId) {
+    // ── Determina se non rimangono risposte (solo OP) ──────────────────────
+    const _drNoReplies = !disc || disc.lastReply === 'Nessuna risposta ancora' || disc.replies === 0;
     const _drPayload = {
       replyId:       String(replyId),
       threadId:      String(currentThreadId),
       senderEmail:   currentUser ? currentUser.email.toLowerCase() : '',
       newReplies:    disc ? disc.replies : 0,
-      newLastAuthor: disc ? (disc.lastReply ? disc.lastReply.split(' · ')[0] : '') : '',
-      newLastTs:     disc ? (disc.lastReplyTs || 0) : 0
+      newLastAuthor: _drNoReplies ? '' : (disc ? (disc.lastReply ? disc.lastReply.split(' · ')[0] : '') : ''),
+      newLastTs:     _drNoReplies ? 0  : (disc ? (disc.lastReplyTs || 0) : 0),
+      noRepliesLeft: _drNoReplies   // ← flag per mostrare "Nessuna risposta ancora"
     };
     // FIX RT: controlla stato del canale prima di usare .send() (WebSocket).
     // Se il canale non è ancora SUBSCRIBED ('joined'), _sbBroadcast usa httpSend
