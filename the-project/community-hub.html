@@ -3692,6 +3692,7 @@ Object.assign(window.I18N_TRANSLATIONS['fr'] || (window.I18N_TRANSLATIONS['fr']=
   'broadcast.recipient.founding':'Founding Members',
   'broadcast.recipient.candidate':'Founder Candidates',
   'broadcast.visible_to':        'Visible par :',
+  'disc.no_replies':             'Aucune réponse pour l\'instant',
   'disc.replies_one':       '{n} réponse',
   'disc.replies':           '{n} réponses',
   'disc.views_one':         '{n} vue',
@@ -3934,6 +3935,7 @@ Object.assign(window.I18N_TRANSLATIONS['de'] || (window.I18N_TRANSLATIONS['de']=
   'broadcast.recipient.founding':'Founding Members',
   'broadcast.recipient.candidate':'Founder Candidates',
   'broadcast.visible_to':        'Sichtbar für:',
+  'disc.no_replies':             'Noch keine Antworten',
   'disc.replies_one':       '{n} Antwort',
   'disc.replies':           '{n} Antworten',
   'disc.views_one':         '{n} Aufruf',
@@ -4174,6 +4176,7 @@ Object.assign(window.I18N_TRANSLATIONS['es'] || (window.I18N_TRANSLATIONS['es']=
   'broadcast.recipient.founding':'Founding Members',
   'broadcast.recipient.candidate':'Founder Candidates',
   'broadcast.visible_to':        'Visible para:',
+  'disc.no_replies':             'Todavía no hay respuestas',
   'disc.replies_one':       '{n} respuesta',
   'disc.replies':           '{n} respuestas',
   'disc.views_one':         '{n} visualización',
@@ -7145,6 +7148,28 @@ function initApp() {
         if (typeof renderFoundingMessages === 'function') renderFoundingMessages();
         if (typeof _updateFoundingStatus === 'function') _updateFoundingStatus();
       }
+      // ── FIX i18n DM: aggiorna timestamp/date conversazioni e messaggi aperti ─
+      // renderConversations: aggiorna "Ieri"/"x gg fa" nella sidebar delle conv
+      if (typeof renderConversations === 'function') renderConversations();
+      // Re-render messaggi della conversazione aperta (date divider + timestamp)
+      if (currentConvPartnerEmail && _msgCache) {
+        const _lcKey = currentConvPartnerEmail.toLowerCase();
+        const _lcMsgs = _msgCache[_lcKey];
+        if (_lcMsgs && _lcMsgs.length > 0 && typeof renderChatMessages === 'function') {
+          renderChatMessages(_lcMsgs, currentConvPartnerEmail);
+        }
+      }
+      // Aggiorna header status "● Online / ○ Offline" nella chat aperta
+      const _csEl = document.getElementById('chatHeaderStatus');
+      if (_csEl && currentConvPartnerEmail) {
+        const _csOnline = ONLINE_MEMBERS.find(m =>
+          (m.email && m.email.toLowerCase() === currentConvPartnerEmail.toLowerCase()) ||
+          (m.name && m.name.toLowerCase() === (getPartnerInfo(currentConvPartnerEmail).name || '').toLowerCase())
+        );
+        _csEl.textContent = _csOnline ? '● Online' : '○ Offline';
+        _csEl.className = 'chat-header-status ' + (_csOnline ? '' : 'offline');
+      }
+      // ────────────────────────────────────────────────────────────────────────
       // Update position label
       var _fpEl = document.getElementById('founderDashPosition');
       if (_fpEl && typeof _getFoundingPosition === 'function') _fpEl.textContent = _getFoundingPosition();
@@ -8078,6 +8103,11 @@ function applyRemoteData(data) {
           const authorPart  = _normalizeAuthorShort(_rtAuthor) || _gasAuthor || _localAuthor || _rawFallback;
           finalLastReply = authorPart ? authorPart + ' · ' + _notifRelTime(finalLastReplyTs) : null;
         }
+        // ── FIX BUG "null": se non ci sono risposte valide, usa il placeholder ──
+        // Evita che disc.lastReply sia null e venga reso come stringa "null" nel DOM.
+        if (!finalLastReply || finalLastReply === 'null') {
+          finalLastReply = 'Nessuna risposta ancora';
+        }
 
         return {
           ...d,
@@ -8814,9 +8844,12 @@ function renderFeedPreview() {
   function _postVisibleForUserPreview(post) {
     if (!post.isTeam) return true;
     const role = currentUser ? currentUser.role : '';
-    const rec  = post.recipient || 'all';
-    const type = post.type      || '';
+    const type = post.type || '';
     if (type === 'exclusive') return role === 'founding' || role === 'team';
+    const rec = post.recipient
+      || (post.locked === 'founding'  ? 'founding'
+        : post.locked === 'candidate' ? 'candidate'
+        : 'all');
     if (rec === 'founding')   return role === 'founding'  || role === 'team';
     if (rec === 'candidate')  return role === 'candidate' || role === 'team';
     return true;
@@ -9452,16 +9485,19 @@ function renderFeed() {
   // Regola B: recipient=founding → founding + team
   // Regola C: recipient=candidate → candidate + team
   // Regola D: type=exclusive (SEMPRE) → solo founding + team
+  // NOTA: GAS salva il campo `locked` (non `recipient`). Se recipient manca,
+  //       il filtro usa locked come fallback per retrocompatibilità.
   function _postVisibleForUser(post) {
     if (!post.isTeam) return true; // Post utente → sempre visibile
     const role = currentUser.role;
-    const rec  = post.recipient || 'all';
-    const type = post.type      || '';
+    const type = post.type || '';
     // Regola D — override assoluto per Contenuto Esclusivo
-    if (type === 'exclusive') {
-      return role === 'founding' || role === 'team';
-    }
-    // Regole A / B / C
+    if (type === 'exclusive') return role === 'founding' || role === 'team';
+    // Determina recipient: campo diretto oppure fallback da locked
+    const rec = post.recipient
+      || (post.locked === 'founding'  ? 'founding'
+        : post.locked === 'candidate' ? 'candidate'
+        : 'all');
     if (rec === 'founding')  return role === 'founding'  || role === 'team';
     if (rec === 'candidate') return role === 'candidate' || role === 'team';
     return true; // rec === 'all'
@@ -9792,7 +9828,7 @@ function renderDiscussions(filter) {
       </div>
       <div class="thread-footer">
         <div class="thread-last-reply">💬 <span>${(() => {
-          if (!d.lastReplyTs && d.lastReply === 'Nessuna risposta ancora') return window.I18n ? I18n.t('disc.no_replies') : d.lastReply;
+          if (!d.lastReplyTs && (!d.lastReply || d.lastReply === 'Nessuna risposta ancora' || d.lastReply === 'null')) return window.I18n ? I18n.t('disc.no_replies') : 'Nessuna risposta ancora';
           // BUG FIX #5: usa lastReplyTs per calcolare tempo relativo dinamicamente
           if (d.lastReplyTs) {
             const _rawPart = d.lastReply ? d.lastReply.split(' · ')[0] : '';
@@ -10922,8 +10958,9 @@ function formatMsgTime(isoStr) {
     const dateMidnight  = new Date(d.getFullYear(),   d.getMonth(),   d.getDate()).getTime();
     const calDays = Math.round((todayMidnight - dateMidnight) / 86400000);
     if (calDays === 0) return d.getHours().toString().padStart(2,'0') + ':' + d.getMinutes().toString().padStart(2,'0');
-    if (calDays === 1) return 'Ieri';
-    if (calDays < 7)   return calDays + ' gg fa';
+    // ── FIX i18n: usa le chiavi di traduzione invece di stringhe IT hardcoded ──
+    if (calDays === 1) return window.I18n ? I18n.t('time.yesterday') : 'Ieri';
+    if (calDays < 7)   return window.I18n ? I18n.t('time.day_ago', { n: calDays }) : (calDays + ' gg fa');
     const _msgDateLang = (window.I18n && I18n.getCurrentLanguage) ? (I18n.getCurrentLanguage() || 'it') : 'it';
     return d.toLocaleDateString(_msgDateLang, { day:'2-digit', month:'short', year:'numeric' });
   } catch(_e) { return ''; }
@@ -11503,7 +11540,7 @@ function renderChatMessages(messages, partnerEmail) {
         <div class="msg-bubble-wrap">
           ${mediaHtml}
           ${msg.text ? `<div class="msg-bubble" data-translatable="true" data-content-lang="${msg.lang || 'it'}" data-content-id="msg-${msg.id||''}">${escapeHtml(msg.text)}</div>` : ''}
-          <div class="msg-time" style="display:flex;align-items:center;gap:0.4rem;">${_msgDeleteBtn}${_msgReportBtn}${timeLabel}</div>
+          <div class="msg-time" data-msg-ts="${msgTs}" style="display:flex;align-items:center;gap:0.4rem;">${_msgDeleteBtn}${_msgReportBtn}<span class="msg-time-label">${timeLabel}</span></div>
         </div>
         ${isSent ? `<div class="msg-avatar" style="${avatarStyle}${avatarVisible}">${avatarInitial}</div>` : ''}
       </div>`;
@@ -14121,6 +14158,20 @@ function _startNotifTimeTicker() {
         if (el.textContent !== newText) el.textContent = newText;
       }
     });
+    // ── FIX i18n DM: aggiorna timestamp messaggi aperti [data-msg-ts] ────────
+    // I messaggi DM non usano data-ts (hanno orario HH:MM o "Ieri") → formatMsgTime
+    document.querySelectorAll('[data-msg-ts] .msg-time-label').forEach(el => {
+      const tsEl  = el.closest('[data-msg-ts]');
+      const msgTs = tsEl ? parseInt(tsEl.dataset.msgTs, 10) : 0;
+      if (!msgTs) return;
+      const newLabel = formatMsgTime(new Date(msgTs).toISOString());
+      if (el.textContent !== newLabel) el.textContent = newLabel;
+    });
+    // Aggiorna la sidebar delle conversazioni (timestamp "Ieri"/"x gg fa") se il pannello è aperto
+    const _msgPanel = document.getElementById('panel-messages');
+    if (_msgPanel && _msgPanel.classList.contains('active') && typeof renderConversations === 'function') {
+      renderConversations();
+    }
   }, 30000); // ogni 30s — sufficiente per testi come "Ieri", "X ore fa", date
 }
 
@@ -15735,8 +15786,17 @@ async function publishBroadcast() {
   const typeMap  = { 'update':'update', 'exclusive':'exclusive', 'news':'news', 'event':'event' };
   const postType = typeChip ? (typeMap[typeChip.dataset.type] || 'update') : 'update';
 
+  // ── locked → codifica recipient per GAS (GAS salva locked ma non recipient) ──
+  // 'founding'  = solo founding + team possono vedere il post
+  // 'candidate' = solo candidate + team possono vedere il post
+  // ''          = tutti i ruoli (recipient='all')
+  // Contenuto Esclusivo override: locked sempre 'founding' indipendentemente da recipient
   const lockedChip = document.querySelector('[data-lock].active');
-  const locked     = lockedChip ? 'candidate' : '';
+  const locked = postType === 'exclusive'
+    ? 'founding'
+    : (recipient === 'founding'  ? 'founding'
+    :  recipient === 'candidate' ? 'candidate'
+    :  (lockedChip               ? 'candidate' : ''));
 
   // Se pianificato: salva scheduling e mostra toast, NON pubblicare adesso
   if (isScheduled) {
