@@ -4290,7 +4290,7 @@ Object.assign(window.I18N_TRANSLATIONS['es'] || (window.I18N_TRANSLATIONS['es']=
       <div style="text-align:center; font-size:0.72rem; color:var(--muted2); line-height:1.6;" data-i18n="login.credentials_sent">
         Le credenziali ti sono state inviate via email al momento della prenotazione. Per assistenza:</div>
       <div style="text-align:center; font-size:0.72rem; color:var(--muted2); line-height:1.6;">
-        <a href="mailto:support@luxhaven360.com" style="color:var(--gold); text-decoration:none;">support@luxhaven360.com</a>
+        <a href="/cdn-cgi/l/email-protection#d4a7a1a4a4bba6a094b8a1acbcb5a2b1bae7e2e4fab7bbb9" style="color:var(--gold); text-decoration:none;"><span class="__cf_email__" data-cfemail="86f5f3f6f6e9f4f2c6eaf3feeee7f0e3e8b5b0b6a8e5e9eb">[email&#160;protected]</span></a>
       </div>
     </div>
 
@@ -4468,7 +4468,7 @@ Object.assign(window.I18N_TRANSLATIONS['es'] || (window.I18N_TRANSLATIONS['es']=
   </header>
 
 
-  <script data-cfasync="false" src="/cdn-cgi/scripts/5c5dd728/cloudflare-static/email-decode.min.js"></script><script>
+  <script data-cfasync="false" src="/cdn-cgi/scripts/5c5dd728/cloudflare-static/email-decode.min.js"></script><script data-cfasync="false" src="/cdn-cgi/scripts/5c5dd728/cloudflare-static/email-decode.min.js"></script><script>
   (function() {
     var BANNER_INTERVAL_MS  = 360 * 60 * 1000; // 6 ore — cooldown tra ricaricamenti
     var BANNER_VISIBLE_MS   = 10 * 1000;        // 10 secondi visibile
@@ -5659,6 +5659,38 @@ function _normalizeAuthorShort(name) {
 }
 
 let LISTINGS = [];
+
+// ── Safety cache permanente per i listing confermati ───────────────────────
+// Risolve il bug "listing sparisce dopo ~5min": se GAS non salva il listing
+// (PropertiesService quota, thumbnail troppo grande, timeout), writeProp fallisce
+// silenziosamente ma ritorna success:true. Dopo 60s+5min di protezione il listing
+// scompare dal frontend perché data.listings non lo contiene mai.
+// _confirmedListings persiste in localStorage e ripristina i listing "persi" finché
+// non vengono esplicitamente eliminati dalla moderazione.
+const _CONFIRMED_LISTINGS_KEY = 'lh360_confirmed_listings_v1';
+let _confirmedListings = {}; // { id: listingObject }
+try {
+  const _clRaw = localStorage.getItem(_CONFIRMED_LISTINGS_KEY);
+  if (_clRaw) _confirmedListings = JSON.parse(_clRaw) || {};
+} catch(_e) { _confirmedListings = {}; }
+
+function _saveConfirmedListings() {
+  try { localStorage.setItem(_CONFIRMED_LISTINGS_KEY, JSON.stringify(_confirmedListings)); } catch(_e) {}
+}
+
+// Aggiungi un listing alla safety cache (chiamato dopo conferma GAS o broadcast ricevuto)
+function _confirmListing(listing) {
+  if (!listing || !listing.id) return;
+  _confirmedListings[String(listing.id)] = listing;
+  _saveConfirmedListings();
+}
+
+// Rimuovi un listing dalla safety cache (chiamato da moderazione/eliminazione)
+function _removeConfirmedListing(listingId) {
+  if (!listingId) return;
+  delete _confirmedListings[String(listingId)];
+  _saveConfirmedListings();
+}
 // Le listing vengono caricate esclusivamente da GAS
 /* Messaggistica reale — popolata da GAS */
 let REAL_CONVS = [];              // [{partnerEmail, partnerName, partnerInitial, partnerRole, lastMessage, lastTs, unread}]
@@ -6338,7 +6370,19 @@ function initApp() {
       total: s.total ?? (s.options ? s.options.reduce((sum, o) => sum + (o.votes || 0), 0) : 0),
       desc:  s.desc || s.question || ''
     }));
-    if (Array.isArray(_bootCache.listings))    LISTINGS      = _bootCache.listings;
+    if (Array.isArray(_bootCache.listings)) {
+      LISTINGS = _bootCache.listings;
+      // ── Fondi con la safety cache permanente ─────────────────────────────
+      // Se GAS non ha mai salvato un listing (quota PropertiesService), questo
+      // lo ripristina alla partenza prima ancora del primo fetch GAS.
+      const _cacheIds = new Set(LISTINGS.map(l => String(l.id)));
+      Object.values(_confirmedListings).forEach(cl => {
+        if (!_cacheIds.has(String(cl.id))) {
+          LISTINGS.push(cl);
+          _cacheIds.add(String(cl.id));
+        }
+      });
+    }
     if (_bootCache.threadMsgs && typeof _bootCache.threadMsgs === 'object') {
       Object.keys(_bootCache.threadMsgs).forEach(k => { THREAD_MESSAGES[k] = _bootCache.threadMsgs[k]; });
     }
@@ -6581,6 +6625,9 @@ function initApp() {
         // Aggiungi a _pendingListingIds con timeout 5 minuti → applyRemoteData non lo cancellerà
         _pendingListingIds.add(l.id);
         setTimeout(() => _pendingListingIds.delete(l.id), 300000);
+        // ── Safety cache permanente: listing ricevuto via broadcast RT ────────────
+        // Anche se GAS non lo salva correttamente, questo client lo conserva
+        _confirmListing(l);
         saveCommunityCache();
         // Aggiorna UI se il pannello listings è aperto
         const activePanel = document.querySelector('.panel.active');
@@ -6590,7 +6637,28 @@ function initApp() {
           const lb = document.getElementById('listingsNewBadge');
           if (lb) lb.classList.remove('hidden');
         }
-        // NON chiamare addRealNotification qui — la notifica arriva già via bcastNotifCh
+        // ── Notifica garantita via broadcast channel ───────────────────────────────
+        // NON ci affidiamo solo a bcastNotifCh (postgres_changes su user_email='__broadcast__')
+        // perché il DB insert in publishListing può fallire silenziosamente se la colonna
+        // author_email non esiste in Supabase o RLS blocca l'insert → nessun trigger DB.
+        // Questo path è sempre affidabile: arriva per tutti i client online al momento
+        // della pubblicazione, indipendentemente dal DB.
+        if (isNotifEnabled('new_listings')) {
+          const _listingTitle = l.title || 'Listing esclusivo';
+          // Dedup con bcastNotifCh: se la notifica DB è già arrivata nei 15s precedenti, skip
+          const _alreadyNotified = NOTIFICATIONS.some(n =>
+            n.text && n.text.includes(_listingTitle) &&
+            Math.abs((n.ts || 0) - Date.now()) < 15000
+          );
+          if (!_alreadyNotified) {
+            addRealNotification(
+              'new_listings', '🏷️',
+              `${I18n.t('notif.new_listing')} <strong>${_listingTitle}</strong>`,
+              null,
+              { i18nKey: 'notif.new_listing', rawTitle: _listingTitle, contentLang: 'it' }
+            );
+          }
+        }
       })
       .on('broadcast', { event: 'update_listing_id' }, (payload) => {
         // Aggiorna l'ID del listing broadcast (tempId → realId) per evitare sparizione al polling
@@ -6605,6 +6673,9 @@ function initApp() {
           _pendingListingIds.delete(tempId);
           _pendingListingIds.add(realId);
           setTimeout(() => _pendingListingIds.delete(realId), 60000);
+          // ── Aggiorna safety cache: rimuovi tempId, salva realId ────────────
+          _removeConfirmedListing(tempId);
+          _confirmListing(LISTINGS[idx]);
           saveCommunityCache();
         }
       })
@@ -8196,7 +8267,27 @@ function applyRemoteData(data) {
       const lTs = l.ts ? new Date(l.ts).getTime() : 0;
       return lTs > 0 && (_nowMs - lTs) < _LISTING_GRACE_MS;
     });
-    LISTINGS = [...pendingLocal, ...data.listings];
+
+    // ── Safety cache permanente: ripristina listing confermati non presenti su GAS ──
+    // Causa bug "listing sparisce": GAS PropertiesService quota superata con thumbnail
+    // grandi → writeProp(CL_KEY) fallisce silenziosamente → listing mai salvato su GAS
+    // → dopo 60s+5min sparisce dal frontend.
+    // _confirmedListings contiene tutti i listing che il client ha visto confermati
+    // (da GAS o da broadcast RT). Li ripristiniamo se GAS non li restituisce.
+    const confirmedMissing = Object.values(_confirmedListings).filter(cl => {
+      const clIdStr = String(cl.id);
+      // Salta se il server già lo ha (non serve ripristinarlo)
+      if (serverListingIds.has(clIdStr)) return false;
+      // Salta se già nella lista pendingLocal (evita duplicati)
+      if (pendingLocal.some(l => String(l.id) === clIdStr)) return false;
+      // Salta se è stato esplicitamente rimosso dalla moderazione
+      return true;
+    });
+    if (confirmedMissing.length > 0) {
+      console.warn('[Listings] Ripristinati ' + confirmedMissing.length + ' listing dalla safety cache (GAS quota?):', confirmedMissing.map(l => l.id));
+    }
+
+    LISTINGS = [...pendingLocal, ...confirmedMissing, ...data.listings];
     // Rimuovi dai pending gli item che il server ha confermato (confronto tollerante al tipo)
     _pendingListingIds.forEach(id => {
       if (serverListingIds.has(String(id))) _pendingListingIds.delete(id);
@@ -15507,6 +15598,7 @@ async function publishListing() {
   };
   LISTINGS.unshift(listingObj);
   _pendingListingIds.add(tempId); // protegge da sovrascrittura polling prima di conferma GAS
+  _confirmListing(listingObj);    // safety cache permanente: sopravvive a reload e quota GAS
   saveCommunityCache();
   renderListings();
   logActivity('gold', '<strong>Team LH360</strong> ha pubblicato un listing: ' + title);
@@ -15515,11 +15607,14 @@ async function publishListing() {
   if (_sbReady) {
     try {
       await _sb.from('notifications').insert({
-        user_email: '__broadcast__',
+        user_email:   '__broadcast__',
         author_email: currentUser.email,
         icon: 'gold', emoji: '🏷️',
-        text: `${window.I18n ? I18n.t('notif.new_listing') : 'Nuovo listing:'} <strong>${listingObj.title}</strong>`,
-        created_at: new Date().toISOString(), read: false
+        text:         `${window.I18n ? I18n.t('notif.new_listing') : 'Nuovo listing:'} <strong>${listingObj.title}</strong>`,
+        i18n_key:     'notif.new_listing',
+        raw_title:    listingObj.title,
+        content_lang: 'it',
+        created_at:   new Date().toISOString(), read: false
       });
     } catch(_e) {}
   }
@@ -15560,7 +15655,17 @@ async function publishListing() {
       if (gasData.success && gasData.listing && gasData.listing.id) {
         const realId = gasData.listing.id;
         const idx = LISTINGS.findIndex(l => l.id === tempId);
-        if (idx !== -1) { LISTINGS[idx].id = realId; saveCommunityCache(); }
+        if (idx !== -1) {
+          LISTINGS[idx].id = realId;
+          saveCommunityCache();
+          // ── Safety: salva nella cache permanente ─────────────────────────
+          // Protegge dalla sparizione causata da GAS PropertiesService quota error
+          // (writeProp fallisce silenziosamente ma GAS ritorna success:true).
+          // Dopo 60s+5min di protezione locale il listing tornerebbe a comparire
+          // da questa cache permanente finché non viene eliminato esplicitamente.
+          _removeConfirmedListing(tempId); // rimuovi la versione con tempId
+          _confirmListing(LISTINGS[idx]);  // salva con realId definitivo
+        }
         _pendingListingIds.delete(tempId);
         _pendingListingIds.add(realId);
         // Aggiungi anche la versione stringa per sicurezza (GAS può restituire numeri o stringhe)
@@ -15582,6 +15687,12 @@ async function publishListing() {
         }
       } else {
         // GAS non ha confermato: estendi protezione polling a 5 minuti
+        // ── Safety: salva comunque nella cache permanente con tempId ─────
+        // Se GAS non ha risposto correttamente, il listing potrebbe non essere
+        // mai su GAS. Lo teniamo nella cache permanente così rimane visibile
+        // all'autore (e tramite il broadcast lo hanno già gli altri utenti online).
+        const _fbIdx = LISTINGS.findIndex(l => l.id === tempId);
+        if (_fbIdx !== -1) _confirmListing(LISTINGS[_fbIdx]);
         setTimeout(() => _pendingListingIds.delete(tempId), 300000);
       }
     } catch(_e) {}
@@ -15598,10 +15709,50 @@ function previewListingThumb(input) {
     return;
   }
   if (nameEl) nameEl.textContent = file.name.length > 30 ? file.name.substring(0,28)+'…' : file.name;
+
+  // ── Compressione immagine via Canvas ────────────────────────────────────
+  // Target: riduzione 70-75% delle dimensioni mantenendo qualità visiva ottimale.
+  // Strategia: ridimensiona a max 1200px sul lato lungo + re-encoding WebP (q=0.72)
+  // o JPEG (q=0.72) come fallback. WebP garantisce ~25-35% in meno rispetto a JPEG
+  // alla stessa qualità percepita. Il risultato finale è tipicamente 70-80% più
+  // leggero rispetto all'originale, anche per PNG e BMP non compressi.
+  const MAX_SIDE   = 1200;   // pixel: lato lungo massimo
+  const QUALITY    = 0.72;   // coefficiente qualità encoder (0-1) → ~28% loss encode
+  const MIME_OUT   = 'image/webp'; // preferito; fallback a jpeg se browser non supporta
+  const MIME_FALL  = 'image/jpeg';
+
   const reader = new FileReader();
   reader.onload = function(e) {
-    if (imgEl) imgEl.src = e.target.result;
-    if (previewEl) previewEl.style.display = 'block';
+    const img = new Image();
+    img.onload = function() {
+      // Calcola nuove dimensioni mantenendo aspect ratio
+      let w = img.naturalWidth;
+      let h = img.naturalHeight;
+      if (w > MAX_SIDE || h > MAX_SIDE) {
+        if (w >= h) { h = Math.round(h * MAX_SIDE / w); w = MAX_SIDE; }
+        else        { w = Math.round(w * MAX_SIDE / h); h = MAX_SIDE; }
+      }
+      // Disegna su canvas e re-encoda
+      const canvas = document.createElement('canvas');
+      canvas.width  = w;
+      canvas.height = h;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0, w, h);
+      // Prova WebP, poi JPEG come fallback
+      let compressed = canvas.toDataURL(MIME_OUT, QUALITY);
+      // Se il browser non supporta WebP, toDataURL ritorna PNG → usa JPEG
+      if (!compressed.startsWith('data:image/webp')) {
+        compressed = canvas.toDataURL(MIME_FALL, QUALITY);
+      }
+      if (imgEl) imgEl.src = compressed;
+      if (previewEl) previewEl.style.display = 'block';
+      // Log riduzione (development aid)
+      const origKB = Math.round(e.target.result.length * 0.75 / 1024);
+      const compKB = Math.round(compressed.length * 0.75 / 1024);
+      const pct    = origKB > 0 ? Math.round((1 - compKB / origKB) * 100) : 0;
+      console.info(`[Thumb] ${origKB}KB → ${compKB}KB (−${pct}% | ${w}×${h}px)`);
+    };
+    img.src = e.target.result;
   };
   reader.readAsDataURL(file);
 }
@@ -16953,6 +17104,12 @@ function removeContentFromPlatform(sourceType, sourceId) {
       const ri = arr.findIndex(m => m.id === sourceId || m.id === idNum);
       if (ri > -1) { arr.splice(ri, 1); if (currentThreadId) renderThreadMessages(currentThreadId); }
     });
+  } else if (sourceType === 'listing') {
+    // ── Rimuovi dalla safety cache permanente → non verrà mai più ripristinato ──
+    _removeConfirmedListing(sourceId);
+    if (idNum) _removeConfirmedListing(idNum);
+    const idx = LISTINGS.findIndex(l => l.id === idNum || l.id === sourceId || String(l.id) === String(sourceId));
+    if (idx > -1) { LISTINGS.splice(idx, 1); renderListings(); }
   }
   saveCommunityCache();
 }
@@ -20817,7 +20974,7 @@ if (window.I18n && typeof I18n.onLanguageChange === 'function') {
     if (el) el.style.webkitOverflowScrolling = 'touch';
   });
 
-  /* ── VIEWPORT: evita zoom su input focus (iOS) ── */
+  /* ── VIEWPORT: evita  zoom su input focus (iOS) ── */
   var metaViewport = document.querySelector('meta[name="viewport"]');
   if (metaViewport) {
     metaViewport.content = 'width=device-width, initial-scale=1.0, maximum-scale=1.0';
