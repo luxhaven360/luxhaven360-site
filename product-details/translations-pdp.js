@@ -154,6 +154,7 @@ const translationsPDP = {
     
     // Trust Badges
     pdp_trust_shipping: "Spedizione Gratuita sopra €150",
+    pdp_trust_shipping_tpl: "Spedizione Gratuita sopra {amount}",
     pdp_trust_return: "Rimborso in caso di difetto accertato",
     pdp_trust_secure: "Pagamenti Sicuri al 100%",
     
@@ -928,6 +929,7 @@ tracking_error_timeout_text: "La richiesta sta impiegando più tempo del previst
     pdp_checkout_error: "An error occurred while initiating payment. Please try again.",
     
     pdp_trust_shipping: "Free Shipping over $150",
+    pdp_trust_shipping_tpl: "Free Shipping over {amount}",
     pdp_trust_return: "Refund for verified defects only",
     pdp_trust_secure: "100% Secure Payments",
     
@@ -1640,6 +1642,7 @@ tracking_error_timeout_text: "The request is taking longer than expected. Check 
     pdp_checkout_error: "Une erreur s'est produite lors de l'initiation du paiement. Veuillez réessayer.",
     
     pdp_trust_shipping: "Livraison Gratuite au-dessus de 150€",
+    pdp_trust_shipping_tpl: "Livraison Gratuite au-dessus de {amount}",
     pdp_trust_return: "Remboursement en cas de défaut avéré",
     pdp_trust_secure: "Paiements Sécurisés à 100%",
     
@@ -2346,6 +2349,7 @@ tracking_error_timeout_text: "La requête prend plus de temps que prévu. Vérif
     pdp_checkout_error: "Beim Initiieren der Zahlung ist ein Fehler aufgetreten. Bitte versuchen Sie es erneut.",
     
     pdp_trust_shipping: "Kostenloser Versand ab 150€",
+    pdp_trust_shipping_tpl: "Kostenloser Versand ab {amount}",
     pdp_trust_return: "Erstattung bei nachgewiesenem Mangel",
     pdp_trust_secure: "100% Sichere Zahlungen",
     
@@ -3060,6 +3064,7 @@ tracking_error_timeout_text: "Die Anfrage dauert länger als erwartet. Überprü
     pdp_checkout_error: "Se produjo un error al iniciar el pago. Por favor, inténtalo de nuevo.",
     
     pdp_trust_shipping: "Envío Gratuito por encima de €150",
+    pdp_trust_shipping_tpl: "Envío Gratuito por encima de {amount}",
     pdp_trust_return: "Reembolso en caso de defecto comprobado",
     pdp_trust_secure: "Pagos 100% Seguros",
     
