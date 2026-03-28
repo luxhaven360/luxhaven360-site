@@ -237,6 +237,15 @@
     const elements = container.querySelectorAll(selector);
     elements.forEach(translateElement);
 
+    // Aggiorna document.title in base alla lingua corrente
+    const titleKey = document.documentElement.getAttribute('data-page-title-key');
+    if (titleKey) {
+      const translatedTitle = t(titleKey);
+      if (translatedTitle && translatedTitle !== titleKey) {
+        document.title = translatedTitle;
+      }
+    }
+
     // Aggiorna anche la radice stessa se ha attributi i18n
     if (root && root.hasAttribute) {
       if (
