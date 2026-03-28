@@ -743,4 +743,10 @@ window.I18N_TRANSLATIONS['en'] = {
   'founding.date_today': 'Today',
   'founding.date_yesterday': 'Yesterday',
   'emoji.search_placeholder': 'Search emoji…',
+
+  // PAGE TITLES
+  'page.title_project': 'The Project — LuxHaven360',
+  'page.title_showcase': 'Showcase & Promotion — LuxHaven360',
+  'page.title_community_hub': 'Community Hub — LuxHaven360',
+  'page.title_members': 'Members Area — LuxHaven360',
 };
