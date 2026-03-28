@@ -205,6 +205,16 @@ class I18n {
     });
     console.log('  ✅ Pulsanti aggiornati');
 
+
+    // Aggiorna document.title in base alla lingua corrente
+    const titleKey = document.documentElement.getAttribute('data-page-title-key');
+    if (titleKey) {
+      const translatedTitle = this.t(titleKey);
+      if (translatedTitle && translatedTitle !== titleKey) {
+        document.title = translatedTitle;
+      }
+    }
+
     // Dispatch custom event for post-translation hooks (e.g. EA counter note)
     try {
       document.dispatchEvent(new CustomEvent('lh360:translated', { detail: { lang: this.currentLang } }));
