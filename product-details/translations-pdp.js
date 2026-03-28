@@ -1,5 +1,14 @@
 const translationsPDP = {
   it: {
+
+    // PAGE TITLES
+    page_title_booking: "Prenota il Test Drive — LuxHaven360",
+    page_title_cart: "Il Tuo Carrello — LuxHaven360",
+    page_title_pdp: "Dettaglio Prodotto — LuxHaven360",
+    page_title_success: "Ordine Confermato — LuxHaven360",
+    page_title_success_booking: "Prenotazione Confermata — LuxHaven360",
+    page_title_tracking: "I Tuoi Ordini — LuxHaven360",
+
     // ============================================
     // CART.HTML - CARRELLO
     // ============================================
@@ -778,6 +787,15 @@ tracking_error_timeout_text: "La richiesta sta impiegando più tempo del previst
   },
 
   en: {
+
+    // PAGE TITLES
+    page_title_booking: "Book Your Test Drive — LuxHaven360",
+    page_title_cart: "Your Cart — LuxHaven360",
+    page_title_pdp: "Product Details — LuxHaven360",
+    page_title_success: "Order Confirmed — LuxHaven360",
+    page_title_success_booking: "Booking Confirmed — LuxHaven360",
+    page_title_tracking: "Your Orders — LuxHaven360",
+
     // ============================================
     // CART.HTML - CART
     // ============================================
@@ -1480,6 +1498,15 @@ tracking_error_timeout_text: "The request is taking longer than expected. Check 
   },
   
   fr: {
+
+    // PAGE TITLES
+    page_title_booking: "Réservez Votre Essai — LuxHaven360",
+    page_title_cart: "Votre Panier — LuxHaven360",
+    page_title_pdp: "Détail du Produit — LuxHaven360",
+    page_title_success: "Commande Confirmée — LuxHaven360",
+    page_title_success_booking: "Réservation Confirmée — LuxHaven360",
+    page_title_tracking: "Vos Commandes — LuxHaven360",
+
     // ============================================
     // CART.HTML - PANIER
     // ============================================
@@ -2182,6 +2209,15 @@ tracking_error_timeout_text: "La requête prend plus de temps que prévu. Vérif
   },
   
   de: {
+
+    // PAGE TITLES
+    page_title_booking: "Test Drive Buchen — LuxHaven360",
+    page_title_cart: "Ihr Warenkorb — LuxHaven360",
+    page_title_pdp: "Produktdetails — LuxHaven360",
+    page_title_success: "Bestellung Bestätigt — LuxHaven360",
+    page_title_success_booking: "Buchung Bestätigt — LuxHaven360",
+    page_title_tracking: "Ihre Bestellungen — LuxHaven360",
+
     // ============================================
     // CART.HTML - WARENKORB
     // ============================================
@@ -2885,6 +2921,15 @@ tracking_error_timeout_text: "Die Anfrage dauert länger als erwartet. Überprü
   },
   
   es: {
+
+    // PAGE TITLES
+    page_title_booking: "Reserva tu Test Drive — LuxHaven360",
+    page_title_cart: "Tu Carrito — LuxHaven360",
+    page_title_pdp: "Detalle del Producto — LuxHaven360",
+    page_title_success: "Pedido Confirmado — LuxHaven360",
+    page_title_success_booking: "Reserva Confirmada — LuxHaven360",
+    page_title_tracking: "Tus Pedidos — LuxHaven360",
+
     // ============================================
     // CART.HTML - CARRITO
     // ============================================
