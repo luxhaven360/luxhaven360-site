@@ -745,7 +745,7 @@ window.I18N_TRANSLATIONS['it'] = {
   'emoji.search_placeholder': 'Cerca emoji…',
 
   // PAGE TITLES
-  'page.title_project': 'Il Progetto — LuxHaven360',
+  'page.title_project': 'The Project — LuxHaven360',
   'page.title_showcase': 'Vetrina & Promozione — LuxHaven360',
   'page.title_community_hub': 'Community Hub — LuxHaven360',
   'page.title_members': 'Area Membri — LuxHaven360',
