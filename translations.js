@@ -1,5 +1,12 @@
 const translations = {
   it: {
+
+    // PAGE TITLES
+    page_title_home: "Home — LuxHaven360",
+    page_title_404: "Pagina Non Trovata — LuxHaven360",
+    page_title_privacy: "Informativa sulla Privacy — LuxHaven360",
+    page_title_terms: "Termini di Servizio — LuxHaven360",
+
     // NAVBAR
     nav_home: "Home",
     nav_properties: "Immobili",
@@ -137,6 +144,13 @@ const translations = {
   },
   
   en: {
+
+    // PAGE TITLES
+    page_title_home: "Home — LuxHaven360",
+    page_title_404: "Page Not Found — LuxHaven360",
+    page_title_privacy: "Privacy Policy — LuxHaven360",
+    page_title_terms: "Terms of Service — LuxHaven360",
+
     // NAVBAR
     nav_home: "Home",
     nav_properties: "Properties",
@@ -274,6 +288,13 @@ const translations = {
   },
   
   fr: {
+
+    // PAGE TITLES
+    page_title_home: "Accueil — LuxHaven360",
+    page_title_404: "Page Introuvable — LuxHaven360",
+    page_title_privacy: "Politique de Confidentialité — LuxHaven360",
+    page_title_terms: "Conditions d'Utilisation — LuxHaven360",
+
     // NAVBAR
     nav_home: "Accueil",
     nav_properties: "Propriétés",
@@ -411,6 +432,13 @@ const translations = {
   },
   
   de: {
+
+    // PAGE TITLES
+    page_title_home: "Startseite — LuxHaven360",
+    page_title_404: "Seite Nicht Gefunden — LuxHaven360",
+    page_title_privacy: "Datenschutzrichtlinie — LuxHaven360",
+    page_title_terms: "Nutzungsbedingungen — LuxHaven360",
+
     // NAVBAR
     nav_home: "Startseite",
     nav_properties: "Immobilien",
@@ -548,6 +576,13 @@ const translations = {
   },
   
   es: {
+
+    // PAGE TITLES
+    page_title_home: "Inicio — LuxHaven360",
+    page_title_404: "Página No Encontrada — LuxHaven360",
+    page_title_privacy: "Política de Privacidad — LuxHaven360",
+    page_title_terms: "Términos de Servicio — LuxHaven360",
+
     // NAVBAR
     nav_home: "Inicio",
     nav_properties: "Propiedades",
