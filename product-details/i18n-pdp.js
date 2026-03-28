@@ -169,6 +169,16 @@ document.querySelectorAll('[data-i18n-placeholder]').forEach(el => {
     });
   }
 
+
+    // Aggiorna document.title in base alla lingua corrente
+    const titleKey = document.documentElement.getAttribute('data-page-title-key');
+    if (titleKey) {
+      const translatedTitle = this.t(titleKey);
+      if (translatedTitle && translatedTitle !== titleKey) {
+        document.title = translatedTitle;
+      }
+    }
+
    // Risolve path tipo 'booking_calendar_months.gennaio' in oggetti annidati
   _getByPath(obj, path) {
     if (!obj || !path) return undefined;
