@@ -167,8 +167,6 @@ document.querySelectorAll('[data-i18n-placeholder]').forEach(el => {
       const translation = this.t(key);
       if (translation) el.title = translation;
     });
-  }
-
 
     // Aggiorna document.title in base alla lingua corrente
     const titleKey = document.documentElement.getAttribute('data-page-title-key');
@@ -178,6 +176,7 @@ document.querySelectorAll('[data-i18n-placeholder]').forEach(el => {
         document.title = translatedTitle;
       }
     }
+  }
 
    // Risolve path tipo 'booking_calendar_months.gennaio' in oggetti annidati
   _getByPath(obj, path) {
